@@ -5,9 +5,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    networks:
-      - default
-      - proxy-network
+    ports:
+      - "80:80"
     restart: unless-stopped
 
   backend:
@@ -17,15 +16,15 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    ports:
+      - "8000:8000"
+      - "3000:3000"
     depends_on:
       - redis
       - neo4j
       - qdrant
     volumes:
       - vault_data:/vault
-    networks:
-      - default
-      - proxy-network
     restart: unless-stopped
 
   worker:
@@ -46,17 +45,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
 
   neo4j:
     image: neo4j:5
-    ports:
-      - "7474:7474"
-      - "7687:7687"
     environment:
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
     volumes:
@@ -65,8 +59,6 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
@@ -76,7 +68,3 @@ volumes:
   redis_data:
   neo4j_data:
   qdrant_data:
-
-networks:
-  proxy-network:
-    external: true

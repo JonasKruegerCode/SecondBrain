@@ -8,9 +8,6 @@ on:
       - ".github/workflows/backend.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend.yml"
 
 env:
   REGISTRY: ghcr.io
