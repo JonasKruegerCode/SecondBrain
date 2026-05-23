@@ -1,0 +1,17 @@
+.agents
+.env
+__pycache__
+
+# Python
+.venv
+*.pyc
+.mypy_cache
+.ruff_cache
+.pytest_cache
+
+# Node
+frontend/node_modules
+frontend/dist
+
+# Vault (lokale Kopie des Wissens-Repos — nicht Teil dieses Repos)
+vault/

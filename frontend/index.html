@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Brain</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  display: flex; height: 100dvh; background: #0f0f13; color: #e0e0e0;
+  font-family: system-ui, sans-serif; overflow: hidden;
+}
+#sidebar {
+  width: 300px; min-width: 300px; padding: 20px 16px; display: flex;
+  flex-direction: column; gap: 18px; border-right: 1px solid #1e1e2e; overflow-y: auto;
+}
+#cy { flex: 1; }
+#cy canvas { cursor: default; }
+#cy .cy-node { cursor: pointer; }
+h1 { font-size: 1rem; font-weight: 700; color: #a78bfa; letter-spacing: 0.08em; }
+h2 {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.12em; color: #52526a; margin-bottom: 6px;
+}
+section { display: flex; flex-direction: column; gap: 6px; }
+textarea {
+  background: #13131c; border: 1px solid #1e1e2e; border-radius: 6px;
+  color: #e0e0e0; padding: 9px 10px; font-size: 0.82rem; resize: vertical;
+  min-height: 72px; outline: none; font-family: inherit; line-height: 1.4;
+}
+textarea:focus, input[type=text]:focus { border-color: #7c3aed; }
+input[type=text] {
+  background: #13131c; border: 1px solid #1e1e2e; border-radius: 6px;
+  color: #e0e0e0; padding: 9px 10px; font-size: 0.82rem; outline: none; width: 100%;
+  font-family: inherit;
+}
+button {
+  background: #7c3aed; color: #fff; border: none; border-radius: 6px;
+  padding: 8px 14px; font-size: 0.82rem; cursor: pointer; font-weight: 600;
+}
+button:hover { background: #6d28d9; }
+button:disabled { opacity: 0.4; cursor: default; }
+.small-btn {
+  background: #1a1a26; color: #6b6b80; font-size: 0.72rem;
+  padding: 5px 10px; font-weight: 500;
+}
+.small-btn:hover { background: #22223a; color: #c0c0d8; }
+.status { font-size: 0.77rem; color: #52526a; min-height: 16px; }
+.result {
+  font-size: 0.78rem; background: #13131c; border-radius: 6px; padding: 10px;
+  max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.55;
+  color: #b0b0c8; border: 1px solid #1e1e2e; display: none;
+}
+.row { display: flex; align-items: center; justify-content: space-between; }
+.log-list { display: flex; flex-direction: column; gap: 4px; }
+.log-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.75rem; color: #7070a0; line-height: 1.3;
+}
+.log-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.log-dot.done { background: #10b981; }
+.log-dot.running { background: #f59e0b; animation: pulse 1.2s infinite; }
+.log-dot.failed { background: #ef4444; }
+.log-meta { display: flex; flex-direction: column; gap: 1px; }
+.log-time { color: #52526a; font-size: 0.7rem; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+/* Modal */
+#modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+  z-index: 100; align-items: center; justify-content: center;
+}
+#modal-overlay.open { display: flex; }
+#modal {
+  background: #13131c; border: 1px solid #2a2a40; border-radius: 10px;
+  width: min(680px, 90vw); max-height: 80vh; display: flex; flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+#modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid #1e1e2e;
+}
+#modal-title { font-size: 0.9rem; font-weight: 700; color: #a78bfa; }
+#modal-close {
+  background: none; border: none; color: #52526a; font-size: 1.2rem;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
+#modal-close:hover { background: #1e1e2e; color: #e0e0e0; }
+#modal-body {
+  padding: 18px; overflow-y: auto; font-size: 0.84rem; line-height: 1.65;
+  color: #c0c0d8;
+}
+#modal-body h1, #modal-body h2, #modal-body h3 { color: #e0e0e0; margin: 1em 0 0.4em; }
+#modal-body h1 { font-size: 1.15rem; }
+#modal-body h2 { font-size: 1rem; }
+#modal-body h3 { font-size: 0.9rem; }
+#modal-body p { margin: 0.5em 0; }
+#modal-body code {
+  background: #0f0f18; border-radius: 3px; padding: 1px 5px;
+  font-family: monospace; font-size: 0.82rem; color: #a78bfa;
+}
+#modal-body pre {
+  background: #0f0f18; border-radius: 6px; padding: 10px 12px;
+  overflow-x: auto; margin: 0.6em 0;
+}
+#modal-body pre code { background: none; padding: 0; }
+#modal-body ul, #modal-body ol { padding-left: 1.4em; margin: 0.4em 0; }
+#modal-body a { color: #7c3aed; }
+#modal-loading { color: #52526a; font-size: 0.82rem; text-align: center; padding: 24px; }
+
+/* ── Mobile elements: hidden on desktop ────────────────────────────── */
+#m-graph-bar { display: none; }
+#m-nav { display: none; }
+
+/* ── Mobile layout ──────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  body { flex-direction: column; overflow: hidden; }
+
+  /* Sidebar becomes a full-screen panel */
+  #sidebar {
+    position: fixed;
+    inset: 0 0 57px 0;       /* leave room for nav */
+    width: 100%;
+    min-width: unset;
+    border-right: none;
+    background: #0f0f13;
+    z-index: 40;
+    padding: 16px 16px 20px;
+    overflow-y: auto;
+    gap: 22px;
+  }
+
+  /* Graph tab: sidebar hidden */
+  body.tab-graph #sidebar { display: none; }
+  /* Other tabs: sidebar visible */
+  body:not(.tab-graph) #sidebar { display: flex; }
+
+  /* On mobile, hide all sections by default; each tab shows one */
+  #sidebar section { display: none; }
+  body.tab-save  #sec-remember { display: flex; }
+  body.tab-ask   #sec-recall   { display: flex; }
+  body.tab-log   #sec-log      { display: flex; }
+  /* sec-graph never shows inside sidebar on mobile (replaced by #m-graph-bar) */
+
+  /* Graph canvas: fills screen below the nav */
+  #cy {
+    position: fixed;
+    inset: 0 0 57px 0;
+    flex: unset;
+    z-index: 10;
+  }
+
+  /* Floating pill over the graph showing stats */
+  #m-graph-bar {
+    position: fixed;
+    top: 8px; left: 8px; right: 8px;
+    background: rgba(15, 15, 19, 0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid #1e1e2e;
+    border-radius: 8px;
+    padding: 8px 12px;
+    z-index: 30;
+    align-items: center;
+    justify-content: space-between;
+  }
+  body.tab-graph #m-graph-bar { display: flex; }
+
+  /* Bottom navigation bar */
+  #m-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 57px;
+    background: #13131c;
+    border-top: 1px solid #1e1e2e;
+    z-index: 50;
+  }
+
+  .m-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    color: #52526a;
+    font-size: 0.62rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 6px 2px;
+    border-radius: 0;
+    transition: color 0.15s;
+  }
+  .m-tab .m-icon { font-size: 1.25rem; line-height: 1; }
+  .m-tab.active { color: #a78bfa; }
+  .m-tab:hover { background: none; color: #c0b0e8; }
+
+  /* Bigger touch targets and font sizes */
+  textarea { min-height: 110px; font-size: 1rem; }
+  input[type=text] { font-size: 1rem; padding: 11px 10px; }
+  button:not(.small-btn):not(#modal-close):not(.m-tab) {
+    padding: 12px 16px; font-size: 0.9rem;
+  }
+  #modal-close { padding: 6px 10px; font-size: 1.4rem; }
+
+  /* Recall result: use sidebar scroll rather than inner scroll */
+  .result { max-height: none; overflow-y: visible; }
+
+  /* Modal: nearly full-screen on mobile */
+  #modal { width: min(680px, 96vw); max-height: 90dvh; }
+  #modal-body { padding: 14px; }
+}
+</style>
+</head>
+<body class="tab-graph">
+
+<!-- ── Desktop sidebar ─────────────────────────────────────────────── -->
+<div id="sidebar">
+  <div class="row">
+    <h1>&#11042; Second Brain</h1>
+  </div>
+
+  <section id="sec-graph">
+    <div class="row">
+      <h2>Knowledge Graph</h2>
+      <button class="small-btn" id="refresh-btn">&#8635; Refresh</button>
+    </div>
+    <div class="status" id="node-count">Loading&#8230;</div>
+  </section>
+
+  <section id="sec-remember">
+    <h2>Remember</h2>
+    <textarea id="remember-input" placeholder="What should be stored?"></textarea>
+    <button id="remember-btn" onclick="doRemember()">Save</button>
+    <div class="status" id="remember-status"></div>
+  </section>
+
+  <section id="sec-log">
+    <h2>Ingestion</h2>
+    <div class="log-list" id="ingestion-log-list">
+      <div class="status">Loading&#8230;</div>
+    </div>
+  </section>
+
+  <section id="sec-recall">
+    <h2>Recall</h2>
+    <input id="recall-input" type="text" placeholder="Question or topic&#8230;"
+      onkeydown="if(event.key==='Enter') doRecall()">
+    <button id="recall-btn" onclick="doRecall()">Search</button>
+    <div class="result" id="recall-result"></div>
+  </section>
+</div>
+
+<!-- ── Graph canvas ─────────────────────────────────────────────────── -->
+<div id="cy"></div>
+
+<!-- ── Mobile: floating graph stats bar ─────────────────────────────── -->
+<div id="m-graph-bar">
+  <span id="m-node-count" class="status">Loading&#8230;</span>
+  <button class="small-btn" id="m-refresh-btn">&#8635; Refresh</button>
+</div>
+
+<!-- ── Mobile: bottom navigation ────────────────────────────────────── -->
+<nav id="m-nav">
+  <button class="m-tab active" data-tab="graph">
+    <span class="m-icon">&#11042;</span>
+    <span>Graph</span>
+  </button>
+  <button class="m-tab" data-tab="save">
+    <span class="m-icon">&#43;</span>
+    <span>Save</span>
+  </button>
+  <button class="m-tab" data-tab="ask">
+    <span class="m-icon">&#9679;</span>
+    <span>Ask</span>
+  </button>
+  <button class="m-tab" data-tab="log">
+    <span class="m-icon">&#8801;</span>
+    <span>Log</span>
+  </button>
+</nav>
+
+<!-- ── Markdown popup ───────────────────────────────────────────────── -->
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div id="modal">
+    <div id="modal-header">
+      <span id="modal-title"></span>
+      <button id="modal-close" onclick="closeModalBtn()">&#10005;</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

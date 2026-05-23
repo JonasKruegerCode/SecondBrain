@@ -1,0 +1,62 @@
+[project]
+name = "second-brain"
+version = "0.1.0"
+description = "Autonomous, self-improving AI agent memory server"
+authors = [
+    {name = "Jonas Krüger", email = "jonas.krueger.senden@gmail.com"}
+]
+requires-python = ">=3.12"
+dependencies = [
+    "uvicorn[standard]>=0.30.1",
+    "starlette>=0.37.2",
+    "pydantic>=2.7.4",
+    "pydantic-settings>=2.3.4",
+    "mcp>=1.0.0",
+    "neo4j>=5.21.0",
+    "qdrant-client>=1.9.1",
+    "celery>=5.4.0",
+    "redis>=5.0.6",
+    "httpx>=0.28.1",
+    "gitpython>=3.1.43",
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.2.2"
+pytest-asyncio = ">=0.23.7"
+mypy = ">=1.10.0"
+ruff = ">=0.4.10"
+httpx = ">=0.28.1"
+testcontainers = {extras = ["neo4j", "qdrant", "redis"], version = "^4.14.2"}
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --asyncio-mode=auto"
+testpaths = [
+    "tests",
+]
+pythonpath = [
+    "src",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.*:",
+    "ignore::UserWarning:qdrant_client.*:",
+]
+markers = [
+    "integration: requires running Docker containers (Testcontainers)",
+]

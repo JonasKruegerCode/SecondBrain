@@ -1,0 +1,81 @@
+import logging
+from pathlib import Path
+from typing import Protocol
+
+from second_brain.llm.client import OpenRouterClient
+from second_brain.memory.graph import Neo4jStore
+from second_brain.memory.vault import FileSystemVault
+from second_brain.memory.vector import QdrantStore
+
+logger = logging.getLogger(__name__)
+
+WIKI_COLLECTION = "wiki_pages"
+
+_SYNTH_SYSTEM = """\
+You are a knowledge assistant. Answer the query exclusively based on the
+provided wiki pages. If the pages contain no relevant information, say so clearly.
+Respond in the language of the query.
+"""
+
+
+class Embedder(Protocol):
+    def embed(self, text: str) -> list[float]:
+        ...
+
+
+class HybridRAG:
+    def __init__(
+        self,
+        vector_store: QdrantStore,
+        graph_store: Neo4jStore,
+        vault_store: FileSystemVault,
+        embedder: Embedder,
+    ) -> None:
+        self.vector_store = vector_store
+        self.graph_store = graph_store
+        self.vault_store = vault_store
+        self.embedder = embedder
+
+    async def retrieve_context(self, query: str, limit: int = 5) -> str:
+        return await self._retrieve_async(query, limit)
+
+    async def _retrieve_async(self, query: str, limit: int) -> str:
+        # 1. Embed query
+        query_vec: list[float] = self.embedder.embed(query)
+
+        # 2. Qdrant: semantically similar wiki pages
+        hits = self.vector_store.search(WIKI_COLLECTION, query_vec, limit=limit)
+        seed_slugs = [h["slug"] for h in hits if "slug" in h]
+        seed_paths = [h["vault_path"] for h in hits if "vault_path" in h]
+
+        # 3. Neo4j: 2-hop neighbors
+        neighbor_slugs: list[str] = []
+        if seed_slugs:
+            try:
+                neighbor_slugs = self.graph_store.get_neighbors(seed_slugs, hops=2)
+            except Exception as exc:
+                logger.warning("Neo4j query failed: %s", exc)
+
+        # 4. Collect all vault paths (deduplicated, max 10)
+        neighbor_paths = [f"1_knowledge/wiki/{s}.md" for s in neighbor_slugs]
+        all_paths = list(dict.fromkeys(seed_paths + neighbor_paths))[:10]
+
+        # 5. Load Markdown
+        wiki_contents: list[str] = []
+        for path in all_paths:
+            content = self.vault_store.read_file(path)
+            if content:
+                wiki_contents.append(f"## {Path(path).stem}\n\n{content}")
+
+        if not wiki_contents:
+            return "No relevant wiki pages found."
+
+        # 6. LLM synthesis
+        context_block = "\n\n---\n\n".join(wiki_contents)
+        user_prompt = f"Query: {query}\n\n---\n\n{context_block}"
+        try:
+            client = OpenRouterClient()
+            return await client.complete(_SYNTH_SYSTEM, user_prompt)
+        except Exception as exc:
+            logger.error("LLM synthesis failed: %s", exc)
+            return f"Raw wiki contents (LLM unavailable):\n\n{context_block[:3000]}"
