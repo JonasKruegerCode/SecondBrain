@@ -69,7 +69,7 @@ MCP Server ──recall───▶ HybridRAG ──▶ Qdrant (vector search)
 ### 1 — Clone and configure
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/SecondBrain.git
+git clone https://github.com/JonasKruegerCode/SecondBrain.git
 cd SecondBrain
 cp .env.example .env
 ```
@@ -193,6 +193,14 @@ docker compose pull && docker compose up -d
 | `mcp.your-domain.com` | `backend:3000` | Protected by `MCP_API_KEY` |
 
 Add `mcp.your-domain.com` to `MCP_ALLOWED_HOSTS` in your `.env`.
+
+Nginx Proxy Manager uses a shared Docker network to reach containers. Create it once and attach the services:
+
+```bash
+docker network create proxy-network
+docker network connect proxy-network secondbrain-frontend-1
+docker network connect proxy-network secondbrain-backend-1
+```
 
 ---
 
