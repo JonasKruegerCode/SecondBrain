@@ -194,12 +194,26 @@ docker compose pull && docker compose up -d
 
 Add `mcp.your-domain.com` to `MCP_ALLOWED_HOSTS` in your `.env`.
 
-Nginx Proxy Manager uses a shared Docker network to reach containers. Create it once and attach the services:
+Nginx Proxy Manager uses a shared Docker network to reach containers. Create a `docker-compose.override.yml` next to your `docker-compose.yml` on the server — Docker Compose picks it up automatically on every `up`:
+
+```yaml
+services:
+  frontend:
+    networks:
+      - proxy-network
+  backend:
+    networks:
+      - proxy-network
+
+networks:
+  proxy-network:
+    external: true
+```
+
+Create the network once if it doesn't exist yet:
 
 ```bash
 docker network create proxy-network
-docker network connect proxy-network secondbrain-frontend-1
-docker network connect proxy-network secondbrain-backend-1
 ```
 
 ---
