@@ -362,6 +362,14 @@ def _process_ingestion_inner(task_id: str, content: str) -> str:
 
 @celery_app.task(name="second_brain.worker.tasks.wiki_review_hourly")  # type: ignore[untyped-decorator]
 def wiki_review_hourly() -> str:
+    graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+    try:
+        deleted = graph.delete_ghost_nodes()
+        if deleted:
+            logger.info("Deleted %d ghost node(s) from graph", deleted)
+    finally:
+        graph.close()
+
     wiki_base = Path(settings.VAULT_PATH) / "1_knowledge" / "wiki"
     if not wiki_base.exists():
         return "no_wiki"
