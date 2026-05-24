@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     VAULT_GITHUB_URL: str = ""
     VAULT_GITHUB_PAT: str = ""
 
-    MCP_ALLOWED_HOSTS: str = "localhost,127.0.0.1"
-
     OPENROUTER_API_KEY: str = ""
     DEFAULT_MODEL: str = "anthropic/claude-sonnet-4-5"
     EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
