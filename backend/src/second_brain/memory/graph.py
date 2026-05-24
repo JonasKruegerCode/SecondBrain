@@ -106,10 +106,10 @@ class Neo4jStore:
             session.run(query, id=slug, title=title, type=page_type, vault_path=vault_path)
 
     def upsert_edge(self, source_slug: str, target_slug: str) -> None:
-        """MERGE a LINKS_TO edge between two WikiPage nodes."""
+        """MERGE a LINKS_TO edge — only if both WikiPage nodes already exist."""
         query = (
-            "MERGE (s:WikiPage {id: $src}) "
-            "MERGE (t:WikiPage {id: $tgt}) "
+            "MATCH (s:WikiPage {id: $src}) "
+            "MATCH (t:WikiPage {id: $tgt}) "
             "MERGE (s)-[:LINKS_TO]->(t)"
         )
         with self.driver.session() as session:
@@ -124,6 +124,14 @@ class Neo4jStore:
         )
         rows = self.execute_query(query, {"seeds": seed_slugs, "hops": hops})
         return [r["id"] for r in rows if r.get("id")]
+
+    def delete_ghost_nodes(self) -> int:
+        """Delete WikiPage nodes that have no vault_path (never ingested as real pages)."""
+        result = self.execute_query(
+            "MATCH (n:WikiPage) WHERE n.vault_path IS NULL "
+            "DETACH DELETE n RETURN count(n) AS deleted"
+        )
+        return result[0]["deleted"] if result else 0
 
     def get_all_graph(self) -> dict[str, list[dict[str, Any]]]:
         """Return all WikiPage nodes and LINKS_TO edges for the UI graph view."""
