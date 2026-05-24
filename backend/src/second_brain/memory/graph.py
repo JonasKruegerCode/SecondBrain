@@ -128,7 +128,8 @@ class Neo4jStore:
     def delete_ghost_nodes(self) -> int:
         """Delete WikiPage nodes that have no vault_path (never ingested as real pages)."""
         result = self.execute_query(
-            "MATCH (n:WikiPage) WHERE n.vault_path IS NULL DETACH DELETE n RETURN count(n) AS deleted"
+            "MATCH (n:WikiPage) WHERE n.vault_path IS NULL "
+            "DETACH DELETE n RETURN count(n) AS deleted"
         )
         return result[0]["deleted"] if result else 0
 
