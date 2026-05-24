@@ -16,6 +16,7 @@ from urllib.parse import parse_qs
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -276,6 +277,7 @@ fmcp = FastMCP(
     "second-brain",
     json_response=True,
     stateless_http=True,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
 
 
