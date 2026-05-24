@@ -16,7 +16,6 @@ from urllib.parse import parse_qs
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -273,15 +272,10 @@ class ApiKeyMiddleware:
         await self.app(scope, receive, send)
 
 
-_allowed_hosts = [h.strip() for h in settings.MCP_ALLOWED_HOSTS.split(",") if h.strip()]
-
 fmcp = FastMCP(
     "second-brain",
     json_response=True,
     stateless_http=True,
-    transport_security=TransportSecuritySettings(
-        allowed_hosts=_allowed_hosts,
-    ),
 )
 
 

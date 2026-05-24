@@ -134,7 +134,6 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 |----------|---------|-------------|
 | `OPENROUTER_API_KEY` | *(required)* | API key for [OpenRouter](https://openrouter.ai/) |
 | `MCP_API_KEY` | *(required)* | Secret key protecting the MCP endpoint |
-| `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated allowed Host headers — add your public MCP domain |
 | `DEFAULT_MODEL` | `google/gemini-3.5-flash` | LLM for planning, writing, and synthesis |
 | `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model for semantic search |
 | `VAULT_PATH` | `/vault` | Filesystem path for the Markdown vault |
@@ -191,8 +190,6 @@ docker compose pull && docker compose up -d
 |--------|-----------|-------|
 | `brain.your-domain.com` | `frontend:80` + location `/api` → `backend:8000` | Add Basic Auth |
 | `mcp.your-domain.com` | `backend:3000` | Protected by `MCP_API_KEY` |
-
-Add `mcp.your-domain.com` to `MCP_ALLOWED_HOSTS` in your `.env`.
 
 Nginx Proxy Manager uses a shared Docker network to reach containers. Create a `docker-compose.override.yml` next to your `docker-compose.yml` on the server — Docker Compose picks it up automatically on every `up`:
 
