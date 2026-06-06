@@ -200,6 +200,35 @@ def _backfill_wikilinks(new_slug: str, new_title: str, wiki_base: Path) -> None:
         _inject_links_into_page(f, partial_map)
 
 
+def _apply_diff(changed: list[str], deleted: list[str]) -> str:
+    """Re-embed changed pages and purge deleted pages from graph + vectors."""
+    if not changed and not deleted:
+        return "no_changes"
+
+    wiki_base = Path(settings.VAULT_PATH) / "1_knowledge" / "wiki"
+
+    if changed:
+        pages = []
+        for slug in changed:
+            path = wiki_base / f"{slug}.md"
+            if path.exists():
+                pages.append((slug, _read_title(path), path.read_text(encoding="utf-8")))
+        if pages:
+            _update_graph_and_vectors(pages)
+
+    if deleted:
+        graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+        vector_store = QdrantStore(settings.QDRANT_URL)
+        try:
+            for slug in deleted:
+                graph.delete_page_node(slug)
+                vector_store.delete(WIKI_COLLECTION, _slug_to_uuid(slug))
+        finally:
+            graph.close()
+
+    return f"ok:+{len(changed)}/-{len(deleted)}"
+
+
 def _update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None:
     """Writes nodes + edges to Neo4j and embeddings to Qdrant."""
     embedder = get_embedder()
@@ -439,3 +468,21 @@ def wiki_review_hourly() -> str:
 def git_sync_daily() -> str:
     get_git_sync().push("chore: daily vault sync")
     return "ok:git_sync_daily"
+
+
+@celery_app.task(name="second_brain.worker.tasks.reindex_after_pull")  # type: ignore[untyped-decorator]
+def reindex_after_pull() -> str:
+    """Pull vault from Git and re-embed only changed/deleted wiki pages."""
+    changed, deleted = get_git_sync().pull_and_diff()
+    return _apply_diff(changed, deleted)
+
+
+@celery_app.task(name="second_brain.worker.tasks.reindex_all_wiki")  # type: ignore[untyped-decorator]
+def reindex_all_wiki() -> str:
+    """Re-embed all wiki pages — used after a fresh clone or full DB reset."""
+    wiki_base = Path(settings.VAULT_PATH) / "1_knowledge" / "wiki"
+    if not wiki_base.exists():
+        return "no_wiki"
+    slugs = [f.stem for f in wiki_base.rglob("*.md")]
+    logger.info("Full reindex: %d wiki pages", len(slugs))
+    return _apply_diff(slugs, [])

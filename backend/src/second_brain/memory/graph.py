@@ -125,6 +125,10 @@ class Neo4jStore:
         rows = self.execute_query(query, {"seeds": seed_slugs, "hops": hops})
         return [r["id"] for r in rows if r.get("id")]
 
+    def delete_page_node(self, slug: str) -> None:
+        """Remove a WikiPage node and all its edges."""
+        self.execute_query("MATCH (n:WikiPage {id: $id}) DETACH DELETE n", {"id": slug})
+
     def delete_ghost_nodes(self) -> int:
         """Delete WikiPage nodes that have no vault_path (never ingested as real pages)."""
         result = self.execute_query(

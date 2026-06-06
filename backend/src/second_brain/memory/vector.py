@@ -78,3 +78,7 @@ class QdrantStore:
             collection_name=collection_name, query=query_vector, limit=limit
         )
         return [hit.payload for hit in search_result.points if hit.payload is not None]
+
+    def delete(self, collection_name: str, point_id: str) -> None:
+        """Delete a point by ID."""
+        self.client.delete(collection_name=collection_name, points_selector=[point_id])
