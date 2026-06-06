@@ -118,11 +118,11 @@ class Neo4jStore:
     def get_neighbors(self, seed_slugs: list[str], hops: int = 2) -> list[str]:
         """Return slugs of all nodes within `hops` hops of any seed node."""
         query = (
-            "MATCH (s:WikiPage)-[:LINKS_TO*1..$hops]-(n:WikiPage) "
+            f"MATCH (s:WikiPage)-[:LINKS_TO*1..{hops}]-(n:WikiPage) "
             "WHERE s.id IN $seeds "
             "RETURN DISTINCT n.id AS id"
         )
-        rows = self.execute_query(query, {"seeds": seed_slugs, "hops": hops})
+        rows = self.execute_query(query, {"seeds": seed_slugs})
         return [r["id"] for r in rows if r.get("id")]
 
     def delete_page_node(self, slug: str) -> None:
