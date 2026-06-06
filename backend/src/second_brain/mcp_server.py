@@ -28,7 +28,7 @@ from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.hybrid_rag import HybridRAG
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
-from second_brain.worker.tasks import process_ingestion, reindex_all_wiki
+from second_brain.worker.tasks import process_ingestion, reindex_after_pull
 
 # ---------------------------------------------------------------------------
 # Service-Factory
@@ -132,10 +132,9 @@ async def handle_api_ingestion_logs(_request: Request) -> JSONResponse:
 
 @asynccontextmanager
 async def _api_lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
-    is_fresh = get_git_sync().setup()
+    get_git_sync().setup()
     get_embedder()
-    if is_fresh:
-        reindex_all_wiki.delay()
+    reindex_after_pull.delay()
     yield
 
 

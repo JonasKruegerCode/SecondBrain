@@ -39,8 +39,7 @@ class GitSync:
             return False
 
         if (self._vault_path / ".git").exists():
-            logger.info("Vault already exists — running pull.")
-            self.pull()
+            logger.info("Vault already exists — pull handled by reindex_after_pull task.")
             return False
 
         auth_url = _authenticated_url(self._url, self._pat) if self._pat else self._url

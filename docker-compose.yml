@@ -20,9 +20,12 @@ services:
       - "8000:8000"
       - "3000:3000"
     depends_on:
-      - redis
-      - neo4j
-      - qdrant
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
     volumes:
       - vault_data:/vault
     restart: unless-stopped
@@ -35,9 +38,12 @@ services:
     env_file:
       - .env
     depends_on:
-      - redis
-      - neo4j
-      - qdrant
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
     volumes:
       - vault_data:/vault
     command: celery -A second_brain.core.celery_app worker --beat --loglevel=info --concurrency=2
@@ -47,6 +53,11 @@ services:
     image: redis:7-alpine
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   neo4j:
@@ -55,12 +66,23 @@ services:
       - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
     volumes:
       - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/7687' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
     restart: unless-stopped
 
   qdrant:
     image: qdrant/qdrant:latest
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
 volumes:

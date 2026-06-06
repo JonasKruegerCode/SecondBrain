@@ -230,24 +230,20 @@ def _apply_diff(changed: list[str], deleted: list[str]) -> str:
 
 
 def _update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None:
-    """Writes nodes + edges to Neo4j and embeddings to Qdrant."""
+    """Writes nodes + edges to Neo4j and embeddings to Qdrant.
+
+    Two-pass graph write: all nodes first, then all edges. This ensures
+    upsert_edge (which uses MATCH) can find target nodes even when source
+    and target are both part of the same batch (e.g. full reindex).
+    """
     embedder = get_embedder()
     vector_store = QdrantStore(settings.QDRANT_URL)
     graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
     try:
+        # Pass 1: nodes + vectors
         for slug, title, page_md in updated_pages:
             vault_path = f"1_knowledge/wiki/{slug}.md"
-
-            # Graph: page node
             graph.upsert_page_node(slug, title, "wiki", vault_path)
-
-            # Graph: edges from [[wikilinks]]
-            for linked in _parse_wikilinks(page_md):
-                target = slugify(linked)
-                if target and target != slug:
-                    graph.upsert_edge(slug, target)
-
-            # Vector embedding
             vec = embedder.embed(page_md[:2000])
             vector_store.upsert(
                 WIKI_COLLECTION,
@@ -255,6 +251,32 @@ def _update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None
                 {"slug": slug, "title": title, "type": "wiki", "vault_path": vault_path},
                 point_id=_slug_to_uuid(slug),
             )
+
+        # Pass 2: edges — build a lookup so wikilinks like [[Python]] resolve
+        # to the correct slug even when the node ID is [[topic-python]].
+        all_nodes = graph.execute_query(
+            "MATCH (n:WikiPage) RETURN n.id AS id, n.title AS title"
+        )
+        slug_lookup: dict[str, str] = {}
+        for row in all_nodes:
+            node_id = row.get("id", "")
+            title = row.get("title", "")
+            if node_id:
+                slug_lookup[node_id] = node_id
+                slug_lookup[slugify(node_id)] = node_id
+                if title:
+                    slug_lookup[title.lower()] = node_id
+                    slug_lookup[slugify(title)] = node_id
+
+        for slug, _, page_md in updated_pages:
+            for linked in _parse_wikilinks(page_md):
+                target = (
+                    slug_lookup.get(linked)
+                    or slug_lookup.get(slugify(linked))
+                    or slug_lookup.get(linked.lower())
+                )
+                if target and target != slug:
+                    graph.upsert_edge(slug, target)
     finally:
         graph.close()
 
@@ -466,14 +488,32 @@ def wiki_review_hourly() -> str:
 
 @celery_app.task(name="second_brain.worker.tasks.git_sync_daily")  # type: ignore[untyped-decorator]
 def git_sync_daily() -> str:
+    """Daily pull + incremental reindex + push."""
+    changed, deleted = get_git_sync().pull_and_diff()
+    _apply_diff(changed, deleted)
     get_git_sync().push("chore: daily vault sync")
     return "ok:git_sync_daily"
 
 
 @celery_app.task(name="second_brain.worker.tasks.reindex_after_pull")  # type: ignore[untyped-decorator]
 def reindex_after_pull() -> str:
-    """Pull vault from Git and re-embed only changed/deleted wiki pages."""
+    """Pull and reindex changed pages. Falls back to full reindex if DB is empty."""
     changed, deleted = get_git_sync().pull_and_diff()
+    if not changed and not deleted:
+        wiki_base = Path(settings.VAULT_PATH) / "1_knowledge" / "wiki"
+        if wiki_base.exists():
+            graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+            try:
+                rows = graph.execute_query("MATCH (n:WikiPage) RETURN count(n) AS c")
+                db_empty = not rows or rows[0].get("c", 0) == 0
+            except Exception:
+                db_empty = False
+            finally:
+                graph.close()
+            if db_empty:
+                slugs = [f.stem for f in wiki_base.rglob("*.md")]
+                logger.info("DB empty, running full reindex: %d pages", len(slugs))
+                return _apply_diff(slugs, [])
     return _apply_diff(changed, deleted)
 
 
