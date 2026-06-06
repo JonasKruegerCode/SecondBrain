@@ -76,6 +76,10 @@ class GitSync:
             return [], []
         try:
             repo = git.Repo(str(self._vault_path))
+        except git.InvalidGitRepositoryError:
+            logger.warning("Vault at %s is not a git repo — skipping pull.", self._vault_path)
+            return [], []
+        try:
             old_head = repo.head.commit.hexsha
             repo.git.pull("--rebase")
             new_head = repo.head.commit.hexsha

@@ -64,7 +64,7 @@ Without the worker, `remember` calls are accepted but never processed.
 ```bash
 # Linux/Mac
 cd backend
-poetry run celery -A second_brain.core.celery_app worker --loglevel=info
+poetry run celery -A second_brain.core.celery_app worker --loglevel=info --pool=solo
 ```
 
 ```powershell
