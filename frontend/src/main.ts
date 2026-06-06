@@ -1,5 +1,9 @@
 import cytoscape from "cytoscape";
+// @ts-expect-error — no types for cytoscape-fcose
+import fcose from "cytoscape-fcose";
 import { marked } from "marked";
+
+cytoscape.use(fcose);
 
 const TYPE_COLORS: Record<string, string> = {
   topic: "#7c3aed",
@@ -46,7 +50,7 @@ const cy = cytoscape({
       },
     },
   ],
-  layout: { name: "cose" },
+  layout: { name: "fcose" },
 });
 
 cy.on("tap", "node", (evt: cytoscape.EventObject) => {
@@ -101,12 +105,20 @@ async function loadGraph(force = false): Promise<void> {
     cy.elements().remove();
     cy.add(elements);
     cy.layout({
-      name: "cose",
+      name: "fcose",
       animate: true,
-      animationDuration: 400,
-      nodeRepulsion: () => 8000,
-      idealEdgeLength: () => 100,
-    } as cytoscape.CoseLayoutOptions).run();
+      animationDuration: 800,
+      quality: "default",
+      randomize: true,
+      fit: true,
+      padding: 40,
+      nodeRepulsion: () => 450000,
+      idealEdgeLength: () => 80,
+      edgeElasticity: () => 0.45,
+      nodeSeparation: 75,
+      numIter: 2500,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any).run();
 
     const n = data.nodes?.length ?? 0;
     const e = data.edges?.length ?? 0;
