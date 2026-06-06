@@ -9,7 +9,6 @@ import asyncio
 import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -29,7 +28,7 @@ from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.hybrid_rag import HybridRAG
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
-from second_brain.worker.tasks import process_ingestion
+from second_brain.worker.tasks import process_ingestion, reindex_after_pull
 
 # ---------------------------------------------------------------------------
 # Service-Factory
@@ -50,89 +49,7 @@ def _build_rag() -> tuple[HybridRAG, Neo4jStore]:
 
 class VaultOps:
     def __init__(self) -> None:
-        self._vault = Path(settings.VAULT_PATH)
-        self._wiki = self._vault / "1_knowledge" / "wiki"
-
-    def _known_slugs(self) -> list[str]:
-        if not self._wiki.exists():
-            return []
-        return [f.stem for f in self._wiki.rglob("*.md")]
-
-    def inject_wikilinks(self, path: Path) -> None:
-        if not path.exists() or path.suffix != ".md":
-            return
-        slugs = self._known_slugs()
-        content = original = path.read_text(encoding="utf-8")
-        for slug in slugs:
-            if slug == path.stem:
-                continue
-            if slug in content and f"[[{slug}]]" not in content:
-                content = re.sub(
-                    rf"\b({re.escape(slug)})\b(?!\])",
-                    r"[[\1]]",
-                    content,
-                    count=1,
-                )
-        if content != original:
-            path.write_text(content, encoding="utf-8")
-
-    def log_activity(self, path: Path, op: str) -> None:
-        today = datetime.now().strftime("%Y-%m-%d")
-        time_now = datetime.now().strftime("%H:%M")
-        log = self._vault / "3_operations" / "logs" / f"{today}-activity.md"
-        log.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            rel = path.relative_to(self._vault)
-        except ValueError:
-            rel = path
-        with open(log, "a", encoding="utf-8") as f:
-            if log.stat().st_size == 0:
-                f.write(f"# Activity Log — {today}\n\n")
-            f.write(f"- {time_now}: `{op}` → `{rel}`\n")
-
-    def find_orphans(self) -> list[str]:
-        if not self._wiki.exists():
-            return []
-        pages = list(self._wiki.rglob("*.md"))
-        if not pages:
-            return []
-        all_text = "\n".join(p.read_text(encoding="utf-8") for p in pages)
-        orphans = []
-        for page in pages:
-            text = page.read_text(encoding="utf-8")
-            has_outgoing = bool(re.search(r"\[\[", text))
-            is_referenced = f"[[{page.stem}]]" in all_text.replace(text, "")
-            if not has_outgoing or not is_referenced:
-                orphans.append(page.stem)
-        return orphans
-
-    def note_orphans_in_brief(self, orphans: list[str]) -> None:
-        if not orphans:
-            return
-        today = datetime.now().strftime("%Y-%m-%d")
-        brief = self._vault / "3_operations" / "briefs" / f"{today}-brief.md"
-        brief.parent.mkdir(parents=True, exist_ok=True)
-        block = "\n## Isolated Wiki Pages\n" + "\n".join(f"- [[{o}]]" for o in orphans) + "\n"
-        if brief.exists():
-            text = brief.read_text(encoding="utf-8")
-            if "Isolated Wiki Pages" not in text:
-                brief.write_text(text + block, encoding="utf-8")
-        else:
-            brief.write_text(f"# Morning Brief — {today}\n{block}", encoding="utf-8")
-
-    def search_vault(self, query: str, max_results: int = 15) -> str:
-        if not self._wiki.exists():
-            return "Wiki is empty."
-        q = query.lower()
-        results = []
-        for f in sorted(self._wiki.rglob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True):
-            text = f.read_text(encoding="utf-8")
-            if q in text.lower():
-                hits = [ln.strip() for ln in text.splitlines() if q in ln.lower()][:3]
-                results.append(f"### [[{f.stem}]]\n" + "\n".join(f"  > {h}" for h in hits))
-        if not results:
-            return f"No results for '{query}'."
-        return f"## Search Results: '{query}'\n\n" + "\n\n".join(results[:max_results])
+        self._wiki = Path(settings.VAULT_PATH) / "1_knowledge" / "wiki"
 
     def get_page(self, name: str) -> str:
         slug = re.sub(r"[^\w\-]", "-", name.lower()).strip("-")
@@ -217,6 +134,7 @@ async def handle_api_ingestion_logs(_request: Request) -> JSONResponse:
 async def _api_lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
     get_git_sync().setup()
     get_embedder()
+    reindex_after_pull.delay()
     yield
 
 

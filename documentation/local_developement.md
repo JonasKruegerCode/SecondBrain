@@ -37,6 +37,8 @@ MCP_API_KEY=                          # empty = no auth locally
 
 > **Important:** Use `localhost`, not `redis`/`neo4j`/`qdrant` — those are Docker-internal hostnames that are only resolvable within the Docker network.
 
+> **If you copied the production `.env`:** Change `VAULT_PATH=/vault` to a local Windows path, e.g. `VAULT_PATH=C:/vault`. The `/vault` value refers to the Docker volume mount and does not exist on the host.
+
 Clone vault locally (one-time):
 ```bash
 git clone git@github.com:your/vault.git ../vault
@@ -64,7 +66,7 @@ Without the worker, `remember` calls are accepted but never processed.
 ```bash
 # Linux/Mac
 cd backend
-poetry run celery -A second_brain.core.celery_app worker --loglevel=info
+poetry run celery -A second_brain.core.celery_app worker --loglevel=info --pool=solo
 ```
 
 ```powershell
