@@ -16,6 +16,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - OTEL_ENABLED=${OTEL_ENABLED:-true}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     ports:
       - "8000:8000"
       - "3000:3000"
@@ -26,6 +29,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     volumes:
       - vault_data:/vault
     restart: unless-stopped
@@ -37,6 +42,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - OTEL_ENABLED=${OTEL_ENABLED:-true}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
     depends_on:
       redis:
         condition: service_healthy
@@ -44,6 +52,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     volumes:
       - vault_data:/vault
     command: celery -A second_brain.core.celery_app worker --beat --loglevel=info --concurrency=2
@@ -90,6 +100,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
     restart: unless-stopped
 
 volumes:

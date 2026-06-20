@@ -2,6 +2,10 @@ from typing import Any, Protocol
 
 from neo4j import GraphDatabase
 
+from second_brain.core.telemetry import get_tracer
+
+tracer = get_tracer(__name__)
+
 
 class GraphStore(Protocol):
     """
@@ -50,8 +54,10 @@ class Neo4jStore:
         if "id" not in properties:
             raise ValueError("Properties must contain an 'id' for idempotent MERGE.")
 
-        with self.driver.session() as session:
-            session.run(query, id=properties["id"], props=properties)
+        with tracer.start_as_current_span("neo4j.add_node") as span:
+            span.set_attribute("db.statement", query)
+            with self.driver.session() as session:
+                session.run(query, id=properties["id"], props=properties)
 
     def add_edge(
         self,
@@ -74,21 +80,27 @@ class Neo4jStore:
         if edge_props:
             query += "SET r += $edge_props"
 
-        with self.driver.session() as session:
-            session.run(
-                query,
-                source_id=source_props["id"],
-                target_id=target_props["id"],
-                edge_props=edge_props or {},
-            )
+        with tracer.start_as_current_span("neo4j.add_edge") as span:
+            span.set_attribute("db.statement", query)
+            with self.driver.session() as session:
+                session.run(
+                    query,
+                    source_id=source_props["id"],
+                    target_id=target_props["id"],
+                    edge_props=edge_props or {},
+                )
 
     def execute_query(
         self, query: str, parameters: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         """Execute a Cypher query and return the results as a list of dicts."""
-        with self.driver.session() as session:
-            result = session.run(query, parameters or {})
-            return [record.data() for record in result]
+        with tracer.start_as_current_span("neo4j.execute_query") as span:
+            span.set_attribute("db.statement", query)
+            with self.driver.session() as session:
+                result = session.run(query, parameters or {})
+                rows = [record.data() for record in result]
+            span.set_attribute("db.rows_returned", len(rows))
+            return rows
 
     # ------------------------------------------------------------------
     # Wiki-Graph API (abgeleitet aus [[wikilinks]] im Markdown-Vault)
@@ -102,8 +114,11 @@ class Neo4jStore:
             "MERGE (p:WikiPage {id: $id}) "
             "SET p.title = $title, p.type = $type, p.vault_path = $vault_path"
         )
-        with self.driver.session() as session:
-            session.run(query, id=slug, title=title, type=page_type, vault_path=vault_path)
+        with tracer.start_as_current_span("neo4j.upsert_page_node") as span:
+            span.set_attribute("db.statement", query)
+            span.set_attribute("slug", slug)
+            with self.driver.session() as session:
+                session.run(query, id=slug, title=title, type=page_type, vault_path=vault_path)
 
     def upsert_edge(self, source_slug: str, target_slug: str) -> None:
         """MERGE a LINKS_TO edge — only if both WikiPage nodes already exist."""
@@ -112,8 +127,10 @@ class Neo4jStore:
             "MATCH (t:WikiPage {id: $tgt}) "
             "MERGE (s)-[:LINKS_TO]->(t)"
         )
-        with self.driver.session() as session:
-            session.run(query, src=source_slug, tgt=target_slug)
+        with tracer.start_as_current_span("neo4j.upsert_edge") as span:
+            span.set_attribute("db.statement", query)
+            with self.driver.session() as session:
+                session.run(query, src=source_slug, tgt=target_slug)
 
     def get_neighbors(self, seed_slugs: list[str], hops: int = 2) -> list[str]:
         """Return slugs of all nodes within `hops` hops of any seed node."""

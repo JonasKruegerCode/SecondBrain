@@ -25,6 +25,7 @@ from typing import Any
 
 from second_brain.core.celery_app import celery_app
 from second_brain.core.config import settings
+from second_brain.core.telemetry import get_tracer
 from second_brain.git_sync import get_git_sync
 from second_brain.llm.embedder import get_embedder
 from second_brain.llm.wiki_writer import (
@@ -39,6 +40,7 @@ from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.vector import QdrantStore
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 WIKI_COLLECTION = "wiki_pages"
 REVIEW_SAMPLE_SIZE = 8
@@ -236,70 +238,75 @@ def _update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None
     upsert_edge (which uses MATCH) can find target nodes even when source
     and target are both part of the same batch (e.g. full reindex).
     """
-    embedder = get_embedder()
-    vector_store = QdrantStore(settings.QDRANT_URL)
-    graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
-    try:
-        # Pass 1: nodes + vectors
-        for slug, title, page_md in updated_pages:
-            vault_path = f"1_knowledge/wiki/{slug}.md"
-            graph.upsert_page_node(slug, title, "wiki", vault_path)
-            vec = embedder.embed(page_md[:2000])
-            vector_store.upsert(
-                WIKI_COLLECTION,
-                vec,
-                {"slug": slug, "title": title, "type": "wiki", "vault_path": vault_path},
-                point_id=_slug_to_uuid(slug),
-            )
-
-        # Pass 2: edges — build a lookup so wikilinks like [[Python]] resolve
-        # to the correct slug even when the node ID is [[topic-python]].
-        all_nodes = graph.execute_query(
-            "MATCH (n:WikiPage) RETURN n.id AS id, n.title AS title"
-        )
-        slug_lookup: dict[str, str] = {}
-        for row in all_nodes:
-            node_id = row.get("id", "")
-            title = row.get("title", "")
-            if node_id:
-                slug_lookup[node_id] = node_id
-                slug_lookup[slugify(node_id)] = node_id
-                if title:
-                    slug_lookup[title.lower()] = node_id
-                    slug_lookup[slugify(title)] = node_id
-
-        for slug, _, page_md in updated_pages:
-            for linked in _parse_wikilinks(page_md):
-                target = (
-                    slug_lookup.get(linked)
-                    or slug_lookup.get(slugify(linked))
-                    or slug_lookup.get(linked.lower())
+    with tracer.start_as_current_span("ingestion.update_graph_and_vectors") as span:
+        span.set_attribute("pages", len(updated_pages))
+        embedder = get_embedder()
+        vector_store = QdrantStore(settings.QDRANT_URL)
+        graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+        try:
+            # Pass 1: nodes + vectors
+            for slug, title, page_md in updated_pages:
+                vault_path = f"1_knowledge/wiki/{slug}.md"
+                graph.upsert_page_node(slug, title, "wiki", vault_path)
+                vec = embedder.embed(page_md[:2000])
+                vector_store.upsert(
+                    WIKI_COLLECTION,
+                    vec,
+                    {"slug": slug, "title": title, "type": "wiki", "vault_path": vault_path},
+                    point_id=_slug_to_uuid(slug),
                 )
-                if target and target != slug:
-                    graph.upsert_edge(slug, target)
-    finally:
-        graph.close()
+
+            # Pass 2: edges — build a lookup so wikilinks like [[Python]] resolve
+            # to the correct slug even when the node ID is [[topic-python]].
+            all_nodes = graph.execute_query(
+                "MATCH (n:WikiPage) RETURN n.id AS id, n.title AS title"
+            )
+            slug_lookup: dict[str, str] = {}
+            for row in all_nodes:
+                node_id = row.get("id", "")
+                title = row.get("title", "")
+                if node_id:
+                    slug_lookup[node_id] = node_id
+                    slug_lookup[slugify(node_id)] = node_id
+                    if title:
+                        slug_lookup[title.lower()] = node_id
+                        slug_lookup[slugify(title)] = node_id
+
+            for slug, _, page_md in updated_pages:
+                for linked in _parse_wikilinks(page_md):
+                    target = (
+                        slug_lookup.get(linked)
+                        or slug_lookup.get(slugify(linked))
+                        or slug_lookup.get(linked.lower())
+                    )
+                    if target and target != slug:
+                        graph.upsert_edge(slug, target)
+        finally:
+            graph.close()
 
 
 def _find_candidates(content: str, wiki_base: Path) -> list[dict[str, Any]]:
     """Finds relevant wiki pages via Qdrant search."""
-    embedder = get_embedder()
-    vector_store = QdrantStore(settings.QDRANT_URL)
-    try:
-        vec = embedder.embed(content[:2000])
-        hits = vector_store.search(WIKI_COLLECTION, vec, limit=8)
-        candidates = []
-        for hit in hits:
-            slug = hit.get("slug", "")
-            title = hit.get("title", slug)
-            wiki_path = wiki_base / f"{slug}.md"
-            if wiki_path.exists():
-                preview = wiki_path.read_text(encoding="utf-8")[:300]
-                candidates.append({"slug": slug, "title": title, "preview": preview})
-        return candidates
-    except Exception as exc:
-        logger.warning("Candidate search failed (Qdrant empty?): %s", exc)
-        return []
+    with tracer.start_as_current_span("ingestion.find_candidates") as span:
+        embedder = get_embedder()
+        vector_store = QdrantStore(settings.QDRANT_URL)
+        try:
+            vec = embedder.embed(content[:2000])
+            hits = vector_store.search(WIKI_COLLECTION, vec, limit=8)
+            candidates = []
+            for hit in hits:
+                slug = hit.get("slug", "")
+                title = hit.get("title", slug)
+                wiki_path = wiki_base / f"{slug}.md"
+                if wiki_path.exists():
+                    preview = wiki_path.read_text(encoding="utf-8")[:300]
+                    candidates.append({"slug": slug, "title": title, "preview": preview})
+            span.set_attribute("candidates", len(candidates))
+            return candidates
+        except Exception as exc:
+            span.record_exception(exc)
+            logger.warning("Candidate search failed (Qdrant empty?): %s", exc)
+            return []
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +330,9 @@ def _process_ingestion_inner(task_id: str, content: str) -> str:
     wiki_base.mkdir(parents=True, exist_ok=True)
 
     # 1. Split input into independent topics
-    topics = _run_async(split_into_topics(content))
+    with tracer.start_as_current_span("ingestion.split_into_topics") as span:
+        topics = _run_async(split_into_topics(content))
+        span.set_attribute("topics", len(topics))
     logger.info("Split input into %d topic(s)", len(topics))
 
     # updated_pages as dict (slug → tuple) so later topics can overwrite pages
@@ -335,46 +344,54 @@ def _process_ingestion_inner(task_id: str, content: str) -> str:
     log_created: dict[str, dict[str, Any]] = {}
 
     for topic in topics:
-        # 2. Find relevant pages (reads current disk state)
-        candidates = _find_candidates(topic, wiki_base)
+        with tracer.start_as_current_span("ingestion.topic") as topic_span:
+            topic_span.set_attribute("topic.preview", topic[:80])
 
-        # 3. Planning agent
-        plan: WikiEditPlan = _run_async(plan_wiki_edits(topic, candidates))
+            # 2. Find relevant pages (reads current disk state)
+            candidates = _find_candidates(topic, wiki_base)
 
-        if not plan.updates and not plan.new_pages:
-            logger.warning("Planning agent found no changes for topic '%s...'", topic[:40])
-            continue
+            # 3. Planning agent
+            with tracer.start_as_current_span("ingestion.plan_wiki_edits"):
+                plan: WikiEditPlan = _run_async(plan_wiki_edits(topic, candidates))
 
-        # 4. Update existing pages
-        for item in plan.updates:
-            slug = item.get("slug", "")
-            title = item.get("title", slug)
-            if not slug:
+            if not plan.updates and not plan.new_pages:
+                logger.warning("Planning agent found no changes for topic '%s...'", topic[:40])
                 continue
-            wiki_path = wiki_base / f"{slug}.md"
-            existing = wiki_path.read_text(encoding="utf-8") if wiki_path.exists() else ""
-            updated_md = _run_async(update_wiki_page(title, topic, existing))
-            wiki_path.write_text(updated_md, encoding="utf-8")
-            logger.info("Updated wiki page: %s", slug)
-            updated_pages_map[slug] = (slug, title, updated_md)
-            diff = _page_diff_summary(existing, updated_md)
-            log_updated[slug] = {"slug": slug, "title": title, "changes": diff}
 
-        # 5. Create new pages
-        for item in plan.new_pages:
-            title = item.get("title", "")
-            if not title:
-                continue
-            slug = slugify(title)
-            wiki_path = wiki_base / f"{slug}.md"
-            existing = wiki_path.read_text(encoding="utf-8") if wiki_path.exists() else ""
-            updated_md = _run_async(update_wiki_page(title, topic, existing))
-            wiki_path.write_text(updated_md, encoding="utf-8")
-            logger.info("Created new wiki page: %s", slug)
-            updated_pages_map[slug] = (slug, title, updated_md)
-            created_slugs.add(slug)
-            diff = _page_diff_summary("", updated_md)
-            log_created[slug] = {"slug": slug, "title": title, "preview": diff}
+            # 4. Update existing pages
+            for item in plan.updates:
+                slug = item.get("slug", "")
+                title = item.get("title", slug)
+                if not slug:
+                    continue
+                wiki_path = wiki_base / f"{slug}.md"
+                existing = wiki_path.read_text(encoding="utf-8") if wiki_path.exists() else ""
+                with tracer.start_as_current_span("ingestion.update_wiki_page") as span:
+                    span.set_attribute("slug", slug)
+                    updated_md = _run_async(update_wiki_page(title, topic, existing))
+                wiki_path.write_text(updated_md, encoding="utf-8")
+                logger.info("Updated wiki page: %s", slug)
+                updated_pages_map[slug] = (slug, title, updated_md)
+                diff = _page_diff_summary(existing, updated_md)
+                log_updated[slug] = {"slug": slug, "title": title, "changes": diff}
+
+            # 5. Create new pages
+            for item in plan.new_pages:
+                title = item.get("title", "")
+                if not title:
+                    continue
+                slug = slugify(title)
+                wiki_path = wiki_base / f"{slug}.md"
+                existing = wiki_path.read_text(encoding="utf-8") if wiki_path.exists() else ""
+                with tracer.start_as_current_span("ingestion.create_wiki_page") as span:
+                    span.set_attribute("slug", slug)
+                    updated_md = _run_async(update_wiki_page(title, topic, existing))
+                wiki_path.write_text(updated_md, encoding="utf-8")
+                logger.info("Created new wiki page: %s", slug)
+                updated_pages_map[slug] = (slug, title, updated_md)
+                created_slugs.add(slug)
+                diff = _page_diff_summary("", updated_md)
+                log_created[slug] = {"slug": slug, "title": title, "preview": diff}
 
     updated_pages = list(updated_pages_map.values())
 
@@ -383,19 +400,20 @@ def _process_ingestion_inner(task_id: str, content: str) -> str:
         return "no_changes"
 
     # 5. Deterministically inject wikilinks
-    slug_title_map = _build_slug_title_map(wiki_base)
+    with tracer.start_as_current_span("ingestion.inject_wikilinks"):
+        slug_title_map = _build_slug_title_map(wiki_base)
 
-    new_slugs = {slug for slug, _, _ in updated_pages}
-    existing_slugs = set(slug_title_map.keys()) - new_slugs
+        new_slugs = {slug for slug, _, _ in updated_pages}
+        existing_slugs = set(slug_title_map.keys()) - new_slugs
 
-    # 5a. Forward: scan updated pages for all known titles
-    for slug, _, _ in updated_pages:
-        _inject_links_into_page(wiki_base / f"{slug}.md", slug_title_map)
+        # 5a. Forward: scan updated pages for all known titles
+        for slug, _, _ in updated_pages:
+            _inject_links_into_page(wiki_base / f"{slug}.md", slug_title_map)
 
-    # 5b. Backward: link existing pages to newly created pages
-    for slug, title, _ in updated_pages:
-        if slug not in existing_slugs:  # only backfill genuinely new pages
-            _backfill_wikilinks(slug, title, wiki_base)
+        # 5b. Backward: link existing pages to newly created pages
+        for slug, title, _ in updated_pages:
+            if slug not in existing_slugs:  # only backfill genuinely new pages
+                _backfill_wikilinks(slug, title, wiki_base)
 
     # 5c. Re-read so injected links land in the embedding
     updated_pages = [

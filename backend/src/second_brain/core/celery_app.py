@@ -2,6 +2,9 @@ from celery import Celery
 from celery.schedules import crontab
 
 from second_brain.core.config import settings
+from second_brain.core.telemetry import init_tracing
+
+init_tracing("secondbrain-worker")
 
 celery_app = Celery(
     "second_brain_worker",

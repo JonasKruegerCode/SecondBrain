@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = "anthropic/claude-sonnet-4-5"
     EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
 
+    OTEL_ENABLED: bool = False
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
+
     model_config = SettingsConfigDict(
         env_file=[".env", "../.env"], env_file_encoding="utf-8", extra="ignore"
     )
