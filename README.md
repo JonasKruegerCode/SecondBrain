@@ -136,6 +136,8 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `MCP_API_KEY` | *(required)* | Secret key protecting the MCP endpoint |
 | `DEFAULT_MODEL` | `google/gemini-3.5-flash` | LLM for planning, writing, and synthesis |
 | `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model for semantic search |
+| `OPENROUTER_CHAT_PROVIDER` | *(optional)* | Pin chat completions to one upstream provider, e.g. `Together` (no fallback) |
+| `OPENROUTER_EMBEDDING_PROVIDER` | *(optional)* | Pin embeddings to one upstream provider (no fallback) |
 | `VAULT_PATH` | `/vault` | Filesystem path for the Markdown vault |
 | `VAULT_GITHUB_URL` | *(optional)* | GitHub repo URL for vault sync |
 | `VAULT_GITHUB_PAT` | *(optional)* | GitHub PAT with repo write access |

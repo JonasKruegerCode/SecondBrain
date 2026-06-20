@@ -4,6 +4,7 @@ import httpx
 
 from second_brain.core.config import settings
 from second_brain.core.telemetry import get_tracer
+from second_brain.llm.provider import provider_routing
 
 logger = logging.getLogger(__name__)
 tracer = get_tracer(__name__)
@@ -33,7 +34,11 @@ class OpenRouterEmbedder:
             resp = httpx.post(
                 f"{_OPENROUTER_BASE}/embeddings",
                 headers=self._headers,
-                json={"model": self._model, "input": texts},
+                json={
+                    "model": self._model,
+                    "input": texts,
+                    **provider_routing(settings.OPENROUTER_EMBEDDING_PROVIDER),
+                },
                 timeout=30.0,
             )
             resp.raise_for_status()

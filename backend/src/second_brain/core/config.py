@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str = ""
     DEFAULT_MODEL: str = "anthropic/claude-sonnet-4-5"
     EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
+    OPENROUTER_CHAT_PROVIDER: str = ""
+    OPENROUTER_EMBEDDING_PROVIDER: str = ""
 
     OTEL_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
