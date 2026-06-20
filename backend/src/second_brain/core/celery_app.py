@@ -1,7 +1,22 @@
-from celery import Celery
+from typing import Any
+
+from celery import Celery, signals
 from celery.schedules import crontab
 
 from second_brain.core.config import settings
+from second_brain.core.telemetry import init_tracing
+
+
+def _init_worker_tracing(**_kwargs: Any) -> None:
+    init_tracing("secondbrain-worker")
+
+
+def _init_beat_tracing(**_kwargs: Any) -> None:
+    init_tracing("secondbrain-worker-beat")
+
+
+signals.worker_process_init.connect(_init_worker_tracing)
+signals.beat_init.connect(_init_beat_tracing)
 
 celery_app = Celery(
     "second_brain_worker",

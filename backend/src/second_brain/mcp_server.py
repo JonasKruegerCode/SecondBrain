@@ -16,12 +16,14 @@ from urllib.parse import parse_qs
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from second_brain.core.config import settings
+from second_brain.core.telemetry import init_tracing
 from second_brain.git_sync import get_git_sync
 from second_brain.llm.embedder import get_embedder
 from second_brain.memory.graph import Neo4jStore
@@ -29,6 +31,8 @@ from second_brain.memory.hybrid_rag import HybridRAG
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
 from second_brain.worker.tasks import process_ingestion, reindex_after_pull
+
+init_tracing("secondbrain-backend")
 
 # ---------------------------------------------------------------------------
 # Service-Factory
@@ -286,8 +290,12 @@ mcp_app = ApiKeyMiddleware(fmcp.streamable_http_app())
 # ---------------------------------------------------------------------------
 
 async def _main() -> None:
-    api_cfg = uvicorn.Config(api_app, host="0.0.0.0", port=settings.API_PORT, log_level="info")
-    mcp_cfg = uvicorn.Config(mcp_app, host="0.0.0.0", port=settings.MCP_PORT, log_level="info")
+    api_cfg = uvicorn.Config(
+        OpenTelemetryMiddleware(api_app), host="0.0.0.0", port=settings.API_PORT, log_level="info"
+    )
+    mcp_cfg = uvicorn.Config(
+        OpenTelemetryMiddleware(mcp_app), host="0.0.0.0", port=settings.MCP_PORT, log_level="info"
+    )
     await asyncio.gather(
         uvicorn.Server(api_cfg).serve(),
         uvicorn.Server(mcp_cfg).serve(),

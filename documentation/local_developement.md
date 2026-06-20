@@ -33,6 +33,10 @@ REDIS_URL=redis://localhost:6379/0
 NEO4J_URI=bolt://localhost:7687
 QDRANT_URL=http://localhost:6333
 MCP_API_KEY=                          # empty = no auth locally
+
+# Tracing (optional, see "Tracing" section below)
+OTEL_ENABLED=true
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```
 
 > **Important:** Use `localhost`, not `redis`/`neo4j`/`qdrant` — those are Docker-internal hostnames that are only resolvable within the Docker network.
@@ -47,7 +51,7 @@ git clone git@github.com:your/vault.git ../vault
 ### 3 — Start infrastructure
 
 ```bash
-docker compose up redis neo4j qdrant -d
+docker compose up redis neo4j qdrant jaeger -d
 ```
 
 ### 4 — Start backend
@@ -114,5 +118,17 @@ cd backend && poetry run pytest tests/integration -m integration
 ```
 
 *(Docker Desktop must be running)*
+
+---
+
+## Tracing
+
+`recall`/`remember` go through several network hops (embeddings, Qdrant, Neo4j, LLM, vault I/O, Git). To see where time is actually going, traces are sent to [Jaeger](https://www.jaegertracing.io/) via OpenTelemetry.
+
+1. Start Jaeger: `docker compose up jaeger -d`
+2. Make sure `.env` has `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` (see step 2 above)
+3. Open the UI: http://localhost:16686 — pick a service (`secondbrain-backend` or `secondbrain-worker`) and inspect a trace
+
+Set `OTEL_ENABLED=false` to disable tracing entirely (no Jaeger needed).
 
 ---

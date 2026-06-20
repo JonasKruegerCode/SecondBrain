@@ -2,6 +2,10 @@ import os
 from pathlib import Path
 from typing import Protocol
 
+from second_brain.core.telemetry import get_tracer
+
+tracer = get_tracer(__name__)
+
 
 class VaultStore(Protocol):
     """
@@ -48,16 +52,20 @@ class FileSystemVault:
 
     def read_file(self, path: str) -> str | None:
         """Read markdown file content."""
-        full_path = self._resolve_path(path)
-        if not full_path.exists() or not full_path.is_file():
-            return None
-        return full_path.read_text(encoding="utf-8")
+        with tracer.start_as_current_span("vault.read_file") as span:
+            span.set_attribute("vault.path", path)
+            full_path = self._resolve_path(path)
+            if not full_path.exists() or not full_path.is_file():
+                return None
+            return full_path.read_text(encoding="utf-8")
 
     def write_file(self, path: str, content: str) -> None:
         """Write content to a markdown file."""
-        full_path = self._resolve_path(path)
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(content, encoding="utf-8")
+        with tracer.start_as_current_span("vault.write_file") as span:
+            span.set_attribute("vault.path", path)
+            full_path = self._resolve_path(path)
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(content, encoding="utf-8")
 
     def list_files(self, prefix: str = "") -> list[str]:
         """List all .md files in the vault."""
