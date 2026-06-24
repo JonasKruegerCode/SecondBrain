@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from second_brain.llm.client import OpenRouterClient
+from second_brain.llm.client import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ async def split_into_topics(content: str) -> list[str]:
     """Splits a text into thematically independent units of information."""
     if len(content) < 80:
         return [content]
-    client = OpenRouterClient()
+    client = get_llm_client()
     try:
         data = await client.chat_json(_SPLIT_SYSTEM, content)
         topics = data.get("topics", [])
@@ -162,7 +162,7 @@ async def plan_wiki_edits(
     candidates: list[dict[str, Any]],
 ) -> WikiEditPlan:
     """Agent decides which wiki pages to update."""
-    client = OpenRouterClient()
+    client = get_llm_client()
 
     if candidates:
         candidates_block = "\n\n".join(
@@ -197,7 +197,7 @@ async def update_wiki_page(
 ) -> str:
     """Updates or creates a single wiki article."""
     from datetime import datetime  # noqa: PLC0415
-    client = OpenRouterClient()
+    client = get_llm_client()
     user = _UPDATE_USER_TEMPLATE.format(
         title=title,
         now=datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -216,7 +216,7 @@ async def review_wiki_pages(pages: list[tuple[str, str]]) -> list[tuple[str, str
     if not pages:
         return []
 
-    client = OpenRouterClient()
+    client = get_llm_client()
     pages_json = json.dumps(
         [{"slug": slug, "content": content[:800]} for slug, content in pages],
         ensure_ascii=False,

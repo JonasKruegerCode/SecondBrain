@@ -19,11 +19,36 @@ class Settings(BaseSettings):
     VAULT_GITHUB_URL: str = ""
     VAULT_GITHUB_PAT: str = ""
 
-    OPENROUTER_API_KEY: str = ""
+    # -------------------------------------------------------------------------
+    # LLM provider selection
+    # -------------------------------------------------------------------------
+    # Supported values: "openrouter" | "gcp"
+    LLM_PROVIDER: str = "openrouter"
+
     DEFAULT_MODEL: str = "anthropic/claude-sonnet-4-5"
     EMBEDDING_MODEL: str = "openai/text-embedding-3-small"
+
+    # -------------------------------------------------------------------------
+    # OpenRouter settings  (LLM_PROVIDER=openrouter)
+    # -------------------------------------------------------------------------
+    OPENROUTER_API_KEY: str = ""
+    # Optional: pin upstream provider (e.g. "anthropic"), empty = let OpenRouter choose
     OPENROUTER_CHAT_PROVIDER: str = ""
     OPENROUTER_EMBEDDING_PROVIDER: str = ""
+
+    # -------------------------------------------------------------------------
+    # GCP / Google AI settings  (LLM_PROVIDER=gcp)
+    # -------------------------------------------------------------------------
+    GCP_API_KEY: str = ""
+    # OpenAI-compatible base URL; default = Google AI (Gemini) compat endpoint
+    GCP_ENDPOINT_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+    @property
+    def llm_api_key(self) -> str:
+        """Return the API key of the active LLM provider."""
+        if self.LLM_PROVIDER == "gcp":
+            return self.GCP_API_KEY
+        return self.OPENROUTER_API_KEY
 
     OTEL_ENABLED: bool = False
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
