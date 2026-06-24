@@ -1,11 +1,4 @@
-from typing import Any
+"""Backward-compat shim — provider_routing moved to providers/openrouter/routing.py."""
+from second_brain.llm.providers.openrouter.routing import provider_routing
 
-
-def provider_routing(name: str) -> dict[str, Any]:
-    """Pins a request to a specific OpenRouter provider, with fallback.
-
-    See https://openrouter.ai/docs/features/provider-routing
-    """
-    if not name:
-        return {}
-    return {"provider": {"order": [name], "allow_fallbacks": True}}
+__all__ = ["provider_routing"]

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Protocol
 
 from second_brain.core.telemetry import get_tracer
-from second_brain.llm.client import OpenRouterClient
+from second_brain.llm.client import get_llm_client
 from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
@@ -89,7 +89,7 @@ class HybridRAG:
             user_prompt = f"Query: {query}\n\n---\n\n{context_block}"
             with tracer.start_as_current_span("hybrid_rag.llm_synthesis") as span:
                 try:
-                    client = OpenRouterClient()
+                    client = get_llm_client()
                     return await client.complete(_SYNTH_SYSTEM, user_prompt)
                 except Exception as exc:
                     span.record_exception(exc)

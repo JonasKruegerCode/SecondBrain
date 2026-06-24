@@ -132,21 +132,30 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENROUTER_API_KEY` | *(required)* | API key for [OpenRouter](https://openrouter.ai/) |
+| `LLM_PROVIDER` | `openrouter` | Active provider: `openrouter` \| `gcp` |
+| `DEFAULT_MODEL` | `deepseek/deepseek-v4-flash` | LLM model name (format depends on provider) |
+| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model name (format depends on provider) |
 | `MCP_API_KEY` | *(required)* | Secret key protecting the MCP endpoint |
-| `DEFAULT_MODEL` | `google/gemini-3.5-flash` | LLM for planning, writing, and synthesis |
-| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model for semantic search |
-| `OPENROUTER_CHAT_PROVIDER` | *(optional)* | Pin chat completions to one upstream provider, e.g. `Together` (no fallback) |
-| `OPENROUTER_EMBEDDING_PROVIDER` | *(optional)* | Pin embeddings to one upstream provider (no fallback) |
+| **OpenRouter** (`LLM_PROVIDER=openrouter`) | | |
+| `OPENROUTER_API_KEY` | *(required)* | API key from [openrouter.ai](https://openrouter.ai/) |
+| `OPENROUTER_CHAT_PROVIDER` | *(optional)* | Pin chat to one upstream provider, e.g. `Together` |
+| `OPENROUTER_EMBEDDING_PROVIDER` | *(optional)* | Pin embeddings to one upstream provider |
+| **GCP / Google AI** (`LLM_PROVIDER=gcp`) | | |
+| `GCP_API_KEY` | *(required)* | Google AI API key |
+| `GCP_ENDPOINT_URL` | Gemini OpenAI-compat URL | Base URL; swap for Vertex AI or any OAI-compat endpoint |
+| **Vault** | | |
 | `VAULT_PATH` | `/vault` | Filesystem path for the Markdown vault |
 | `VAULT_GITHUB_URL` | *(optional)* | GitHub repo URL for vault sync |
 | `VAULT_GITHUB_PAT` | *(optional)* | GitHub PAT with repo write access |
+| **Infrastructure** | | |
 | `NEO4J_PASSWORD` | `secretpassword` | Neo4j database password |
 | `REDIS_URL` | `redis://redis:6379/0` | Celery broker URL |
 | `NEO4J_URI` | `bolt://neo4j:7687` | Neo4j connection URI |
 | `QDRANT_URL` | `http://qdrant:6333` | Qdrant connection URL |
 
 > **Localhost vs. Docker:** Use `localhost:*` for local dev. On a server with Docker Compose, use service names (`redis`, `neo4j`, `qdrant`) — they resolve inside the Docker network.
+
+> **Switching providers:** Set `LLM_PROVIDER=gcp`, `GCP_API_KEY=...`, and update `DEFAULT_MODEL` / `EMBEDDING_MODEL` to model names your provider understands (e.g. `gemini-3.5-flash` / `-gemini-embedding-2` for Google AI).
 
 ---
 
@@ -227,7 +236,7 @@ See [documentation/local_developement.md](documentation/local_developement.md) f
 
 Contributions are welcome. Here's what would make this project more production-ready as open source:
 
-- **Alternative LLM providers** — support for direct OpenAI/Anthropic keys (not just OpenRouter)
+- **Additional LLM providers** — OpenAI/Anthropic direct keys, Azure OpenAI, Ollama (local)
 - **Documentation** — usage examples, cookbook for common agent patterns
 - **Git sync: any host** — currently only GitHub PAT auth is tested. Supporting GitLab, Gitea, and self-hosted instances would make the feature genuinely host-agnostic
 - **Tests** — expand integration test coverage (`backend/tests/`)

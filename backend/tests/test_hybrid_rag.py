@@ -50,9 +50,10 @@ async def test_hybrid_rag_returns_synthesized_context() -> None:
     rag = HybridRAG(_FakeVectorStore(), _FakeGraphStore(), _FakeVaultStore(), _FakeEmbedder())  # type: ignore[arg-type]
 
     with patch(
-        "second_brain.memory.hybrid_rag.OpenRouterClient"
-    ) as mock_cls:
-        mock_client = mock_cls.return_value
+        "second_brain.memory.hybrid_rag.get_llm_client"
+    ) as mock_fn:
+        mock_client = AsyncMock()
+        mock_fn.return_value = mock_client
         mock_client.complete = AsyncMock(return_value="Synthese: Jonas programmiert gerne Rust.")
         result = await rag.retrieve_context("Was mag Jonas?")
 
@@ -63,9 +64,10 @@ async def test_hybrid_rag_fallback_when_llm_fails() -> None:
     rag = HybridRAG(_FakeVectorStore(), _FakeGraphStore(), _FakeVaultStore(), _FakeEmbedder())  # type: ignore[arg-type]
 
     with patch(
-        "second_brain.memory.hybrid_rag.OpenRouterClient"
-    ) as mock_cls:
-        mock_client = mock_cls.return_value
+        "second_brain.memory.hybrid_rag.get_llm_client"
+    ) as mock_fn:
+        mock_client = AsyncMock()
+        mock_fn.return_value = mock_client
         mock_client.complete = AsyncMock(side_effect=Exception("API down"))
         result = await rag.retrieve_context("Testquery")
 

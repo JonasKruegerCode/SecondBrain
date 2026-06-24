@@ -1,0 +1,50 @@
+"""OpenRouter embedder — implements the generic LLMEmbedder interface."""
+from __future__ import annotations
+
+import logging
+
+import httpx
+
+from second_brain.core.config import settings
+from second_brain.core.telemetry import get_tracer
+from second_brain.llm.base import LLMEmbedder
+from second_brain.llm.providers.openrouter.routing import provider_routing
+
+logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
+
+_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+class OpenRouterEmbedder(LLMEmbedder):
+    def __init__(self) -> None:
+        if not settings.OPENROUTER_API_KEY:
+            raise RuntimeError("OPENROUTER_API_KEY is not set.")
+        self._headers = {
+            "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        self._model = settings.EMBEDDING_MODEL
+        logger.info("OpenRouter Embedder initialized (model: %s)", self._model)
+
+    def embed(self, text: str) -> list[float]:
+        return self.embed_batch([text])[0]
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        with tracer.start_as_current_span("embedder.embed_batch") as span:
+            span.set_attribute("embedder.model", self._model)
+            span.set_attribute("embedder.batch_size", len(texts))
+            resp = httpx.post(
+                f"{_BASE_URL}/embeddings",
+                headers=self._headers,
+                json={
+                    "model": self._model,
+                    "input": texts,
+                    **provider_routing(settings.OPENROUTER_EMBEDDING_PROVIDER),
+                },
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            items = sorted(data["data"], key=lambda x: x["index"])
+            return [item["embedding"] for item in items]

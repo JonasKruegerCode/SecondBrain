@@ -21,7 +21,21 @@ cd frontend && npm install && cd ..
 Create `.env` in the **repo root** (ignored by Git):
 
 ```env
+# LLM provider: "openrouter" | "gcp"
+LLM_PROVIDER=openrouter
+DEFAULT_MODEL=deepseek/deepseek-v4-flash
+EMBEDDING_MODEL=openai/text-embedding-3-small
+
+# OpenRouter (LLM_PROVIDER=openrouter)
 OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_CHAT_PROVIDER=
+OPENROUTER_EMBEDDING_PROVIDER=
+
+# GCP / Google AI (LLM_PROVIDER=gcp)
+# GCP_API_KEY=AIza...
+# GCP_ENDPOINT_URL=https://generativelanguage.googleapis.com/v1beta/openai
+# DEFAULT_MODEL=gemini-2.0-flash
+# EMBEDDING_MODEL=text-embedding-004
 
 NEO4J_PASSWORD=secretpassword
 VAULT_PATH=C:/Users/your-name/vault   # local path (created automatically)
