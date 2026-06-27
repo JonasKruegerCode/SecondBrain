@@ -1,6 +1,7 @@
 .agents
 .env
 __pycache__
+.vscode
 
 # Python
 .venv

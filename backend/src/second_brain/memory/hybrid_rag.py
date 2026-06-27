@@ -41,6 +41,43 @@ class HybridRAG:
     async def retrieve_context(self, query: str, limit: int = 5) -> str:
         return await self._retrieve_async(query, limit)
 
+    async def search(
+        self, query: str, limit: int = 15, hpos: int = 0
+    ) -> list[dict[str, object]]:
+        """Hybrid vector search without LLM synthesis.
+
+        Returns the top `limit` semantic hits as {id, title}. If `hpos` is 1 or 2,
+        each hit also carries its direct (1) or 2-hop (2) graph neighbors as {id, title}.
+        """
+        with tracer.start_as_current_span("hybrid_rag.search") as root_span:
+            root_span.set_attribute("query.length", len(query))
+            root_span.set_attribute("query.limit", limit)
+            root_span.set_attribute("query.hpos", hpos)
+
+            with tracer.start_as_current_span("hybrid_rag.embed_query"):
+                query_vec: list[float] = self.embedder.embed(query)
+
+            with tracer.start_as_current_span("hybrid_rag.vector_search") as span:
+                hits = self.vector_store.search(WIKI_COLLECTION, query_vec, limit=limit)
+                span.set_attribute("hits", len(hits))
+
+            results: list[dict[str, object]] = []
+            for hit in hits:
+                slug = hit.get("slug")
+                if not slug:
+                    continue
+                entry: dict[str, object] = {"id": slug, "title": hit.get("title", slug)}
+                if hpos in (1, 2):
+                    try:
+                        entry["neighbors"] = self.graph_store.get_neighbors_with_titles(
+                            slug, hops=hpos
+                        )
+                    except Exception as exc:
+                        logger.warning("Neo4j neighbor query failed for %s: %s", slug, exc)
+                        entry["neighbors"] = []
+                results.append(entry)
+            return results
+
     async def _retrieve_async(self, query: str, limit: int) -> str:
         with tracer.start_as_current_span("hybrid_rag.retrieve_context") as root_span:
             root_span.set_attribute("query.length", len(query))
