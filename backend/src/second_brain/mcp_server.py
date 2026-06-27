@@ -6,7 +6,6 @@ Two separate ASGI apps in the same process:
 """
 
 import asyncio
-import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -38,9 +37,12 @@ init_tracing("secondbrain-backend")
 # Service-Factory
 # ---------------------------------------------------------------------------
 
+
 def _build_rag() -> tuple[HybridRAG, Neo4jStore]:
     vector_store = QdrantStore(settings.QDRANT_URL)
-    graph_store = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+    graph_store = Neo4jStore(
+        settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD
+    )
     vault_store = FileSystemVault(settings.VAULT_PATH)
     embedder = get_embedder()
     rag = HybridRAG(vector_store, graph_store, vault_store, embedder)
@@ -51,24 +53,36 @@ def _build_rag() -> tuple[HybridRAG, Neo4jStore]:
 # VaultOps — deterministic, no LLM
 # ---------------------------------------------------------------------------
 
+
 class VaultOps:
     def __init__(self) -> None:
         self._wiki = Path(settings.VAULT_PATH) / "1_knowledge" / "wiki"
 
-    def get_page(self, name: str) -> str:
-        slug = re.sub(r"[^\w\-]", "-", name.lower()).strip("-")
-        for f in self._wiki.rglob("*.md"):
-            if f.stem.lower() in (name.lower(), slug):
-                return f.read_text(encoding="utf-8")
-        return f"Page '{name}' not found."
+    def get_page(self, page_id: str) -> str:
+        f = self._wiki / f"{page_id}.md"
+        if f.is_file() and f.resolve().parent == self._wiki.resolve():
+            return f.read_text(encoding="utf-8")
+        return f"Page with id '{page_id}' not found."
 
 
 vault_ops = VaultOps()
 
 
+def _format_search_results(results: list[dict[str, Any]]) -> str:
+    if not results:
+        return "No matching wiki pages found."
+    lines: list[str] = []
+    for hit in results:
+        lines.append(f"- **{hit['title']}** (id: {hit['id']})")
+        for neighbor in hit.get("neighbors", []):
+            lines.append(f"  - {neighbor.get('title')} (id: {neighbor.get('id')})")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Shared tool dispatch logic (MCP + REST API)
 # ---------------------------------------------------------------------------
+
 
 async def _dispatch(name: str, args: dict[str, Any]) -> str:
     if name == "remember":
@@ -83,12 +97,24 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
             return await rag.retrieve_context(args["query"], limit=args.get("limit", 5))
         finally:
             graph_store.close()
+    if name == "search_wiki":
+        rag, graph_store = _build_rag()
+        try:
+            results = await rag.search(
+                args["query"], limit=args.get("limit", 15), hpos=args.get("hpos", 0)
+            )
+        finally:
+            graph_store.close()
+        return _format_search_results(results)
+    if name == "get_page":
+        return vault_ops.get_page(args["id"])
     return f"Unknown tool: {name}"
 
 
 # ---------------------------------------------------------------------------
 # api_app — Port 8000 (REST API for the web frontend)
 # ---------------------------------------------------------------------------
+
 
 async def handle_api_remember(request: Request) -> JSONResponse:
     body = await request.json()
@@ -103,7 +129,9 @@ async def handle_api_recall(request: Request) -> JSONResponse:
 
 
 async def handle_api_graph(_request: Request) -> JSONResponse:
-    graph_store = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+    graph_store = Neo4jStore(
+        settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD
+    )
     try:
         data = graph_store.get_all_graph()
     finally:
@@ -119,10 +147,13 @@ async def handle_api_page(request: Request) -> JSONResponse:
 
 async def handle_api_ingestion_logs(_request: Request) -> JSONResponse:
     import json as _json  # noqa: PLC0415
+
     log_dir = Path(settings.VAULT_PATH) / "3_operations" / "ingestion-logs"
     if not log_dir.exists():
         return JSONResponse([])
-    files = sorted(log_dir.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    files = sorted(
+        log_dir.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True
+    )
     running: list[Any] = []
     completed: list[Any] = []
     for f in files:
@@ -158,6 +189,7 @@ api_app = Starlette(
 # mcp_app — Port 3000 (Streamable HTTP, protected by MCP_API_KEY)
 # ---------------------------------------------------------------------------
 
+
 class ApiKeyMiddleware:
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -169,14 +201,17 @@ class ApiKeyMiddleware:
 
             if settings.MCP_API_KEY:
                 path = scope.get("path", "")
-                public = (
-                    path in ("/health", "/register", "/token")
-                    or path.startswith("/.well-known")
+                public = path in ("/health", "/register", "/token") or path.startswith(
+                    "/.well-known"
                 )
                 if not public:
                     header_key = headers_dict.get(b"x-api-key", b"").decode()
                     auth_header = headers_dict.get(b"authorization", b"").decode()
-                    bearer_key = auth_header[7:] if auth_header.lower().startswith("bearer ") else ""  # noqa: E501
+                    bearer_key = (
+                        auth_header[7:]
+                        if auth_header.lower().startswith("bearer ")
+                        else ""
+                    )  # noqa: E501
                     query_string = scope.get("query_string", b"").decode()
                     query_key = parse_qs(query_string).get("api_key", [""])[0]
                     key = header_key or bearer_key or query_key
@@ -203,31 +238,63 @@ fmcp = FastMCP(
 )
 
 
-@fmcp.tool(description=(
-    "Permanently saves text to the memory system. "
-    "Celery worker runs the Wikipedia-agent pipeline: updates wiki, graph, vectors, and Git vault."
-))
+@fmcp.tool(
+    description=(
+        "Permanently saves text to the memory system. "
+        "Celery worker runs the Wikipedia-agent pipeline: updates wiki, graph, vectors, "
+        "and Git vault."
+    )
+)
 async def remember(text: str, metadata: dict[str, Any] | None = None) -> str:
     return await _dispatch("remember", {"text": text, "metadata": metadata or {}})
 
 
-@fmcp.tool(description="Retrieves the best context for a query (HybridRAG: vector + graph + wiki + LLM).")  # noqa: E501
+@fmcp.tool(
+    description="Retrieves the best context for a query (HybridRAG: vector + graph + wiki + LLM)."
+)  # noqa: E501
 async def recall(query: str, limit: int = 5) -> str:
     return await _dispatch("recall", {"query": query, "limit": limit})
 
+
+@fmcp.tool(
+    description=(
+        "Hybrid vector search over wiki pages — like recall, but returns raw hits "
+        "(title + id) instead of an LLM-synthesized answer. "
+        "hpos controls graph expansion per hit: 0 = hit only, 1 = include direct neighbors, "
+        "2 = include neighbors of neighbors."
+    )
+)
+async def search_wiki(query: str, limit: int = 15, hpos: int = 0) -> str:
+    return await _dispatch(
+        "search_wiki", {"query": query, "limit": limit, "hpos": hpos}
+    )
+
+
+@fmcp.tool(
+    description=(
+        "Retrieves the full Markdown content of a single wiki page by its id "
+        "(as returned by search_wiki/recall)."
+    )
+)
+async def get_page(id: str) -> str:  # noqa: A002
+    return await _dispatch("get_page", {"id": id})
 
 
 @fmcp.custom_route("/health", methods=["GET"])  # type: ignore[untyped-decorator]
 async def handle_health(_request: Request) -> JSONResponse:
     vault_path = Path(settings.VAULT_PATH)
     wiki_path = vault_path / "1_knowledge" / "wiki"
-    return JSONResponse({
-        "status": "ok",
-        "vault": str(vault_path),
-        "wiki_pages": len(list(wiki_path.rglob("*.md"))) if wiki_path.exists() else 0,
-        "llm_ready": bool(settings.llm_api_key),
-        "git_sync": bool(settings.VAULT_GITHUB_URL),
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "vault": str(vault_path),
+            "wiki_pages": (
+                len(list(wiki_path.rglob("*.md"))) if wiki_path.exists() else 0
+            ),
+            "llm_ready": bool(settings.llm_api_key),
+            "git_sync": bool(settings.VAULT_GITHUB_URL),
+        }
+    )
 
 
 def _mcp_base_url(request: Request) -> str:
@@ -246,23 +313,31 @@ async def oauth_protected_resource(request: Request) -> JSONResponse:
 @fmcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])  # type: ignore[untyped-decorator]
 async def oauth_authorization_server(request: Request) -> JSONResponse:
     base = _mcp_base_url(request)
-    return JSONResponse({
-        "issuer": base,
-        "registration_endpoint": f"{base}/register",
-        "token_endpoint": f"{base}/token",
-        "grant_types_supported": ["client_credentials"],
-        "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
-    })
+    return JSONResponse(
+        {
+            "issuer": base,
+            "registration_endpoint": f"{base}/register",
+            "token_endpoint": f"{base}/token",
+            "grant_types_supported": ["client_credentials"],
+            "token_endpoint_auth_methods_supported": [
+                "client_secret_post",
+                "client_secret_basic",
+            ],
+        }
+    )
 
 
 @fmcp.custom_route("/register", methods=["POST"])  # type: ignore[untyped-decorator]
 async def oauth_register(_request: Request) -> JSONResponse:
-    return JSONResponse({
-        "client_id": "mcp-client",
-        "client_secret": settings.MCP_API_KEY,
-        "grant_types": ["client_credentials"],
-        "token_endpoint_auth_method": "client_secret_post",
-    }, status_code=201)
+    return JSONResponse(
+        {
+            "client_id": "mcp-client",
+            "client_secret": settings.MCP_API_KEY,
+            "grant_types": ["client_credentials"],
+            "token_endpoint_auth_method": "client_secret_post",
+        },
+        status_code=201,
+    )
 
 
 @fmcp.custom_route("/token", methods=["POST"])  # type: ignore[untyped-decorator]
@@ -275,11 +350,13 @@ async def oauth_token(request: Request) -> JSONResponse:
         return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
     if settings.MCP_API_KEY and client_secret != settings.MCP_API_KEY:
         return JSONResponse({"error": "invalid_client"}, status_code=401)
-    return JSONResponse({
-        "access_token": settings.MCP_API_KEY,
-        "token_type": "bearer",
-        "expires_in": 86400,
-    })
+    return JSONResponse(
+        {
+            "access_token": settings.MCP_API_KEY,
+            "token_type": "bearer",
+            "expires_in": 86400,
+        }
+    )
 
 
 mcp_app = ApiKeyMiddleware(fmcp.streamable_http_app())
@@ -289,12 +366,19 @@ mcp_app = ApiKeyMiddleware(fmcp.streamable_http_app())
 # Entrypoint — both servers simultaneously
 # ---------------------------------------------------------------------------
 
+
 async def _main() -> None:
     api_cfg = uvicorn.Config(
-        OpenTelemetryMiddleware(api_app), host="0.0.0.0", port=settings.API_PORT, log_level="info"
+        OpenTelemetryMiddleware(api_app),
+        host="0.0.0.0",
+        port=settings.API_PORT,
+        log_level="info",
     )
     mcp_cfg = uvicorn.Config(
-        OpenTelemetryMiddleware(mcp_app), host="0.0.0.0", port=settings.MCP_PORT, log_level="info"
+        OpenTelemetryMiddleware(mcp_app),
+        host="0.0.0.0",
+        port=settings.MCP_PORT,
+        log_level="info",
     )
     await asyncio.gather(
         uvicorn.Server(api_cfg).serve(),

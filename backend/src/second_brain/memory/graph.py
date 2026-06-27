@@ -142,6 +142,15 @@ class Neo4jStore:
         rows = self.execute_query(query, {"seeds": seed_slugs})
         return [r["id"] for r in rows if r.get("id")]
 
+    def get_neighbors_with_titles(self, seed_slug: str, hops: int) -> list[dict[str, Any]]:
+        """Return {id, title} of nodes within exactly `hops` hops of one seed node."""
+        query = (
+            f"MATCH (s:WikiPage {{id: $seed}})-[:LINKS_TO*1..{hops}]-(n:WikiPage) "
+            "WHERE n.id <> $seed "
+            "RETURN DISTINCT n.id AS id, n.title AS title"
+        )
+        return self.execute_query(query, {"seed": seed_slug})
+
     def delete_page_node(self, slug: str) -> None:
         """Remove a WikiPage node and all its edges."""
         self.execute_query("MATCH (n:WikiPage {id: $id}) DETACH DELETE n", {"id": slug})
