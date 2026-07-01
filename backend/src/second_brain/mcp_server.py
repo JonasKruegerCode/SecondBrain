@@ -91,12 +91,35 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
             f"Saved — Celery task `{task.id}` is running in the background.\n"
             f"Graph, vectors, and vault will be updated."
         )
-    if name == "recall":
+    if name == "get_RAG_response":
         rag, graph_store = _build_rag()
         try:
             return await rag.retrieve_context(args["query"], limit=args.get("limit", 5))
         finally:
             graph_store.close()
+    if name == "recall":
+        rag, graph_store = _build_rag()
+        try:
+            hits = await rag.search(args["query"], limit=3, hpos=1)
+        finally:
+            graph_store.close()
+        if not hits:
+            return "No matching wiki pages found."
+        sections: list[str] = []
+        for hit in hits:
+            slug = str(hit["id"])
+            title = str(hit.get("title", slug))
+            content = vault_ops.get_page(slug)
+            neighbors = hit.get("neighbors", [])
+            block = f"## {title} (id: {slug})\n\n{content}"
+            if neighbors:
+                neighbor_lines = "\n".join(
+                    f"- {n.get('title')} (id: {n.get('id')})"
+                    for n in neighbors  # type: ignore[union-attr]
+                )
+                block += f"\n\n**Neighbors:**\n{neighbor_lines}"
+            sections.append(block)
+        return "\n\n---\n\n".join(sections)
     if name == "search_wiki":
         rag, graph_store = _build_rag()
         try:
@@ -250,10 +273,21 @@ async def remember(text: str, metadata: dict[str, Any] | None = None) -> str:
 
 
 @fmcp.tool(
+    description=(
+        "AI-free recall: returns the top 3 most relevant wiki pages with their full Markdown "
+        "content, plus id and title of each page's direct graph neighbors. "
+        "No LLM involved — fast and deterministic."
+    )
+)
+async def recall(query: str) -> str:
+    return await _dispatch("recall", {"query": query})
+
+
+@fmcp.tool(
     description="Retrieves the best context for a query (HybridRAG: vector + graph + wiki + LLM)."
-)  # noqa: E501
-async def recall(query: str, limit: int = 5) -> str:
-    return await _dispatch("recall", {"query": query, "limit": limit})
+)
+async def get_RAG_response(query: str, limit: int = 5) -> str:  # noqa: N802
+    return await _dispatch("get_RAG_response", {"query": query, "limit": limit})
 
 
 @fmcp.tool(
