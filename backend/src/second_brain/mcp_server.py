@@ -267,8 +267,8 @@ fmcp = FastMCP(
 @fmcp.tool(
     description=(
         "Permanently saves text to the memory system. "
-        "Celery worker runs the Wikipedia-agent pipeline: updates wiki, graph, vectors, "
-        "and Git vault."
+        "The edit_vault agent routes it via retrieval to the relevant wiki pages and "
+        "applies minimal typed edits; graph, vectors, and Git vault are updated."
     )
 )
 async def remember(text: str, metadata: dict[str, Any] | None = None) -> str:

@@ -3,14 +3,15 @@ E2E integration test for the full ingestion flow.
 
 Requires running Docker containers (via Testcontainers) and is
 activated explicitly via the `integration_settings` fixture.
-LLM calls (OpenRouter) and git operations are mocked.
+LLM calls and git operations are mocked; the edit_vault agent,
+operation application, graph, and embeddings run for real.
 """
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from second_brain.llm.wiki_writer import WikiEditPlan
 from second_brain.worker.tasks import process_ingestion
 
 
@@ -23,39 +24,47 @@ def _docker_available() -> bool:
         return False
 
 
+class _FakeLLM:
+    """chat_json returns a fixed create_page plan for any prompt."""
+
+    def __init__(self, operations: list[dict[str, Any]]) -> None:
+        self._operations = operations
+
+    async def chat_json(self, _system: str, _user: str, **_kw: Any) -> dict[str, Any]:
+        return {"operations": self._operations}
+
+    async def complete(self, _system: str, _user: str, **_kw: Any) -> str:
+        return ""
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(not _docker_available(), reason="Docker not available")
 def test_e2e_ingest_creates_wiki_page(integration_settings: object) -> None:
-    """Full ingestion flow with mocked LLM: planning → wiki page write → graph → embeddings."""
+    """Full ingestion flow with mocked LLM: plan ops → apply → graph → embeddings."""
     vault_path = Path(str(getattr(integration_settings, "VAULT_PATH", "/tmp/vault")))
     wiki_dir = vault_path / "1_knowledge" / "wiki"
     wiki_dir.mkdir(parents=True, exist_ok=True)
 
     fake_embedder = type("E", (), {"embed": lambda self, _t: [0.1] * 1536})()
-    fake_plan = WikiEditPlan(new_pages=[{"title": "Testcontainers"}])
-    fake_page = (
-        "# Testcontainers\n\nlast_updated: 2026-05-08\n\n"
-        "Testcontainers is a tool for integration tests.\n"
-    )
+    fake_llm = _FakeLLM([
+        {
+            "op": "create_page",
+            "title": "Testcontainers",
+            "content": "Testcontainers is a tool for integration tests.",
+        }
+    ])
+    fake_git = MagicMock()
 
     with (
         patch(
             "second_brain.worker.tasks.split_into_topics",
             new=AsyncMock(return_value=["Testcontainers makes integration tests easy."]),
         ),
-        patch(
-            "second_brain.worker.tasks.plan_wiki_edits",
-            new=AsyncMock(return_value=fake_plan),
-        ),
-        patch(
-            "second_brain.worker.tasks.update_wiki_page",
-            new=AsyncMock(return_value=fake_page),
-        ),
-        patch("second_brain.worker.tasks.get_git_sync") as mock_git,
-        patch("second_brain.worker.tasks.get_embedder", return_value=fake_embedder),
+        patch("second_brain.agent.edit_vault.get_llm_client", return_value=fake_llm),
+        patch("second_brain.agent.edit_vault.get_git_sync", return_value=fake_git),
+        patch("second_brain.agent.edit_vault.get_embedder", return_value=fake_embedder),
+        patch("second_brain.memory.indexing.get_embedder", return_value=fake_embedder),
     ):
-        mock_git.return_value.push = lambda msg: None
-
         result = process_ingestion(
             "Testcontainers makes integration tests easy.", {}
         )
@@ -64,5 +73,9 @@ def test_e2e_ingest_creates_wiki_page(integration_settings: object) -> None:
 
     wiki_files = list(wiki_dir.rglob("*.md"))
     assert len(wiki_files) >= 1
-    content = wiki_files[0].read_text(encoding="utf-8")
+    content = (wiki_dir / "testcontainers.md").read_text(encoding="utf-8")
     assert "Testcontainers" in content
+    assert "last_updated:" in content
+    fake_git.push.assert_called_once()
+    message = fake_git.push.call_args.args[0]
+    assert message.startswith("remember:")
