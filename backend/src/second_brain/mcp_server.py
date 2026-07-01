@@ -110,12 +110,15 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
             slug = str(hit["id"])
             title = str(hit.get("title", slug))
             content = vault_ops.get_page(slug)
-            neighbors = hit.get("neighbors", [])
+            raw_neighbors = hit.get("neighbors", [])
+            neighbors: list[dict[str, object]] = (
+                raw_neighbors if isinstance(raw_neighbors, list) else []
+            )
             block = f"## {title} (id: {slug})\n\n{content}"
             if neighbors:
                 neighbor_lines = "\n".join(
                     f"- {n.get('title')} (id: {n.get('id')})"
-                    for n in neighbors  # type: ignore[union-attr]
+                    for n in neighbors
                 )
                 block += f"\n\n**Neighbors:**\n{neighbor_lines}"
             sections.append(block)
