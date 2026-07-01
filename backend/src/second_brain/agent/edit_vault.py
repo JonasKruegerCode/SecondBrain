@@ -102,8 +102,10 @@ Available operations:
   Replace the body of one section. Repeat every sentence that stays unchanged verbatim.
 - {"op": "create_page", "title": "...", "content": "..."}
   Only if no shown page fits the information.
-- {"op": "link", "page": "<slug>", "to": "<slug>"}
-  Add a wikilink between two shown pages.
+- {"op": "link", "page": "<slug>", "to": "<slug>", "type": "<relation or null>"}
+  Add a wikilink between two shown pages. Give "type" (a short snake_case label
+  like "uses", "part_of", "works_at", "decided_against") ONLY when the input or
+  the pages state that relation explicitly — otherwise leave it null.
 - {"op": "merge", "source": "<slug>", "target": "<slug>"}
   Only for true duplicates. Contents are combined mechanically — do not rewrite them.
 - {"op": "mark_outdated", "page": "<slug>", "reason": "..."}
@@ -138,6 +140,7 @@ Check, using ONLY the shown pages:
 - Is another shown page a true duplicate of it? → merge
 - Do shown pages contradict each other? → mark_outdated the superseded statement
 - Are two shown pages clearly related but not linked? → link
+  (add "type" only if the pages state the relation explicitly)
 - Is a section obviously stale? → mark_outdated
 
 Do not use create_page. Do not add new content. If everything is fine,

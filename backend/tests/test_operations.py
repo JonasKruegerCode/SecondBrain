@@ -179,6 +179,50 @@ def test_link_injects_at_mention(tmp_path: Path) -> None:
     assert "[[watchtower|" in content.lower() or "Related: [[watchtower]]" in content
 
 
+def test_typed_link_writes_relations_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [Link(page="second-brain", to="watchtower", type="deployed_with")], wiki
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "## Relations" in content
+    assert "- deployed_with:: [[watchtower]]" in content
+    assert "second-brain" in result.changed
+
+    # Same typed relation again → skipped, appears only once
+    again = apply_operations(
+        [Link(page="second-brain", to="watchtower", type="deployed_with")], wiki
+    )
+    assert again.skipped
+    assert (wiki / "second-brain.md").read_text(encoding="utf-8").count(
+        "- deployed_with:: [[watchtower]]"
+    ) == 1
+
+
+def test_typed_link_appends_to_existing_relations_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [
+            Link(page="second-brain", to="watchtower", type="deployed_with"),
+            Link(page="second-brain", to="secondbrain-project", type="part_of"),
+        ],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert content.count("## Relations") == 1
+    assert "- deployed_with:: [[watchtower]]" in content
+    assert "- part_of:: [[secondbrain-project]]" in content
+
+
+def test_parse_link_normalizes_type() -> None:
+    ops, rejected = parse_operations(
+        [{"op": "link", "page": "a", "to": "b", "type": "Part Of"}]
+    )
+    assert not rejected
+    assert isinstance(ops[0], Link)
+    assert ops[0].type == "part_of"
+
+
 def test_link_appends_when_no_mention(tmp_path: Path) -> None:
     wiki = _make_vault(tmp_path)
     (wiki / "unrelated.md").write_text("# Unrelated\n\nNothing here.\n", encoding="utf-8")

@@ -16,7 +16,12 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from second_brain.memory.indexing import inject_links_into_text, read_title, slugify
+from second_brain.memory.indexing import (
+    inject_links_into_text,
+    normalize_rel,
+    read_title,
+    slugify,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +54,7 @@ class CreatePage:
 class Link:
     page: str
     to: str
+    type: str | None = None  # relation label, e.g. "uses", "part_of"
 
 
 @dataclass(frozen=True)
@@ -75,7 +81,8 @@ def describe(op: Operation) -> str:
     if isinstance(op, CreatePage):
         return f"create_page → {op.title}"
     if isinstance(op, Link):
-        return f"link → {op.page} → {op.to}"
+        rel = f" ({op.type})" if op.type else ""
+        return f"link → {op.page} → {op.to}{rel}"
     if isinstance(op, Merge):
         return f"merge → {op.source} into {op.target}"
     return f"mark_outdated → {op.page}: {op.reason[:80]}"
@@ -121,7 +128,12 @@ def parse_operations(raw_ops: Any) -> tuple[list[Operation], list[str]]:
                 title=_str(raw, "title") or "", content=_str(raw, "content") or ""
             )
         elif kind == "link" and page and _str(raw, "to"):
-            parsed = Link(page=page, to=_str(raw, "to") or "")
+            rel_type = _str(raw, "type")
+            parsed = Link(
+                page=page,
+                to=_str(raw, "to") or "",
+                type=normalize_rel(rel_type) if rel_type else None,
+            )
         elif kind == "merge" and _str(raw, "source") and _str(raw, "target"):
             parsed = Merge(source=_str(raw, "source") or "", target=_str(raw, "target") or "")
         elif kind == "mark_outdated" and page and _str(raw, "reason"):
@@ -325,6 +337,31 @@ def _apply_one(op: Operation, vault: _Vault, result: ApplyResult, today: str) ->
         target_path = vault.path(op.to)
         if not target_path.exists():
             result.skipped.append(f"{describe(op)} — target not found")
+            return
+        if op.type:
+            # Typed relation → Dataview-style line under ## Relations;
+            # derived into a `rel`-attributed Neo4j edge by indexing.parse_links.
+            line = f"- {op.type}:: [[{op.to}]]"
+            if re.search(
+                rf"(?m)^\s*(?:[-*]\s+)?{re.escape(op.type)}::\s*\[\[{re.escape(op.to)}[\]|]",
+                md,
+                re.IGNORECASE,
+            ):
+                result.skipped.append(f"{describe(op)} — already linked")
+                return
+            lines = md.splitlines()
+            bounds = _section_bounds(lines, "Relations")
+            if bounds:
+                start, end = bounds
+                body = lines[start:end]
+                while body and not body[-1].strip():
+                    body.pop()
+                lines[start:end] = [*body, line]
+                new_md = "\n".join(lines) + "\n"
+            else:
+                new_md = _append_section(md, "Relations", line)
+            vault.write(op.page, new_md)
+            _mark_changed(result, op, op.page)
             return
         if re.search(rf"\[\[{re.escape(op.to)}[\]|]", md, re.IGNORECASE):
             result.skipped.append(f"{describe(op)} — already linked")

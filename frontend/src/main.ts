@@ -49,6 +49,19 @@ const cy = cytoscape({
         "arrow-scale": 0.8,
       },
     },
+    {
+      // Typed relations (property-graph edges) get a label on the edge
+      selector: "edge[rel]",
+      style: {
+        label: "data(rel)",
+        "font-size": 7,
+        color: "#8888aa",
+        "text-rotation": "autorotate",
+        "text-background-color": "#12121c",
+        "text-background-opacity": 0.8,
+        "text-background-padding": "1px",
+      },
+    },
   ],
   layout: { name: "fcose" },
 });
@@ -64,13 +77,13 @@ cy.on("tap", "node", (evt: cytoscape.EventObject) => {
 
 interface GraphData {
   nodes: Array<{ id: string; title?: string; type?: string }>;
-  edges: Array<{ source: string; target: string }>;
+  edges: Array<{ source: string; target: string; rel?: string | null }>;
 }
 
 function graphFingerprint(data: GraphData): string {
   const nodeIds = [...(data.nodes ?? [])].map((n) => n.id).sort().join(",");
   const edgeIds = [...(data.edges ?? [])]
-    .map((e) => `${e.source}->${e.target}`)
+    .map((e) => `${e.source}-${e.rel ?? ""}->${e.target}`)
     .sort()
     .join(",");
   return `${nodeIds}|${edgeIds}`;
@@ -99,7 +112,11 @@ async function loadGraph(force = false): Promise<void> {
     });
     (data.edges ?? []).forEach((e) => {
       if (e.source && e.target)
-        elements.push({ data: { source: e.source, target: e.target } });
+        elements.push({
+          data: e.rel
+            ? { source: e.source, target: e.target, rel: e.rel }
+            : { source: e.source, target: e.target },
+        });
     });
 
     cy.elements().remove();

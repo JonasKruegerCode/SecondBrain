@@ -42,6 +42,45 @@ def parse_wikilinks(markdown: str) -> list[str]:
     return [m.split("|")[0].strip() for m in re.findall(r"\[\[([^\]]+)\]\]", markdown)]
 
 
+# Dataview-style inline field: `- uses:: [[docker]]` (Obsidian-compatible)
+_TYPED_LINK_RE = re.compile(
+    r"(?m)^\s*(?:[-*]\s+)?([A-Za-z][\w -]*?)::\s*\[\[([^\]]+)\]\]"
+)
+
+
+def normalize_rel(rel: str) -> str:
+    return re.sub(r"[^\w]+", "_", rel.strip().lower()).strip("_")
+
+
+def parse_links(markdown: str) -> list[tuple[str, str | None]]:
+    """All outgoing links of a page as (target, relation | None).
+
+    Typed relations (`rel:: [[target]]`) take precedence; plain [[wikilinks]]
+    to the same target are dropped. A target may appear with several distinct
+    relation types.
+    """
+    links: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
+    typed_targets: set[str] = set()
+
+    for rel_raw, target_raw in _TYPED_LINK_RE.findall(markdown):
+        target = target_raw.split("|")[0].strip()
+        rel = normalize_rel(rel_raw)
+        if not target or not rel:
+            continue
+        key = (target, rel)
+        if key not in seen:
+            seen.add(key)
+            typed_targets.add(target)
+            links.append((target, rel))
+
+    for target in parse_wikilinks(markdown):
+        if target and target not in typed_targets and (target, None) not in seen:
+            seen.add((target, None))
+            links.append((target, None))
+    return links
+
+
 def read_title(path: Path) -> str:
     """Reads the first # heading from a Markdown file as the title."""
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -154,14 +193,18 @@ def update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None:
                         slug_lookup[slugify(title)] = node_id
 
             for slug, _, page_md in updated_pages:
-                for linked in parse_wikilinks(page_md):
+                edges: list[tuple[str, str | None]] = []
+                for linked, rel in parse_links(page_md):
                     target = (
                         slug_lookup.get(linked)
                         or slug_lookup.get(slugify(linked))
                         or slug_lookup.get(linked.lower())
                     )
                     if target and target != slug:
-                        graph.upsert_edge(slug, target)
+                        edges.append((target, rel))
+                # Replace instead of add: the graph is a derived view, so
+                # links removed from the page disappear from Neo4j too.
+                graph.replace_page_edges(slug, edges)
         finally:
             graph.close()
 

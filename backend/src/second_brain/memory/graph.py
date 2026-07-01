@@ -132,6 +132,31 @@ class Neo4jStore:
             with self.driver.session() as session:
                 session.run(query, src=source_slug, tgt=target_slug)
 
+    def replace_page_edges(
+        self, source_slug: str, edges: list[tuple[str, str | None]]
+    ) -> None:
+        """Replace ALL outgoing LINKS_TO edges of a page.
+
+        `edges` is a list of (target_slug, relation | None). The relation is
+        stored as an edge property `rel`, so the graph stays traversable with
+        a single relationship type while carrying property-graph semantics.
+        Edges are created only if the target node exists.
+        """
+        delete_query = "MATCH (s:WikiPage {id: $src})-[r:LINKS_TO]->() DELETE r"
+        create_query = (
+            "MATCH (s:WikiPage {id: $src}) "
+            "MATCH (t:WikiPage {id: $tgt}) "
+            "CREATE (s)-[r:LINKS_TO]->(t) "
+            "SET r.rel = $rel"
+        )
+        with tracer.start_as_current_span("neo4j.replace_page_edges") as span:
+            span.set_attribute("slug", source_slug)
+            span.set_attribute("edges", len(edges))
+            with self.driver.session() as session:
+                session.run(delete_query, src=source_slug)
+                for target_slug, rel in edges:
+                    session.run(create_query, src=source_slug, tgt=target_slug, rel=rel)
+
     def get_neighbors(self, seed_slugs: list[str], hops: int = 2) -> list[str]:
         """Return slugs of all nodes within `hops` hops of any seed node."""
         query = (
@@ -143,12 +168,22 @@ class Neo4jStore:
         return [r["id"] for r in rows if r.get("id")]
 
     def get_neighbors_with_titles(self, seed_slug: str, hops: int) -> list[dict[str, Any]]:
-        """Return {id, title} of nodes within exactly `hops` hops of one seed node."""
-        query = (
-            f"MATCH (s:WikiPage {{id: $seed}})-[:LINKS_TO*1..{hops}]-(n:WikiPage) "
-            "WHERE n.id <> $seed "
-            "RETURN DISTINCT n.id AS id, n.title AS title"
-        )
+        """Return {id, title} of nodes within `hops` hops of one seed node.
+
+        Direct neighbors (hops=1) also carry the edge relation as `rel`.
+        """
+        if hops == 1:
+            query = (
+                "MATCH (s:WikiPage {id: $seed})-[r:LINKS_TO]-(n:WikiPage) "
+                "WHERE n.id <> $seed "
+                "RETURN DISTINCT n.id AS id, n.title AS title, r.rel AS rel"
+            )
+        else:
+            query = (
+                f"MATCH (s:WikiPage {{id: $seed}})-[:LINKS_TO*1..{hops}]-(n:WikiPage) "
+                "WHERE n.id <> $seed "
+                "RETURN DISTINCT n.id AS id, n.title AS title"
+            )
         return self.execute_query(query, {"seed": seed_slug})
 
     def delete_page_node(self, slug: str) -> None:
@@ -169,6 +204,7 @@ class Neo4jStore:
             "MATCH (n:WikiPage) RETURN n.id AS id, n.title AS title, n.type AS type"
         )
         edges = self.execute_query(
-            "MATCH (a:WikiPage)-[:LINKS_TO]->(b:WikiPage) RETURN a.id AS source, b.id AS target"
+            "MATCH (a:WikiPage)-[r:LINKS_TO]->(b:WikiPage) "
+            "RETURN a.id AS source, b.id AS target, r.rel AS rel"
         )
         return {"nodes": nodes, "edges": edges}
