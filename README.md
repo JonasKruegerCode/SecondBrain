@@ -27,7 +27,7 @@ When an agent calls `recall("what do I know about X?")`, SecondBrain runs Hybrid
 - **Wikipedia-agent model** — planning + update agents write and revise wiki pages intelligently
 - **HybridRAG** — vector search (Qdrant) + graph traversal (Neo4j) + Markdown vault
 - **Markdown vault** — Obsidian-compatible, optionally Git-synced to any GitHub/GitLab/Gitea repo
-- **Hourly review agent** — automatically cross-links related pages and resolves contradictions
+- **Hourly repair agent** — gardens one page per run: merges duplicates, flags contradictions, adds missing links
 - **Web UI** — knowledge graph visualizer + remember/recall interface
 - **Self-hosted** — runs entirely on your own infrastructure
 

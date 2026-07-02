@@ -35,8 +35,8 @@ celery_app.conf.update(
             "task": "second_brain.worker.tasks.git_sync_daily",
             "schedule": crontab(hour=3, minute=0),
         },
-        "wiki-review-hourly": {
-            "task": "second_brain.worker.tasks.wiki_review_hourly",
+        "vault-repair-hourly": {
+            "task": "second_brain.worker.tasks.vault_repair_hourly",
             "schedule": crontab(minute=0),
         },
     },
