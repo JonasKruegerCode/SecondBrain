@@ -56,7 +56,7 @@ services:
         condition: service_started
     volumes:
       - vault_data:/vault
-    command: celery -A second_brain.core.celery_app worker --beat --loglevel=info --concurrency=2
+    command: celery -A second_brain.core.celery_app worker --beat --loglevel=info --concurrency=1
     restart: unless-stopped
 
   redis:

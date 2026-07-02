@@ -61,7 +61,8 @@ def test_e2e_ingest_creates_wiki_page(integration_settings: object) -> None:
             new=AsyncMock(return_value=["Testcontainers makes integration tests easy."]),
         ),
         patch("second_brain.agent.edit_vault.get_llm_client", return_value=fake_llm),
-        patch("second_brain.agent.edit_vault.get_git_sync", return_value=fake_git),
+        patch("second_brain.worker.tasks.sync_vault", return_value="no_changes"),
+        patch("second_brain.worker.tasks.get_git_sync", return_value=fake_git),
         patch("second_brain.agent.edit_vault.get_embedder", return_value=fake_embedder),
         patch("second_brain.memory.indexing.get_embedder", return_value=fake_embedder),
     ):

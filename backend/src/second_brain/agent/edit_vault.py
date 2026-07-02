@@ -11,13 +11,15 @@ plan     is a single LLM call that returns typed operations instead of
          confabulation (see agent/operations.py).
 apply    executes the operations deterministically.
 reconcile runs only after create_page/merge and rewires backlinks.
-finalize re-derives graph + vectors for changed pages and commits to Git
-         with the trigger in the message (audit/revert net).
+finalize re-derives graph + vectors for changed pages. Git sync happens in
+         the calling task: pull before the run, one push after the ingestion
+         log reached its final state (audit/revert net).
 
 Entry points differ only in how gather resolves the focus:
   remember(text)  → focus is new information
   repair(slug)    → focus is an existing page to garden
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,7 +37,6 @@ from second_brain.agent.operations import (
 )
 from second_brain.core.config import settings
 from second_brain.core.telemetry import get_tracer
-from second_brain.git_sync import get_git_sync
 from second_brain.llm.client import get_llm_client
 from second_brain.llm.embedder import get_embedder
 from second_brain.memory.indexing import (
@@ -62,14 +63,15 @@ Mode = Literal["remember", "repair"]
 # State
 # ---------------------------------------------------------------------------
 
+
 class EditVaultState(TypedDict):
     mode: Mode
-    focus: str                 # new text (remember) or page slug (repair)
-    source: str                # trigger description → git commit message
-    pages: dict[str, str]      # slug → full markdown, loaded by gather
+    focus: str  # new text (remember) or page slug (repair)
+    source: str  # trigger description → git commit message
+    pages: dict[str, str]  # slug → full markdown, loaded by gather
     operations: list[Operation]
     rejected: list[str]
-    changed: dict[str, str]    # slug → diff summary
+    changed: dict[str, str]  # slug → diff summary
     created: list[str]
     skipped: list[str]
     applied: list[str]
@@ -189,6 +191,7 @@ async def split_into_topics(content: str) -> list[str]:
 # Nodes
 # ---------------------------------------------------------------------------
 
+
 def _load_pages(slugs: list[str]) -> dict[str, str]:
     wiki_base = wiki_base_path()
     pages: dict[str, str] = {}
@@ -202,7 +205,9 @@ def _load_pages(slugs: list[str]) -> dict[str, str]:
 def _search_slugs(query_text: str, limit: int = GATHER_LIMIT) -> list[str]:
     try:
         vec = get_embedder().embed(query_text[:2000])
-        hits = QdrantStore(settings.QDRANT_URL).search(WIKI_COLLECTION, vec, limit=limit)
+        hits = QdrantStore(settings.QDRANT_URL).search(
+            WIKI_COLLECTION, vec, limit=limit
+        )
         return [str(h["slug"]) for h in hits if h.get("slug")]
     except Exception as exc:
         logger.warning("Gather search failed (Qdrant empty?): %s", exc)
@@ -211,9 +216,6 @@ def _search_slugs(query_text: str, limit: int = GATHER_LIMIT) -> list[str]:
 
 async def _gather(state: EditVaultState) -> dict[str, Any]:
     with tracer.start_as_current_span("edit_vault.gather") as span:
-        # Sync before anything is read or edited — edits must happen on top of
-        # the freshest remote state, otherwise instances diverge for months.
-        get_git_sync().pull()
         if state["mode"] == "remember":
             slugs = _search_slugs(state["focus"])
         else:
@@ -250,11 +252,15 @@ async def _plan(state: EditVaultState) -> dict[str, Any]:
             logger.error("Planning failed: %s", exc)
             return {"operations": [], "rejected": [f"planning LLM call failed: {exc}"]}
 
-        ops, rejected = parse_operations(data.get("operations") if isinstance(data, dict) else None)
+        ops, rejected = parse_operations(
+            data.get("operations") if isinstance(data, dict) else None
+        )
         if state["mode"] == "repair":
             creates = [op for op in ops if isinstance(op, CreatePage)]
             if creates:
-                rejected += [f"create_page not allowed in repair: {op.title}" for op in creates]
+                rejected += [
+                    f"create_page not allowed in repair: {op.title}" for op in creates
+                ]
                 ops = [op for op in ops if not isinstance(op, CreatePage)]
         span.set_attribute("operations", len(ops))
         span.set_attribute("rejected", len(rejected))
@@ -295,7 +301,7 @@ async def _reconcile(state: EditVaultState) -> dict[str, Any]:
 
 
 async def _finalize(state: EditVaultState) -> dict[str, Any]:
-    """Re-derive graph + vectors for changed pages, then commit to Git."""
+    """Re-derive graph + vectors for changed pages."""
     with tracer.start_as_current_span("edit_vault.finalize") as span:
         changed = state["changed"]
         if not changed:
@@ -309,9 +315,6 @@ async def _finalize(state: EditVaultState) -> dict[str, Any]:
                 pages.append((slug, read_title(path), path.read_text(encoding="utf-8")))
         if pages:
             update_graph_and_vectors(pages)
-
-        message = f"{state['mode']}: {state['source'][:120]}"
-        get_git_sync().push(message)
         span.set_attribute("pages", len(pages))
         return {"result": f"ok:{len(changed)}_pages"}
 
@@ -323,6 +326,7 @@ def _route_after_apply(state: EditVaultState) -> str:
 # ---------------------------------------------------------------------------
 # Graph
 # ---------------------------------------------------------------------------
+
 
 def _build_graph() -> Any:
     builder = StateGraph(EditVaultState)
