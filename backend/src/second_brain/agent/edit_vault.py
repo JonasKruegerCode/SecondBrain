@@ -211,6 +211,9 @@ def _search_slugs(query_text: str, limit: int = GATHER_LIMIT) -> list[str]:
 
 async def _gather(state: EditVaultState) -> dict[str, Any]:
     with tracer.start_as_current_span("edit_vault.gather") as span:
+        # Sync before anything is read or edited — edits must happen on top of
+        # the freshest remote state, otherwise instances diverge for months.
+        get_git_sync().pull()
         if state["mode"] == "remember":
             slugs = _search_slugs(state["focus"])
         else:
