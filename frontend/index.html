@@ -253,6 +253,7 @@ button:disabled { opacity: 0.4; cursor: default; }
     <input id="recall-input" type="text" placeholder="Question or topic&#8230;"
       onkeydown="if(event.key==='Enter') doRecall()">
     <button id="recall-btn" onclick="doRecall()">Search</button>
+    <button id="rag-btn" onclick="doRag()" style="display:block;margin-top:6px">RAG Answer</button>
     <div class="result" id="recall-result"></div>
   </section>
 </div>

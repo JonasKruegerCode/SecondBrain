@@ -154,6 +154,12 @@ async def handle_api_recall(request: Request) -> JSONResponse:
     return JSONResponse({"result": result})
 
 
+async def handle_api_rag(request: Request) -> JSONResponse:
+    body = await request.json()
+    result = await _dispatch("get_RAG_response", body)
+    return JSONResponse({"result": result})
+
+
 async def handle_api_graph(_request: Request) -> JSONResponse:
     graph_store = Neo4jStore(
         settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD
@@ -204,6 +210,7 @@ api_app = Starlette(
     routes=[
         Route("/api/remember", endpoint=handle_api_remember, methods=["POST"]),
         Route("/api/recall", endpoint=handle_api_recall, methods=["POST"]),
+        Route("/api/rag", endpoint=handle_api_rag, methods=["POST"]),
         Route("/api/graph", endpoint=handle_api_graph),
         Route("/api/page/{slug}", endpoint=handle_api_page),
         Route("/api/ingestion-logs", endpoint=handle_api_ingestion_logs),

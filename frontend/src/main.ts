@@ -238,6 +238,29 @@ async function doRecall(): Promise<void> {
   btn.disabled = false;
 }
 
+async function doRag(): Promise<void> {
+  const input = document.getElementById("recall-input") as HTMLInputElement;
+  const query = input.value.trim();
+  if (!query) return;
+  const btn = document.getElementById("rag-btn") as HTMLButtonElement;
+  const result = document.getElementById("recall-result")!;
+  btn.disabled = true;
+  result.textContent = "Generating answer…";
+  result.style.display = "block";
+  try {
+    const r = await fetch("/api/rag", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const data = (await r.json()) as { result: string };
+    result.innerHTML = await marked.parse(data.result);
+  } catch (err) {
+    result.textContent = "Error: " + String(err);
+  }
+  btn.disabled = false;
+}
+
 // ---------------------------------------------------------------------------
 // Ingestion log
 // ---------------------------------------------------------------------------
@@ -255,13 +278,10 @@ interface IngestionLog {
   started: string;
   finished: string | null;
   input_preview: string;
+  input?: string | null;
   pages_updated: PageEntry[];
   pages_created: PageEntry[];
   error: string | null;
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function formatDateTime(iso: string): string {
@@ -305,10 +325,20 @@ function openIngestionModal(log: IngestionLog): void {
     return `<h3>${label}</h3>${items.join("")}`;
   };
 
+  const preview = log.input_preview ?? "";
+  const fullInput = log.input ?? "";
+  const inputHtml = fullInput.length > preview.length
+    ? `<p style="white-space:pre-wrap">${preview}…</p>
+       <details style="margin:4px 0">
+         <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">Show full input (${fullInput.length} chars)</summary>
+         <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
+       </details>`
+    : `<p style="white-space:pre-wrap">${fullInput || preview || "—"}</p>`;
+
   document.getElementById("modal-body")!.innerHTML = `
     <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status} &nbsp;·&nbsp; <strong>Duration:</strong> ${duration}</p>
     <h3>Input</h3>
-    <p>${log.input_preview ?? "—"}</p>
+    ${inputHtml}
     ${pageList(log.pages_updated ?? [], "Updated")}
     ${pageList(log.pages_created ?? [], "Created")}
     ${log.error ? `<h3>Error</h3><pre>${log.error}</pre>` : ""}
@@ -334,8 +364,8 @@ async function loadIngestionLogs(): Promise<void> {
       <div class="log-item" style="cursor:pointer">
         <div class="log-dot ${log.status}"></div>
         <div class="log-meta">
-          <span>${log.input_preview ?? ""}</span>
-          <span class="log-time">${formatTime(log.started)} · ${logSummary(log)}</span>
+          <span>${(log.input_preview ?? "").slice(0, 110)}</span>
+          <span class="log-time">${formatDateTime(log.started)} · ${logSummary(log)}</span>
         </div>
       </div>`).join("");
 
@@ -385,6 +415,7 @@ declare global {
     loadGraph: (force?: boolean) => Promise<void>;
     doRemember: () => Promise<void>;
     doRecall: () => Promise<void>;
+    doRag: () => Promise<void>;
     closeModal: (evt: MouseEvent) => void;
     closeModalBtn: () => void;
   }
@@ -392,6 +423,7 @@ declare global {
 window.loadGraph = loadGraph;
 window.doRemember = doRemember;
 window.doRecall = doRecall;
+window.doRag = doRag;
 window.closeModal = closeModal;
 window.closeModalBtn = closeModalBtn;
 
