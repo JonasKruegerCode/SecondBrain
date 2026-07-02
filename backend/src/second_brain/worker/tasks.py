@@ -235,10 +235,23 @@ def reindex_after_pull() -> str:
 
 @celery_app.task(name="second_brain.worker.tasks.reindex_all_wiki")  # type: ignore[untyped-decorator]
 def reindex_all_wiki() -> str:
-    """Re-embed all wiki pages — used after a fresh clone or full DB reset."""
+    """Full reindex from disk — the wiki files are the source of truth.
+
+    Re-embeds every page AND purges graph/vector entries for pages that no
+    longer exist on disk (renamed, merged, or deleted outside the app).
+    """
     wiki_base = wiki_base_path()
     if not wiki_base.exists():
         return "no_wiki"
     slugs = [f.stem for f in wiki_base.rglob("*.md")]
-    logger.info("Full reindex: %d wiki pages", len(slugs))
-    return apply_index_diff(slugs, [])
+
+    graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+    try:
+        rows = graph.execute_query("MATCH (n:WikiPage) RETURN n.id AS id")
+    finally:
+        graph.close()
+    indexed = {str(r["id"]) for r in rows if r.get("id")}
+    stale = sorted(indexed - set(slugs))
+
+    logger.info("Full reindex: %d wiki pages, purging %d stale nodes", len(slugs), len(stale))
+    return apply_index_diff(slugs, stale)

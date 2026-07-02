@@ -1,5 +1,10 @@
 """Unit tests for link parsing (typed relations → property-graph edges)."""
-from second_brain.memory.indexing import normalize_rel, parse_links, parse_wikilinks
+from second_brain.memory.indexing import (
+    normalize_rel,
+    parse_links,
+    parse_wikilinks,
+    resolve_page_edges,
+)
 
 PAGE = """\
 # Second Brain
@@ -52,3 +57,38 @@ def test_normalize_rel() -> None:
     assert normalize_rel("Part Of") == "part_of"
     assert normalize_rel("works-at") == "works_at"
     assert normalize_rel("  uses  ") == "uses"
+
+
+# ---------------------------------------------------------------------------
+# resolve_page_edges — dedup AFTER slug resolution
+# ---------------------------------------------------------------------------
+
+LOOKUP = {
+    "person-jonas": "person-jonas",
+    "jonas": "person-jonas",          # title variant resolves to the same node
+    "second-brain": "second-brain",
+}
+
+
+def test_resolve_dedupes_after_resolution() -> None:
+    # Two different raw links resolving to the same node → one edge
+    md = "Text about [[Jonas]] and later [[person-jonas]] again.\n"
+    assert resolve_page_edges("other-page", md, LOOKUP) == [("person-jonas", None)]
+
+
+def test_resolve_drops_untyped_when_typed_exists() -> None:
+    md = "See [[Jonas]].\n\n## Relations\n\n- friend_of:: [[person-jonas]]\n"
+    assert resolve_page_edges("other-page", md, LOOKUP) == [("person-jonas", "friend_of")]
+
+
+def test_resolve_skips_self_and_unknown_targets() -> None:
+    md = "Self link [[person-jonas]] and unknown [[does-not-exist]] and [[second-brain]].\n"
+    assert resolve_page_edges("person-jonas", md, LOOKUP) == [("second-brain", None)]
+
+
+def test_resolve_keeps_distinct_relations_to_same_node() -> None:
+    md = "- uses:: [[second-brain]]\n- maintains:: [[second-brain]]\n"
+    edges = resolve_page_edges("person-jonas", md, LOOKUP)
+    assert ("second-brain", "uses") in edges
+    assert ("second-brain", "maintains") in edges
+    assert len(edges) == 2

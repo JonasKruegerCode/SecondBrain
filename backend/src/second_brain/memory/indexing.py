@@ -151,6 +151,34 @@ def backfill_wikilinks(new_slug: str, new_title: str, wiki_base: Path) -> list[s
     return changed
 
 
+def resolve_page_edges(
+    slug: str, page_md: str, slug_lookup: dict[str, str]
+) -> list[tuple[str, str | None]]:
+    """Resolves a page's links to graph edges (target_node, rel | None).
+
+    Deduplicates AFTER slug resolution: [[Jonas]] and [[person-jonas]] may
+    resolve to the same node and must yield one edge, not two (edges are
+    CREATEd, not MERGEd). An untyped link is dropped when a typed relation
+    to the same node exists.
+    """
+    edges: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
+    for linked, rel in parse_links(page_md):
+        target = (
+            slug_lookup.get(linked)
+            or slug_lookup.get(slugify(linked))
+            or slug_lookup.get(linked.lower())
+        )
+        if not target or target == slug:
+            continue
+        key = (target, rel)
+        if key not in seen:
+            seen.add(key)
+            edges.append(key)
+    typed_targets = {target for target, rel in edges if rel}
+    return [(t, r) for t, r in edges if r or t not in typed_targets]
+
+
 def update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None:
     """Writes nodes + edges to Neo4j and embeddings to Qdrant.
 
@@ -193,15 +221,7 @@ def update_graph_and_vectors(updated_pages: list[tuple[str, str, str]]) -> None:
                         slug_lookup[slugify(title)] = node_id
 
             for slug, _, page_md in updated_pages:
-                edges: list[tuple[str, str | None]] = []
-                for linked, rel in parse_links(page_md):
-                    target = (
-                        slug_lookup.get(linked)
-                        or slug_lookup.get(slugify(linked))
-                        or slug_lookup.get(linked.lower())
-                    )
-                    if target and target != slug:
-                        edges.append((target, rel))
+                edges = resolve_page_edges(slug, page_md, slug_lookup)
                 # Replace instead of add: the graph is a derived view, so
                 # links removed from the page disappear from Neo4j too.
                 graph.replace_page_edges(slug, edges)
