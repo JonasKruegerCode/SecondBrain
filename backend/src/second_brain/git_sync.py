@@ -32,7 +32,9 @@ from second_brain.core.telemetry import get_tracer
 logger = logging.getLogger(__name__)
 tracer = get_tracer(__name__)
 
-_COMMIT_ACTOR = Actor("SecondBrain", "bot@secondbrain.local")
+_COMMIT_NAME = "SecondBrain"
+_COMMIT_EMAIL = "bot@secondbrain.local"
+_COMMIT_ACTOR = Actor(_COMMIT_NAME, _COMMIT_EMAIL)
 
 
 def _authenticated_url(url: str, pat: str) -> str:
@@ -80,10 +82,23 @@ class GitSync:
 
     def _repo(self) -> git.Repo | None:
         try:
-            return git.Repo(str(self._vault_path))
+            repo = git.Repo(str(self._vault_path))
         except (git.InvalidGitRepositoryError, git.NoSuchPathError):
             logger.warning("Vault at %s is not a git repo — skipping sync.", self._vault_path)
             return None
+        self._ensure_identity(repo)
+        return repo
+
+    @staticmethod
+    def _ensure_identity(repo: git.Repo) -> None:
+        """git pull creates merge commits, which need a committer identity.
+
+        Containers and CI runners have no global git config, so always write
+        the bot identity into the repo config (idempotent).
+        """
+        with repo.config_writer() as writer:
+            writer.set_value("user", "name", _COMMIT_NAME)
+            writer.set_value("user", "email", _COMMIT_EMAIL)
 
     def _recover_stuck_state(self, repo: git.Repo) -> None:
         """Aborts leftover rebase/merge state so the repo can never stay stuck."""

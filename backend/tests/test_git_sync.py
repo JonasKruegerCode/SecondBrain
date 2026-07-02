@@ -25,7 +25,16 @@ def _commit_and_push(repo: git.Repo, message: str) -> None:
 
 @pytest.fixture
 def vault_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Bare 'GitHub' remote + seeded second clone + the vault clone."""
+    """Bare 'GitHub' remote + seeded second clone + the vault clone.
+
+    Global/system git config is disabled so the tests behave like CI and
+    containers (no committer identity available).
+    """
+    empty_config = tmp_path / "empty-gitconfig"
+    empty_config.touch()
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
     remote = tmp_path / "remote.git"
     git.Repo.init(remote, bare=True)
 
