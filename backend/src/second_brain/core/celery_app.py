@@ -39,6 +39,11 @@ celery_app.conf.update(
             "task": "second_brain.worker.tasks.vault_repair_hourly",
             "schedule": crontab(minute=0),
         },
+        # Keep idle instances live: pull + reindex remote changes every 5 min
+        "vault-sync-5min": {
+            "task": "second_brain.worker.tasks.reindex_after_pull",
+            "schedule": 300.0,
+        },
     },
 )
 

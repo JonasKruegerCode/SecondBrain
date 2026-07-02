@@ -24,7 +24,12 @@ from second_brain.core.config import settings
 from second_brain.core.telemetry import get_tracer
 from second_brain.git_sync import get_git_sync
 from second_brain.memory.graph import Neo4jStore
-from second_brain.memory.indexing import apply_index_diff, read_title, wiki_base_path
+from second_brain.memory.indexing import (
+    apply_index_diff,
+    read_title,
+    sync_vault,
+    wiki_base_path,
+)
 
 logger = logging.getLogger(__name__)
 tracer = get_tracer(__name__)
@@ -105,6 +110,8 @@ def _run_async(coro: Any) -> Any:
 @celery_app.task(name="second_brain.worker.tasks.process_ingestion", bind=True)  # type: ignore[untyped-decorator]
 def process_ingestion(self: Any, content: str, _metadata: dict[str, Any] | None = None) -> str:
     task_id: str = self.request.id or "unknown"
+    # Sync bracket: pull before any work …
+    sync_vault()
     _log_start(task_id, content)
 
     try:
@@ -112,6 +119,11 @@ def process_ingestion(self: Any, content: str, _metadata: dict[str, Any] | None 
     except Exception as exc:
         _log_failed(task_id, str(exc))
         raise
+    finally:
+        # … and ONE push at the very end, after the log reached its final
+        # state (done/failed). Pushing earlier leaves the log "running"
+        # forever on every other instance.
+        get_git_sync().push(f"remember: {content[:120]}")
 
 
 def _process_ingestion_inner(task_id: str, content: str) -> str:
@@ -175,6 +187,8 @@ def _pick_repair_seed(wiki_base: Path) -> str | None:
 
 @celery_app.task(name="second_brain.worker.tasks.vault_repair_hourly")  # type: ignore[untyped-decorator]
 def vault_repair_hourly() -> str:
+    sync_vault()
+
     graph = Neo4jStore(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
     try:
         deleted = graph.delete_ghost_nodes()
@@ -192,7 +206,10 @@ def vault_repair_hourly() -> str:
         return "empty_wiki"
 
     logger.info("Vault repair: gardening page '%s'", seed)
-    result: EditVaultResult = _run_async(edit_vault("repair", seed, source=seed))
+    try:
+        result: EditVaultResult = _run_async(edit_vault("repair", seed, source=seed))
+    finally:
+        get_git_sync().push(f"repair: {seed}")
     if result.applied:
         logger.info("Vault repair applied: %s", result.applied)
     return result.result

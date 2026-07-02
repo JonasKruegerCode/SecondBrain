@@ -27,6 +27,7 @@ from second_brain.git_sync import get_git_sync
 from second_brain.llm.embedder import get_embedder
 from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.hybrid_rag import HybridRAG
+from second_brain.memory.indexing import sync_vault
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
 from second_brain.worker.tasks import process_ingestion, reindex_after_pull
@@ -84,7 +85,17 @@ def _format_search_results(results: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
+READ_TOOLS = ("recall", "get_RAG_response", "search_wiki", "get_page")
+
+# Throttle so bursts (recall + get_page in a row) don't fetch on every call
+READ_SYNC_INTERVAL_SECONDS = 30.0
+
+
 async def _dispatch(name: str, args: dict[str, Any]) -> str:
+    if name in READ_TOOLS:
+        # Reads see the live state of all instances (pull + index refresh);
+        # writes sync inside the Celery task itself.
+        sync_vault(min_interval_seconds=READ_SYNC_INTERVAL_SECONDS)
     if name == "remember":
         task = process_ingestion.delay(args["text"], args.get("metadata") or {})
         return (
@@ -177,6 +188,28 @@ async def handle_api_page(request: Request) -> JSONResponse:
     return JSONResponse({"content": content})
 
 
+STALE_RUNNING_MINUTES = 30
+
+
+def _mark_stale_running(data: dict[str, Any]) -> None:
+    """Logs stuck in 'running' (crashed instance, never pushed completion)
+    are displayed as failed instead of running forever."""
+    if data.get("status") != "running":
+        return
+    try:
+        from datetime import datetime, timedelta  # noqa: PLC0415
+
+        started = datetime.fromisoformat(str(data.get("started")))
+        if datetime.now() - started > timedelta(minutes=STALE_RUNNING_MINUTES):
+            data["status"] = "failed"
+            data["error"] = (
+                f"stale — no completion after {STALE_RUNNING_MINUTES} min "
+                "(instance crashed or offline)"
+            )
+    except Exception:
+        pass
+
+
 async def handle_api_ingestion_logs(_request: Request) -> JSONResponse:
     import json as _json  # noqa: PLC0415
 
@@ -191,6 +224,7 @@ async def handle_api_ingestion_logs(_request: Request) -> JSONResponse:
     for f in files:
         try:
             data = _json.loads(f.read_text(encoding="utf-8"))
+            _mark_stale_running(data)
             (running if data.get("status") == "running" else completed).append(data)
         except Exception:
             pass

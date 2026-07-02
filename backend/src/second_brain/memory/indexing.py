@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import uuid
 from pathlib import Path
 
 from second_brain.core.config import settings
 from second_brain.core.telemetry import get_tracer
+from second_brain.git_sync import get_git_sync
 from second_brain.llm.embedder import get_embedder
 from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.vector import QdrantStore
@@ -22,6 +24,25 @@ logger = logging.getLogger(__name__)
 tracer = get_tracer(__name__)
 
 WIKI_COLLECTION = "wiki_pages"
+
+_last_sync: float = 0.0
+
+
+def sync_vault(min_interval_seconds: float = 0.0) -> str:
+    """Pull the vault and refresh derived indexes for whatever came in.
+
+    THE entry point for "make everything live before working" — used before
+    every read (recall/search/RAG) and at the start of every write task, so
+    multiple instances can work on the same brain concurrently.
+    `min_interval_seconds` throttles bursts (e.g. recall + get_page in a row).
+    """
+    global _last_sync
+    now = time.monotonic()
+    if min_interval_seconds and now - _last_sync < min_interval_seconds:
+        return "throttled"
+    _last_sync = now
+    changed, deleted = get_git_sync().pull_and_diff()
+    return apply_index_diff(changed, deleted)
 
 
 def wiki_base_path() -> Path:

@@ -33,8 +33,12 @@ async def test_search_wiki_dispatches_vector_search() -> None:
     mock_rag.search = _async_search
     mock_graph_store = MagicMock()
 
-    with patch(
-        "second_brain.mcp_server._build_rag", return_value=(mock_rag, mock_graph_store)
+    with (
+        patch(
+            "second_brain.mcp_server._build_rag",
+            return_value=(mock_rag, mock_graph_store),
+        ),
+        patch("second_brain.mcp_server.sync_vault", return_value="no_changes"),
     ):
         result = await _dispatch("search_wiki", {"query": "Rust", "limit": 15, "hpos": 1})
 
@@ -46,15 +50,36 @@ async def test_search_wiki_dispatches_vector_search() -> None:
 
 @pytest.mark.asyncio
 async def test_get_page_dispatches_vault_ops() -> None:
-    with patch("second_brain.mcp_server.vault_ops") as mock_vault_ops:
+    with (
+        patch("second_brain.mcp_server.vault_ops") as mock_vault_ops,
+        patch("second_brain.mcp_server.sync_vault", return_value="no_changes") as mock_sync,
+    ):
         mock_vault_ops.get_page.return_value = "# Rust\n..."
         result = await _dispatch("get_page", {"id": "rust"})
 
     assert result == "# Rust\n..."
     mock_vault_ops.get_page.assert_called_once_with("rust")
+    mock_sync.assert_called_once()  # reads sync before serving
 
 
 @pytest.mark.asyncio
 async def test_unknown_tool() -> None:
     result = await _dispatch("nonexistent_tool", {})
     assert "Unknown tool" in result
+
+
+def test_stale_running_logs_are_marked_failed() -> None:
+    from second_brain.mcp_server import _mark_stale_running
+
+    fresh = {"status": "running", "started": "2999-01-01T00:00:00"}
+    _mark_stale_running(fresh)
+    assert fresh["status"] == "running"
+
+    stale = {"status": "running", "started": "2020-01-01T00:00:00"}
+    _mark_stale_running(stale)
+    assert stale["status"] == "failed"
+    assert "stale" in str(stale["error"])
+
+    done = {"status": "done", "started": "2020-01-01T00:00:00"}
+    _mark_stale_running(done)
+    assert done["status"] == "done"
