@@ -69,7 +69,29 @@ class MarkOutdated:
     reason: str
 
 
-Operation = AddClaim | EditSection | CreatePage | Link | Merge | MarkOutdated
+@dataclass(frozen=True)
+class DeleteClaim:
+    page: str
+    text: str  # exact text of the claim to remove (matched as substring)
+
+
+@dataclass(frozen=True)
+class DeletePage:
+    slug: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class EditClaim:
+    page: str
+    old_text: str  # exact text to find and replace
+    new_text: str
+
+
+Operation = (
+    AddClaim | EditSection | CreatePage | Link | Merge | MarkOutdated
+    | DeleteClaim | DeletePage | EditClaim
+)
 
 
 def describe(op: Operation) -> str:
@@ -85,6 +107,12 @@ def describe(op: Operation) -> str:
         return f"link → {op.page} → {op.to}{rel}"
     if isinstance(op, Merge):
         return f"merge → {op.source} into {op.target}"
+    if isinstance(op, DeleteClaim):
+        return f"delete_claim → {op.page}: {op.text[:80]}"
+    if isinstance(op, DeletePage):
+        return f"delete_page → {op.slug}: {op.reason[:80]}"
+    if isinstance(op, EditClaim):
+        return f"edit_claim → {op.page}: {op.old_text[:40]} → {op.new_text[:40]}"
     return f"mark_outdated → {op.page}: {op.reason[:80]}"
 
 
@@ -138,6 +166,16 @@ def parse_operations(raw_ops: Any) -> tuple[list[Operation], list[str]]:
             parsed = Merge(source=_str(raw, "source") or "", target=_str(raw, "target") or "")
         elif kind == "mark_outdated" and page and _str(raw, "reason"):
             parsed = MarkOutdated(page=page, reason=_str(raw, "reason") or "")
+        elif kind == "delete_claim" and page and text:
+            parsed = DeleteClaim(page=page, text=text)
+        elif kind == "delete_page" and _str(raw, "slug") and _str(raw, "reason"):
+            parsed = DeletePage(slug=_str(raw, "slug") or "", reason=_str(raw, "reason") or "")
+        elif kind == "edit_claim" and page and _str(raw, "old_text") and _str(raw, "new_text"):
+            parsed = EditClaim(
+                page=page,
+                old_text=_str(raw, "old_text") or "",
+                new_text=_str(raw, "new_text") or "",
+            )
 
         if parsed is None:
             rejected.append(f"invalid or incomplete op: {raw!r}")
@@ -218,6 +256,7 @@ def _page_diff_summary(old: str, new: str, max_lines: int = 10) -> str:
 class ApplyResult:
     changed: dict[str, str] = field(default_factory=dict)   # slug → diff summary
     created: set[str] = field(default_factory=set)
+    deleted: set[str] = field(default_factory=set)          # slugs hard-deleted (file removed)
     merged: bool = False
     skipped: list[str] = field(default_factory=list)
     applied: list[str] = field(default_factory=list)        # describe() lines
@@ -395,6 +434,45 @@ def _apply_one(op: Operation, vault: _Vault, result: ApplyResult, today: str) ->
         vault.write(op.page, _touch_last_updated("\n".join(lines) + "\n", today))
         _mark_changed(result, op, op.page)
 
+    elif isinstance(op, DeleteClaim):
+        md = vault.read(op.page)
+        if md is None:
+            result.skipped.append(f"{describe(op)} — page not found")
+            return
+        if op.text not in md:
+            result.skipped.append(f"{describe(op)} — claim text not found in page")
+            return
+        # Remove the line(s) containing the exact claim text
+        lines = md.splitlines()
+        new_lines = [line for line in lines if op.text not in line]
+        if new_lines == lines:
+            result.skipped.append(f"{describe(op)} — nothing removed (no matching line)")
+            return
+        vault.write(op.page, _touch_last_updated("\n".join(new_lines) + "\n", today))
+        _mark_changed(result, op, op.page)
+
+    elif isinstance(op, DeletePage):
+        path = vault.path(op.slug)
+        if not path.exists():
+            result.skipped.append(f"{describe(op)} — page not found")
+            return
+        # Hard-delete: remove the file entirely. Git is the audit trail.
+        path.unlink()
+        result.deleted.add(op.slug)
+        _mark_changed(result, op, op.slug)
+
+    elif isinstance(op, EditClaim):
+        md = vault.read(op.page)
+        if md is None:
+            result.skipped.append(f"{describe(op)} — page not found")
+            return
+        if op.old_text not in md:
+            result.skipped.append(f"{describe(op)} — old_text not found in page")
+            return
+        new_md = md.replace(op.old_text, op.new_text, 1)
+        vault.write(op.page, _touch_last_updated(new_md, today))
+        _mark_changed(result, op, op.page)
+
 
 def _apply_merge(op: Merge, vault: _Vault, result: ApplyResult, today: str) -> None:
     """Lossless mechanical merge: the source body is appended verbatim to the
@@ -427,13 +505,9 @@ def _apply_merge(op: Merge, vault: _Vault, result: ApplyResult, today: str) -> N
             vault.write(f.stem, new_content)
             rewired.append(f.stem)
 
-    # Redirect stub so old IDs keep resolving
-    stub = (
-        f"# {source_title}\n\n"
-        f"last_updated: {today}\n\n"
-        f"This page was merged into [[{op.target}]].\n"
-    )
-    vault.write(op.source, stub)
+    # Hard-delete the source file — Git is the audit trail.
+    vault.path(op.source).unlink(missing_ok=True)
+    result.deleted.add(op.source)
 
     result.merged = True
     _mark_changed(result, op, op.target, op.source, *rewired)

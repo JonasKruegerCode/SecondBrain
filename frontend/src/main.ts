@@ -50,7 +50,6 @@ const cy = cytoscape({
       },
     },
     {
-      // Typed relations (property-graph edges) get a label on the edge
       selector: "edge[rel]",
       style: {
         label: "data(rel)",
@@ -72,7 +71,7 @@ cy.on("tap", "node", (evt: cytoscape.EventObject) => {
 });
 
 // ---------------------------------------------------------------------------
-// Smart graph refresh — only re-layout when data changed
+// Graph refresh
 // ---------------------------------------------------------------------------
 
 interface GraphData {
@@ -100,7 +99,7 @@ async function loadGraph(force = false): Promise<void> {
     const data = (await r.json()) as GraphData;
 
     const fp = graphFingerprint(data);
-    if (!force && fp === lastFingerprint) return; // no change — skip redraw
+    if (!force && fp === lastFingerprint) return;
     lastFingerprint = fp;
 
     const elements: cytoscape.ElementDefinition[] = [];
@@ -153,29 +152,131 @@ async function loadGraph(force = false): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Markdown modal
+// Wiki-Page Modal — View + Edit mode
 // ---------------------------------------------------------------------------
 
-async function openPageModal(slug: string, title: string): Promise<void> {
-  const overlay = document.getElementById("modal-overlay")!;
-  const modalTitle = document.getElementById("modal-title")!;
-  const modalBody = document.getElementById("modal-body")!;
+let _modalSlug = "";
+let _modalRawContent = "";
+let _editMode = false;
 
-  modalTitle.textContent = title;
-  modalBody.innerHTML = '<div id="modal-loading">Loading…</div>';
-  overlay.classList.add("open");
+async function openPageModal(slug: string, title: string): Promise<void> {
+  _modalSlug = slug;
+  _editMode = false;
+
+  document.getElementById("modal-title")!.textContent = title;
+  document.getElementById("modal-body")!.innerHTML =
+    '<div id="modal-loading">Loading…</div>';
+  setEditMode(false);
+  document.getElementById("modal-delete-bar")!.classList.remove("visible");
+  document.getElementById("modal-overlay")!.classList.add("open");
 
   try {
     const r = await fetch(`/api/page/${encodeURIComponent(slug)}`);
     const data = (await r.json()) as { content: string };
-    modalBody.innerHTML = await marked.parse(data.content);
+    _modalRawContent = data.content;
+    document.getElementById("modal-body")!.innerHTML =
+      await marked.parse(data.content);
+    document.getElementById("modal-delete-bar")!.classList.add("visible");
+    document.getElementById("modal-save-status")!.textContent = "";
   } catch {
-    modalBody.innerHTML = "<p>Page could not be loaded.</p>";
+    document.getElementById("modal-body")!.innerHTML =
+      "<p>Page could not be loaded.</p>";
+  }
+}
+
+function setEditMode(on: boolean): void {
+  _editMode = on;
+  const body = document.getElementById("modal-body")!;
+  const editArea = document.getElementById("modal-edit-area")!;
+  const modeBtn = document.getElementById("modal-mode-btn")!;
+
+  if (on) {
+    body.style.display = "none";
+    editArea.classList.add("visible");
+    modeBtn.style.display = "none";
+    const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
+    ta.value = _modalRawContent;
+    ta.focus();
+  } else {
+    body.style.display = "";
+    editArea.classList.remove("visible");
+    modeBtn.style.display = "";
+    modeBtn.textContent = "✎ Edit";
+  }
+}
+
+document.getElementById("modal-mode-btn")!.addEventListener("click", () => {
+  if (!_modalSlug) return;
+  setEditMode(true);
+});
+
+document.getElementById("modal-save-btn")!.addEventListener("click", () => {
+  void savePageRaw();
+});
+
+document.getElementById("modal-discard-btn")!.addEventListener("click", () => {
+  setEditMode(false);
+  document.getElementById("modal-save-status")!.textContent = "";
+});
+
+async function savePageRaw(): Promise<void> {
+  const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
+  const content = ta.value;
+  const statusEl = document.getElementById("modal-save-status")!;
+  const saveBtn = document.getElementById("modal-save-btn") as HTMLButtonElement;
+
+  saveBtn.disabled = true;
+  statusEl.textContent = "Saving…";
+
+  try {
+    const r = await fetch("/api/save-page", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_id: _modalSlug, content }),
+    });
+    const data = (await r.json()) as { result?: string; error?: string };
+    if (data.error) {
+      statusEl.textContent = "❌ " + data.error;
+    } else {
+      _modalRawContent = content;
+      statusEl.textContent = "✓ Saved";
+      // Switch back to view, re-render
+      document.getElementById("modal-body")!.innerHTML =
+        await marked.parse(content);
+      setEditMode(false);
+      setTimeout(() => void loadGraph(true), 1500);
+    }
+  } catch (err) {
+    statusEl.textContent = "Error: " + String(err);
+  }
+  saveBtn.disabled = false;
+}
+
+document.getElementById("modal-delete-page-btn")!.addEventListener("click", () => {
+  if (!_modalSlug) return;
+  if (!confirm(`Delete page "${_modalSlug}"? Git keeps the history.`)) return;
+  void deletePage();
+});
+
+async function deletePage(): Promise<void> {
+  const r = await fetch("/api/delete-page", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_id: _modalSlug, reason: "manual delete" }),
+  });
+  const data = (await r.json()) as { result?: string; error?: string };
+  if (data.error) {
+    alert("Error: " + data.error);
+  } else {
+    closeModalBtn();
+    setTimeout(() => void loadGraph(true), 1000);
   }
 }
 
 function closeModalBtn(): void {
   document.getElementById("modal-overlay")!.classList.remove("open");
+  _modalSlug = "";
+  _editMode = false;
 }
 
 function closeModal(evt: MouseEvent): void {
@@ -184,6 +285,11 @@ function closeModal(evt: MouseEvent): void {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeModalBtn();
+  // Ctrl+S / Cmd+S im Edit-Modus speichern
+  if ((e.ctrlKey || e.metaKey) && e.key === "s" && _editMode) {
+    e.preventDefault();
+    void savePageRaw();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -204,10 +310,14 @@ async function doRemember(): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
-    const data = (await r.json()) as { result: string };
-    status.textContent = "✓ " + data.result;
-    input.value = "";
-    setTimeout(() => void loadGraph(true), 4000);
+    const data = (await r.json()) as { result?: string; error?: string };
+    if (data.error) {
+      status.textContent = "❌ " + data.error;
+    } else {
+      status.textContent = "✓ " + (data.result ?? "Saved");
+      input.value = "";
+      setTimeout(() => void loadGraph(true), 2000);
+    }
   } catch (err) {
     status.textContent = "Error: " + String(err);
   }
@@ -300,15 +410,19 @@ function logSummary(log: IngestionLog): string {
 }
 
 function openIngestionModal(log: IngestionLog): void {
-  const overlay = document.getElementById("modal-overlay")!;
   document.getElementById("modal-title")!.textContent =
     `Ingestion · ${formatDateTime(log.started)}`;
+  _modalSlug = "";
+  setEditMode(false);
+  document.getElementById("modal-delete-bar")!.classList.remove("visible");
 
   const statusLabel: Record<string, string> = {
     done: "✅ Done", running: "🟠 Running", failed: "❌ Error",
   };
   const duration = log.finished
-    ? `${Math.round((new Date(log.finished).getTime() - new Date(log.started).getTime()) / 1000)}s`
+    ? `${Math.round(
+        (new Date(log.finished).getTime() - new Date(log.started).getTime()) / 1000
+      )}s`
     : "—";
 
   const pageList = (pages: (PageEntry | string)[], label: string) => {
@@ -327,23 +441,27 @@ function openIngestionModal(log: IngestionLog): void {
 
   const preview = log.input_preview ?? "";
   const fullInput = log.input ?? "";
-  const inputHtml = fullInput.length > preview.length
-    ? `<p style="white-space:pre-wrap">${preview}…</p>
-       <details style="margin:4px 0">
-         <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">Show full input (${fullInput.length} chars)</summary>
-         <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
-       </details>`
-    : `<p style="white-space:pre-wrap">${fullInput || preview || "—"}</p>`;
+  const inputHtml =
+    fullInput.length > preview.length
+      ? `<p style="white-space:pre-wrap">${preview}…</p>
+         <details style="margin:4px 0">
+           <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">
+             Show full input (${fullInput.length} chars)
+           </summary>
+           <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
+         </details>`
+      : `<p style="white-space:pre-wrap">${fullInput || preview || "—"}</p>`;
 
   document.getElementById("modal-body")!.innerHTML = `
-    <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status} &nbsp;·&nbsp; <strong>Duration:</strong> ${duration}</p>
+    <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status}
+       &nbsp;·&nbsp; <strong>Duration:</strong> ${duration}</p>
     <h3>Input</h3>
     ${inputHtml}
     ${pageList(log.pages_updated ?? [], "Updated")}
     ${pageList(log.pages_created ?? [], "Created")}
     ${log.error ? `<h3>Error</h3><pre>${log.error}</pre>` : ""}
   `;
-  overlay.classList.add("open");
+  document.getElementById("modal-overlay")!.classList.add("open");
 }
 
 async function loadIngestionLogs(): Promise<void> {
@@ -353,21 +471,24 @@ async function loadIngestionLogs(): Promise<void> {
     if (!r.ok) throw new Error(String(r.status));
     const raw = (await r.json()) as IngestionLog[];
     if (!raw.length) {
-      list.innerHTML = '<div class="status">No tasks yet</div>';
+      list.innerHTML = '<div class="status">No entries yet</div>';
       return;
     }
-    // Running tasks always on top
     const logs = [...raw]
       .sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1))
-      .slice(0, 4);
-    list.innerHTML = logs.map((log) => `
+      .slice(0, 3);
+    list.innerHTML = logs
+      .map(
+        (log) => `
       <div class="log-item" style="cursor:pointer">
         <div class="log-dot ${log.status}"></div>
         <div class="log-meta">
           <span>${(log.input_preview ?? "").slice(0, 110)}</span>
           <span class="log-time">${formatDateTime(log.started)} · ${logSummary(log)}</span>
         </div>
-      </div>`).join("");
+      </div>`
+      )
+      .join("");
 
     list.querySelectorAll<HTMLElement>(".log-item").forEach((el, i) => {
       el.addEventListener("click", () => openIngestionModal(logs[i]));
@@ -378,36 +499,59 @@ async function loadIngestionLogs(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Mobile bottom navigation
+// Resizable sidebar
+// ---------------------------------------------------------------------------
+
+function setupSidebarResize(): void {
+  const sidebar = document.getElementById("sidebar")!;
+  const handle = document.getElementById("sidebar-resize")!;
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    document.body.classList.add("resizing");
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const w = Math.max(180, Math.min(window.innerWidth * 0.6, startWidth + (e.clientX - startX)));
+    sidebar.style.width = `${w}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove("resizing");
+    cy.resize();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Mobile nav
 // ---------------------------------------------------------------------------
 
 function setupMobileNav(): void {
   const tabs = document.querySelectorAll<HTMLElement>(".m-tab");
-
   tabs.forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.dataset.tab ?? "graph";
       tabs.forEach((t) => t.classList.remove("active"));
       btn.classList.add("active");
       document.body.className = `tab-${tab}`;
-      if (tab === "graph") {
-        // Let the browser repaint first so the canvas has dimensions
-        requestAnimationFrame(() => cy.resize());
-      }
+      if (tab === "graph") requestAnimationFrame(() => cy.resize());
     });
   });
-
-  document.getElementById("m-refresh-btn")?.addEventListener("click", () => {
-    void loadGraph(true);
-  });
-
-  document.getElementById("refresh-btn")?.addEventListener("click", () => {
-    void loadGraph(true);
-  });
+  document.getElementById("m-refresh-btn")?.addEventListener("click", () => void loadGraph(true));
+  document.getElementById("refresh-btn")?.addEventListener("click", () => void loadGraph(true));
 }
 
 // ---------------------------------------------------------------------------
-// Global handlers + init
+// Global + init
 // ---------------------------------------------------------------------------
 
 declare global {
@@ -428,6 +572,7 @@ window.closeModal = closeModal;
 window.closeModalBtn = closeModalBtn;
 
 setupMobileNav();
+setupSidebarResize();
 
 void loadGraph(true);
 setInterval(() => void loadGraph(), 30_000);

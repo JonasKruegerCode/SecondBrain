@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Second Brain</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -11,12 +12,31 @@ body {
   font-family: system-ui, sans-serif; overflow: hidden;
 }
 #sidebar {
-  width: 300px; min-width: 300px; padding: 20px 16px; display: flex;
-  flex-direction: column; gap: 18px; border-right: 1px solid #1e1e2e; overflow-y: auto;
+  width: 600px; min-width: 180px; max-width: 60vw; padding: 20px 16px; display: flex;
+  flex-direction: column; gap: 18px; border-right: 1px solid #1e1e2e;
+  overflow: hidden; flex-shrink: 0;
 }
-#cy { flex: 1; }
+/* Recall section fills remaining sidebar height so result grows to bottom */
+#sec-recall {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; overflow: hidden;
+}
+.result {
+  font-size: 0.78rem; background: #13131c; border-radius: 6px; padding: 10px;
+  flex: 1; overflow-y: auto; white-space: pre-wrap; line-height: 1.55;
+  color: #b0b0c8; border: 1px solid #1e1e2e; display: none; min-height: 80px;
+}
+/* Other sections scroll if content overflows */
+#sec-remember, #sec-log, #sec-graph { overflow-y: auto; }/* Resize handle — sits between sidebar and graph, outside sidebar so overflow:auto doesn't clip it */
+#sidebar-resize {
+  width: 6px; flex-shrink: 0; cursor: col-resize; background: transparent;
+  transition: background 0.15s;
+}
+#sidebar-resize:hover, body.resizing #sidebar-resize {
+  background: #7c3aed66;
+}
+body.resizing { cursor: col-resize; user-select: none; }
+#cy { flex: 1; min-width: 0; }
 #cy canvas { cursor: default; }
-#cy .cy-node { cursor: pointer; }
 h1 { font-size: 1rem; font-weight: 700; color: #a78bfa; letter-spacing: 0.08em; }
 h2 {
   font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
@@ -45,12 +65,9 @@ button:disabled { opacity: 0.4; cursor: default; }
   padding: 5px 10px; font-weight: 500;
 }
 .small-btn:hover { background: #22223a; color: #c0c0d8; }
+.danger-btn { background: #2a1010; color: #ef4444; border: 1px solid #3a1a1a; }
+.danger-btn:hover { background: #3a1515; }
 .status { font-size: 0.77rem; color: #52526a; min-height: 16px; }
-.result {
-  font-size: 0.78rem; background: #13131c; border-radius: 6px; padding: 10px;
-  max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.55;
-  color: #b0b0c8; border: 1px solid #1e1e2e; display: none;
-}
 .row { display: flex; align-items: center; justify-content: space-between; }
 .log-list { display: flex; flex-direction: column; gap: 4px; }
 .log-item {
@@ -65,7 +82,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .log-time { color: #52526a; font-size: 0.7rem; }
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 
-/* Modal */
+/* ── Modal ────────────────────────────────────────────────────────── */
 #modal-overlay {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
@@ -74,146 +91,121 @@ button:disabled { opacity: 0.4; cursor: default; }
 #modal-overlay.open { display: flex; }
 #modal {
   background: #13131c; border: 1px solid #2a2a40; border-radius: 10px;
-  width: min(680px, 90vw); max-height: 80vh; display: flex; flex-direction: column;
+  width: min(740px, 92vw); max-height: 88vh; display: flex; flex-direction: column;
   box-shadow: 0 24px 60px rgba(0,0,0,0.5);
 }
 #modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; border-bottom: 1px solid #1e1e2e;
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid #1e1e2e; flex-shrink: 0;
 }
-#modal-title { font-size: 0.9rem; font-weight: 700; color: #a78bfa; }
+#modal-title { font-size: 0.9rem; font-weight: 700; color: #a78bfa; flex: 1; }
+/* Edit/View toggle in header */
+#modal-mode-btn {
+  background: #1a1a26; color: #7c7ca0; font-size: 0.72rem; padding: 4px 10px;
+  border: 1px solid #2a2a40; border-radius: 5px; font-weight: 500;
+}
+#modal-mode-btn:hover { background: #22223a; color: #a78bfa; }
+#modal-mode-btn.active { background: #2a1f4a; color: #a78bfa; border-color: #7c3aed; }
 #modal-close {
   background: none; border: none; color: #52526a; font-size: 1.2rem;
   cursor: pointer; padding: 2px 6px; border-radius: 4px;
 }
 #modal-close:hover { background: #1e1e2e; color: #e0e0e0; }
+
+/* View mode */
 #modal-body {
   padding: 18px; overflow-y: auto; font-size: 0.84rem; line-height: 1.65;
-  color: #c0c0d8;
+  color: #c0c0d8; flex: 1;
 }
 #modal-body h1, #modal-body h2, #modal-body h3 { color: #e0e0e0; margin: 1em 0 0.4em; }
-#modal-body h1 { font-size: 1.15rem; }
-#modal-body h2 { font-size: 1rem; }
-#modal-body h3 { font-size: 0.9rem; }
+#modal-body h1 { font-size: 1.1rem; }
+#modal-body h2 { font-size: 0.95rem; }
+#modal-body h3 { font-size: 0.88rem; }
 #modal-body p { margin: 0.5em 0; }
 #modal-body code {
   background: #0f0f18; border-radius: 3px; padding: 1px 5px;
   font-family: monospace; font-size: 0.82rem; color: #a78bfa;
 }
-#modal-body pre {
-  background: #0f0f18; border-radius: 6px; padding: 10px 12px;
-  overflow-x: auto; margin: 0.6em 0;
-}
+#modal-body pre { background: #0f0f18; border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 0.6em 0; }
 #modal-body pre code { background: none; padding: 0; }
 #modal-body ul, #modal-body ol { padding-left: 1.4em; margin: 0.4em 0; }
 #modal-body a { color: #7c3aed; }
 #modal-loading { color: #52526a; font-size: 0.82rem; text-align: center; padding: 24px; }
 
-/* ── Mobile elements: hidden on desktop ────────────────────────────── */
+/* Edit mode */
+#modal-edit-area {
+  display: none; flex: 1; flex-direction: column; min-height: 0;
+}
+#modal-edit-area.visible { display: flex; }
+#modal-raw-textarea {
+  flex: 1; margin: 0; border-radius: 0; border: none; border-top: 1px solid #1e1e2e;
+  border-bottom: 1px solid #1e1e2e; resize: none; font-family: monospace;
+  font-size: 0.82rem; line-height: 1.6; min-height: 200px; padding: 16px 18px;
+  background: #0d0d16; color: #d0d0e8;
+}
+#modal-raw-textarea:focus { border-color: #7c3aed; outline: none; }
+#modal-edit-footer {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  border-top: 1px solid #1e1e2e; flex-shrink: 0;
+}
+#modal-save-status { font-size: 0.77rem; color: #52526a; flex: 1; }
+
+/* Delete bar */
+#modal-delete-bar {
+  display: none; padding: 8px 16px; border-top: 1px solid #1e1e2e;
+  flex-shrink: 0;
+}
+#modal-delete-bar.visible { display: flex; justify-content: flex-end; }
+
+/* ── Mobile ────────────────────────────────────────────────────────── */
 #m-graph-bar { display: none; }
 #m-nav { display: none; }
 
-/* ── Mobile layout ──────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   body { flex-direction: column; overflow: hidden; }
-
-  /* Sidebar becomes a full-screen panel */
   #sidebar {
-    position: fixed;
-    inset: 0 0 57px 0;       /* leave room for nav */
-    width: 100%;
-    min-width: unset;
-    border-right: none;
-    background: #0f0f13;
-    z-index: 40;
-    padding: 16px 16px 20px;
-    overflow-y: auto;
-    gap: 22px;
+    position: fixed; inset: 0 0 57px 0; width: 100%; min-width: unset;
+    border-right: none; background: #0f0f13; z-index: 40;
+    padding: 16px 16px 20px; overflow-y: auto; gap: 22px;
   }
-
-  /* Graph tab: sidebar hidden */
+  #sidebar-resize { display: none; }
   body.tab-graph #sidebar { display: none; }
-  /* Other tabs: sidebar visible */
   body:not(.tab-graph) #sidebar { display: flex; }
-
-  /* On mobile, hide all sections by default; each tab shows one */
   #sidebar section { display: none; }
   body.tab-save  #sec-remember { display: flex; }
   body.tab-ask   #sec-recall   { display: flex; }
   body.tab-log   #sec-log      { display: flex; }
-  /* sec-graph never shows inside sidebar on mobile (replaced by #m-graph-bar) */
-
-  /* Graph canvas: fills screen below the nav */
-  #cy {
-    position: fixed;
-    inset: 0 0 57px 0;
-    flex: unset;
-    z-index: 10;
-  }
-
-  /* Floating pill over the graph showing stats */
+  #cy { position: fixed; inset: 0 0 57px 0; flex: unset; z-index: 10; }
   #m-graph-bar {
-    position: fixed;
-    top: 8px; left: 8px; right: 8px;
-    background: rgba(15, 15, 19, 0.88);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid #1e1e2e;
-    border-radius: 8px;
-    padding: 8px 12px;
-    z-index: 30;
-    align-items: center;
-    justify-content: space-between;
+    position: fixed; top: 8px; left: 8px; right: 8px;
+    background: rgba(15,15,19,0.88); backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px); border: 1px solid #1e1e2e;
+    border-radius: 8px; padding: 8px 12px; z-index: 30;
+    align-items: center; justify-content: space-between;
   }
   body.tab-graph #m-graph-bar { display: flex; }
-
-  /* Bottom navigation bar */
   #m-nav {
-    display: flex;
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    height: 57px;
-    background: #13131c;
-    border-top: 1px solid #1e1e2e;
-    z-index: 50;
+    display: flex; position: fixed; bottom: 0; left: 0; right: 0;
+    height: 57px; background: #13131c; border-top: 1px solid #1e1e2e; z-index: 50;
   }
-
   .m-tab {
-    flex: 1;
-    background: none;
-    border: none;
-    color: #52526a;
-    font-size: 0.62rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    cursor: pointer;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 6px 2px;
-    border-radius: 0;
-    transition: color 0.15s;
+    flex: 1; background: none; border: none; color: #52526a; font-size: 0.62rem;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; cursor: pointer; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 6px 2px; border-radius: 0; transition: color 0.15s;
   }
   .m-tab .m-icon { font-size: 1.25rem; line-height: 1; }
   .m-tab.active { color: #a78bfa; }
   .m-tab:hover { background: none; color: #c0b0e8; }
-
-  /* Bigger touch targets and font sizes */
   textarea { min-height: 110px; font-size: 1rem; }
   input[type=text] { font-size: 1rem; padding: 11px 10px; }
-  button:not(.small-btn):not(#modal-close):not(.m-tab) {
+  button:not(.small-btn):not(#modal-close):not(.m-tab):not(#modal-mode-btn) {
     padding: 12px 16px; font-size: 0.9rem;
   }
   #modal-close { padding: 6px 10px; font-size: 1.4rem; }
-
-  /* Recall result: use sidebar scroll rather than inner scroll */
-  .result { max-height: none; overflow-y: visible; }
-
-  /* Modal: nearly full-screen on mobile */
-  #modal { width: min(680px, 96vw); max-height: 90dvh; }
+  /* Recall result: natural height on mobile (sidebar scrolls) */
+  .result { flex: none; min-height: 120px; max-height: 50dvh; overflow-y: auto; }
+  #modal { width: min(740px, 96vw); max-height: 90dvh; }
   #modal-body { padding: 14px; }
 }
 </style>
@@ -236,7 +228,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 
   <section id="sec-remember">
     <h2>Remember</h2>
-    <textarea id="remember-input" placeholder="What should be stored?"></textarea>
+    <textarea id="remember-input" placeholder="What should be stored? Corrections work too: &quot;Fact X is no longer true.&quot;"></textarea>
     <button id="remember-btn" onclick="doRemember()">Save</button>
     <div class="status" id="remember-status"></div>
   </section>
@@ -257,6 +249,9 @@ button:disabled { opacity: 0.4; cursor: default; }
     <div class="result" id="recall-result"></div>
   </section>
 </div>
+
+<!-- ── Resize handle (between sidebar and graph, outside sidebar) ──── -->
+<div id="sidebar-resize"></div>
 
 <!-- ── Graph canvas ─────────────────────────────────────────────────── -->
 <div id="cy"></div>
@@ -287,14 +282,32 @@ button:disabled { opacity: 0.4; cursor: default; }
   </button>
 </nav>
 
-<!-- ── Markdown popup ───────────────────────────────────────────────── -->
+<!-- ── Wiki-Page Modal ───────────────────────────────────────────────── -->
 <div id="modal-overlay" onclick="closeModal(event)">
   <div id="modal">
     <div id="modal-header">
       <span id="modal-title"></span>
+      <button id="modal-mode-btn" title="Edit Markdown">&#9998; Edit</button>
       <button id="modal-close" onclick="closeModalBtn()">&#10005;</button>
     </div>
+
+    <!-- View mode: rendered Markdown -->
     <div id="modal-body"></div>
+
+    <!-- Edit mode: raw Markdown textarea -->
+    <div id="modal-edit-area">
+      <textarea id="modal-raw-textarea" spellcheck="false"></textarea>
+      <div id="modal-edit-footer">
+        <button id="modal-save-btn">&#10003; Save</button>
+        <button class="small-btn" id="modal-discard-btn">Discard</button>
+        <span id="modal-save-status"></span>
+      </div>
+    </div>
+
+    <!-- Delete bar (always visible for wiki pages) -->
+    <div id="modal-delete-bar">
+      <button class="small-btn danger-btn" id="modal-delete-page-btn">&#128465; Delete page</button>
+    </div>
   </div>
 </div>
 

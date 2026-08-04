@@ -4,6 +4,9 @@ from pathlib import Path
 from second_brain.agent.operations import (
     AddClaim,
     CreatePage,
+    DeleteClaim,
+    DeletePage,
+    EditClaim,
     EditSection,
     Link,
     MarkOutdated,
@@ -240,9 +243,9 @@ def test_merge_is_lossless_and_rewires_backlinks(tmp_path: Path) -> None:
     assert "## Merged from: SecondBrain Project" in target
     assert "Duplicate page about the same" in target
 
-    # Source became a redirect stub
-    stub = (wiki / "secondbrain-project.md").read_text(encoding="utf-8")
-    assert "merged into [[second-brain]]" in stub
+    # Source file is hard-deleted (Git is the audit trail, no redirect stub)
+    assert not (wiki / "secondbrain-project.md").exists()
+    assert "secondbrain-project" in result.deleted
 
     # Backlinks in third pages were rewired, display text preserved
     watchtower = (wiki / "watchtower.md").read_text(encoding="utf-8")
@@ -263,3 +266,102 @@ def test_mark_outdated(tmp_path: Path) -> None:
     assert "> **Outdated:** replaced by manual deploys" in content
     # marker sits right below the H1
     assert content.splitlines()[2].startswith("> **Outdated:**")
+
+
+# ---------------------------------------------------------------------------
+# New op types: DeleteClaim, DeletePage, EditClaim
+# ---------------------------------------------------------------------------
+
+def test_delete_claim(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [DeleteClaim(page="second-brain", text="A personal memory system.")], wiki
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "A personal memory system." not in content
+
+
+def test_delete_claim_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [DeleteClaim(page="second-brain", text="This text does not exist.")], wiki
+    )
+    assert any("not found" in s for s in result.skipped)
+
+
+def test_delete_claim_page_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [DeleteClaim(page="nonexistent", text="some text")], wiki
+    )
+    assert any("page not found" in s for s in result.skipped)
+
+
+def test_delete_page_removes_file(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    assert (wiki / "second-brain.md").exists()
+    result = apply_operations(
+        [DeletePage(slug="second-brain", reason="no longer relevant")], wiki
+    )
+    # File must be gone (Git is the audit trail, no tombstone)
+    assert not (wiki / "second-brain.md").exists()
+    assert "second-brain" in result.deleted
+    assert "second-brain" in result.changed
+
+
+def test_delete_page_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [DeletePage(slug="does-not-exist", reason="test")], wiki
+    )
+    assert any("page not found" in s for s in result.skipped)
+
+
+def test_edit_claim(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [EditClaim(
+            page="second-brain",
+            old_text="A personal memory system.",
+            new_text="A personal and team memory system.",
+        )],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "A personal and team memory system." in content
+    assert "A personal memory system." not in content
+
+
+def test_edit_claim_old_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [EditClaim(page="second-brain", old_text="DOES NOT EXIST", new_text="new")], wiki
+    )
+    assert any("not found" in s for s in result.skipped)
+
+
+def test_parse_delete_claim() -> None:
+    ops, rejected = parse_operations([
+        {"op": "delete_claim", "page": "test", "text": "some claim"}
+    ])
+    assert len(ops) == 1
+    assert isinstance(ops[0], DeleteClaim)
+    assert rejected == []
+
+
+def test_parse_delete_page() -> None:
+    ops, rejected = parse_operations([
+        {"op": "delete_page", "slug": "test", "reason": "stale page"}
+    ])
+    assert len(ops) == 1
+    assert isinstance(ops[0], DeletePage)
+    assert rejected == []
+
+
+def test_parse_edit_claim() -> None:
+    ops, rejected = parse_operations([
+        {"op": "edit_claim", "page": "test", "old_text": "old sentence", "new_text": "new sentence"}
+    ])
+    assert len(ops) == 1
+    assert isinstance(ops[0], EditClaim)
+    assert rejected == []

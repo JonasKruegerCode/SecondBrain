@@ -1,19 +1,23 @@
 """
-Celery tasks — thin entry points into the shared edit_vault agent.
+Celery tasks — background jobs for the SecondBrain worker.
 
-process_ingestion   remember: split input into topics, run edit_vault per topic.
+run_ingestion_sync  remember: called directly (async) from MCP/API for real-time feedback.
 vault_repair_hourly repair: pick one page (orphans first, then oldest) and let
-                    the same agent garden it (dedupe/merge, contradictions,
+                    the edit_vault agent garden it (dedupe/merge, contradictions,
                     links, staleness).
+git_sync_daily      pull + incremental reindex + push.
+reindex_after_pull  pull + reindex changed pages; full reindex if DB is empty.
+reindex_all_wiki    full reindex from disk (source of truth).
 
 The wiki is the source of truth; graph, vectors, and Git commits are handled
-inside the agent's finalize step. The remaining tasks only sync derived
-indexes after Git pulls.
+inside the agent's finalize step. The Celery tasks only run background cron jobs
+and index syncs — ingestion itself is synchronous (run_ingestion_sync).
 """
 import asyncio
 import json
 import logging
 import random
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -99,70 +103,62 @@ def _log_failed(task_id: str, error: str) -> None:
     _write_log(task_id, data)
 
 
-def _run_async(coro: Any) -> Any:
-    return asyncio.run(coro)
-
-
 # ---------------------------------------------------------------------------
-# remember — ingestion entry point
+# remember — async ingestion (called directly from MCP/API)
 # ---------------------------------------------------------------------------
 
-@celery_app.task(name="second_brain.worker.tasks.process_ingestion", bind=True)  # type: ignore[untyped-decorator]
-def process_ingestion(self: Any, content: str, _metadata: dict[str, Any] | None = None) -> str:
-    task_id: str = self.request.id or "unknown"
-    # Sync bracket: pull before any work …
+async def run_ingestion_sync(content: str, _metadata: dict[str, Any] | None = None) -> str:
+    """Run ingestion and return a result string, or raise RuntimeError on failure.
+
+    Called directly from the MCP/API layer so the client gets genuine
+    success/failure feedback. Writes an ingestion log entry for the frontend.
+    """
+    task_id = str(uuid.uuid4())
     sync_vault()
     _log_start(task_id, content)
-
     try:
-        return _process_ingestion_inner(task_id, content)
+        with tracer.start_as_current_span("ingestion.split_into_topics") as span:
+            topics = await split_into_topics(content)
+            span.set_attribute("topics", len(topics))
+        logger.info("Split input into %d topic(s)", len(topics))
+
+        log_updated: dict[str, dict[str, Any]] = {}
+        log_created: dict[str, dict[str, Any]] = {}
+        total_changed: set[str] = set()
+
+        for topic in topics:
+            with tracer.start_as_current_span("ingestion.topic") as topic_span:
+                topic_span.set_attribute("topic.preview", topic[:80])
+                result: EditVaultResult = await edit_vault(
+                    "remember", topic, source=topic[:120]
+                )
+                for slug, diff in result.changed.items():
+                    total_changed.add(slug)
+                    page_path = wiki_base_path() / f"{slug}.md"
+                    title = read_title(page_path) if page_path.exists() else slug
+                    entry = {"slug": slug, "title": title, "changes": diff}
+                    if slug in result.created:
+                        entry["preview"] = entry.pop("changes")
+                        log_created[slug] = entry
+                    else:
+                        log_updated[slug] = entry
+
+        if not total_changed:
+            _log_done(task_id, [], [])
+            return "no_changes"
+
+        _log_done(task_id, list(log_updated.values()), list(log_created.values()))
+        return f"ok:{len(total_changed)}_pages"
+
     except Exception as exc:
         _log_failed(task_id, str(exc))
-        raise
+        raise RuntimeError(f"Ingestion failed: {exc}") from exc
     finally:
-        # … and ONE push at the very end, after the log reached its final
-        # state (done/failed). Pushing earlier leaves the log "running"
-        # forever on every other instance.
         get_git_sync().push(f"remember: {content[:120]}")
 
 
-def _process_ingestion_inner(task_id: str, content: str) -> str:
-    with tracer.start_as_current_span("ingestion.split_into_topics") as span:
-        topics = _run_async(split_into_topics(content))
-        span.set_attribute("topics", len(topics))
-    logger.info("Split input into %d topic(s)", len(topics))
-
-    log_updated: dict[str, dict[str, Any]] = {}
-    log_created: dict[str, dict[str, Any]] = {}
-    total_changed: set[str] = set()
-
-    for topic in topics:
-        with tracer.start_as_current_span("ingestion.topic") as topic_span:
-            topic_span.set_attribute("topic.preview", topic[:80])
-            result: EditVaultResult = _run_async(
-                edit_vault("remember", topic, source=topic[:120])
-            )
-            for slug, diff in result.changed.items():
-                total_changed.add(slug)
-                page_path = wiki_base_path() / f"{slug}.md"
-                title = read_title(page_path) if page_path.exists() else slug
-                entry = {"slug": slug, "title": title, "changes": diff}
-                if slug in result.created:
-                    entry["preview"] = entry.pop("changes")
-                    log_created[slug] = entry
-                else:
-                    log_updated[slug] = entry
-
-    if not total_changed:
-        _log_done(task_id, [], [])
-        return "no_changes"
-
-    _log_done(task_id, list(log_updated.values()), list(log_created.values()))
-    return f"ok:{len(total_changed)}_pages"
-
-
 # ---------------------------------------------------------------------------
-# repair — hourly gardening entry point
+# repair — hourly gardening (Celery cron)
 # ---------------------------------------------------------------------------
 
 def _pick_repair_seed(wiki_base: Path) -> str | None:
@@ -207,7 +203,7 @@ def vault_repair_hourly() -> str:
 
     logger.info("Vault repair: gardening page '%s'", seed)
     try:
-        result: EditVaultResult = _run_async(edit_vault("repair", seed, source=seed))
+        result: EditVaultResult = asyncio.run(edit_vault("repair", seed, source=seed))
     finally:
         get_git_sync().push(f"repair: {seed}")
     if result.applied:
@@ -216,7 +212,7 @@ def vault_repair_hourly() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Git / index sync
+# Git / index sync (Celery cron)
 # ---------------------------------------------------------------------------
 
 @celery_app.task(name="second_brain.worker.tasks.git_sync_daily")  # type: ignore[untyped-decorator]
