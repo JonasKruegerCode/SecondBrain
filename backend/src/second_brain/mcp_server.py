@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
-logger = logging.getLogger(__name__)
-
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -48,6 +46,8 @@ from second_brain.memory.indexing import (
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
 from second_brain.worker.tasks import reindex_after_pull, run_ingestion_sync
+
+logger = logging.getLogger(__name__)
 
 init_tracing("secondbrain-backend")
 
