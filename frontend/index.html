@@ -228,7 +228,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 
   <section id="sec-remember">
     <h2>Remember</h2>
-    <textarea id="remember-input" placeholder="Was soll gespeichert werden? Auch Korrekturen möglich: &quot;Der Fakt X stimmt nicht mehr.&quot;"></textarea>
+    <textarea id="remember-input" placeholder="What should be stored? Corrections work too: &quot;Fact X is no longer true.&quot;"></textarea>
     <button id="remember-btn" onclick="doRemember()">Save</button>
     <div class="status" id="remember-status"></div>
   </section>
@@ -287,7 +287,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   <div id="modal">
     <div id="modal-header">
       <span id="modal-title"></span>
-      <button id="modal-mode-btn" title="Markdown bearbeiten">&#9998; Bearbeiten</button>
+      <button id="modal-mode-btn" title="Edit Markdown">&#9998; Edit</button>
       <button id="modal-close" onclick="closeModalBtn()">&#10005;</button>
     </div>
 
@@ -298,15 +298,15 @@ button:disabled { opacity: 0.4; cursor: default; }
     <div id="modal-edit-area">
       <textarea id="modal-raw-textarea" spellcheck="false"></textarea>
       <div id="modal-edit-footer">
-        <button id="modal-save-btn">&#10003; Speichern</button>
-        <button class="small-btn" id="modal-discard-btn">Verwerfen</button>
+        <button id="modal-save-btn">&#10003; Save</button>
+        <button class="small-btn" id="modal-discard-btn">Discard</button>
         <span id="modal-save-status"></span>
       </div>
     </div>
 
     <!-- Delete bar (always visible for wiki pages) -->
     <div id="modal-delete-bar">
-      <button class="small-btn danger-btn" id="modal-delete-page-btn">&#128465; Seite löschen</button>
+      <button class="small-btn danger-btn" id="modal-delete-page-btn">&#128465; Delete page</button>
     </div>
   </div>
 </div>

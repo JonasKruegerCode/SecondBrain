@@ -180,7 +180,7 @@ async function openPageModal(slug: string, title: string): Promise<void> {
     document.getElementById("modal-save-status")!.textContent = "";
   } catch {
     document.getElementById("modal-body")!.innerHTML =
-      "<p>Seite konnte nicht geladen werden.</p>";
+      "<p>Page could not be loaded.</p>";
   }
 }
 
@@ -193,22 +193,21 @@ function setEditMode(on: boolean): void {
   if (on) {
     body.style.display = "none";
     editArea.classList.add("visible");
-    modeBtn.classList.add("active");
-    modeBtn.textContent = "👁 Ansicht";
+    modeBtn.style.display = "none";
     const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
     ta.value = _modalRawContent;
     ta.focus();
   } else {
     body.style.display = "";
     editArea.classList.remove("visible");
-    modeBtn.classList.remove("active");
-    modeBtn.textContent = "✎ Bearbeiten";
+    modeBtn.style.display = "";
+    modeBtn.textContent = "✎ Edit";
   }
 }
 
 document.getElementById("modal-mode-btn")!.addEventListener("click", () => {
   if (!_modalSlug) return;
-  setEditMode(!_editMode);
+  setEditMode(true);
 });
 
 document.getElementById("modal-save-btn")!.addEventListener("click", () => {
@@ -227,7 +226,7 @@ async function savePageRaw(): Promise<void> {
   const saveBtn = document.getElementById("modal-save-btn") as HTMLButtonElement;
 
   saveBtn.disabled = true;
-  statusEl.textContent = "Speichern…";
+  statusEl.textContent = "Saving…";
 
   try {
     const r = await fetch("/api/save-page", {
@@ -240,7 +239,7 @@ async function savePageRaw(): Promise<void> {
       statusEl.textContent = "❌ " + data.error;
     } else {
       _modalRawContent = content;
-      statusEl.textContent = "✓ Gespeichert";
+      statusEl.textContent = "✓ Saved";
       // Switch back to view, re-render
       document.getElementById("modal-body")!.innerHTML =
         await marked.parse(content);
@@ -248,14 +247,14 @@ async function savePageRaw(): Promise<void> {
       setTimeout(() => void loadGraph(true), 1500);
     }
   } catch (err) {
-    statusEl.textContent = "Fehler: " + String(err);
+    statusEl.textContent = "Error: " + String(err);
   }
   saveBtn.disabled = false;
 }
 
 document.getElementById("modal-delete-page-btn")!.addEventListener("click", () => {
   if (!_modalSlug) return;
-  if (!confirm(`Seite "${_modalSlug}" wirklich löschen? Git behält den Verlauf.`)) return;
+  if (!confirm(`Delete page "${_modalSlug}"? Git keeps the history.`)) return;
   void deletePage();
 });
 
@@ -267,7 +266,7 @@ async function deletePage(): Promise<void> {
   });
   const data = (await r.json()) as { result?: string; error?: string };
   if (data.error) {
-    alert("Fehler: " + data.error);
+    alert("Error: " + data.error);
   } else {
     closeModalBtn();
     setTimeout(() => void loadGraph(true), 1000);
@@ -304,7 +303,7 @@ async function doRemember(): Promise<void> {
   const btn = document.getElementById("remember-btn") as HTMLButtonElement;
   const status = document.getElementById("remember-status")!;
   btn.disabled = true;
-  status.textContent = "Verarbeite…";
+  status.textContent = "Processing…";
   try {
     const r = await fetch("/api/remember", {
       method: "POST",
@@ -315,12 +314,12 @@ async function doRemember(): Promise<void> {
     if (data.error) {
       status.textContent = "❌ " + data.error;
     } else {
-      status.textContent = "✓ " + (data.result ?? "Gespeichert");
+      status.textContent = "✓ " + (data.result ?? "Saved");
       input.value = "";
       setTimeout(() => void loadGraph(true), 2000);
     }
   } catch (err) {
-    status.textContent = "Fehler: " + String(err);
+    status.textContent = "Error: " + String(err);
   }
   btn.disabled = false;
 }
@@ -343,7 +342,7 @@ async function doRecall(): Promise<void> {
     result.textContent = data.result;
     result.style.display = "block";
   } catch (err) {
-    result.textContent = "Fehler: " + String(err);
+    result.textContent = "Error: " + String(err);
     result.style.display = "block";
   }
   btn.disabled = false;
@@ -356,7 +355,7 @@ async function doRag(): Promise<void> {
   const btn = document.getElementById("rag-btn") as HTMLButtonElement;
   const result = document.getElementById("recall-result")!;
   btn.disabled = true;
-  result.textContent = "Generiere Antwort…";
+  result.textContent = "Generating answer…";
   result.style.display = "block";
   try {
     const r = await fetch("/api/rag", {
@@ -367,7 +366,7 @@ async function doRag(): Promise<void> {
     const data = (await r.json()) as { result: string };
     result.innerHTML = await marked.parse(data.result);
   } catch (err) {
-    result.textContent = "Fehler: " + String(err);
+    result.textContent = "Error: " + String(err);
   }
   btn.disabled = false;
 }
@@ -400,14 +399,14 @@ function formatDateTime(iso: string): string {
 }
 
 function logSummary(log: IngestionLog): string {
-  if (log.status === "running") return "läuft…";
-  if (log.status === "failed") return `Fehler: ${log.error ?? "unbekannt"}`;
+  if (log.status === "running") return "running…";
+  if (log.status === "failed") return `Error: ${log.error ?? "unknown"}`;
   const u = log.pages_updated?.length ?? 0;
   const c = log.pages_created?.length ?? 0;
   const parts: string[] = [];
-  if (u > 0) parts.push(`${u} aktualisiert`);
-  if (c > 0) parts.push(`${c} neu`);
-  return parts.length ? parts.join(", ") : "keine Änderungen";
+  if (u > 0) parts.push(`${u} updated`);
+  if (c > 0) parts.push(`${c} new`);
+  return parts.length ? parts.join(", ") : "no changes";
 }
 
 function openIngestionModal(log: IngestionLog): void {
@@ -418,7 +417,7 @@ function openIngestionModal(log: IngestionLog): void {
   document.getElementById("modal-delete-bar")!.classList.remove("visible");
 
   const statusLabel: Record<string, string> = {
-    done: "✅ Fertig", running: "🟠 Läuft", failed: "❌ Fehler",
+    done: "✅ Done", running: "🟠 Running", failed: "❌ Error",
   };
   const duration = log.finished
     ? `${Math.round(
@@ -434,7 +433,7 @@ function openIngestionModal(log: IngestionLog): void {
       const titlePart = p.title && p.title !== p.slug ? ` — ${p.title}` : "";
       const body = diff
         ? `<pre style="font-size:0.76rem;margin:4px 0 0;white-space:pre-wrap">${diff}</pre>`
-        : "<em style='font-size:0.76rem'>keine Textänderungen</em>";
+        : "<em style='font-size:0.76rem'>no text changes</em>";
       return `<details style="margin:6px 0"><summary style="cursor:pointer;font-size:0.82rem"><code>${p.slug}</code>${titlePart}</summary>${body}</details>`;
     });
     return `<h3>${label}</h3>${items.join("")}`;
@@ -447,7 +446,7 @@ function openIngestionModal(log: IngestionLog): void {
       ? `<p style="white-space:pre-wrap">${preview}…</p>
          <details style="margin:4px 0">
            <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">
-             Vollständige Eingabe anzeigen (${fullInput.length} Zeichen)
+             Show full input (${fullInput.length} chars)
            </summary>
            <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
          </details>`
@@ -455,12 +454,12 @@ function openIngestionModal(log: IngestionLog): void {
 
   document.getElementById("modal-body")!.innerHTML = `
     <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status}
-       &nbsp;·&nbsp; <strong>Dauer:</strong> ${duration}</p>
-    <h3>Eingabe</h3>
+       &nbsp;·&nbsp; <strong>Duration:</strong> ${duration}</p>
+    <h3>Input</h3>
     ${inputHtml}
-    ${pageList(log.pages_updated ?? [], "Aktualisiert")}
-    ${pageList(log.pages_created ?? [], "Neu erstellt")}
-    ${log.error ? `<h3>Fehler</h3><pre>${log.error}</pre>` : ""}
+    ${pageList(log.pages_updated ?? [], "Updated")}
+    ${pageList(log.pages_created ?? [], "Created")}
+    ${log.error ? `<h3>Error</h3><pre>${log.error}</pre>` : ""}
   `;
   document.getElementById("modal-overlay")!.classList.add("open");
 }
@@ -472,7 +471,7 @@ async function loadIngestionLogs(): Promise<void> {
     if (!r.ok) throw new Error(String(r.status));
     const raw = (await r.json()) as IngestionLog[];
     if (!raw.length) {
-      list.innerHTML = '<div class="status">Noch keine Einträge</div>';
+      list.innerHTML = '<div class="status">No entries yet</div>';
       return;
     }
     const logs = [...raw]
@@ -495,7 +494,7 @@ async function loadIngestionLogs(): Promise<void> {
       el.addEventListener("click", () => openIngestionModal(logs[i]));
     });
   } catch {
-    list.innerHTML = '<div class="status">Logs nicht verfügbar</div>';
+    list.innerHTML = '<div class="status">Logs unavailable</div>';
   }
 }
 

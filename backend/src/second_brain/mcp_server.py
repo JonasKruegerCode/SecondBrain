@@ -6,11 +6,14 @@ Two separate ASGI apps in the same process:
 """
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
+
+logger = logging.getLogger(__name__)
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
@@ -599,9 +602,18 @@ async def _save_page_raw(page_id: str, content: str) -> dict[str, str]:
     """Write raw Markdown directly to a wiki page and reindex. No LLM."""
     import asyncio as _asyncio  # noqa: PLC0415
 
-    sync_vault()
     wiki_base = wiki_base_path()
     path = wiki_base / f"{page_id}.md"
+
+    # Resolve and validate path to prevent directory traversal
+    try:
+        resolved = path.resolve()
+        wiki_resolved = wiki_base.resolve()
+        if not str(resolved).startswith(str(wiki_resolved)):
+            return {"error": "Invalid page id"}
+    except Exception:
+        return {"error": f"Page '{page_id}' not found"}
+
     if not path.exists():
         return {"error": f"Page '{page_id}' not found"}
 
@@ -615,9 +627,12 @@ async def _save_page_raw(page_id: str, content: str) -> dict[str, str]:
         update_graph_and_vectors,
         [(page_id, title, content)],
     )
-    await loop.run_in_executor(
-        None, lambda: get_git_sync().push(f"edit: {page_id}")
-    )
+    try:
+        await loop.run_in_executor(
+            None, lambda: get_git_sync().push(f"edit: {page_id}")
+        )
+    except Exception as exc:
+        logger.warning("git push after save_page failed: %s", exc)
     return {"result": "ok"}
 
 
