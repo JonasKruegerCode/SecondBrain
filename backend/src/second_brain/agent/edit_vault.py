@@ -96,54 +96,51 @@ class EditVaultResult:
 # ---------------------------------------------------------------------------
 
 _PLAN_SYSTEM = """\
-You maintain a personal wiki. You never rewrite pages as free prose — you
-propose a minimal list of typed operations as JSON.
+You are a wiki editor. Your job is to store information as well-written,
+readable wiki articles — not as bullet-point fact lists.
 
 Available operations:
-- {"op": "add_claim", "page": "<slug>", "section": "<heading or null>", "text": "..."}
-  Append one statement to a page (into the given section, or at the end).
-- {"op": "edit_claim", "page": "<slug>", "old_text": "...", "new_text": "..."}
-  Replace an exact existing sentence/claim in a page. Use only when the exact old_text
-  is visible in the shown page.
-- {"op": "edit_section", "page": "<slug>", "section": "<heading>", "text": "..."}
-  Replace the body of one section. Repeat every sentence that stays unchanged verbatim.
 - {"op": "create_page", "title": "...", "content": "..."}
-  Only if no shown page fits the information.
+  Create a new wiki page with full Markdown content. Use proper headings,
+  paragraphs and wikilinks [[like this]]. This is the PRIMARY operation
+  for any substantial new content (documentation, protocols, descriptions).
+- {"op": "edit_section", "page": "<slug>", "section": "<heading>", "text": "..."}
+  Replace or add a section on an existing page. Write the section as readable
+  prose, not a list of facts.
+- {"op": "add_claim", "page": "<slug>", "section": "<heading or null>", "text": "..."}
+  Add a single short factual statement to an existing page. Use only for
+  small additions to already well-structured pages, not for bulk content.
+- {"op": "edit_claim", "page": "<slug>", "old_text": "...", "new_text": "..."}
+  Replace an exact existing sentence in a page.
 - {"op": "delete_claim", "page": "<slug>", "text": "..."}
-  Remove a specific claim from a page. The text must match exactly a sentence in the page.
+  Remove a specific sentence. The text must match exactly.
 - {"op": "delete_page", "slug": "<slug>", "reason": "..."}
-  Hard-deletes a page (file removed, Git is the audit trail).
-  Use only for pages with no valid content.
+  Hard-delete a page (Git keeps the history). Only for truly obsolete pages.
 - {"op": "link", "page": "<slug>", "to": "<slug>", "type": "<relation or null>"}
-  Add a wikilink between two shown pages. Give "type" (a short snake_case label
-  like "uses", "part_of", "works_at", "decided_against") ONLY when the input or
-  the pages state that relation explicitly — otherwise leave it null.
+  Add a wikilink. Give "type" only when the relation is explicitly stated.
 - {"op": "merge", "source": "<slug>", "target": "<slug>"}
-  Only for true duplicates. Contents are combined mechanically — do not rewrite them.
+  Merge a true duplicate into another page.
 - {"op": "mark_outdated", "page": "<slug>", "reason": "..."}
-  Flag a statement or page that is contradicted or superseded.
+  Flag a contradicted or superseded page or statement.
 
-Grounding rules (strict):
-1. Every sentence you write must come verbatim or near-verbatim from the given
-   input or from the shown pages. No background knowledge, no interpretations,
-   no plausible details. If a name resembles a well-known term, do NOT infer
-   anything from that resemblance.
-2. Prefer the smallest edit that captures the information:
-   add_claim over edit_section over create_page.
-3. Reuse existing wording verbatim wherever possible.
-4. An empty operation list is a valid answer — but only if the input contains
-   NO information not already present in the shown pages.
+Content quality rules:
+1. Write like a Wikipedia editor, not a database engineer. Prefer flowing
+   prose and structured sections over enumerated fact lines.
+2. For substantial input (meeting notes, documentation, design docs): use
+   create_page with rich Markdown content including ## headings, paragraphs,
+   and [[wikilinks]] to related topics.
+3. For small additions to existing topics: use edit_section or add_claim.
+4. The content field of create_page should be a complete, well-structured
+   Markdown article — not a dump of the raw input text.
+5. Group related information into meaningful sections. A meeting with 5
+   agenda items → one page with 5 ## sections, not 5 separate pages.
 
-Completeness rules (critical — this is where most errors happen):
-5. Every distinct factual statement in the input MUST produce at least one
-   operation. Do not silently drop facts. If you are unsure which page to
-   attach a claim to, create a new page rather than omitting the claim.
-6. One add_claim per statement — do not bundle multiple facts into a single
-   add_claim. Each claim must be self-contained and independently verifiable.
-7. Never append a raw block of text as one long add_claim. If the input
-   contains N distinct facts, emit at least N operations.
-8. After planning, mentally scan the input once more and verify that every
-   sentence is covered by at least one operation. If not, add the missing ones.
+Grounding rules:
+6. Only use information that is present in the input or shown pages.
+   Do not invent, interpret, or infer beyond what is stated.
+7. If something is described as wrong or outdated, use mark_outdated or
+   delete_claim.
+8. An empty operation list is valid if the input adds nothing new.
 
 Reply ONLY with valid JSON, no comments:
 {"operations": [ ... ]}
@@ -153,13 +150,18 @@ _REMEMBER_TASK = """\
 New information (current date: {now}):
 {focus}
 
-Store this in the wiki. Rules:
-- Update the shown pages where they cover the topic; create a new page only if none fits.
-- Every distinct factual statement in the input must produce its own add_claim operation.
-  Do NOT bundle multiple facts into one claim and do NOT drop any fact.
-- If the input says something is wrong, outdated, or no longer true, use mark_outdated
-  or delete_claim to remove or flag the incorrect information from the relevant page.
-- Do not invent or infer anything not stated in the input.
+Store this in the wiki as a readable article or article update.
+
+Decide first: what kind of content is this?
+- Substantial new content (docs, meeting notes, design decisions, descriptions):
+  → create_page with well-structured Markdown, proper headings and prose
+- New information about an existing topic:
+  → edit_section to update/extend the relevant section, or add_claim for small additions
+- A correction or retraction:
+  → mark_outdated or delete_claim on the relevant page
+
+The goal is a wiki someone would actually enjoy reading, not a list of facts.
+Do not invent or infer anything not stated in the input.
 """
 
 _REPAIR_TASK = """\
@@ -184,31 +186,35 @@ _PAGES_BLOCK_EMPTY = "(the wiki has no relevant pages yet)"
 # ---------------------------------------------------------------------------
 
 _SPLIT_SYSTEM = """\
-You are a knowledge analyst. Split the text into the smallest thematically
-independent units that each make sense on their own in a knowledge base.
+You are a knowledge analyst. Split the text into thematically coherent chunks
+that each make sense as a standalone wiki article or article section.
 
 Rules:
-- Each unit should cover exactly ONE entity, concept, event, or relation.
-- If a sentence combines two independent facts about different subjects,
-  split it into two units.
-- Keep related details about the SAME subject together in one unit.
-- Never discard information — every sentence must appear in exactly one unit.
-- If the text is already a single atomic unit, return it as is.
-- Aim for units of 1–3 sentences maximum. Short is better than long.
+- Keep related content together. A meeting agenda item with discussion and
+  decision belongs in ONE chunk, not split by sentence.
+- Split on topic boundaries, not sentence boundaries.
+- A technical documentation section stays together as one chunk.
+- Only split when the content clearly covers two independent topics that would
+  naturally live on separate wiki pages.
+- Short input (< 5 sentences on one topic): return as a single chunk.
+- Never discard information — every sentence must appear in exactly one chunk.
 
 Reply ONLY with valid JSON:
-{"topics": ["unit 1", "unit 2", ...]}
+{"topics": ["chunk 1", "chunk 2", ...]}
 
 Example:
-Input: "Marie Curie was born in 1867. She discovered Polonium. LangGraph is a Python framework."
-Output: {"topics": ["Marie Curie was born in 1867.", "Marie Curie discovered Polonium.",
-         "LangGraph is a Python framework."]}
+Input: "Sprint planning: we decided to refactor the auth module. Estimated 3 days.
+        New feature: dark mode was added to the backlog."
+Output: {"topics": [
+  "Sprint planning: we decided to refactor the auth module. Estimated 3 days.",
+  "New feature: dark mode was added to the backlog."
+]}
 """
 
-# Maximum characters per topic before forcing a sentence-level split
-_MAX_TOPIC_CHARS = 500
-# Maximum sentences per plan call — longer inputs are chunked
-_MAX_SENTENCES_PER_PLAN = 8
+# Characters per chunk before forcing a split (roughly 1-2 paragraphs)
+_MAX_TOPIC_CHARS = 2000
+# Fallback sentence groups when LLM split fails
+_MAX_SENTENCES_PER_PLAN = 20
 
 
 def _split_sentences(text: str) -> list[str]:

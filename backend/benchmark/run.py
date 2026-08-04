@@ -161,6 +161,64 @@ def score(
     }
 
 
+def wiki_quality_score(topic_results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measures whether the output looks like readable wiki articles.
+
+    Checks op-type distribution and content length as proxies for quality.
+    A good wiki has create_page/edit_section ops with substantial content,
+    not dozens of tiny add_claim ops.
+    """
+    op_types: dict[str, int] = {}
+    create_page_content_lengths: list[int] = []
+    add_claim_count = 0
+    total_ops = 0
+
+    for tr in topic_results:
+        for ot in tr.get("op_types", []):
+            op_types[ot] = op_types.get(ot, 0) + 1
+            total_ops += 1
+            if ot == "AddClaim":
+                add_claim_count += 1
+
+        # Check content length of create_page ops
+        for op in tr.get("raw_ops", []):
+            from second_brain.agent.operations import CreatePage  # noqa: PLC0415
+            if isinstance(op, CreatePage):
+                create_page_content_lengths.append(len(op.content))
+
+    if total_ops == 0:
+        return {"wiki_quality": 0.0, "verdict": "no operations"}
+
+    # Ratio of structural ops (create_page, edit_section) vs add_claim
+    structural_ops = op_types.get("CreatePage", 0) + op_types.get("EditSection", 0)
+    structural_ratio = structural_ops / total_ops
+
+    # Average content length of created pages (good articles are > 300 chars)
+    avg_content_len = (
+        sum(create_page_content_lengths) / len(create_page_content_lengths)
+        if create_page_content_lengths else 0
+    )
+
+    # Score: structural_ratio weighted 60%, content length 40%
+    length_score = min(1.0, avg_content_len / 500) if avg_content_len > 0 else 0.0
+    quality = round(structural_ratio * 0.6 + length_score * 0.4, 3)
+
+    if quality >= 0.7:
+        verdict = "good — readable articles"
+    elif quality >= 0.4:
+        verdict = "mixed — some structure but still fact-listy"
+    else:
+        verdict = "poor — mostly atomic facts, not readable articles"
+
+    return {
+        "wiki_quality": quality,
+        "verdict": verdict,
+        "structural_ratio": round(structural_ratio, 3),
+        "avg_page_content_chars": round(avg_content_len),
+        "op_type_distribution": op_types,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Report formatting
 # ---------------------------------------------------------------------------
@@ -172,7 +230,9 @@ def format_report(
     scores: dict[str, Any],
     elapsed_seconds: float,
     split_used: bool,
+    wiki_quality: dict[str, Any] | None = None,
 ) -> str:
+    wq = wiki_quality or {}
     all_op_types: dict[str, int] = {}
     for tr in topic_results:
         for ot in tr["op_types"]:
@@ -188,40 +248,52 @@ def format_report(
         "",
         "## Scores",
         "",
+        "## Scores",
+        "",
         "| Metric | Value |",
         "|--------|-------|",
-        f"| Recall | {scores['recall']:.1%}"
-        f" ({scores['found_facts']}/{scores['total_facts']} facts) |",
-        f"| Precision | {scores['precision']:.1%}"
-        f" ({scores['total_ops'] - scores['potential_hallucinations']}"
-        f"/{scores['total_ops']} ops grounded) |",
-        f"| Total ops | {scores['total_ops']} |",
+    ]
+    if scores:
+        lines += [
+            f"| Recall | {scores['recall']:.1%}"
+            f" ({scores['found_facts']}/{scores['total_facts']} facts) |",
+            f"| Precision | {scores['precision']:.1%}"
+            f" ({scores['total_ops'] - scores['potential_hallucinations']}"
+            f"/{scores['total_ops']} ops grounded) |",
+        ]
+    if wq:
+        lines += [
+            f"| Wiki Quality | {wq['wiki_quality']:.1%} — {wq['verdict']} |",
+            f"| Structural ops ratio | {wq['structural_ratio']:.0%} |",
+            f"| Avg page content | {wq['avg_page_content_chars']} chars |",
+        ]
+    lines += [
+        f"| Total ops | {len(sum([tr['operations'] for tr in topic_results], []))} |",
         "",
         "## Op-Type Distribution",
         "",
     ]
     for ot, cnt in sorted(all_op_types.items(), key=lambda x: -x[1]):
         lines.append(f"- `{ot}`: {cnt}")
-    lines += [
-        "",
-        "## Missing Facts (not captured)",
-        "",
-    ]
-    for fid in scores["missing_ids"]:
-        lines.append(f"- **{fid}**: {ground_truth.get(fid, '?')}")
-    lines += [
-        "",
-        "## Potential Hallucinations (ops with no ground-truth keywords)",
-        "",
-    ]
-    for op in scores["hallucinated_ops"]:
-        lines.append(f"- {op}")
-    if not scores["hallucinated_ops"]:
-        lines.append("*(none detected)*")
+    if ground_truth:
+        lines += [
+            "",
+            "## Missing Facts (not captured)",
+            "",
+        ]
+        for fid in scores.get("missing_ids", []):
+            lines.append(f"- **{fid}**: {ground_truth.get(fid, '?')}")
+    if scores.get("hallucinated_ops"):
+        lines += [
+            "",
+            "## Potential Hallucinations",
+            "",
+        ]
+        for op in scores["hallucinated_ops"]:
+            lines.append(f"- {op}")
     lines += ["", "## Per-Topic Details", ""]
     for i, tr in enumerate(topic_results, 1):
         lines.append(f"### Topic {i}: {tr['topic_preview'][:80]}…")
-        lines.append(f"- Pages loaded: {', '.join(tr['pages_loaded']) or '(none)'}")
         lines.append(f"- Operations planned: {len(tr['operations'])}")
         for op in tr["operations"]:
             lines.append(f"  - {op}")
@@ -247,14 +319,23 @@ async def _run(args: argparse.Namespace) -> None:
 
     gt_content = input_path.read_text(encoding="utf-8")
     ground_truth = parse_ground_truth(gt_content)
-    if not ground_truth:
-        print("ERROR: no facts (F01: ...) found in input file", file=sys.stderr)
-        sys.exit(1)
+    has_ground_truth = bool(ground_truth)
 
     print(f"[benchmark] Run: {run_id}")
-    print(f"[benchmark] Ground truth: {len(ground_truth)} facts")
+    if has_ground_truth:
+        print(f"[benchmark] Ground truth: {len(ground_truth)} facts")
+    else:
+        print("[benchmark] No F01/F02... facts found — wiki quality mode only")
 
-    ingestion_text = extract_all_facts_text(input_path)
+    # Use full file content for wiki-quality inputs, facts-only for fact inputs
+    if has_ground_truth:
+        ingestion_text = extract_all_facts_text(input_path)
+    else:
+        # Strip markdown headers/metadata, use full content
+        ingestion_text = "\n".join(
+            line for line in gt_content.splitlines()
+            if not line.startswith("#") or line.startswith("## ")
+        ).strip()
 
     # Topic split
     if args.no_split:
@@ -264,7 +345,7 @@ async def _run(args: argparse.Namespace) -> None:
         topics = await split_into_topics(ingestion_text)
     print(f"[benchmark] Topics: {len(topics)}")
 
-    # Dry-run gather + plan per topic
+    # Dry-run plan per topic
     t_start = asyncio.get_event_loop().time()
     topic_results: list[dict[str, Any]] = []
     all_op_descriptions: list[str] = []
@@ -282,42 +363,46 @@ async def _run(args: argparse.Namespace) -> None:
 
     elapsed = asyncio.get_event_loop().time() - t_start
 
-    # Score
-    scores = score(ground_truth, all_op_descriptions, verbose=args.verbose)
+    # Scores
+    scores = score(ground_truth, all_op_descriptions) if has_ground_truth else {}
+    wq = wiki_quality_score(topic_results)
 
     print()
     print("=" * 60)
-    print(
-        f"  RECALL:    {scores['recall']:.1%}"
-        f"  ({scores['found_facts']}/{scores['total_facts']} facts)"
-    )
-    grounded = scores["total_ops"] - scores["potential_hallucinations"]
-    print(
-        f"  PRECISION: {scores['precision']:.1%}"
-        f"  ({grounded}/{scores['total_ops']} ops grounded)"
-    )
-    print(f"  Total ops: {scores['total_ops']}")
+    if has_ground_truth:
+        print(
+            f"  RECALL:    {scores['recall']:.1%}"
+            f"  ({scores['found_facts']}/{scores['total_facts']} facts)"
+        )
+        grounded = scores["total_ops"] - scores["potential_hallucinations"]
+        print(
+            f"  PRECISION: {scores['precision']:.1%}"
+            f"  ({grounded}/{scores['total_ops']} ops grounded)"
+        )
+    print(f"  WIKI QUALITY: {wq['wiki_quality']:.1%}  — {wq['verdict']}")
+    print(f"  Structural ops: {wq['structural_ratio']:.0%}"
+          f"  Avg page length: {wq['avg_page_content_chars']} chars")
+    print(f"  Total ops: {len(all_op_descriptions)}")
     print(f"  Elapsed:   {elapsed:.1f}s")
     print("=" * 60)
 
-    if scores["missing_ids"]:
+    if has_ground_truth and scores.get("missing_ids"):
         print(f"\nMissing facts: {', '.join(scores['missing_ids'])}")
-    if scores["hallucinated_ops"]:
-        print(f"\nPotential hallucinations: {len(scores['hallucinated_ops'])} ops")
 
     # Persist
     split_used = not args.no_split
     report_md = format_report(
-        run_id, ground_truth, topic_results, scores, elapsed, split_used
+        run_id, ground_truth, topic_results, scores, elapsed, split_used, wq
     )
     report_data = {
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
         "input_file": str(input_path),
-        "split_used": not args.no_split,
+        "split_used": split_used,
         "topics": len(topics),
         "elapsed_seconds": round(elapsed, 1),
         "scores": scores,
+        "wiki_quality": wq,
         "op_type_distribution": {ot: all_op_types.count(ot) for ot in set(all_op_types)},
         "topic_results": [
             {k: v for k, v in tr.items() if k != "raw_ops"}
@@ -327,7 +412,9 @@ async def _run(args: argparse.Namespace) -> None:
 
     json_path = output_dir / f"{run_id}.json"
     md_path = output_dir / f"{run_id}.md"
-    json_path.write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     md_path.write_text(report_md, encoding="utf-8")
     print("\n[benchmark] Reports saved:")
     print(f"  JSON: {json_path}")
@@ -344,11 +431,13 @@ async def _run(args: argparse.Namespace) -> None:
     index.append({
         "run_id": run_id,
         "timestamp": report_data["timestamp"],
-        "recall": scores["recall"],
-        "precision": scores["precision"],
-        "total_ops": scores["total_ops"],
-        "found_facts": scores["found_facts"],
-        "total_facts": scores["total_facts"],
+        "recall": scores.get("recall"),
+        "precision": scores.get("precision"),
+        "wiki_quality": wq.get("wiki_quality"),
+        "wiki_verdict": wq.get("verdict"),
+        "total_ops": len(all_op_descriptions),
+        "found_facts": scores.get("found_facts"),
+        "total_facts": scores.get("total_facts"),
         "elapsed_seconds": round(elapsed, 1),
     })
     index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
