@@ -34,7 +34,6 @@ if str(_SRC) not in sys.path:
 
 from second_brain.agent.edit_vault import (  # noqa: E402
     EditVaultState,  # noqa: E402
-    _gather,
     _plan,
     split_into_topics,
 )
@@ -60,27 +59,30 @@ def extract_all_facts_text(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Dry-run: gather + plan only
+# Dry-run: plan only (gather skipped — no Qdrant needed for benchmark)
 # ---------------------------------------------------------------------------
 
 async def dry_run_topic(topic: str) -> dict[str, Any]:
-    """Runs gather + plan for one topic, returns raw plan data."""
+    """Runs plan only (no gather) for one topic, returns raw plan data.
+
+    gather is skipped intentionally: the benchmark measures LLM planning
+    quality in isolation. Qdrant/Neo4j do not need to be running.
+    """
     state: EditVaultState = {
         "mode": "remember",
         "focus": topic,
         "source": "benchmark",
-        "pages": {},
+        "pages": {},          # empty — no existing wiki context
         "operations": [],
         "rejected": [],
         "changed": {},
         "created": [],
+        "deleted": [],
         "skipped": [],
         "applied": [],
         "needs_reconcile": False,
         "result": "no_changes",
     }
-    state_after_gather = await _gather(state)
-    state.update(state_after_gather)  # type: ignore[typeddict-item]
     state_after_plan = await _plan(state)
     ops = state_after_plan.get("operations", [])
     rejected = state_after_plan.get("rejected", [])

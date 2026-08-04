@@ -28,5 +28,13 @@ prod:
 test:
 	cd backend && poetry run pytest tests/ --ignore=tests/integration --ignore=tests/test_git_sync.py -q
 
+# Quick smoke test — 5 facts, verifies benchmark pipeline works without waiting minutes
+benchmark-smoke:
+	cd backend && poetry run python -m benchmark.run --input benchmark/smoke_test.md --run-id smoke_$(shell date +%Y%m%d_%H%M%S)
+
+# Full benchmark — 25 facts
+benchmark:
+	cd backend && poetry run python -m benchmark.run --run-id run_$(shell date +%Y%m%d_%H%M%S) --verbose
+
 lint:
 	cd backend && poetry run ruff check src/ tests/ benchmark/
