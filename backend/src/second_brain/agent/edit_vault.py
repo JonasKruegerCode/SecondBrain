@@ -157,6 +157,8 @@ Store this in the wiki. Rules:
 - Update the shown pages where they cover the topic; create a new page only if none fits.
 - Every distinct factual statement in the input must produce its own add_claim operation.
   Do NOT bundle multiple facts into one claim and do NOT drop any fact.
+- If the input says something is wrong, outdated, or no longer true, use mark_outdated
+  or delete_claim to remove or flag the incorrect information from the relevant page.
 - Do not invent or infer anything not stated in the input.
 """
 

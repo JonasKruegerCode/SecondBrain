@@ -346,6 +346,21 @@ async def handle_api_create_page_manual(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, status_code=500)
 
 
+async def handle_api_save_page_raw(request: Request) -> JSONResponse:
+    body = await request.json()
+    page_id = body.get("page_id", "")
+    content = body.get("content", "")
+    if not page_id or not content:
+        return JSONResponse({"error": "page_id and content required"}, status_code=400)
+    try:
+        result = await _save_page_raw(page_id, content)
+        if "error" in result:
+            return JSONResponse(result, status_code=404)
+        return JSONResponse(result)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 api_app = Starlette(
     lifespan=_api_lifespan,
     routes=[
@@ -358,6 +373,7 @@ api_app = Starlette(
         Route("/api/edit-page", endpoint=handle_api_edit_page, methods=["POST"]),
         Route("/api/delete-fact", endpoint=handle_api_delete_fact, methods=["POST"]),
         Route("/api/delete-page", endpoint=handle_api_delete_page, methods=["POST"]),
+        Route("/api/save-page", endpoint=handle_api_save_page_raw, methods=["POST"]),
         Route(
             "/api/create-page",
             endpoint=handle_api_create_page_manual,
@@ -577,6 +593,34 @@ async def create_page_manual(title: str, content: str) -> str:
             f"Graph and vectors updated."
         )
     return "No page created."
+
+
+async def _save_page_raw(page_id: str, content: str) -> dict[str, str]:
+    """Write raw Markdown directly to a wiki page and reindex. No LLM."""
+    import asyncio as _asyncio  # noqa: PLC0415
+
+    sync_vault()
+    wiki_base = wiki_base_path()
+    path = wiki_base / f"{page_id}.md"
+    if not path.exists():
+        return {"error": f"Page '{page_id}' not found"}
+
+    loop = _asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None, lambda: path.write_text(content, encoding="utf-8")
+    )
+    title = read_title(path)
+    await loop.run_in_executor(
+        None,
+        update_graph_and_vectors,
+        [(page_id, title, content)],
+    )
+    await loop.run_in_executor(
+        None, lambda: get_git_sync().push(f"edit: {page_id}")
+    )
+    return {"result": "ok"}
+
+
 
 
 @fmcp.custom_route("/health", methods=["GET"])  # type: ignore[untyped-decorator]

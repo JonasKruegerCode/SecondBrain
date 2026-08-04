@@ -50,7 +50,6 @@ const cy = cytoscape({
       },
     },
     {
-      // Typed relations (property-graph edges) get a label on the edge
       selector: "edge[rel]",
       style: {
         label: "data(rel)",
@@ -72,7 +71,7 @@ cy.on("tap", "node", (evt: cytoscape.EventObject) => {
 });
 
 // ---------------------------------------------------------------------------
-// Smart graph refresh — only re-layout when data changed
+// Graph refresh
 // ---------------------------------------------------------------------------
 
 interface GraphData {
@@ -100,7 +99,7 @@ async function loadGraph(force = false): Promise<void> {
     const data = (await r.json()) as GraphData;
 
     const fp = graphFingerprint(data);
-    if (!force && fp === lastFingerprint) return; // no change — skip redraw
+    if (!force && fp === lastFingerprint) return;
     lastFingerprint = fp;
 
     const elements: cytoscape.ElementDefinition[] = [];
@@ -153,45 +152,132 @@ async function loadGraph(force = false): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Markdown modal
+// Wiki-Page Modal — View + Edit mode
 // ---------------------------------------------------------------------------
 
-let _currentModalSlug = "";
-let _currentModalOp = "";
+let _modalSlug = "";
+let _modalRawContent = "";
+let _editMode = false;
 
 async function openPageModal(slug: string, title: string): Promise<void> {
-  const overlay = document.getElementById("modal-overlay")!;
-  const modalTitle = document.getElementById("modal-title")!;
-  const modalBody = document.getElementById("modal-body")!;
+  _modalSlug = slug;
+  _editMode = false;
 
-  modalTitle.textContent = title;
-  modalBody.innerHTML = '<div id="modal-loading">Loading…</div>';
-  overlay.classList.add("open");
-
-  // Reset edit form/bar state
-  hideEditBar();
-  hideEditForm();
+  document.getElementById("modal-title")!.textContent = title;
+  document.getElementById("modal-body")!.innerHTML =
+    '<div id="modal-loading">Loading…</div>';
+  setEditMode(false);
+  document.getElementById("modal-delete-bar")!.classList.remove("visible");
+  document.getElementById("modal-overlay")!.classList.add("open");
 
   try {
     const r = await fetch(`/api/page/${encodeURIComponent(slug)}`);
     const data = (await r.json()) as { content: string };
-    modalBody.innerHTML = await marked.parse(data.content);
-    // Show edit controls for real wiki pages
-    showEditBar(slug);
+    _modalRawContent = data.content;
+    document.getElementById("modal-body")!.innerHTML =
+      await marked.parse(data.content);
+    document.getElementById("modal-delete-bar")!.classList.add("visible");
+    document.getElementById("modal-save-status")!.textContent = "";
   } catch {
-    modalBody.innerHTML = "<p>Page could not be loaded.</p>";
+    document.getElementById("modal-body")!.innerHTML =
+      "<p>Seite konnte nicht geladen werden.</p>";
   }
 }
 
-function hideEditBar(): void {
-  document.getElementById("modal-edit-bar")!.classList.remove("visible");
-  _currentModalSlug = "";
+function setEditMode(on: boolean): void {
+  _editMode = on;
+  const body = document.getElementById("modal-body")!;
+  const editArea = document.getElementById("modal-edit-area")!;
+  const modeBtn = document.getElementById("modal-mode-btn")!;
+
+  if (on) {
+    body.style.display = "none";
+    editArea.classList.add("visible");
+    modeBtn.classList.add("active");
+    modeBtn.textContent = "👁 Ansicht";
+    const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
+    ta.value = _modalRawContent;
+    ta.focus();
+  } else {
+    body.style.display = "";
+    editArea.classList.remove("visible");
+    modeBtn.classList.remove("active");
+    modeBtn.textContent = "✎ Bearbeiten";
+  }
+}
+
+document.getElementById("modal-mode-btn")!.addEventListener("click", () => {
+  if (!_modalSlug) return;
+  setEditMode(!_editMode);
+});
+
+document.getElementById("modal-save-btn")!.addEventListener("click", () => {
+  void savePageRaw();
+});
+
+document.getElementById("modal-discard-btn")!.addEventListener("click", () => {
+  setEditMode(false);
+  document.getElementById("modal-save-status")!.textContent = "";
+});
+
+async function savePageRaw(): Promise<void> {
+  const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
+  const content = ta.value;
+  const statusEl = document.getElementById("modal-save-status")!;
+  const saveBtn = document.getElementById("modal-save-btn") as HTMLButtonElement;
+
+  saveBtn.disabled = true;
+  statusEl.textContent = "Speichern…";
+
+  try {
+    const r = await fetch("/api/save-page", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_id: _modalSlug, content }),
+    });
+    const data = (await r.json()) as { result?: string; error?: string };
+    if (data.error) {
+      statusEl.textContent = "❌ " + data.error;
+    } else {
+      _modalRawContent = content;
+      statusEl.textContent = "✓ Gespeichert";
+      // Switch back to view, re-render
+      document.getElementById("modal-body")!.innerHTML =
+        await marked.parse(content);
+      setEditMode(false);
+      setTimeout(() => void loadGraph(true), 1500);
+    }
+  } catch (err) {
+    statusEl.textContent = "Fehler: " + String(err);
+  }
+  saveBtn.disabled = false;
+}
+
+document.getElementById("modal-delete-page-btn")!.addEventListener("click", () => {
+  if (!_modalSlug) return;
+  if (!confirm(`Seite "${_modalSlug}" wirklich löschen? Git behält den Verlauf.`)) return;
+  void deletePage();
+});
+
+async function deletePage(): Promise<void> {
+  const r = await fetch("/api/delete-page", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_id: _modalSlug, reason: "manual delete" }),
+  });
+  const data = (await r.json()) as { result?: string; error?: string };
+  if (data.error) {
+    alert("Fehler: " + data.error);
+  } else {
+    closeModalBtn();
+    setTimeout(() => void loadGraph(true), 1000);
+  }
 }
 
 function closeModalBtn(): void {
   document.getElementById("modal-overlay")!.classList.remove("open");
-  hideEditBar();
-  hideEditForm();
+  _modalSlug = "";
+  _editMode = false;
 }
 
 function closeModal(evt: MouseEvent): void {
@@ -200,6 +286,11 @@ function closeModal(evt: MouseEvent): void {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeModalBtn();
+  // Ctrl+S / Cmd+S im Edit-Modus speichern
+  if ((e.ctrlKey || e.metaKey) && e.key === "s" && _editMode) {
+    e.preventDefault();
+    void savePageRaw();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -213,7 +304,7 @@ async function doRemember(): Promise<void> {
   const btn = document.getElementById("remember-btn") as HTMLButtonElement;
   const status = document.getElementById("remember-status")!;
   btn.disabled = true;
-  status.textContent = "Processing…";
+  status.textContent = "Verarbeite…";
   try {
     const r = await fetch("/api/remember", {
       method: "POST",
@@ -224,12 +315,12 @@ async function doRemember(): Promise<void> {
     if (data.error) {
       status.textContent = "❌ " + data.error;
     } else {
-      status.textContent = "✓ " + (data.result ?? "Saved");
+      status.textContent = "✓ " + (data.result ?? "Gespeichert");
       input.value = "";
       setTimeout(() => void loadGraph(true), 2000);
     }
   } catch (err) {
-    status.textContent = "Error: " + String(err);
+    status.textContent = "Fehler: " + String(err);
   }
   btn.disabled = false;
 }
@@ -252,7 +343,7 @@ async function doRecall(): Promise<void> {
     result.textContent = data.result;
     result.style.display = "block";
   } catch (err) {
-    result.textContent = "Error: " + String(err);
+    result.textContent = "Fehler: " + String(err);
     result.style.display = "block";
   }
   btn.disabled = false;
@@ -265,7 +356,7 @@ async function doRag(): Promise<void> {
   const btn = document.getElementById("rag-btn") as HTMLButtonElement;
   const result = document.getElementById("recall-result")!;
   btn.disabled = true;
-  result.textContent = "Generating answer…";
+  result.textContent = "Generiere Antwort…";
   result.style.display = "block";
   try {
     const r = await fetch("/api/rag", {
@@ -276,7 +367,7 @@ async function doRag(): Promise<void> {
     const data = (await r.json()) as { result: string };
     result.innerHTML = await marked.parse(data.result);
   } catch (err) {
-    result.textContent = "Error: " + String(err);
+    result.textContent = "Fehler: " + String(err);
   }
   btn.disabled = false;
 }
@@ -309,26 +400,30 @@ function formatDateTime(iso: string): string {
 }
 
 function logSummary(log: IngestionLog): string {
-  if (log.status === "running") return "running…";
-  if (log.status === "failed") return `Error: ${log.error ?? "unknown"}`;
+  if (log.status === "running") return "läuft…";
+  if (log.status === "failed") return `Fehler: ${log.error ?? "unbekannt"}`;
   const u = log.pages_updated?.length ?? 0;
   const c = log.pages_created?.length ?? 0;
   const parts: string[] = [];
-  if (u > 0) parts.push(`${u} updated`);
-  if (c > 0) parts.push(`${c} new`);
-  return parts.length ? parts.join(", ") : "no changes";
+  if (u > 0) parts.push(`${u} aktualisiert`);
+  if (c > 0) parts.push(`${c} neu`);
+  return parts.length ? parts.join(", ") : "keine Änderungen";
 }
 
 function openIngestionModal(log: IngestionLog): void {
-  const overlay = document.getElementById("modal-overlay")!;
   document.getElementById("modal-title")!.textContent =
     `Ingestion · ${formatDateTime(log.started)}`;
+  _modalSlug = "";
+  setEditMode(false);
+  document.getElementById("modal-delete-bar")!.classList.remove("visible");
 
   const statusLabel: Record<string, string> = {
-    done: "✅ Done", running: "🟠 Running", failed: "❌ Error",
+    done: "✅ Fertig", running: "🟠 Läuft", failed: "❌ Fehler",
   };
   const duration = log.finished
-    ? `${Math.round((new Date(log.finished).getTime() - new Date(log.started).getTime()) / 1000)}s`
+    ? `${Math.round(
+        (new Date(log.finished).getTime() - new Date(log.started).getTime()) / 1000
+      )}s`
     : "—";
 
   const pageList = (pages: (PageEntry | string)[], label: string) => {
@@ -339,7 +434,7 @@ function openIngestionModal(log: IngestionLog): void {
       const titlePart = p.title && p.title !== p.slug ? ` — ${p.title}` : "";
       const body = diff
         ? `<pre style="font-size:0.76rem;margin:4px 0 0;white-space:pre-wrap">${diff}</pre>`
-        : "<em style='font-size:0.76rem'>no text changes</em>";
+        : "<em style='font-size:0.76rem'>keine Textänderungen</em>";
       return `<details style="margin:6px 0"><summary style="cursor:pointer;font-size:0.82rem"><code>${p.slug}</code>${titlePart}</summary>${body}</details>`;
     });
     return `<h3>${label}</h3>${items.join("")}`;
@@ -347,23 +442,27 @@ function openIngestionModal(log: IngestionLog): void {
 
   const preview = log.input_preview ?? "";
   const fullInput = log.input ?? "";
-  const inputHtml = fullInput.length > preview.length
-    ? `<p style="white-space:pre-wrap">${preview}…</p>
-       <details style="margin:4px 0">
-         <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">Show full input (${fullInput.length} chars)</summary>
-         <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
-       </details>`
-    : `<p style="white-space:pre-wrap">${fullInput || preview || "—"}</p>`;
+  const inputHtml =
+    fullInput.length > preview.length
+      ? `<p style="white-space:pre-wrap">${preview}…</p>
+         <details style="margin:4px 0">
+           <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">
+             Vollständige Eingabe anzeigen (${fullInput.length} Zeichen)
+           </summary>
+           <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
+         </details>`
+      : `<p style="white-space:pre-wrap">${fullInput || preview || "—"}</p>`;
 
   document.getElementById("modal-body")!.innerHTML = `
-    <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status} &nbsp;·&nbsp; <strong>Duration:</strong> ${duration}</p>
-    <h3>Input</h3>
+    <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status}
+       &nbsp;·&nbsp; <strong>Dauer:</strong> ${duration}</p>
+    <h3>Eingabe</h3>
     ${inputHtml}
-    ${pageList(log.pages_updated ?? [], "Updated")}
-    ${pageList(log.pages_created ?? [], "Created")}
-    ${log.error ? `<h3>Error</h3><pre>${log.error}</pre>` : ""}
+    ${pageList(log.pages_updated ?? [], "Aktualisiert")}
+    ${pageList(log.pages_created ?? [], "Neu erstellt")}
+    ${log.error ? `<h3>Fehler</h3><pre>${log.error}</pre>` : ""}
   `;
-  overlay.classList.add("open");
+  document.getElementById("modal-overlay")!.classList.add("open");
 }
 
 async function loadIngestionLogs(): Promise<void> {
@@ -373,61 +472,87 @@ async function loadIngestionLogs(): Promise<void> {
     if (!r.ok) throw new Error(String(r.status));
     const raw = (await r.json()) as IngestionLog[];
     if (!raw.length) {
-      list.innerHTML = '<div class="status">No tasks yet</div>';
+      list.innerHTML = '<div class="status">Noch keine Einträge</div>';
       return;
     }
-    // Running tasks always on top
     const logs = [...raw]
       .sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1))
       .slice(0, 4);
-    list.innerHTML = logs.map((log) => `
+    list.innerHTML = logs
+      .map(
+        (log) => `
       <div class="log-item" style="cursor:pointer">
         <div class="log-dot ${log.status}"></div>
         <div class="log-meta">
           <span>${(log.input_preview ?? "").slice(0, 110)}</span>
           <span class="log-time">${formatDateTime(log.started)} · ${logSummary(log)}</span>
         </div>
-      </div>`).join("");
+      </div>`
+      )
+      .join("");
 
     list.querySelectorAll<HTMLElement>(".log-item").forEach((el, i) => {
       el.addEventListener("click", () => openIngestionModal(logs[i]));
     });
   } catch {
-    list.innerHTML = '<div class="status">Logs unavailable</div>';
+    list.innerHTML = '<div class="status">Logs nicht verfügbar</div>';
   }
 }
 
 // ---------------------------------------------------------------------------
-// Mobile bottom navigation
+// Resizable sidebar
+// ---------------------------------------------------------------------------
+
+function setupSidebarResize(): void {
+  const sidebar = document.getElementById("sidebar")!;
+  const handle = document.getElementById("sidebar-resize")!;
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    document.body.classList.add("resizing");
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const w = Math.max(180, Math.min(600, startWidth + (e.clientX - startX)));
+    sidebar.style.width = `${w}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove("resizing");
+    cy.resize();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Mobile nav
 // ---------------------------------------------------------------------------
 
 function setupMobileNav(): void {
   const tabs = document.querySelectorAll<HTMLElement>(".m-tab");
-
   tabs.forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.dataset.tab ?? "graph";
       tabs.forEach((t) => t.classList.remove("active"));
       btn.classList.add("active");
       document.body.className = `tab-${tab}`;
-      if (tab === "graph") {
-        // Let the browser repaint first so the canvas has dimensions
-        requestAnimationFrame(() => cy.resize());
-      }
+      if (tab === "graph") requestAnimationFrame(() => cy.resize());
     });
   });
-
-  document.getElementById("m-refresh-btn")?.addEventListener("click", () => {
-    void loadGraph(true);
-  });
-
-  document.getElementById("refresh-btn")?.addEventListener("click", () => {
-    void loadGraph(true);
-  });
+  document.getElementById("m-refresh-btn")?.addEventListener("click", () => void loadGraph(true));
+  document.getElementById("refresh-btn")?.addEventListener("click", () => void loadGraph(true));
 }
 
 // ---------------------------------------------------------------------------
-// Global handlers + init
+// Global + init
 // ---------------------------------------------------------------------------
 
 declare global {
@@ -446,133 +571,6 @@ window.doRecall = doRecall;
 window.doRag = doRag;
 window.closeModal = closeModal;
 window.closeModalBtn = closeModalBtn;
-
-// ---------------------------------------------------------------------------
-// Resizable sidebar (desktop)
-// ---------------------------------------------------------------------------
-
-function setupSidebarResize(): void {
-  const sidebar = document.getElementById("sidebar")!;
-  const handle = document.getElementById("sidebar-resize")!;
-  let dragging = false;
-  let startX = 0;
-  let startWidth = 0;
-
-  handle.addEventListener("mousedown", (e) => {
-    dragging = true;
-    startX = e.clientX;
-    startWidth = sidebar.offsetWidth;
-    handle.classList.add("dragging");
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  });
-
-  document.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    const newWidth = Math.max(200, Math.min(600, startWidth + (e.clientX - startX)));
-    sidebar.style.width = `${newWidth}px`;
-  });
-
-  document.addEventListener("mouseup", () => {
-    if (!dragging) return;
-    dragging = false;
-    handle.classList.remove("dragging");
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-    cy.resize();
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Edit / Delete wiki pages via modal
-// ---------------------------------------------------------------------------
-
-function showEditBar(slug: string): void {
-  _currentModalSlug = slug;
-  const bar = document.getElementById("modal-edit-bar")!;
-  bar.classList.add("visible");
-}
-
-function hideEditForm(): void {
-  const form = document.getElementById("modal-edit-form")!;
-  form.classList.remove("visible");
-  (document.getElementById("modal-edit-text") as HTMLTextAreaElement).value = "";
-  document.getElementById("modal-edit-status")!.textContent = "";
-}
-
-document.getElementById("modal-add-claim-btn")?.addEventListener("click", () => {
-  _currentModalOp = "add_claim";
-  const form = document.getElementById("modal-edit-form")!;
-  document.getElementById("modal-edit-label")!.textContent = "Claim text to add:";
-  (document.getElementById("modal-edit-text") as HTMLTextAreaElement).placeholder =
-    "Enter the new claim sentence…";
-  form.classList.add("visible");
-});
-
-document.getElementById("modal-delete-page-btn")?.addEventListener("click", () => {
-  if (!_currentModalSlug) return;
-  if (!confirm(`Delete page '${_currentModalSlug}'? A tombstone will be left for the audit trail.`)) return;
-  _currentModalOp = "delete_page";
-  const form = document.getElementById("modal-edit-form")!;
-  document.getElementById("modal-edit-label")!.textContent = "Reason for deletion:";
-  (document.getElementById("modal-edit-text") as HTMLTextAreaElement).placeholder =
-    "Why is this page being deleted?";
-  form.classList.add("visible");
-});
-
-document.getElementById("modal-edit-cancel-btn")?.addEventListener("click", hideEditForm);
-
-document.getElementById("modal-edit-submit-btn")?.addEventListener("click", () => {
-  void submitEdit();
-});
-
-async function submitEdit(): Promise<void> {
-  const text = (document.getElementById("modal-edit-text") as HTMLTextAreaElement).value.trim();
-  const statusEl = document.getElementById("modal-edit-status")!;
-  if (!text) { statusEl.textContent = "Please enter text."; return; }
-
-  const submitBtn = document.getElementById("modal-edit-submit-btn") as HTMLButtonElement;
-  submitBtn.disabled = true;
-  statusEl.textContent = "Saving…";
-
-  try {
-    let url = "";
-    let body: Record<string, string> = {};
-
-    if (_currentModalOp === "add_claim") {
-      url = "/api/edit-page";
-      body = { page_id: _currentModalSlug, op: "add_claim", text };
-    } else if (_currentModalOp === "delete_page") {
-      url = "/api/delete-page";
-      body = { page_id: _currentModalSlug, reason: text };
-    }
-
-    if (!url) { statusEl.textContent = "Unknown operation."; return; }
-
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = (await r.json()) as { result?: string; error?: string };
-    if (data.error) {
-      statusEl.textContent = "Error: " + data.error;
-    } else {
-      statusEl.textContent = "✓ " + (data.result ?? "Done");
-      setTimeout(() => {
-        hideEditForm();
-        void loadGraph(true);
-        // Reload the page content in the modal
-        if (_currentModalOp !== "delete_page") {
-          void openPageModal(_currentModalSlug, document.getElementById("modal-title")!.textContent ?? "");
-        }
-      }, 1200);
-    }
-  } catch (err) {
-    statusEl.textContent = "Error: " + String(err);
-  }
-  submitBtn.disabled = false;
-}
 
 setupMobileNav();
 setupSidebarResize();
