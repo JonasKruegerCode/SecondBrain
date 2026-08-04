@@ -7,17 +7,26 @@ from second_brain.mcp_server import _dispatch
 
 
 @pytest.mark.asyncio
-async def test_remember_dispatches_celery() -> None:
-    mock_task = MagicMock()
-    mock_task.id = "test-task-id"
+async def test_remember_calls_ingestion_sync() -> None:
+    """remember() now calls run_ingestion_sync directly and returns its result."""
     with patch(
-        "second_brain.mcp_server.process_ingestion"
-    ) as mock_proc:
-        mock_proc.delay.return_value = mock_task
+        "second_brain.mcp_server.run_ingestion_sync",
+        return_value="ok:2_pages",
+    ) as mock_sync:
         result = await _dispatch("remember", {"text": "Jonas mag Rust"})
 
-    assert "test-task-id" in result
-    mock_proc.delay.assert_called_once_with("Jonas mag Rust", {})
+    assert result == "ok:2_pages"
+    mock_sync.assert_called_once_with("Jonas mag Rust", {})
+
+
+@pytest.mark.asyncio
+async def test_remember_propagates_ingestion_error() -> None:
+    """If run_ingestion_sync raises, _dispatch re-raises — no silent swallow."""
+    with patch(
+        "second_brain.mcp_server.run_ingestion_sync",
+        side_effect=RuntimeError("Ingestion failed: budget exhausted"),
+    ), pytest.raises(RuntimeError, match="budget exhausted"):
+        await _dispatch("remember", {"text": "some text"})
 
 
 @pytest.mark.asyncio

@@ -35,8 +35,9 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _run(mode: str, focus: str, llm: _FakeLLM, hits: list[dict[str, Any]]) -> Any:
+    import asyncio  # noqa: PLC0415
+
     from second_brain.agent.edit_vault import edit_vault
-    from second_brain.worker.tasks import _run_async
 
     qdrant = MagicMock()
     qdrant.search.return_value = hits
@@ -48,7 +49,7 @@ def _run(mode: str, focus: str, llm: _FakeLLM, hits: list[dict[str, Any]]) -> An
         patch("second_brain.agent.edit_vault.QdrantStore", return_value=qdrant),
         patch("second_brain.agent.edit_vault.update_graph_and_vectors") as mock_index,
     ):
-        result = _run_async(edit_vault(mode, focus, source=focus[:120]))  # type: ignore[arg-type]
+        result = asyncio.run(edit_vault(mode, focus, source=focus[:120]))  # type: ignore[arg-type]
     return result, mock_index
 
 

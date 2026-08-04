@@ -73,6 +73,7 @@ class EditVaultState(TypedDict):
     rejected: list[str]
     changed: dict[str, str]  # slug → diff summary
     created: list[str]
+    deleted: list[str]       # slugs hard-deleted → remove from Qdrant + Neo4j
     skipped: list[str]
     applied: list[str]
     needs_reconcile: bool
@@ -84,6 +85,7 @@ class EditVaultResult:
     result: str
     changed: dict[str, str] = field(default_factory=dict)
     created: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
     applied: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     rejected: list[str] = field(default_factory=list)
@@ -100,10 +102,18 @@ propose a minimal list of typed operations as JSON.
 Available operations:
 - {"op": "add_claim", "page": "<slug>", "section": "<heading or null>", "text": "..."}
   Append one statement to a page (into the given section, or at the end).
+- {"op": "edit_claim", "page": "<slug>", "old_text": "...", "new_text": "..."}
+  Replace an exact existing sentence/claim in a page. Use only when the exact old_text
+  is visible in the shown page.
 - {"op": "edit_section", "page": "<slug>", "section": "<heading>", "text": "..."}
   Replace the body of one section. Repeat every sentence that stays unchanged verbatim.
 - {"op": "create_page", "title": "...", "content": "..."}
   Only if no shown page fits the information.
+- {"op": "delete_claim", "page": "<slug>", "text": "..."}
+  Remove a specific claim from a page. The text must match exactly a sentence in the page.
+- {"op": "delete_page", "slug": "<slug>", "reason": "..."}
+  Hard-deletes a page (file removed, Git is the audit trail).
+  Use only for pages with no valid content.
 - {"op": "link", "page": "<slug>", "to": "<slug>", "type": "<relation or null>"}
   Add a wikilink between two shown pages. Give "type" (a short snake_case label
   like "uses", "part_of", "works_at", "decided_against") ONLY when the input or
@@ -114,14 +124,26 @@ Available operations:
   Flag a statement or page that is contradicted or superseded.
 
 Grounding rules (strict):
-1. Every sentence you write must come from the given input or from the shown
-   pages. No background knowledge, no interpretations, no plausible details.
-   If a name resembles a well-known term, do NOT infer anything from that
-   resemblance.
+1. Every sentence you write must come verbatim or near-verbatim from the given
+   input or from the shown pages. No background knowledge, no interpretations,
+   no plausible details. If a name resembles a well-known term, do NOT infer
+   anything from that resemblance.
 2. Prefer the smallest edit that captures the information:
    add_claim over edit_section over create_page.
 3. Reuse existing wording verbatim wherever possible.
-4. An empty operation list is a valid answer.
+4. An empty operation list is a valid answer — but only if the input contains
+   NO information not already present in the shown pages.
+
+Completeness rules (critical — this is where most errors happen):
+5. Every distinct factual statement in the input MUST produce at least one
+   operation. Do not silently drop facts. If you are unsure which page to
+   attach a claim to, create a new page rather than omitting the claim.
+6. One add_claim per statement — do not bundle multiple facts into a single
+   add_claim. Each claim must be self-contained and independently verifiable.
+7. Never append a raw block of text as one long add_claim. If the input
+   contains N distinct facts, emit at least N operations.
+8. After planning, mentally scan the input once more and verify that every
+   sentence is covered by at least one operation. If not, add the missing ones.
 
 Reply ONLY with valid JSON, no comments:
 {"operations": [ ... ]}
@@ -131,8 +153,11 @@ _REMEMBER_TASK = """\
 New information (current date: {now}):
 {focus}
 
-Store this in the wiki. Update the shown pages where they cover the topic;
-create a new page only if none fits.
+Store this in the wiki. Rules:
+- Update the shown pages where they cover the topic; create a new page only if none fits.
+- Every distinct factual statement in the input must produce its own add_claim operation.
+  Do NOT bundle multiple facts into one claim and do NOT drop any fact.
+- Do not invent or infer anything not stated in the input.
 """
 
 _REPAIR_TASK = """\
@@ -157,25 +182,84 @@ _PAGES_BLOCK_EMPTY = "(the wiki has no relevant pages yet)"
 # ---------------------------------------------------------------------------
 
 _SPLIT_SYSTEM = """\
-You are a knowledge analyst. Check whether the text contains multiple thematically
-independent units of information that would be better stored separately in a knowledge base.
+You are a knowledge analyst. Split the text into the smallest thematically
+independent units that each make sense on their own in a knowledge base.
 
-If yes: split into separate units.
-If no: return the text as a single unit.
+Rules:
+- Each unit should cover exactly ONE entity, concept, event, or relation.
+- If a sentence combines two independent facts about different subjects,
+  split it into two units.
+- Keep related details about the SAME subject together in one unit.
+- Never discard information — every sentence must appear in exactly one unit.
+- If the text is already a single atomic unit, return it as is.
+- Aim for units of 1–3 sentences maximum. Short is better than long.
 
 Reply ONLY with valid JSON:
-{"topics": ["unit 1", "unit 2"]}
+{"topics": ["unit 1", "unit 2", ...]}
 
 Example:
-Input: "I broke my foot today and called my mother."
-Output: {"topics": ["I broke my foot today.", "I called my mother today."]}
+Input: "Marie Curie was born in 1867. She discovered Polonium. LangGraph is a Python framework."
+Output: {"topics": ["Marie Curie was born in 1867.", "Marie Curie discovered Polonium.",
+         "LangGraph is a Python framework."]}
 """
+
+# Maximum characters per topic before forcing a sentence-level split
+_MAX_TOPIC_CHARS = 500
+# Maximum sentences per plan call — longer inputs are chunked
+_MAX_SENTENCES_PER_PLAN = 8
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Naive sentence splitter — splits on '. ', '! ', '? ', newlines."""
+    import re as _re  # noqa: PLC0415
+    parts = _re.split(r"(?<=[.!?])\s+|\n+", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _chunk_into_sentence_groups(
+    text: str, max_sentences: int = _MAX_SENTENCES_PER_PLAN
+) -> list[str]:
+    """Splits text into chunks of at most max_sentences sentences."""
+    sentences = _split_sentences(text)
+    if len(sentences) <= max_sentences:
+        return [text]
+    chunks = []
+    for i in range(0, len(sentences), max_sentences):
+        chunks.append(" ".join(sentences[i:i + max_sentences]))
+    return chunks
 
 
 async def split_into_topics(content: str) -> list[str]:
-    """Splits a text into thematically independent units of information."""
+    """Splits a text into thematically independent units of information.
+
+    For long inputs (>_MAX_TOPIC_CHARS), forces a sentence-level pre-split
+    before the LLM call to avoid the LLM silently dropping facts due to
+    input-length pressure.
+    """
     if len(content) < 80:
         return [content]
+
+    # Pre-chunk very long inputs sentence-by-sentence so the LLM sees
+    # manageable pieces and can't skip facts due to length pressure
+    if len(content) > _MAX_TOPIC_CHARS * 2:
+        chunks = _chunk_into_sentence_groups(content, _MAX_SENTENCES_PER_PLAN)
+        results: list[str] = []
+        client = get_llm_client()
+        for chunk in chunks:
+            if len(chunk) < 80:
+                results.append(chunk)
+                continue
+            try:
+                data = await client.chat_json(_SPLIT_SYSTEM, chunk)
+                topics = data.get("topics", [])
+                if isinstance(topics, list) and all(isinstance(t, str) for t in topics):
+                    results.extend(t for t in topics if t.strip())
+                    continue
+            except Exception as exc:
+                logger.warning("Topic split failed for chunk, using sentences: %s", exc)
+            results.extend(_split_sentences(chunk))
+        return results or [content]
+
     client = get_llm_client()
     try:
         data = await client.chat_json(_SPLIT_SYSTEM, content)
@@ -274,6 +358,7 @@ async def _apply(state: EditVaultState) -> dict[str, Any]:
         return {
             "changed": result.changed,
             "created": sorted(result.created),
+            "deleted": sorted(result.deleted),
             "skipped": result.skipped,
             "applied": result.applied,
             "needs_reconcile": bool(result.created) or result.merged,
@@ -301,22 +386,38 @@ async def _reconcile(state: EditVaultState) -> dict[str, Any]:
 
 
 async def _finalize(state: EditVaultState) -> dict[str, Any]:
-    """Re-derive graph + vectors for changed pages."""
+    """Re-derive graph + vectors for changed pages; purge deleted pages from indexes."""
     with tracer.start_as_current_span("edit_vault.finalize") as span:
         changed = state["changed"]
-        if not changed:
+        deleted = state.get("deleted", [])
+
+        if not changed and not deleted:
             return {"result": "no_changes"}
 
         wiki_base = wiki_base_path()
+
+        # Re-embed changed pages (excluding tombstoned ones)
+        deleted_set = set(deleted)
         pages = []
         for slug in changed:
+            if slug in deleted_set:
+                continue  # will be purged below, not re-embedded
             path = wiki_base / f"{slug}.md"
             if path.exists():
                 pages.append((slug, read_title(path), path.read_text(encoding="utf-8")))
         if pages:
             update_graph_and_vectors(pages)
-        span.set_attribute("pages", len(pages))
-        return {"result": f"ok:{len(changed)}_pages"}
+
+        # Purge hard-deleted slugs from Qdrant + Neo4j
+        if deleted_set:
+            from second_brain.memory.indexing import (  # noqa: PLC0415
+                apply_index_diff,
+            )
+            apply_index_diff([], list(deleted_set))
+
+        span.set_attribute("deleted", len(deleted_set))
+        total = len(pages) + len(deleted_set)
+        return {"result": f"ok:{total}_pages"}
 
 
 def _route_after_apply(state: EditVaultState) -> str:
@@ -360,6 +461,7 @@ async def edit_vault(mode: Mode, focus: str, source: str) -> EditVaultResult:
         "rejected": [],
         "changed": {},
         "created": [],
+        "deleted": [],
         "skipped": [],
         "applied": [],
         "needs_reconcile": False,
@@ -374,6 +476,7 @@ async def edit_vault(mode: Mode, focus: str, source: str) -> EditVaultResult:
         result=str(final.get("result", "no_changes")),
         changed=dict(final.get("changed", {})),
         created=list(final.get("created", [])),
+        deleted=list(final.get("deleted", [])),
         applied=list(final.get("applied", [])),
         skipped=list(final.get("skipped", [])),
         rejected=list(final.get("rejected", [])),

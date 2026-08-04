@@ -21,16 +21,30 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from second_brain.agent.operations import (
+    AddClaim,
+    CreatePage,
+    DeleteClaim,
+    DeletePage,
+    EditClaim,
+    EditSection,
+    apply_operations,
+)
 from second_brain.core.config import settings
 from second_brain.core.telemetry import init_tracing
 from second_brain.git_sync import get_git_sync
 from second_brain.llm.embedder import get_embedder
 from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.hybrid_rag import HybridRAG
-from second_brain.memory.indexing import sync_vault
+from second_brain.memory.indexing import (
+    read_title,
+    sync_vault,
+    update_graph_and_vectors,
+    wiki_base_path,
+)
 from second_brain.memory.vault import FileSystemVault
 from second_brain.memory.vector import QdrantStore
-from second_brain.worker.tasks import process_ingestion, reindex_after_pull
+from second_brain.worker.tasks import reindex_after_pull, run_ingestion_sync
 
 init_tracing("secondbrain-backend")
 
@@ -97,11 +111,7 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
         # writes sync inside the Celery task itself.
         sync_vault(min_interval_seconds=READ_SYNC_INTERVAL_SECONDS)
     if name == "remember":
-        task = process_ingestion.delay(args["text"], args.get("metadata") or {})
-        return (
-            f"Saved — Celery task `{task.id}` is running in the background.\n"
-            f"Graph, vectors, and vault will be updated."
-        )
+        return await run_ingestion_sync(args["text"], args.get("metadata") or {})
     if name == "get_RAG_response":
         rag, graph_store = _build_rag()
         try:
@@ -149,14 +159,68 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Manual edit helpers — bypass LLM, go directly through apply + reindex
+# ---------------------------------------------------------------------------
+
+
+def _reindex_changed(changed: dict[str, str]) -> None:
+    """Synchronously re-derive graph + vectors for changed pages."""
+    wiki_base = wiki_base_path()
+    pages = []
+    for slug in changed:
+        path = wiki_base / f"{slug}.md"
+        if path.exists():
+            pages.append((slug, read_title(path), path.read_text(encoding="utf-8")))
+    if pages:
+        update_graph_and_vectors(pages)
+
+
+async def _apply_manual_ops(
+    ops: list[Any], commit_msg: str
+) -> dict[str, Any]:
+    """Apply ops, reindex, push git. Returns result dict."""
+    import asyncio as _asyncio  # noqa: PLC0415
+
+    sync_vault()
+    wiki_base = wiki_base_path()
+
+    loop = _asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, apply_operations, ops, wiki_base)
+
+    if result.changed or result.deleted:
+        # Re-embed changed pages (skip deleted ones — they're gone)
+        await loop.run_in_executor(None, _reindex_changed, result.changed)
+        # Purge deleted slugs from Qdrant + Neo4j
+        if result.deleted:
+            from second_brain.memory.indexing import apply_index_diff  # noqa: PLC0415
+            await loop.run_in_executor(
+                None, apply_index_diff, [], list(result.deleted)
+            )
+        await loop.run_in_executor(
+            None, lambda: get_git_sync().push(commit_msg)
+        )
+
+    return {
+        "changed": list(result.changed.keys()),
+        "created": sorted(result.created),
+        "deleted": sorted(result.deleted),
+        "skipped": result.skipped,
+        "applied": result.applied,
+    }
+
+
+# ---------------------------------------------------------------------------
 # api_app — Port 8000 (REST API for the web frontend)
 # ---------------------------------------------------------------------------
 
 
 async def handle_api_remember(request: Request) -> JSONResponse:
     body = await request.json()
-    result = await _dispatch("remember", body)
-    return JSONResponse({"result": result})
+    try:
+        result = await _dispatch("remember", body)
+        return JSONResponse({"result": result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 async def handle_api_recall(request: Request) -> JSONResponse:
@@ -239,6 +303,49 @@ async def _api_lifespan(_app: Starlette) -> AsyncGenerator[None, None]:
     yield
 
 
+async def handle_api_edit_page(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        result = await edit_page(
+            page_id=body["page_id"],
+            op=body["op"],
+            text=body.get("text", ""),
+            section=body.get("section"),
+            old_text=body.get("old_text", ""),
+            new_text=body.get("new_text", ""),
+        )
+        return JSONResponse({"result": result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+async def handle_api_delete_fact(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        result = await delete_fact(page_id=body["page_id"], text=body["text"])
+        return JSONResponse({"result": result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+async def handle_api_delete_page(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        result = await delete_wiki_page(page_id=body["page_id"], reason=body["reason"])
+        return JSONResponse({"result": result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+async def handle_api_create_page_manual(request: Request) -> JSONResponse:
+    body = await request.json()
+    try:
+        result = await create_page_manual(title=body["title"], content=body["content"])
+        return JSONResponse({"result": result})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 api_app = Starlette(
     lifespan=_api_lifespan,
     routes=[
@@ -248,6 +355,14 @@ api_app = Starlette(
         Route("/api/graph", endpoint=handle_api_graph),
         Route("/api/page/{slug}", endpoint=handle_api_page),
         Route("/api/ingestion-logs", endpoint=handle_api_ingestion_logs),
+        Route("/api/edit-page", endpoint=handle_api_edit_page, methods=["POST"]),
+        Route("/api/delete-fact", endpoint=handle_api_delete_fact, methods=["POST"]),
+        Route("/api/delete-page", endpoint=handle_api_delete_page, methods=["POST"]),
+        Route(
+            "/api/create-page",
+            endpoint=handle_api_create_page_manual,
+            methods=["POST"],
+        ),
     ],
 )
 
@@ -356,6 +471,112 @@ async def search_wiki(query: str, limit: int = 15, hpos: int = 0) -> str:
 )
 async def get_page(id: str) -> str:  # noqa: A002
     return await _dispatch("get_page", {"id": id})
+
+
+@fmcp.tool(
+    description=(
+        "Manually edit a wiki page: add, edit, or delete a specific claim, "
+        "or replace a whole section. Bypasses LLM — you specify the exact operation. "
+        "Graph and vector index are updated synchronously before returning. "
+        "op must be one of: 'add_claim', 'edit_claim', 'delete_claim', 'edit_section'. "
+        "For add_claim/edit_section provide 'text'. "
+        "For edit_claim provide 'old_text' and 'new_text'. "
+        "For delete_claim provide 'text' (exact sentence to remove). "
+        "For edit_section provide 'section' (heading) and 'text' (new body). "
+        "For add_claim 'section' is optional."
+    )
+)
+async def edit_page(
+    page_id: str,
+    op: str,
+    text: str = "",
+    section: str | None = None,
+    old_text: str = "",
+    new_text: str = "",
+) -> str:
+    op_obj: Any
+    if op == "add_claim":
+        if not text:
+            return "Error: 'text' is required for add_claim"
+        op_obj = AddClaim(page=page_id, text=text, section=section)
+    elif op == "edit_claim":
+        if not old_text or not new_text:
+            return "Error: 'old_text' and 'new_text' are required for edit_claim"
+        op_obj = EditClaim(page=page_id, old_text=old_text, new_text=new_text)
+    elif op == "delete_claim":
+        if not text:
+            return "Error: 'text' is required for delete_claim"
+        op_obj = DeleteClaim(page=page_id, text=text)
+    elif op == "edit_section":
+        if not section or not text:
+            return "Error: 'section' and 'text' are required for edit_section"
+        op_obj = EditSection(page=page_id, section=section, text=text)
+    else:
+        return f"Error: unknown op '{op}'. Use: add_claim, edit_claim, delete_claim, edit_section"
+
+    result = await _apply_manual_ops(
+        [op_obj], f"manual edit_page: {op} on {page_id}"
+    )
+    if result["skipped"]:
+        return f"Skipped: {'; '.join(result['skipped'])}"
+    if result["applied"]:
+        return f"Applied: {'; '.join(result['applied'])}. Reindexed: {result['changed']}"
+    return "No changes made."
+
+
+@fmcp.tool(
+    description=(
+        "Delete a specific fact/claim from a wiki page. "
+        "The 'text' must match the exact sentence in the page. "
+        "Graph and vector index are updated synchronously."
+    )
+)
+async def delete_fact(page_id: str, text: str) -> str:
+    result = await _apply_manual_ops(
+        [DeleteClaim(page=page_id, text=text)],
+        f"manual delete_fact: {page_id}",
+    )
+    if result["skipped"]:
+        return f"Skipped: {'; '.join(result['skipped'])}"
+    return f"Deleted claim from {page_id}. Reindexed."
+
+
+@fmcp.tool(
+    description=(
+        "Delete an entire wiki page (hard-delete: file removed, Git is the audit trail). "
+        "Removed from Qdrant and Neo4j immediately — no longer findable via search. "
+    )
+)
+async def delete_wiki_page(page_id: str, reason: str) -> str:
+    result = await _apply_manual_ops(
+        [DeletePage(slug=page_id, reason=reason)],
+        f"manual delete_page: {page_id}",
+    )
+    if result["skipped"]:
+        return f"Skipped: {'; '.join(result['skipped'])}"
+    return f"Page {page_id} deleted. Removed from search index."
+
+
+@fmcp.tool(
+    description=(
+        "Manually create a new wiki page with given title and content. "
+        "Bypasses LLM — you provide the exact Markdown content. "
+        "Graph and vector index are updated synchronously before returning."
+    )
+)
+async def create_page_manual(title: str, content: str) -> str:
+    result = await _apply_manual_ops(
+        [CreatePage(title=title, content=content)],
+        f"manual create_page: {title}",
+    )
+    if result["skipped"]:
+        return f"Skipped: {'; '.join(result['skipped'])}"
+    if result["created"]:
+        return (
+            f"Created page '{title}' (id: {result['created'][0]}). "
+            f"Graph and vectors updated."
+        )
+    return "No page created."
 
 
 @fmcp.custom_route("/health", methods=["GET"])  # type: ignore[untyped-decorator]

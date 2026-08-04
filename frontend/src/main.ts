@@ -156,6 +156,9 @@ async function loadGraph(force = false): Promise<void> {
 // Markdown modal
 // ---------------------------------------------------------------------------
 
+let _currentModalSlug = "";
+let _currentModalOp = "";
+
 async function openPageModal(slug: string, title: string): Promise<void> {
   const overlay = document.getElementById("modal-overlay")!;
   const modalTitle = document.getElementById("modal-title")!;
@@ -165,17 +168,30 @@ async function openPageModal(slug: string, title: string): Promise<void> {
   modalBody.innerHTML = '<div id="modal-loading">Loading…</div>';
   overlay.classList.add("open");
 
+  // Reset edit form/bar state
+  hideEditBar();
+  hideEditForm();
+
   try {
     const r = await fetch(`/api/page/${encodeURIComponent(slug)}`);
     const data = (await r.json()) as { content: string };
     modalBody.innerHTML = await marked.parse(data.content);
+    // Show edit controls for real wiki pages
+    showEditBar(slug);
   } catch {
     modalBody.innerHTML = "<p>Page could not be loaded.</p>";
   }
 }
 
+function hideEditBar(): void {
+  document.getElementById("modal-edit-bar")!.classList.remove("visible");
+  _currentModalSlug = "";
+}
+
 function closeModalBtn(): void {
   document.getElementById("modal-overlay")!.classList.remove("open");
+  hideEditBar();
+  hideEditForm();
 }
 
 function closeModal(evt: MouseEvent): void {
@@ -204,10 +220,14 @@ async function doRemember(): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
-    const data = (await r.json()) as { result: string };
-    status.textContent = "✓ " + data.result;
-    input.value = "";
-    setTimeout(() => void loadGraph(true), 4000);
+    const data = (await r.json()) as { result?: string; error?: string };
+    if (data.error) {
+      status.textContent = "❌ " + data.error;
+    } else {
+      status.textContent = "✓ " + (data.result ?? "Saved");
+      input.value = "";
+      setTimeout(() => void loadGraph(true), 2000);
+    }
   } catch (err) {
     status.textContent = "Error: " + String(err);
   }
@@ -427,7 +447,135 @@ window.doRag = doRag;
 window.closeModal = closeModal;
 window.closeModalBtn = closeModalBtn;
 
+// ---------------------------------------------------------------------------
+// Resizable sidebar (desktop)
+// ---------------------------------------------------------------------------
+
+function setupSidebarResize(): void {
+  const sidebar = document.getElementById("sidebar")!;
+  const handle = document.getElementById("sidebar-resize")!;
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener("mousedown", (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    handle.classList.add("dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const newWidth = Math.max(200, Math.min(600, startWidth + (e.clientX - startX)));
+    sidebar.style.width = `${newWidth}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("dragging");
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    cy.resize();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Edit / Delete wiki pages via modal
+// ---------------------------------------------------------------------------
+
+function showEditBar(slug: string): void {
+  _currentModalSlug = slug;
+  const bar = document.getElementById("modal-edit-bar")!;
+  bar.classList.add("visible");
+}
+
+function hideEditForm(): void {
+  const form = document.getElementById("modal-edit-form")!;
+  form.classList.remove("visible");
+  (document.getElementById("modal-edit-text") as HTMLTextAreaElement).value = "";
+  document.getElementById("modal-edit-status")!.textContent = "";
+}
+
+document.getElementById("modal-add-claim-btn")?.addEventListener("click", () => {
+  _currentModalOp = "add_claim";
+  const form = document.getElementById("modal-edit-form")!;
+  document.getElementById("modal-edit-label")!.textContent = "Claim text to add:";
+  (document.getElementById("modal-edit-text") as HTMLTextAreaElement).placeholder =
+    "Enter the new claim sentence…";
+  form.classList.add("visible");
+});
+
+document.getElementById("modal-delete-page-btn")?.addEventListener("click", () => {
+  if (!_currentModalSlug) return;
+  if (!confirm(`Delete page '${_currentModalSlug}'? A tombstone will be left for the audit trail.`)) return;
+  _currentModalOp = "delete_page";
+  const form = document.getElementById("modal-edit-form")!;
+  document.getElementById("modal-edit-label")!.textContent = "Reason for deletion:";
+  (document.getElementById("modal-edit-text") as HTMLTextAreaElement).placeholder =
+    "Why is this page being deleted?";
+  form.classList.add("visible");
+});
+
+document.getElementById("modal-edit-cancel-btn")?.addEventListener("click", hideEditForm);
+
+document.getElementById("modal-edit-submit-btn")?.addEventListener("click", () => {
+  void submitEdit();
+});
+
+async function submitEdit(): Promise<void> {
+  const text = (document.getElementById("modal-edit-text") as HTMLTextAreaElement).value.trim();
+  const statusEl = document.getElementById("modal-edit-status")!;
+  if (!text) { statusEl.textContent = "Please enter text."; return; }
+
+  const submitBtn = document.getElementById("modal-edit-submit-btn") as HTMLButtonElement;
+  submitBtn.disabled = true;
+  statusEl.textContent = "Saving…";
+
+  try {
+    let url = "";
+    let body: Record<string, string> = {};
+
+    if (_currentModalOp === "add_claim") {
+      url = "/api/edit-page";
+      body = { page_id: _currentModalSlug, op: "add_claim", text };
+    } else if (_currentModalOp === "delete_page") {
+      url = "/api/delete-page";
+      body = { page_id: _currentModalSlug, reason: text };
+    }
+
+    if (!url) { statusEl.textContent = "Unknown operation."; return; }
+
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = (await r.json()) as { result?: string; error?: string };
+    if (data.error) {
+      statusEl.textContent = "Error: " + data.error;
+    } else {
+      statusEl.textContent = "✓ " + (data.result ?? "Done");
+      setTimeout(() => {
+        hideEditForm();
+        void loadGraph(true);
+        // Reload the page content in the modal
+        if (_currentModalOp !== "delete_page") {
+          void openPageModal(_currentModalSlug, document.getElementById("modal-title")!.textContent ?? "");
+        }
+      }, 1200);
+    }
+  } catch (err) {
+    statusEl.textContent = "Error: " + String(err);
+  }
+  submitBtn.disabled = false;
+}
+
 setupMobileNav();
+setupSidebarResize();
 
 void loadGraph(true);
 setInterval(() => void loadGraph(), 30_000);
