@@ -24,17 +24,27 @@ dev-backend:
 prod:
 	docker start $(BACKEND_CONTAINER) $(WORKER_CONTAINER)
 
-# Tests
+# Run all checks: backend lint + types + tests + frontend types + build
+check:
+	cd backend && poetry run ruff check src/ tests/ benchmark/
+	cd backend && poetry run mypy src/ tests/
+	cd backend && poetry run pytest tests/ --ignore=tests/integration --ignore=tests/test_git_sync.py -q
+	cd frontend && npx tsc --noEmit
+	cd frontend && npm run build
+
+# Individual targets
+lint:
+	cd backend && poetry run ruff check src/ tests/ benchmark/
+
+typecheck:
+	cd backend && poetry run mypy src/ tests/
+
 test:
 	cd backend && poetry run pytest tests/ --ignore=tests/integration --ignore=tests/test_git_sync.py -q
 
-# Quick smoke test — 5 facts, verifies benchmark pipeline works without waiting minutes
+# Benchmark
 benchmark-smoke:
 	cd backend && poetry run python -m benchmark.run --input benchmark/smoke_test.md --run-id smoke_$(shell date +%Y%m%d_%H%M%S)
 
-# Full benchmark — 25 facts
 benchmark:
 	cd backend && poetry run python -m benchmark.run --run-id run_$(shell date +%Y%m%d_%H%M%S) --verbose
-
-lint:
-	cd backend && poetry run ruff check src/ tests/ benchmark/

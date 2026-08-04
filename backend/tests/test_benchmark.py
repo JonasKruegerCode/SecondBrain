@@ -29,35 +29,32 @@ GROUND_TRUTH = {
 }
 
 
-def test_parse_ground_truth():
+def test_parse_ground_truth() -> None:
     gt = parse_ground_truth(SAMPLE_GT_TEXT)
     assert gt == GROUND_TRUTH
 
 
-def test_parse_ground_truth_empty():
+def test_parse_ground_truth_empty() -> None:
     assert parse_ground_truth("no facts here") == {}
 
 
-def test_fact_mentioned_positive():
+def test_fact_mentioned_positive() -> None:
     ops = ["add_claim → marie: Marie Curie wurde 1867 in Warschau geboren"]
     assert _fact_mentioned("Marie Curie wurde 1867 in Warschau geboren.", ops)
 
 
-def test_fact_mentioned_negative():
+def test_fact_mentioned_negative() -> None:
     ops = ["add_claim → eiffel: Der Eiffelturm steht in Paris"]
     assert not _fact_mentioned("Marie Curie wurde 1867 in Warschau geboren.", ops)
 
 
-def test_fact_mentioned_partial_threshold():
-    # 40% threshold: 2 of 4 significant words present → should be True
+def test_fact_mentioned_partial_threshold() -> None:
     ops = ["add_claim → page: marie curie entdeckt etwas anderes komplett"]
     result = _fact_mentioned("Marie Curie Polonium entdeckt Element Warschau", ops)
-    # "marie", "curie", "entdeckt" match out of ~4-5 significant words — borderline
-    # Just check it runs without error
     assert isinstance(result, bool)
 
 
-def test_score_perfect_recall():
+def test_score_perfect_recall() -> None:
     ops = [
         "add_claim → marie: Marie Curie wurde 1867 in Warschau geboren",
         "add_claim → marie: Das Element Polonium wurde von Marie Curie entdeckt",
@@ -69,31 +66,30 @@ def test_score_perfect_recall():
     assert s["missing_facts"] == 0
 
 
-def test_score_zero_recall():
+def test_score_zero_recall() -> None:
     ops = ["add_claim → page: etwas völlig anderes ohne relevante keywords"]
     s = score(GROUND_TRUTH, ops)
     assert s["found_facts"] == 0
     assert s["recall"] == 0.0
 
 
-def test_score_empty_ops():
+def test_score_empty_ops() -> None:
     s = score(GROUND_TRUTH, [])
     assert s["recall"] == 0.0
-    assert s["precision"] == 1.0  # no ops → no hallucinations
+    assert s["precision"] == 1.0
     assert s["total_ops"] == 0
 
 
-def test_score_hallucination_detection():
+def test_score_hallucination_detection() -> None:
     ops = [
         "add_claim → marie: Marie Curie Warschau geboren",
-        "add_claim → xyz: völlig erfundene information über xyz topic",  # hallucinated
+        "add_claim → xyz: völlig erfundene information über xyz topic",
     ]
     s = score(GROUND_TRUTH, ops)
-    # Second op has no ground-truth keywords → flagged
     assert s["potential_hallucinations"] >= 1
 
 
-def test_format_report_runs():
+def test_format_report_runs() -> None:
     topic_results = [
         {
             "topic_preview": "Marie Curie Fakten",
@@ -103,14 +99,14 @@ def test_format_report_runs():
             "rejected": [],
         }
     ]
-    s = score(GROUND_TRUTH, topic_results[0]["operations"])
+    s = score(GROUND_TRUTH, list(topic_results[0]["operations"]))
     report = format_report("test_run", GROUND_TRUTH, topic_results, s, 5.0, True)
     assert "test_run" in report
     assert "Recall" in report
     assert "Precision" in report
 
 
-def test_extract_all_facts_text(tmp_path: Path):
+def test_extract_all_facts_text(tmp_path: Path) -> None:
     gt_file = tmp_path / "gt.md"
     gt_file.write_text(SAMPLE_GT_TEXT, encoding="utf-8")
     text = extract_all_facts_text(gt_file)

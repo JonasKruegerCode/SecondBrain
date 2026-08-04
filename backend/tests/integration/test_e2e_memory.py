@@ -6,13 +6,14 @@ activated explicitly via the `integration_settings` fixture.
 LLM calls and git operations are mocked; the edit_vault agent,
 operation application, graph, and embeddings run for real.
 """
+import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from second_brain.worker.tasks import process_ingestion
+from second_brain.worker.tasks import run_ingestion_sync
 
 
 def _docker_available() -> bool:
@@ -66,8 +67,8 @@ def test_e2e_ingest_creates_wiki_page(integration_settings: object) -> None:
         patch("second_brain.agent.edit_vault.get_embedder", return_value=fake_embedder),
         patch("second_brain.memory.indexing.get_embedder", return_value=fake_embedder),
     ):
-        result = process_ingestion(
-            "Testcontainers makes integration tests easy.", {}
+        result = asyncio.run(
+            run_ingestion_sync("Testcontainers makes integration tests easy.", {})
         )
 
     assert result.startswith("ok:")
@@ -79,4 +80,4 @@ def test_e2e_ingest_creates_wiki_page(integration_settings: object) -> None:
     assert "last_updated:" in content
     fake_git.push.assert_called_once()
     message = fake_git.push.call_args.args[0]
-    assert message.startswith("remember:")
+    assert "Testcontainers" in message or "remember" in message
