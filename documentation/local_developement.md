@@ -2,7 +2,7 @@
 
 ### Prerequisites
 
-- Python 3.12+, [Poetry](https://python-poetry.org/)
+- Python 3.14+, [Poetry](https://python-poetry.org/)
 - Node 20+, npm
 - Docker Desktop (for infrastructure and integration tests)
 
@@ -42,86 +42,83 @@ VAULT_PATH=C:/Users/your-name/vault   # local path (created automatically)
 VAULT_GITHUB_URL=                     # optional: https://github.com/your/vault.git
 VAULT_GITHUB_PAT=                     # optional: GitHub PAT for vault sync
 
-# Local infrastructure (Docker containers via docker compose up)
+# Local infrastructure (Docker containers)
 REDIS_URL=redis://localhost:6379/0
 NEO4J_URI=bolt://localhost:7687
 QDRANT_URL=http://localhost:6333
 MCP_API_KEY=                          # empty = no auth locally
 
-# Tracing (optional, see "Tracing" section below)
-OTEL_ENABLED=true
+OTEL_ENABLED=false                    # set to true to enable tracing
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```
 
-> **Important:** Use `localhost`, not `redis`/`neo4j`/`qdrant` — those are Docker-internal hostnames that are only resolvable within the Docker network.
+> **Important:** Use `localhost`, not `redis`/`neo4j`/`qdrant` — those are Docker-internal hostnames only resolvable inside the Docker network.
 
-> **If you copied the production `.env`:** Change `VAULT_PATH=/vault` to a local Windows path, e.g. `VAULT_PATH=C:/vault`. The `/vault` value refers to the Docker volume mount and does not exist on the host.
-
-Clone vault locally (one-time):
-```bash
-git clone git@github.com:your/vault.git ../vault
-```
+> **Copied the production `.env`?** Change `VAULT_PATH=/vault` to a local path, e.g. `VAULT_PATH=C:/vault`. The `/vault` value refers to the Docker volume mount and does not exist on the host.
 
 ### 3 — Start infrastructure
 
-```bash
-docker compose up redis neo4j qdrant jaeger -d
-```
+All `make` commands must be run from the **repo root** (`~/Entwicklung/SecondBrain`).
 
-### 4 — Start backend
+**If the production stack is already running** (autostart on WSL boot), infrastructure is already up. Just stop the backend and worker containers to free the ports:
 
 ```bash
-cd backend
-poetry run python -m second_brain.mcp_server
-# API running at http://localhost:8000
-# MCP server running at http://localhost:3000
+make dev-start-infra
+# equivalent to: docker compose stop backend worker
 ```
 
-### 5 — Start Celery worker (second terminal)
-
-Without the worker, `remember` calls are accepted but never processed.
+**If the full stack is not running at all:**
 
 ```bash
-# Linux/Mac
-cd backend
-poetry run celery -A second_brain.core.celery_app worker --loglevel=info --pool=solo
+make infra
+# starts Redis, Neo4j, Qdrant, Jaeger from scratch
 ```
 
-```powershell
-# Windows — prefork pool doesn't work, use --pool=solo
-cd backend
-poetry run celery -A second_brain.core.celery_app worker --pool=solo --loglevel=info
-```
-
-> `--beat` (automatic Git sync at 03:00) is not possible in the worker process on Windows. Not needed for local development.
-
-### 6 — Start frontend (third terminal)
+### 4 — Start dev server (one command, auto-reload)
 
 ```bash
-cd frontend
-npm run dev
-# → http://localhost:5173
+make dev
 ```
 
-Vite automatically proxies `/api/*` to `localhost:8000` — no CORS, no extra configuration needed.
+This starts three processes in parallel with color-coded logs:
+
+| Process | URL | Reload |
+|---------|-----|--------|
+| **api** | http://localhost:8000 | Auto-reload on Python file changes |
+| **mcp** | http://localhost:3000 | Auto-reload on Python file changes |
+| **frontend** | http://localhost:5173 | Vite HMR (instant) |
+
+`Ctrl+C` stops all three.
+
+Backend only (no frontend):
+```bash
+make dev-backend
+```
+
+> **Running alongside production Docker:** The prod instance uses ports `8000`/`3000`. To develop in parallel, add to your `.env`:
+> ```env
+> API_PORT=8001
+> MCP_PORT=3001
+> ```
+> Dev runs on `:8001`/`:3001`, prod stays on `:8000`/`:3000`. Vite reads `API_PORT` automatically.
 
 ---
 
 ## Tests & Quality Assurance
 
 ```bash
+make test   # unit tests
+make lint   # ruff
+
 # All checks (lint + types + tests + frontend build)
 bash check.sh
-
-# Lint and type checks only (fast, no Docker required)
-bash check.sh --no-tests
 ```
 
 | Check | Tool | Description |
 |-------|------|-------------|
 | ruff | `poetry run ruff check` | Import order, style, unused vars |
 | mypy | `poetry run mypy` | Static types (strict mode) |
-| pytest | `poetry run pytest` | Unit tests; integration tests only with `@pytest.mark.integration` |
+| pytest | `poetry run pytest` | Unit tests; integration tests need `@pytest.mark.integration` |
 | tsc | `npx tsc --noEmit` | TypeScript types in frontend |
 | vite build | `npm run build` | Production build of the frontend |
 
@@ -139,10 +136,8 @@ cd backend && poetry run pytest tests/integration -m integration
 
 `recall`/`remember` go through several network hops (embeddings, Qdrant, Neo4j, LLM, vault I/O, Git). To see where time is actually going, traces are sent to [Jaeger](https://www.jaegertracing.io/) via OpenTelemetry.
 
-1. Start Jaeger: `docker compose up jaeger -d`
-2. Make sure `.env` has `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` (see step 2 above)
-3. Open the UI: http://localhost:16686 — pick a service (`secondbrain-backend` or `secondbrain-worker`) and inspect a trace
+1. Jaeger is already included in `make infra`
+2. Set in `.env`: `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
+3. Open the UI: http://localhost:16686 — pick a service (`secondbrain-backend`) and inspect a trace
 
 Set `OTEL_ENABLED=false` to disable tracing entirely (no Jaeger needed).
-
----

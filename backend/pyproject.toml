@@ -35,6 +35,7 @@ mypy = ">=1.10.0"
 ruff = ">=0.4.10"
 httpx = ">=0.28.1"
 testcontainers = {extras = ["neo4j", "qdrant", "redis"], version = "^4.14.2"}
+honcho = "^2.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
