@@ -477,7 +477,7 @@ async function loadIngestionLogs(): Promise<void> {
     }
     const logs = [...raw]
       .sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1))
-      .slice(0, 4);
+      .slice(0, 3);
     list.innerHTML = logs
       .map(
         (log) => `
@@ -520,7 +520,7 @@ function setupSidebarResize(): void {
 
   document.addEventListener("mousemove", (e) => {
     if (!dragging) return;
-    const w = Math.max(180, Math.min(600, startWidth + (e.clientX - startX)));
+    const w = Math.max(180, Math.min(window.innerWidth * 0.6, startWidth + (e.clientX - startX)));
     sidebar.style.width = `${w}px`;
   });
 
