@@ -26,7 +26,7 @@ When an agent calls `recall("what do I know about X?")`, SecondBrain runs Hybrid
 - **MCP-native** — plug into claude.ai, OpenClaw, or any MCP client
 - **Wikipedia-agent model** — planning + update agents write and revise wiki pages intelligently
 - **HybridRAG** — vector search (Qdrant) + graph traversal (Neo4j) + Markdown vault
-- **Markdown vault** — Obsidian-compatible, optionally Git-synced to any GitHub/GitLab/Gitea repo
+- **Markdown vault** — Obsidian-compatible, optionally Git-synced to GitHub, Bitbucket, GitLab, Gitea, or a self-hosted Git server
 - **Hourly repair agent** — gardens one page per run: merges duplicates, flags contradictions, adds missing links
 - **Web UI** — knowledge graph visualizer + remember/recall interface
 - **Self-hosted** — runs entirely on your own infrastructure
@@ -64,7 +64,7 @@ MCP Server ──recall───▶ HybridRAG ──▶ Qdrant (vector search)
 
 - Docker + Docker Compose
 - An [OpenRouter](https://openrouter.ai/) API key (supports Claude, GPT-4, etc.)
-- Optional: a private GitHub repo for vault sync
+- Optional: a private Git repository for vault sync (for example Bitbucket)
 
 ### 1 — Clone and configure
 
@@ -145,13 +145,25 @@ All configuration is via environment variables. Copy `.env.example` to `.env` an
 | `GCP_ENDPOINT_URL` | Gemini OpenAI-compat URL | Base URL; swap for Vertex AI or any OAI-compat endpoint |
 | **Vault** | | |
 | `VAULT_PATH` | `/vault` | Filesystem path for the Markdown vault |
-| `VAULT_GITHUB_URL` | *(optional)* | GitHub repo URL for vault sync |
-| `VAULT_GITHUB_PAT` | *(optional)* | GitHub PAT with repo write access |
+| `VAULT_GITHUB_URL` | *(optional, backwards-compatible default)* | GitHub repository URL for vault sync |
+| `VAULT_GITHUB_PAT` | *(optional)* | GitHub PAT; remains supported for existing installations |
+| `VAULT_GIT_PROVIDER` | `github` | Provider name, e.g. `github` or `bitbucket` |
+| `VAULT_GIT_URL` | *(optional)* | Provider-neutral Git URL; overrides `VAULT_GITHUB_URL` when set |
+| `VAULT_GIT_BRANCH` | *(optional)* | Explicit target branch, e.g. `wiki`; empty keeps the remote default |
+| `VAULT_GIT_AUTH_METHOD` | `auto` | `http`, `ssh`, `none`, or `auto` |
+| `VAULT_GIT_HTTP_USERNAME` | provider-dependent | HTTP username; Bitbucket access tokens commonly use `x-token-auth` |
+| `VAULT_GIT_HTTP_ACCESS_TOKEN` | *(optional)* | HTTP token/password; kept out of `.git/config` |
+| `VAULT_GIT_SSH_KEY_PATH` | *(optional)* | Mounted SSH private-key path |
+| `VAULT_GIT_SSH_KEY` | *(optional)* | Inline SSH key; a mounted file is preferred |
 | **Infrastructure** | | |
 | `NEO4J_PASSWORD` | `secretpassword` | Neo4j database password |
 | `REDIS_URL` | `redis://redis:6379/0` | Celery broker URL |
 | `NEO4J_URI` | `bolt://neo4j:7687` | Neo4j connection URI |
 | `QDRANT_URL` | `http://qdrant:6333` | Qdrant connection URL |
+
+For the standard GitHub setup, continue using `VAULT_GITHUB_URL` and
+`VAULT_GITHUB_PAT`. The provider-neutral `VAULT_GIT_*` settings are only
+needed when selecting another provider, branch, or authentication method.
 
 > **Localhost vs. Docker:** Use `localhost:*` for local dev. On a server with Docker Compose, use service names (`redis`, `neo4j`, `qdrant`) — they resolve inside the Docker network.
 
@@ -238,7 +250,7 @@ Contributions are welcome. Here's what would make this project more production-r
 
 - **Additional LLM providers** — OpenAI/Anthropic direct keys, Azure OpenAI, Ollama (local)
 - **Documentation** — usage examples, cookbook for common agent patterns
-- **Git sync: any host** — currently only GitHub PAT auth is tested. Supporting GitLab, Gitea, and self-hosted instances would make the feature genuinely host-agnostic
+- **Git sync: any host** — provider-neutral HTTP-token and SSH authentication are supported; add host-specific integration tests as needed
 - **Tests** — expand integration test coverage (`backend/tests/`)
 - **CI** — add GitHub Actions workflow for `pytest` and `ruff`/`mypy` on PRs
 - **Vault templates** — starter vault structures for different use cases

@@ -39,8 +39,33 @@ OPENROUTER_EMBEDDING_PROVIDER=
 
 NEO4J_PASSWORD=secretpassword
 VAULT_PATH=C:/Users/your-name/vault   # local path (created automatically)
-VAULT_GITHUB_URL=                     # optional: https://github.com/your/vault.git
-VAULT_GITHUB_PAT=                     # optional: GitHub PAT for vault sync
+
+# Git vault sync: GitHub remains the backwards-compatible default
+# Existing GitHub deployments can keep using only these settings:
+VAULT_GITHUB_URL=https://github.com/your/vault.git
+VAULT_GITHUB_PAT=                    # optional GitHub PAT
+
+# Optional provider-neutral configuration (overrides VAULT_GITHUB_*):
+# VAULT_GIT_PROVIDER=github           # github | bitbucket | other
+# VAULT_GIT_URL=https://github.com/your/vault.git
+# VAULT_GIT_BRANCH=                   # empty = remote default branch
+# VAULT_GIT_AUTH_METHOD=auto          # auto | http | ssh | none
+# VAULT_GIT_HTTP_USERNAME=oauth2
+# VAULT_GIT_HTTP_ACCESS_TOKEN=        # never commit this value
+
+# Bitbucket example:
+# VAULT_GIT_PROVIDER=bitbucket
+# VAULT_GIT_URL=https://bitbucket.org/your-workspace/vault.git
+# VAULT_GIT_BRANCH=wiki
+# VAULT_GIT_AUTH_METHOD=http
+# VAULT_GIT_HTTP_USERNAME=x-token-auth
+# VAULT_GIT_HTTP_ACCESS_TOKEN=
+
+# SSH alternative:
+# VAULT_GIT_URL=git@bitbucket.org:your-workspace/vault.git
+# VAULT_GIT_AUTH_METHOD=ssh
+# VAULT_GIT_SSH_KEY_PATH=C:/secrets/bitbucket_ed25519
+# VAULT_GIT_SSH_KNOWN_HOSTS_PATH=C:/secrets/known_hosts
 
 # Local infrastructure (Docker containers)
 REDIS_URL=redis://localhost:6379/0

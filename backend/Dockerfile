@@ -20,8 +20,8 @@ ENV VIRTUAL_ENV=/app/.venv \
     PYTHONPATH="/app/src" \
     PYTHONUNBUFFERED=1
 
-# git is required for GitSync (vault repo clone/push)
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+# git and the SSH client are required for GitSync (vault repo clone/push)
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

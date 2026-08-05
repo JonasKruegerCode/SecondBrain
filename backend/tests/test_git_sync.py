@@ -12,7 +12,7 @@ import pytest
 from git import Actor
 
 from second_brain.core.config import settings
-from second_brain.git_sync import GitSync
+from second_brain.git_sync import GitSync, _without_http_credentials
 
 ACTOR = Actor("test", "test@test.local")
 
@@ -49,6 +49,16 @@ def vault_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(settings, "VAULT_PATH", str(vault_path))
     monkeypatch.setattr(settings, "VAULT_GITHUB_URL", str(remote))
     monkeypatch.setattr(settings, "VAULT_GITHUB_PAT", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_URL", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_BRANCH", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_PROVIDER", "github")
+    monkeypatch.setattr(settings, "VAULT_GIT_AUTH_METHOD", "auto")
+    monkeypatch.setattr(settings, "VAULT_GIT_HTTP_USERNAME", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_HTTP_ACCESS_TOKEN", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_HTTP_TOKEN", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_SSH_KEY_PATH", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_SSH_KEY", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_SSH_KNOWN_HOSTS_PATH", "")
 
     return SimpleNamespace(
         remote=remote, seed=seed, seed_path=seed_path, vault=vault, vault_path=vault_path
@@ -139,3 +149,73 @@ def test_recovers_from_stuck_rebase(vault_env: Any) -> None:
     readme = remote_head.tree["README.md"].data_stream.read().decode()
     assert "local version" in readme  # -X ours kept the writing instance's state
     assert remote_head.hexsha == vault.head.commit.hexsha  # fully synced
+
+
+def test_pushes_to_configured_branch(vault_env: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    default_branch = vault_env.vault.active_branch.name
+    branch = vault_env.seed.create_head("wiki")
+    vault_env.seed.head.reference = branch
+    vault_env.seed.head.reset(index=True, working_tree=True)
+    (vault_env.seed_path / "wiki-seed.md").write_text("# Wiki seed\n", encoding="utf-8")
+    _commit_and_push(vault_env.seed, "create wiki branch")
+
+    # Re-clone the vault from the remote default branch, then explicitly target
+    # the wiki branch. GitSync must not push to the default branch.
+    vault_env.vault.close()
+    import shutil
+
+    shutil.rmtree(vault_env.vault_path)
+    git.Repo.clone_from(str(vault_env.remote), str(vault_env.vault_path))
+    monkeypatch.setattr(settings, "VAULT_GIT_URL", str(vault_env.remote))
+    monkeypatch.setattr(settings, "VAULT_GITHUB_URL", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_BRANCH", "wiki")
+    monkeypatch.setattr(settings, "VAULT_GIT_PROVIDER", "bitbucket")
+
+    sync = GitSync()
+    sync.setup()
+    (vault_env.vault_path / "wiki-note.md").write_text("# Wiki note\n", encoding="utf-8")
+    sync.push("remember: wiki note")
+
+    remote = git.Repo(vault_env.remote)
+    assert remote.commit("refs/heads/wiki").tree["wiki-note.md"]
+    assert "wiki-note.md" not in remote.commit(f"refs/heads/{default_branch}").tree
+
+
+def test_http_credentials_are_not_persisted_in_remote_url(
+    vault_env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "VAULT_GITHUB_URL", "")
+    monkeypatch.setattr(settings, "VAULT_GIT_URL", "https://bitbucket.org/team/vault.git")
+    monkeypatch.setattr(settings, "VAULT_GIT_PROVIDER", "bitbucket")
+    monkeypatch.setattr(settings, "VAULT_GIT_HTTP_ACCESS_TOKEN", "token-with:special@chars")
+    monkeypatch.setattr(settings, "VAULT_GIT_HTTP_USERNAME", "x-token-auth")
+
+    sync = GitSync()
+    sync._ensure_auth_remote(vault_env.vault)
+
+    assert vault_env.vault.remotes["origin"].url == "https://bitbucket.org/team/vault.git"
+    assert "token-with" not in vault_env.vault.remotes["origin"].url
+    assert _without_http_credentials("https://user:secret@example.com/vault.git") == (
+        "https://example.com/vault.git"
+    )
+
+
+def test_ssh_environment_uses_key_and_known_hosts(
+    vault_env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    key_path = vault_env.vault_path.parent / "id_ed25519"
+    key_path.write_text("fake-key", encoding="utf-8")
+    known_hosts = vault_env.vault_path.parent / "known_hosts"
+    known_hosts.write_text("example host key", encoding="utf-8")
+    monkeypatch.setattr(settings, "VAULT_GIT_URL", "git@bitbucket.org:team/vault.git")
+    monkeypatch.setattr(settings, "VAULT_GIT_PROVIDER", "bitbucket")
+    monkeypatch.setattr(settings, "VAULT_GIT_AUTH_METHOD", "ssh")
+    monkeypatch.setattr(settings, "VAULT_GIT_SSH_KEY_PATH", str(key_path))
+    monkeypatch.setattr(settings, "VAULT_GIT_SSH_KNOWN_HOSTS_PATH", str(known_hosts))
+
+    sync = GitSync()
+    with sync._git_environment() as env:
+        assert env["GIT_TERMINAL_PROMPT"] == "0"
+        assert "-i" in env["GIT_SSH_COMMAND"]
+        assert str(key_path) in env["GIT_SSH_COMMAND"]
+        assert f"UserKnownHostsFile={known_hosts}" in env["GIT_SSH_COMMAND"]

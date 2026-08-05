@@ -650,7 +650,7 @@ async def handle_health(_request: Request) -> JSONResponse:
                 len(list(wiki_path.rglob("*.md"))) if wiki_path.exists() else 0
             ),
             "llm_ready": bool(settings.llm_api_key),
-            "git_sync": bool(settings.VAULT_GITHUB_URL),
+            "git_sync": bool(settings.vault_git_url),
         }
     )
 

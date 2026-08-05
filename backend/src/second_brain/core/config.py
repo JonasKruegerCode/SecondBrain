@@ -16,8 +16,37 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
 
     VAULT_PATH: str = "/vault"
+
+    # -------------------------------------------------------------------------
+    # Vault Git sync
+    # -------------------------------------------------------------------------
+    # ``VAULT_GITHUB_*`` is kept for backwards compatibility.  New
+    # installations should use the provider-neutral ``VAULT_GIT_*`` settings
+    # below; this makes Bitbucket (and other Git hosts) configurable without
+    # changing the vault implementation.
+    VAULT_GIT_PROVIDER: str = "github"
+    VAULT_GIT_URL: str = ""
+    VAULT_GIT_BRANCH: str = ""
+    # Supported values: "auto" | "http" | "ssh" | "none"
+    VAULT_GIT_AUTH_METHOD: str = "auto"
+    VAULT_GIT_HTTP_USERNAME: str = ""
+    VAULT_GIT_HTTP_ACCESS_TOKEN: str = ""
+    # Alias kept for deployments that prefer the shorter name.
+    VAULT_GIT_HTTP_TOKEN: str = ""
+    VAULT_GIT_SSH_KEY_PATH: str = ""
+    # Inline keys are supported for secret managers that inject multiline
+    # values. A mounted file via VAULT_GIT_SSH_KEY_PATH is preferred.
+    VAULT_GIT_SSH_KEY: str = ""
+    VAULT_GIT_SSH_KNOWN_HOSTS_PATH: str = ""
+
+    # Legacy GitHub-only settings.
     VAULT_GITHUB_URL: str = ""
     VAULT_GITHUB_PAT: str = ""
+
+    @property
+    def vault_git_url(self) -> str:
+        """Return the configured Git URL, including the legacy fallback."""
+        return self.VAULT_GIT_URL or self.VAULT_GITHUB_URL
 
     # -------------------------------------------------------------------------
     # LLM provider selection
