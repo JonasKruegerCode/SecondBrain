@@ -58,6 +58,13 @@ class Link:
 
 
 @dataclass(frozen=True)
+class Unlink:
+    page: str
+    to: str
+    type: str | None = None  # remove only this typed relation when provided
+
+
+@dataclass(frozen=True)
 class Merge:
     source: str
     target: str
@@ -89,7 +96,7 @@ class EditClaim:
 
 
 Operation = (
-    AddClaim | EditSection | CreatePage | Link | Merge | MarkOutdated
+    AddClaim | EditSection | CreatePage | Link | Unlink | Merge | MarkOutdated
     | DeleteClaim | DeletePage | EditClaim
 )
 
@@ -105,6 +112,9 @@ def describe(op: Operation) -> str:
     if isinstance(op, Link):
         rel = f" ({op.type})" if op.type else ""
         return f"link → {op.page} → {op.to}{rel}"
+    if isinstance(op, Unlink):
+        rel = f" ({op.type})" if op.type else ""
+        return f"unlink → {op.page} → {op.to}{rel}"
     if isinstance(op, Merge):
         return f"merge → {op.source} into {op.target}"
     if isinstance(op, DeleteClaim):
@@ -158,6 +168,13 @@ def parse_operations(raw_ops: Any) -> tuple[list[Operation], list[str]]:
         elif kind == "link" and page and _str(raw, "to"):
             rel_type = _str(raw, "type")
             parsed = Link(
+                page=page,
+                to=_str(raw, "to") or "",
+                type=normalize_rel(rel_type) if rel_type else None,
+            )
+        elif kind == "unlink" and page and _str(raw, "to"):
+            rel_type = _str(raw, "type")
+            parsed = Unlink(
                 page=page,
                 to=_str(raw, "to") or "",
                 type=normalize_rel(rel_type) if rel_type else None,
@@ -409,6 +426,43 @@ def _apply_one(op: Operation, vault: _Vault, result: ApplyResult, today: str) ->
         new_md = inject_links_into_text(md, op.page, {op.to: title})
         if new_md == md:
             new_md = md.rstrip() + f"\n\nRelated: [[{op.to}]]\n"
+        vault.write(op.page, new_md)
+        _mark_changed(result, op, op.page)
+
+    elif isinstance(op, Unlink):
+        md = vault.read(op.page)
+        if md is None:
+            result.skipped.append(f"{describe(op)} — page not found")
+            return
+
+        if op.type:
+            relation_line = re.compile(
+                rf"(?mi)^[ \t]*(?:[-*][ \t]+)?{re.escape(op.type)}::[ \t]*"
+                rf"\[\[{re.escape(op.to)}(?:\|[^\]]+)?\]\][ \t]*\n?"
+            )
+            new_md, count = relation_line.subn("", md)
+        else:
+            standalone_link = re.compile(
+                rf"(?mi)^[ \t]*(?:(?:[-*][ \t]+)|(?:Related:[ \t]*))"
+                rf"\[\[{re.escape(op.to)}(?:\|[^\]]+)?\]\][ \t]*\n?"
+            )
+            new_md, count = standalone_link.subn("", md)
+
+            target_path = vault.path(op.to)
+            fallback_title = read_title(target_path) if target_path.exists() else op.to
+            inline_link = re.compile(
+                rf"\[\[{re.escape(op.to)}(?:\|([^\]]+))?\]\]",
+                re.IGNORECASE,
+            )
+            new_md, inline_count = inline_link.subn(
+                lambda match: match.group(1) or fallback_title,
+                new_md,
+            )
+            count += inline_count
+
+        if count == 0:
+            result.skipped.append(f"{describe(op)} — link not found")
+            return
         vault.write(op.page, new_md)
         _mark_changed(result, op, op.page)
 

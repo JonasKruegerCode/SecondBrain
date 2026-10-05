@@ -127,6 +127,7 @@ API Key: your-secret-key   (set as Bearer token / MCP_API_KEY)
 | `get_page(id)` | Read one complete Markdown page by id |
 | `get_neighbors(id, hops?)` | Navigate one or two hops from a known page without vector search |
 | `link_page(page_id, target_id, relation_type?)` | Add a deterministic link between existing pages |
+| `unlink_page(page_id, target_id, relation_type?)` | Remove an untyped link or one exact typed relation |
 | `edit_page(...)` | Add, edit, delete, or replace a specific page claim or section |
 | `create_page_manual(title, content)` | Create a page from exact Markdown |
 | `delete_fact(page_id, text)` | Remove an exact claim from a page |

@@ -30,6 +30,7 @@ from second_brain.agent.operations import (
     EditClaim,
     EditSection,
     Link,
+    Unlink,
     apply_operations,
 )
 from second_brain.core.config import settings
@@ -562,6 +563,31 @@ async def link_page(
         return f"Skipped: {'; '.join(result['skipped'])}"
     if result["applied"]:
         return f"Linked {page_id} to {target_id}. Reindexed: {result['changed']}"
+    return "No changes made."
+
+
+@fmcp.tool(
+    description=(
+        "Remove a deterministic wiki link from one page to another. "
+        "Provide relation_type to remove only that typed relation; otherwise untyped "
+        "wikilinks are removed while their visible text is preserved. "
+        "Graph and vector indexes are updated synchronously."
+    )
+)
+async def unlink_page(
+    page_id: str,
+    target_id: str,
+    relation_type: str | None = None,
+) -> str:
+    normalized_relation = normalize_rel(relation_type) if relation_type else None
+    result = await _apply_manual_ops(
+        [Unlink(page=page_id, to=target_id, type=normalized_relation)],
+        f"manual unlink_page: {page_id} from {target_id}",
+    )
+    if result["skipped"]:
+        return f"Skipped: {'; '.join(result['skipped'])}"
+    if result["applied"]:
+        return f"Unlinked {page_id} from {target_id}. Reindexed: {result['changed']}"
     return "No changes made."
 
 

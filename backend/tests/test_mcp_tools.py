@@ -3,7 +3,8 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-from second_brain.mcp_server import _dispatch, link_page
+
+from second_brain.mcp_server import _dispatch, link_page, unlink_page
 
 
 @pytest.mark.asyncio
@@ -135,6 +136,32 @@ async def test_link_page_uses_typed_deterministic_operation() -> None:
         )
 
     assert result == "Linked second-brain to graph. Reindexed: ['second-brain']"
+    operation = mock_apply.call_args.args[0][0]
+    assert operation.page == "second-brain"
+    assert operation.to == "graph"
+    assert operation.type == "part_of"
+
+
+@pytest.mark.asyncio
+async def test_unlink_page_uses_typed_deterministic_operation() -> None:
+    result_payload = {
+        "changed": ["second-brain"],
+        "created": [],
+        "deleted": [],
+        "skipped": [],
+        "applied": ["unlink → second-brain → graph (part_of)"],
+    }
+    with patch(
+        "second_brain.mcp_server._apply_manual_ops",
+        return_value=result_payload,
+    ) as mock_apply:
+        result = await unlink_page(
+            page_id="second-brain",
+            target_id="graph",
+            relation_type="Part Of",
+        )
+
+    assert result == "Unlinked second-brain from graph. Reindexed: ['second-brain']"
     operation = mock_apply.call_args.args[0][0]
     assert operation.page == "second-brain"
     assert operation.to == "graph"

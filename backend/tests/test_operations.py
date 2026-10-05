@@ -11,6 +11,7 @@ from second_brain.agent.operations import (
     Link,
     MarkOutdated,
     Merge,
+    Unlink,
     apply_operations,
     parse_operations,
 )
@@ -68,20 +69,22 @@ def test_parse_valid_and_invalid_ops() -> None:
          "text": "Updated."},
         {"op": "create_page", "title": "New Page", "content": "Body."},
         {"op": "link", "page": "second-brain", "to": "watchtower"},
+        {"op": "unlink", "page": "second-brain", "to": "watchtower"},
         {"op": "merge", "source": "a", "target": "b"},
         {"op": "mark_outdated", "page": "second-brain", "reason": "superseded"},
         {"op": "rewrite_everything", "page": "second-brain"},   # unknown op
         {"op": "add_claim", "page": "second-brain"},            # missing text
         "not an object",
     ])
-    assert len(ops) == 6
+    assert len(ops) == 7
     assert len(rejected) == 3
     assert isinstance(ops[0], AddClaim)
     assert isinstance(ops[1], EditSection)
     assert isinstance(ops[2], CreatePage)
     assert isinstance(ops[3], Link)
-    assert isinstance(ops[4], Merge)
-    assert isinstance(ops[5], MarkOutdated)
+    assert isinstance(ops[4], Unlink)
+    assert isinstance(ops[5], Merge)
+    assert isinstance(ops[6], MarkOutdated)
 
 
 def test_parse_rejects_non_list() -> None:
@@ -232,6 +235,54 @@ def test_link_appends_when_no_mention(tmp_path: Path) -> None:
     apply_operations([Link(page="unrelated", to="watchtower")], wiki)
     content = (wiki / "unrelated.md").read_text(encoding="utf-8")
     assert "Related: [[watchtower]]" in content
+
+
+def test_unlink_removes_managed_related_line(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    (wiki / "unrelated.md").write_text("# Unrelated\n\nNothing here.\n", encoding="utf-8")
+    apply_operations([Link(page="unrelated", to="watchtower")], wiki)
+
+    result = apply_operations([Unlink(page="unrelated", to="watchtower")], wiki)
+    content = (wiki / "unrelated.md").read_text(encoding="utf-8")
+    assert "Related: [[watchtower]]" not in content
+    assert "unrelated" in result.changed
+
+
+def test_unlink_preserves_visible_inline_text(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations([Unlink(page="watchtower", to="secondbrain-project")], wiki)
+    content = (wiki / "watchtower.md").read_text(encoding="utf-8")
+    assert "[[secondbrain-project" not in content
+    assert "SecondBrain Project" in content
+    assert "the project" in content
+
+
+def test_unlink_removes_only_requested_typed_relation(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [
+            Link(page="second-brain", to="watchtower", type="uses"),
+            Link(page="second-brain", to="watchtower", type="deployed_with"),
+        ],
+        wiki,
+    )
+
+    result = apply_operations(
+        [Unlink(page="second-brain", to="watchtower", type="uses")], wiki
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "- uses:: [[watchtower]]" not in content
+    assert "- deployed_with:: [[watchtower]]" in content
+    assert "second-brain" in result.changed
+
+
+def test_unlink_missing_link_is_skipped(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [Unlink(page="second-brain", to="secondbrain-project")], wiki
+    )
+    assert not result.changed
+    assert result.skipped
 
 
 def test_merge_is_lossless_and_rewires_backlinks(tmp_path: Path) -> None:
