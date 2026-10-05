@@ -276,6 +276,39 @@ def test_unlink_removes_only_requested_typed_relation(tmp_path: Path) -> None:
     assert "second-brain" in result.changed
 
 
+def test_untyped_unlink_preserves_typed_relation(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    page = wiki / "second-brain.md"
+    page.write_text(
+        page.read_text(encoding="utf-8")
+        + "\nSee [[watchtower|the deployment service]]."
+        + "\n\n## Relations\n\n- uses:: [[watchtower]]\n",
+        encoding="utf-8",
+    )
+
+    result = apply_operations([Unlink(page="second-brain", to="watchtower")], wiki)
+    content = page.read_text(encoding="utf-8")
+
+    assert "See the deployment service." in content
+    assert "- uses:: [[watchtower]]" in content
+    assert "second-brain" in result.changed
+
+
+def test_untyped_unlink_skips_when_only_typed_relation_exists(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [Link(page="second-brain", to="watchtower", type="uses")],
+        wiki,
+    )
+
+    result = apply_operations([Unlink(page="second-brain", to="watchtower")], wiki)
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+
+    assert "- uses:: [[watchtower]]" in content
+    assert not result.changed
+    assert result.skipped
+
+
 def test_unlink_missing_link_is_skipped(tmp_path: Path) -> None:
     wiki = _make_vault(tmp_path)
     result = apply_operations(
