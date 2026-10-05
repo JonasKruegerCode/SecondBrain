@@ -1,9 +1,9 @@
 """Unit tests for MCP tool dispatch logic (no Docker required)."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from second_brain.mcp_server import _dispatch
+from second_brain.mcp_server import _dispatch, link_page
 
 
 @pytest.mark.asyncio
@@ -69,6 +69,76 @@ async def test_get_page_dispatches_vault_ops() -> None:
     assert result == "# Rust\n..."
     mock_vault_ops.get_page.assert_called_once_with("rust")
     mock_sync.assert_called_once()  # reads sync before serving
+
+
+@pytest.mark.asyncio
+async def test_get_neighbors_navigates_graph_without_vector_search() -> None:
+    mock_graph_store = MagicMock()
+    mock_graph_store.get_neighbors_with_titles.return_value = [
+        {
+            "id": "graph",
+            "title": "Knowledge Graph",
+            "rel": "uses",
+            "direction": "outgoing",
+        },
+        {"id": "vectors", "title": "Vector Search", "rel": None},
+    ]
+
+    with (
+        patch(
+            "second_brain.mcp_server.Neo4jStore",
+            return_value=mock_graph_store,
+        ),
+        patch("second_brain.mcp_server.sync_vault", return_value="no_changes"),
+    ):
+        result = await _dispatch(
+            "get_neighbors", {"id": "second-brain", "hops": 1}
+        )
+
+    assert "Knowledge Graph" in result
+    assert "relation: uses" in result
+    assert "direction: outgoing" in result
+    assert "Vector Search" in result
+    mock_graph_store.get_neighbors_with_titles.assert_called_once_with(
+        "second-brain", hops=1
+    )
+    mock_graph_store.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_neighbors_rejects_unsupported_hop_count() -> None:
+    with patch("second_brain.mcp_server.sync_vault", return_value="no_changes"):
+        result = await _dispatch(
+            "get_neighbors", {"id": "second-brain", "hops": 3}
+        )
+
+    assert result == "Error: 'hops' must be 1 or 2"
+
+
+@pytest.mark.asyncio
+async def test_link_page_uses_typed_deterministic_operation() -> None:
+    result_payload = {
+        "changed": ["second-brain"],
+        "created": [],
+        "deleted": [],
+        "skipped": [],
+        "applied": ["link → second-brain → graph (part_of)"],
+    }
+    with patch(
+        "second_brain.mcp_server._apply_manual_ops",
+        return_value=result_payload,
+    ) as mock_apply:
+        result = await link_page(
+            page_id="second-brain",
+            target_id="graph",
+            relation_type="Part Of",
+        )
+
+    assert result == "Linked second-brain to graph. Reindexed: ['second-brain']"
+    operation = mock_apply.call_args.args[0][0]
+    assert operation.page == "second-brain"
+    assert operation.to == "graph"
+    assert operation.type == "part_of"
 
 
 @pytest.mark.asyncio

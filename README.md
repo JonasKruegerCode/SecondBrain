@@ -121,8 +121,17 @@ API Key: your-secret-key   (set as Bearer token / MCP_API_KEY)
 
 | Tool | Description |
 |------|-------------|
-| `remember(text)` | Store knowledge — runs async in the background, returns a task ID |
-| `recall(query, limit?)` | Retrieve context — HybridRAG + LLM synthesis |
+| `remember(text)` | Curate new knowledge into the wiki through the ingestion agent |
+| `recall(query)` | Return the three most relevant pages plus direct graph neighbors |
+| `search_wiki(query, limit?, hpos?)` | Search page ids by semantic similarity |
+| `get_page(id)` | Read one complete Markdown page by id |
+| `get_neighbors(id, hops?)` | Navigate one or two hops from a known page without vector search |
+| `link_page(page_id, target_id, relation_type?)` | Add a deterministic link between existing pages |
+| `edit_page(...)` | Add, edit, delete, or replace a specific page claim or section |
+| `create_page_manual(title, content)` | Create a page from exact Markdown |
+| `delete_fact(page_id, text)` | Remove an exact claim from a page |
+| `delete_wiki_page(page_id, reason)` | Hard-delete a page; Git remains the audit trail |
+| `get_RAG_response(query, limit?)` | Retrieve synthesized HybridRAG context |
 
 ---
 

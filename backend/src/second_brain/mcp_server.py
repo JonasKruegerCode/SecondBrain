@@ -29,6 +29,7 @@ from second_brain.agent.operations import (
     DeletePage,
     EditClaim,
     EditSection,
+    Link,
     apply_operations,
 )
 from second_brain.core.config import settings
@@ -38,6 +39,7 @@ from second_brain.llm.embedder import get_embedder
 from second_brain.memory.graph import Neo4jStore
 from second_brain.memory.hybrid_rag import HybridRAG
 from second_brain.memory.indexing import (
+    normalize_rel,
     read_title,
     sync_vault,
     update_graph_and_vectors,
@@ -97,12 +99,36 @@ def _format_search_results(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _format_neighbors(page_id: str, neighbors: list[dict[str, Any]]) -> str:
+    if not neighbors:
+        return f"No graph neighbors found for page '{page_id}'."
+    lines = [f"Graph neighbors of '{page_id}':"]
+    for neighbor in neighbors:
+        metadata = []
+        if relation := neighbor.get("rel"):
+            metadata.append(f"relation: {relation}")
+        if direction := neighbor.get("direction"):
+            metadata.append(f"direction: {direction}")
+        metadata_suffix = f" ({', '.join(metadata)})" if metadata else ""
+        lines.append(
+            f"- **{neighbor.get('title', neighbor.get('id'))}** "
+            f"(id: {neighbor.get('id')}){metadata_suffix}"
+        )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Shared tool dispatch logic (MCP + REST API)
 # ---------------------------------------------------------------------------
 
 
-READ_TOOLS = ("recall", "get_RAG_response", "search_wiki", "get_page")
+READ_TOOLS = (
+    "recall",
+    "get_RAG_response",
+    "search_wiki",
+    "get_page",
+    "get_neighbors",
+)
 
 # Throttle so bursts (recall + get_page in a row) don't fetch on every call
 READ_SYNC_INTERVAL_SECONDS = 30.0
@@ -158,6 +184,18 @@ async def _dispatch(name: str, args: dict[str, Any]) -> str:
         return _format_search_results(results)
     if name == "get_page":
         return vault_ops.get_page(args["id"])
+    if name == "get_neighbors":
+        hops = args.get("hops", 1)
+        if hops not in (1, 2):
+            return "Error: 'hops' must be 1 or 2"
+        graph_store = Neo4jStore(
+            settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD
+        )
+        try:
+            neighbors = graph_store.get_neighbors_with_titles(args["id"], hops=hops)
+        finally:
+            graph_store.close()
+        return _format_neighbors(args["id"], neighbors)
     return f"Unknown tool: {name}"
 
 
@@ -490,6 +528,41 @@ async def search_wiki(query: str, limit: int = 15, hpos: int = 0) -> str:
 )
 async def get_page(id: str) -> str:  # noqa: A002
     return await _dispatch("get_page", {"id": id})
+
+
+@fmcp.tool(
+    description=(
+        "Navigate the wiki graph directly from a known page id without semantic search. "
+        "Returns linked pages up to one or two hops away. Direct neighbors include "
+        "relation metadata when present."
+    )
+)
+async def get_neighbors(id: str, hops: int = 1) -> str:  # noqa: A002
+    return await _dispatch("get_neighbors", {"id": id, "hops": hops})
+
+
+@fmcp.tool(
+    description=(
+        "Create a deterministic wiki link from one existing page to another. "
+        "Optionally provide a relation_type such as 'part_of' or 'uses'. "
+        "Both pages must already exist; graph and vector indexes are updated synchronously."
+    )
+)
+async def link_page(
+    page_id: str,
+    target_id: str,
+    relation_type: str | None = None,
+) -> str:
+    normalized_relation = normalize_rel(relation_type) if relation_type else None
+    result = await _apply_manual_ops(
+        [Link(page=page_id, to=target_id, type=normalized_relation)],
+        f"manual link_page: {page_id} to {target_id}",
+    )
+    if result["skipped"]:
+        return f"Skipped: {'; '.join(result['skipped'])}"
+    if result["applied"]:
+        return f"Linked {page_id} to {target_id}. Reindexed: {result['changed']}"
+    return "No changes made."
 
 
 @fmcp.tool(
