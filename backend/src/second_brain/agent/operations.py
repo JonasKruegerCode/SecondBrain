@@ -454,10 +454,24 @@ def _apply_one(op: Operation, vault: _Vault, result: ApplyResult, today: str) ->
                 rf"\[\[{re.escape(op.to)}(?:\|([^\]]+))?\]\]",
                 re.IGNORECASE,
             )
-            new_md, inline_count = inline_link.subn(
-                lambda match: match.group(1) or fallback_title,
-                new_md,
+            typed_relation = re.compile(
+                rf"^[ \t]*(?:[-*][ \t]+)?[A-Za-z][\w -]*?::[ \t]*"
+                rf"\[\[{re.escape(op.to)}(?:\|[^\]]+)?\]\]",
+                re.IGNORECASE,
             )
+            rewritten_lines: list[str] = []
+            inline_count = 0
+            for line in new_md.splitlines(keepends=True):
+                if typed_relation.match(line):
+                    rewritten_lines.append(line)
+                    continue
+                rewritten, replacements = inline_link.subn(
+                    lambda match: match.group(1) or fallback_title,
+                    line,
+                )
+                rewritten_lines.append(rewritten)
+                inline_count += replacements
+            new_md = "".join(rewritten_lines)
             count += inline_count
 
         if count == 0:
