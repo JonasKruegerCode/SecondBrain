@@ -77,7 +77,7 @@ verification separately. Factory-owned workers reconstruct pending work after
 saves and restarts. The immutable save receipt remains publication-time evidence. The immediate graph derives
 explicit wikilinks and typed relations from one content snapshot, resolves unique
 titles, and reports missing/ambiguous targets without inferring dependencies.
-Frontend title-link resolution and galaxy layout remain unfinished.
+The browser uses the same target resolver for ID/title links, ambiguous choices and missing links. A first snapshot galaxy is available at `/galaxy`; its topology grouping is a navigation aid, not a semantic classification.
 
 ## REST and MCP
 
@@ -187,3 +187,43 @@ reader and identical content/revision results. These are local fixture timings,
 not a production scalability guarantee. Concurrent publication during a batch
 read is covered by a regression ensuring the returned graph remains on its
 declared snapshot.
+
+
+## Link navigation and snapshot galaxy
+
+Wiki links use exact page IDs first, then case-insensitive unique titles. Duplicate
+titles offer explicit candidate cards; missing targets are marked within prose.
+Title aliases, cross-page heading fragments and `[[#Heading]]` work alongside
+direct URLs and browser history. Rendering still ignores wikilinks inside code.
+The bounded read endpoint `/api/wiki/resolve-links?target=...&source=...` shares
+the graph resolver and returns its content revision. Article links are hydrated
+in small batches; their resolution route remains available on request failure.
+A late response for an abandoned article cannot replace the current edit target.
+
+The galaxy reads `/api/wiki/graph`, which derives resolved edges from one
+immutable Markdown snapshot. Cores and groups are deterministic link-topology
+neighborhoods: prefer highly linked local hubs over connectors spanning at least
+80% of a component; additional cores are separated by at least two links. Assign
+pages to their nearest core, with deterministic ties. A generic wikilink never
+implies a dependency. The evidence panel preserves actual source/target direction
+and declared relation labels. Unresolved targets do not become invented stars.
+Use the explicit refresh link to read a newer revision after saves/deletions.
+
+Overview, focused neighborhood, star selection, local title/ID search and article
+navigation share a keyboard-accessible sidebar. Zoom/pan are bounded. On narrow
+screens, controls remain reachable and a list view offers a reduced alternative.
+Above 250 pages or 800 links, list view is the default and skips SVG construction.
+The map can still be selected explicitly; large-map performance is not accepted.
+Grouping changes may move stars after a content mutation. Semantic communities,
+stable incremental placement, richer overview aggregation and visual depth remain
+quality work for the final galaxy acceptance; this first view is not that signoff.
+
+Validated against actual isolated demo services: 235 nonintegrative backend tests,
+Ruff and strict MyPy, TypeScript and both Vite entries. Fifteen Chromium cases in
+total cover reader/editor regressions, title ambiguity/deletion, fragments,
+delayed real responses and galaxy save/link/delete refresh. Desktop 1440 and
+mobile viewport 390 screenshots were inspected; light-shell contrast, label
+collisions and navigation overflow were corrected. Browser emulation is not a
+physical-device installation or hosted-provider/model test. One history response
+uses a synthetic error and one real page response is delayed; the remaining
+content and mutations use real services.

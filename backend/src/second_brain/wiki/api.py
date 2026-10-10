@@ -115,6 +115,13 @@ def create_app(
     async def graph(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(store.graph))
 
+    async def resolve_links(request: Request) -> Response:
+        targets = request.query_params.getlist("target")
+        source = request.query_params.get("source", "")
+        if len(targets) > 200 or any(len(target) > 500 for target in targets) or len(source) > 160:
+            raise WikiError("invalid_payload", "Resolve at most 200 links of 500 characters each.")
+        return JSONResponse(await run_in_threadpool(store.resolve_links, targets, source))
+
     async def index_status(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(indexes.status))
 
@@ -170,6 +177,7 @@ def create_app(
             Route("/api/wiki/pages", pages),
             Route("/api/wiki/search", search),
             Route("/api/wiki/graph", graph),
+            Route("/api/wiki/resolve-links", resolve_links),
             Route("/api/wiki/index-status", index_status),
             Route("/api/wiki/delivery-status", delivery_status),
             Route("/api/wiki/pages/{page_id}/neighbors", neighbors),

@@ -201,6 +201,40 @@ class WikiStore:
         result: dict[str, Any] = self.snapshot()["graph"]
         return result
 
+    @staticmethod
+    def _resolve_target(
+        raw_target: str, source: str, ids: set[str], titles: dict[str, set[str]]
+    ) -> tuple[str, list[str]]:
+        target = raw_target.split("#", 1)[0].strip()
+        if not target and raw_target.strip().startswith("#"):
+            target = source
+        if target in ids:
+            return target, [target]
+        return target, sorted(titles.get(target.casefold(), set()))
+
+    def resolve_links(self, targets: list[str], source: str = "") -> dict[str, Any]:
+        """Resolve a bounded article batch against one immutable content snapshot."""
+        snapshot = self.snapshot()
+        pages = {p["id"]: p for p in snapshot["pages"]}
+        titles: dict[str, set[str]] = {}
+        for page in pages.values():
+            titles.setdefault(page["title"].casefold(), set()).add(page["id"])
+        ids = set(pages)
+        resolutions = []
+        for raw in targets:
+            _, candidates = self._resolve_target(raw, source, ids, titles)
+            resolutions.append(
+                {
+                    "target": raw,
+                    "status": "resolved"
+                    if len(candidates) == 1
+                    else ("ambiguous" if candidates else "missing"),
+                    "fragment": raw.partition("#")[2],
+                    "candidates": [{"id": key, "title": pages[key]["title"]} for key in candidates],
+                }
+            )
+        return {"revision": snapshot["revision"], "resolutions": resolutions}
+
     def snapshot(self) -> dict[str, Any]:
         """Capture content and its derived graph at one immutable Git commit."""
         head = self._head()
@@ -225,24 +259,16 @@ class WikiStore:
             links.extend((match.group(1), None) for match in LINK_RE.finditer(prose))
             outgoing: set[tuple[str, str | None]] = set()
             for raw_target, rel in links:
-                target = raw_target.split("#", 1)[0].strip()
+                target, candidates = WikiStore._resolve_target(raw_target, page["id"], ids, titles)
                 if not target:
-                    # [[#Heading]] is an explicit link within this page.
-                    if raw_target.strip().startswith("#"):
-                        target = page["id"]
-                    else:
-                        continue
-                if target in ids:
-                    resolved = target
-                else:
-                    candidates = titles.get(target.casefold(), set())
-                    if len(candidates) > 1:
-                        ambiguous.add((page["id"], target, tuple(sorted(candidates))))
-                        continue
-                    if not candidates:
-                        missing.add((page["id"], target))
-                        continue
-                    resolved = next(iter(candidates))
+                    continue
+                if len(candidates) > 1:
+                    ambiguous.add((page["id"], target, tuple(candidates)))
+                    continue
+                if not candidates:
+                    missing.add((page["id"], target))
+                    continue
+                resolved = candidates[0]
                 outgoing.add((resolved, rel))
             typed_targets = {target for target, rel in outgoing if rel is not None}
             edges.update(

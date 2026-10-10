@@ -196,10 +196,10 @@ test("mobile direct page and missing link state remain readable", async ({
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBeTruthy();
-  await page.getByRole("link", { name: "A missing thought" }).click();
-  await expect(
-    page.getByRole("heading", { name: "This page is missing." }),
-  ).toBeVisible();
+  await expect(page.locator(".missing-link")).toHaveText("A missing thought");
+  await expect(page.locator(".missing-link")).not.toHaveAttribute("href");
+  await page.goto("/wiki/missing-e2e-page");
+  await expect(page.getByRole("heading", { name: "This page is missing." })).toBeVisible();
   await page.getByRole("link", { name: "Back to home" }).click();
   await expect(
     page.getByRole("heading", { name: "A growing collection" }),
@@ -309,4 +309,96 @@ test("history errors can be retried without leaving the page", async ({ page, re
   await history.click();
   await history.click();
   await expect(page.locator(".history-list li")).toHaveCount(1);
+});
+
+test("title links resolve IDs, preserve sections and show missing targets", async ({ page, request }) => {
+  const title = `Reference ${randomUUID()}`;
+  const target = await create(request, `# ${title}\n\n## Fine detail\n\nA synthetic reference.`);
+  const source = await create(request, `# Link source\n\n[[${title}#Fine detail|Title reference]] and [[${target.id}|Stable reference]]. [[nonexistent-${randomUUID()}|Missing reference]].\n\n## Local detail\n\n[[#Local detail|Within this article]]`);
+  await page.goto(`/wiki/${source.id}`);
+  const titleLink = page.getByRole("link", { name: "Title reference", exact: true });
+  await expect(titleLink).toHaveAttribute("href", new RegExp(`/wiki/${target.id}#Fine%20detail$`));
+  await expect(page.locator(".missing-link")).toHaveText("Missing reference");
+  await expect(page.locator(".missing-link")).not.toHaveAttribute("href");
+  await page.getByRole("link", { name: "Within this article", exact: true }).click();
+  await expect(page.locator("#section-1")).toBeFocused();
+  await titleLink.click();
+  await expect(page).toHaveURL(new RegExp(`/wiki/${target.id}#Fine%20detail$`));
+  await expect(page.locator("#section-1")).toBeFocused();
+  await page.reload();
+  await expect(page.locator("#section-1")).toBeFocused();
+  await page.goBack();
+  await expect(page.getByRole("link", { name: "Stable reference", exact: true })).toBeVisible();
+});
+
+test("ambiguous titles offer explicit choices and refresh after deletion", async ({ page, request }) => {
+  const title = `Duplicate ${randomUUID()}`;
+  const a = await create(request, `# ${title}\n\n## Details\n\nFirst synthetic candidate.`);
+  const b = await create(request, `# ${title}\n\n## Details\n\nSecond synthetic candidate.`);
+  const source = await create(request, `# Ambiguous source\n\n[[${title}#Details|Shared reference]]`);
+  await page.goto(`/wiki/${source.id}`);
+  const link = page.getByRole("link", { name: "Shared reference", exact: true });
+  await expect(link).toHaveClass(/ambiguous-link/);
+  await link.click();
+  await expect(page.getByRole("heading", { name: "Choose a page." })).toBeVisible();
+  const choices = page.locator(".card");
+  await expect(choices).toHaveCount(2);
+  await expect(choices.first()).toHaveAttribute("href", /#Details$/);
+  await choices.filter({ hasText: title }).first().click();
+  await expect(page.locator("#section-1")).toBeFocused();
+  const response = await request.delete(`/api/wiki/pages/${a.id}`, { data: {
+    base_revision: a.revision, request_id: randomUUID(),
+  }});
+  expect(response.ok()).toBeTruthy();
+  await page.goto(`/wiki/${source.id}`);
+  await expect(page.getByRole("link", { name: "Shared reference", exact: true })).toHaveAttribute("href", `/wiki/${b.id}#Details`);
+});
+
+test("late real page response cannot replace a newer article or edit target", async ({ page, request }) => {
+  const a = await create(request, `# Delayed article ${randomUUID()}\nOld route.`);
+  const title = `Current article ${randomUUID()}`;
+  const b = await create(request, `# ${title}\nCurrent route.`);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`**/api/wiki/pages/${a.id}`, async route => { await gate; await route.continue(); });
+  await page.goto(`/wiki/${a.id}`);
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.locator(".card").filter({ hasText: title }).click();
+  await expect(page.locator("article h1")).toHaveText(title);
+  const staleResponse = page.waitForResponse(response => response.url().endsWith(`/api/wiki/pages/${a.id}`));
+  release();
+  await staleResponse;
+  await page.getByRole("button", { name: "Edit page" }).click();
+  await expect(page.locator("#editor")).toHaveValue(b.markdown);
+});
+
+test("galaxy snapshot refresh reflects real save, link and delete operations", async ({ page, request }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const title = `New star ${randomUUID()}`;
+  await page.goto("/galaxy");
+  const previous = await page.locator(".galaxy-revision").innerText();
+  const target = await create(request, `# ${title}\n\nAn isolated synthetic star.`);
+  const source = await create(request, `# Star source ${randomUUID()}\n\n[[${target.id}]]`);
+  await expect(page.locator(".galaxy-revision")).toHaveText(previous);
+  await page.getByRole("link", { name: "Refresh snapshot" }).click();
+  await expect(page.locator(".galaxy-revision")).not.toHaveText(previous);
+  await page.getByRole("searchbox", { name: "Find a page in this snapshot" }).fill(target.id);
+  await page.locator(".galaxy-page").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title);
+  await expect(page.locator(".galaxy-evidence")).toContainText("Explicit wikilink");
+  const response = await request.delete(`/api/wiki/pages/${target.id}`, { data: {
+    base_revision: target.revision, request_id: randomUUID(),
+  }});
+  expect(response.ok()).toBeTruthy();
+  await page.getByRole("link", { name: "Refresh snapshot" }).click();
+  await page.getByRole("searchbox", { name: "Find a page in this snapshot" }).fill(target.id);
+  await expect(page.locator(".galaxy-sidebar-content")).toContainText("No title or page ID matches.");
+  await page.getByRole("searchbox", { name: "Find a page in this snapshot" }).fill(source.id);
+  await page.locator(".galaxy-page").click();
+  await expect(page.locator(".galaxy-problems")).toContainText(target.id);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.getByRole("button", { name: "List view", exact: true }).click();
+  await expect(page.locator(".galaxy-stage")).toBeHidden();
 });

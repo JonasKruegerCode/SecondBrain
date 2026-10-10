@@ -629,3 +629,13 @@ textarea {
 @media (max-width: 600px) { .article-toc { padding: 18px; } }
 .delivery-notice { font-size: 12px; line-height: 1.7; color: #688576; }
 .delivery-notice:empty { display: none; }
+
+.prose .missing-link { color: #697583; border-bottom: 1px dashed currentColor; text-decoration: none; cursor: help; }
+.prose .ambiguous-link { text-decoration-style: dotted; }
+.link-target { overflow-wrap: anywhere; font-family: monospace; }
+
+@media (max-width: 550px) {
+  header { height: auto; min-height: 85px; padding: 16px 22px; flex-wrap: wrap; gap: 8px; }
+  header nav { flex-wrap: wrap; }
+  header nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 9px 11px; }
+}

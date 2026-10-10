@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import "./style.css";
+import { renderGalaxy, Graph } from "./galaxy";
 type HistoryEntry = { commit: string; date: string; message: string };
 type Page = {
   id: string;
@@ -18,7 +19,7 @@ let page: Page | null = null,
   deliveryNotice = "",
   generation = 0,
   deliveryGeneration = 0,
-  activeUrl = location.pathname + location.search;
+  activeUrl = location.pathname + location.search + location.hash;
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -28,6 +29,9 @@ const esc = (s: string) =>
       ]!,
   );
 const url = (id: string) => "/wiki/" + encodeURIComponent(id);
+const linkUrl = (target: string, source = page?.id || "") =>
+  `/resolve?${new URLSearchParams({ target, source })}`;
+let cleanupView: (() => void) | undefined;
 // Marked invokes inline tokenizers only in prose, leaving code blocks and spans intact.
 marked.use({
   extensions: [
@@ -48,7 +52,7 @@ marked.use({
         };
       },
       renderer(token) {
-        return `<a href="${esc(url(token.id as string))}">${esc(token.label as string)}</a>`;
+        return `<a href="${esc(linkUrl(token.id as string))}" data-wiki-target="${esc(token.id as string)}">${esc(token.label as string)}</a>`;
       },
     },
   ],
@@ -80,13 +84,15 @@ function markdown(s: string) {
     const out = document.createElement(el.tagName.toLowerCase());
     if (el.tagName === "A") {
       const href = el.getAttribute("href") || "";
-      if (/^\/wiki\//.test(href) || /^https?:\/\//.test(href)) {
+      if (/^\/(wiki\/|resolve\?)/.test(href) || /^#/.test(href) || /^https?:\/\//.test(href)) {
         out.setAttribute("href", href);
         if (href.startsWith("http")) {
           out.setAttribute("target", "_blank");
           out.setAttribute("rel", "noopener noreferrer");
         }
       }
+      const target = el.getAttribute("data-wiki-target");
+      if (target !== null) out.dataset.wikiTarget = target;
     }
     if (el.tagName === "IMG") {
       const src = el.getAttribute("src") || "";
@@ -132,30 +138,76 @@ function navigate(path: string) {
   )
     return;
   history.pushState({}, "", path);
-  activeUrl = path;
+  activeUrl = location.pathname + location.search + location.hash;
   void route();
 }
 app.addEventListener("click", (e) => {
   const a = (e.target as HTMLElement).closest("a");
   const href = a?.getAttribute("href");
-  if (href?.startsWith("/") && !e.ctrlKey && !e.metaKey) {
+  if (href?.startsWith("/") && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
     e.preventDefault();
     navigate(href);
   }
 });
 function shell() {
-  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${location.pathname === "/search" ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a></nav><div class="workspace"><i></i>Personal workspace</div></header><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${location.pathname === "/search" || location.pathname === "/galaxy" ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a><a href="/galaxy" class="${location.pathname === "/galaxy" ? "active" : ""}">Galaxy</a></nav><div class="workspace"><i></i>Personal workspace</div></header><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
 }
-function cards(pages: Page[]) {
+
+function focusFragment() {
+  if (!location.hash) return;
+  let fragment = "";
+  try { fragment = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+  const slug = (s: string) => s.trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
+  const headings = Array.from(app.querySelectorAll<HTMLHeadingElement>(".prose h1,.prose h2,.prose h3,.prose h4,.prose h5,.prose h6"));
+  const target = headings.find(h => h.id === fragment) || headings.find(h => slug(h.textContent || "") === slug(fragment));
+  if (target) { target.focus({ preventScroll: true }); target.scrollIntoView({ block: "start" }); }
+}
+
+async function resolveTargets(targets: string[], source: string) {
+  const parameters = new URLSearchParams({ source });
+  targets.forEach(target => parameters.append("target", target));
+  return api(`/resolve-links?${parameters}`);
+}
+
+async function hydrateLinks(prose: Element, source: string) {
+  const links = Array.from(prose.querySelectorAll<HTMLAnchorElement>("a[data-wiki-target]"));
+  const targets = [...new Set(links.map(link => link.dataset.wikiTarget!))];
+  // Keep requests small enough for reverse proxy request-line limits.
+  for (let offset = 0; offset < targets.length; offset += 8) {
+    if (!prose.isConnected) return;
+    try {
+      const data = await resolveTargets(targets.slice(offset, offset + 8), source);
+      if (!prose.isConnected) return;
+      for (const result of data.resolutions) {
+        for (const link of links.filter(a => a.dataset.wikiTarget === result.target)) {
+          if (result.status === "resolved") {
+            link.href = url(result.candidates[0].id) + (result.fragment ? `#${encodeURIComponent(result.fragment)}` : "");
+          } else if (result.status === "missing") {
+            link.removeAttribute("href");
+            link.classList.add("missing-link");
+            link.title = "This page does not exist.";
+            link.setAttribute("aria-label", `${link.textContent}; page missing`);
+          } else {
+            link.classList.add("ambiguous-link");
+            link.title = "Several pages share this title. Choose a page.";
+          }
+        }
+      }
+    } catch { /* The explicit resolution route still provides a retryable fallback. */ }
+  }
+}
+function cards(pages: Page[], fragment = "") {
   return pages
     .map(
       (p, i) =>
-        `<a class="card" href="${url(p.id)}"><div class="card-meta"><span>${String(i + 1).padStart(2, "0")}</span><span>↗</span></div><h3>${esc(p.title)}</h3><p>${esc(p.excerpt || "Open this page and follow a thought.")}</p><div class="card-foot">Read page <span>→</span></div></a>`,
+        `<a class="card" href="${url(p.id)}${fragment ? `#${encodeURIComponent(fragment)}` : ""}"><div class="card-meta"><span>${String(i + 1).padStart(2, "0")}</span><span>↗</span></div><h3>${esc(p.title)}</h3><p>${esc(p.excerpt || "Open this page and follow a thought.")}</p><div class="card-foot">Read page <span>→</span></div></a>`,
     )
     .join("");
 }
 async function route() {
   const run = ++generation;
+  cleanupView?.();
+  cleanupView = undefined;
   page = null;
   editing = false;
   notice = "";
@@ -164,6 +216,28 @@ async function route() {
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
   try {
+    if (location.pathname === "/galaxy") {
+      const graph: Graph = await api("/graph");
+      if (run !== generation) return;
+      cleanupView = renderGalaxy(main, graph);
+      return;
+    }
+    if (location.pathname === "/resolve") {
+      const parameters = new URLSearchParams(location.search);
+      const target = parameters.get("target") || "";
+      const data = await resolveTargets([target], parameters.get("source") || "");
+      if (run !== generation) return;
+      const result = data.resolutions[0];
+      if (result.status === "resolved") {
+        const path = url(result.candidates[0].id) + (result.fragment ? `#${encodeURIComponent(result.fragment)}` : "");
+        history.replaceState({}, "", path);
+        activeUrl = path;
+        void route();
+      } else {
+        main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
+      }
+      return;
+    }
     if (location.pathname === "/search") {
       main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW YOUR CURIOSITY</div><h1>Find a thought.</h1><p>Search your pages, pick up a thread, and keep going.</p></section><form><span>⌕</span><input aria-label="Search pages" placeholder="Search your knowledge…" value="${esc(new URLSearchParams(location.search).get("q") || "")}"><button class="primary">Search →</button></form><div id="results"><p class="quiet">A name, an idea, a phrase. Start anywhere.</p></div>`;
       const input = main.querySelector("input")!;
@@ -192,12 +266,14 @@ async function route() {
       return;
     }
     if (location.pathname.startsWith("/wiki/")) {
-      page = await api(
+      const loaded = await api(
         "/pages/" +
           encodeURIComponent(decodeURIComponent(location.pathname.slice(6))),
       );
       if (run !== generation) return;
+      page = loaded;
       renderPage();
+      focusFragment();
       return;
     }
     const { pages } = await api("/pages");
@@ -232,6 +308,7 @@ function renderPage() {
   if (!editing) {
     const prose = main.querySelector(".prose")!;
     prose.append(markdown((page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
+    void hydrateLinks(prose, page.id);
     const headings = Array.from(prose.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
     if (headings.length) {
       headings.forEach((heading, i) => {
@@ -373,8 +450,12 @@ window.addEventListener("popstate", () => {
     history.pushState({}, "", activeUrl);
     return;
   }
-  activeUrl = location.pathname + location.search;
+  activeUrl = location.pathname + location.search + location.hash;
   void route();
+});
+window.addEventListener("hashchange", () => {
+  activeUrl = location.pathname + location.search + location.hash;
+  focusFragment();
 });
 window.addEventListener("beforeunload", (e) => {
   if (editing && draft !== page?.markdown) {
