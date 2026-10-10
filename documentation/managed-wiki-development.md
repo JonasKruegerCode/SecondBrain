@@ -30,6 +30,14 @@ The seeder's repeat-verification and interrupted `--resume` behavior are in
 [demo-start.md](demo-start.md). It never overwrites an existing nonempty wiki.
 No chat response or external semantic index is simulated by the demo.
 
+For a deliberate empty/template/local-Git installation choice, use the
+[first-start command](first-start.md). It does not start services, seed on API
+startup, or replace a populated wiki. [Markdown export](wiki-export.md) prepares
+a separate, revision-guarded content-only directory without copying Git internals.
+[Explicit managed Git sync](managed-git-sync.md) publishes or imports reviewed
+snapshots with durable acknowledgements and a guarded normal push. It is not yet
+connected to automatic UI/MCP save delivery.
+
 The separate `docker-compose.wiki.yml` describes an empty managed installation
 on `127.0.0.1:8080`. Its container build/start has not yet been verified. It uses
 an independent `managed_wiki` volume and does not expose the backend port. Put
@@ -125,8 +133,8 @@ frontend is retained as a separate build entry for legacy deployment. Screenshot
 inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
-Not complete: remote Git synchronization and Markdown export workflow,
-live provider/deployment integration, index scheduling/retention/scale, richer
+Not complete: automatic remote/index delivery after saves, production Git
+credential provisioning, live provider/deployment integration, index retention/scale, richer
 Markdown navigation/history UI,
 galaxy, iterative OpenRouter chat, installable PWA, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
@@ -140,14 +148,24 @@ compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use onl
 a disposable synthetic vault: the suite deliberately creates, edits and deletes
 fixture pages. Test artifacts are kept under the ignored `.demo` directory.
 
-On 2026-10-10: 163 nonintegrative backend tests passed, repository Ruff and strict
-MyPy passed (63 source/test files). The prior UI milestone passed TypeScript,
-both Vite builds and nine real-API browser regressions in Chromium; this backend
-index change did not repeat that visual acceptance. Desktop (1440 pixels) and narrow
-(390 pixels) screenshots were inspected. The demo launcher was started and
-stopped against real services. New real HTTP REST/MCP semantic regression used
-embedded Qdrant and synthetic embeddings. Docker deployment, hosted index services,
-remote synchronization, real-model chat and device installation remain untested.
+On 2026-10-10: 212 nonintegrative backend tests passed; repository Ruff and strict
+MyPy passed (71 source/test files). New exporter/setup/remote/CLI coverage uses
+real local Git, with frozen snapshots, no-replace outputs, byte preservation,
+conflicts, lost acknowledgements, restart, request identity, and prepared-object
+retention. A trusted generated pre-push guard validates Git's advertised remote
+OID before a normal non-force push; actual deletion/rewind race tests passed.
+
+A new twelve-page template -> plain export -> committed Git -> managed import
+roundtrip preserved every Markdown byte. The imported app was actually started;
+nine real-API browser tests passed, desktop 1440px/mobile 390px screenshots were
+inspected, and real network MCP SDK initialize/read/guidance/save agreed with
+REST revisions. No observed JavaScript errors or page overflow. Earlier frontend
+TypeScript and both Vite build checks remain the unchanged-UI baseline.
+
+The preceding index milestone started real REST/MCP semantic services with
+embedded Qdrant and synthetic embeddings. Docker is unavailable here; container
+build/deployment, hosted index/embedding providers, authenticated production Git,
+real-model chat and actual device installation remain untested.
 
 The imported atlas was also opened in the running browser, and desktop/mobile
 screenshots were inspected. The narrow-view table inspection exposed excessive

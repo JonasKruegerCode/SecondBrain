@@ -32,11 +32,14 @@ The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importi
 
 1. Open **Lantern Bay field atlas** and follow the night-sky route.
 2. Search for `tide` and inspect how it connects astronomy, ecology, and history.
-3. Open the graph: the subject clusters meet through the tide clock, archive method, harvest calendar, and festival.
+3. Follow the tide clock, archive method, harvest calendar, and festival links to see the bridges between subjects. The galaxy UI is still pending; the current Markdown graph is available through `/api/wiki/graph`.
 4. Edit a page, save, and reload it. The saved Markdown remains available from the same local vault.
 5. Keep two tabs open on the same page to try revision conflict handling.
 
 ## Seeding rules
+
+For the explicit empty/template/local-Git first-start choice, see
+[first-start.md](first-start.md). No first-start command replaces a populated wiki.
 
 Nothing is seeded on API startup. The CLI requires `--vault`; there is no default destination. It writes pages through the same managed `WikiStore.save_page` path as ordinary edits.
 

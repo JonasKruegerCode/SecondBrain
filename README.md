@@ -9,6 +9,11 @@ editing. It is **not yet a complete 2.0 release**. Use the opt-in
 [fictional demo](documentation/demo-start.md). Controlled
 [local Git import](documentation/wiki-import.md) preserves source history;
 [managed HTTP MCP](documentation/managed-mcp.md) shares the same content service.
+[First-start profiles](documentation/first-start.md) explicitly choose empty,
+fictional template, or local Git import. [Markdown export](documentation/wiki-export.md)
+produces a separate content-only snapshot.
+[Explicit Git snapshot sync](documentation/managed-git-sync.md) supports guarded
+push/pull without implicit merging; it is not yet wired to automatic UI saves.
 Existing legacy services remain
 separate; do not mix their writers with a managed vault.
 
