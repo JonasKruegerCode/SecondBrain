@@ -45,6 +45,18 @@ installing its dependencies. For the one-command isolated development tour, use
 [`make demo`](managed-wiki-development.md). Setup itself neither starts a server
 nor configures production services, remotes, or secrets.
 
+For the isolated container preview, copy `.env.wiki.example` to the ignored
+`.env.wiki`, set a real MCP secret, and run:
+
+```sh
+docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
+```
+
+This starts with an empty persistent named volume unless a prepared managed
+vault is restored into that volume by an explicit operator procedure. It never
+auto-seeds template content. Container execution and named-volume restore remain
+unverified until run with a Docker-compatible runtime.
+
 Repeating an empty setup checks that no pages exist. A populated wiki is refused.
 Repeating a template setup verifies unchanged content; edits, extra pages and
 missing pages are preserved and cause refusal. An interrupted template requires

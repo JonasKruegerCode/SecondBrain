@@ -1,19 +1,49 @@
-# Opt-in managed profile. Legacy Compose and production volumes are unchanged.
+# Managed Wiki 2.0 preview. Legacy Compose and production volumes are unchanged.
 services:
   backend:
     build: ./backend
     command: python -m uvicorn second_brain.wiki.api:app_factory --factory --host 0.0.0.0 --port 8000
     environment:
       SECOND_BRAIN_WIKI_VAULT: /managed-vault
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek/deepseek-v4-flash}
     volumes:
       - managed_wiki:/managed-vault
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/wiki/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  mcp:
+    build: ./backend
+    command: python -m uvicorn second_brain.wiki.mcp:http_app_factory --factory --host 0.0.0.0 --port 3001
+    environment:
+      SECOND_BRAIN_WIKI_VAULT: /managed-vault
+      SECOND_BRAIN_WIKI_API_KEY: ${SECOND_BRAIN_WIKI_API_KEY:-}
+      SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS: "${SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS:-localhost,localhost:*,127.0.0.1,127.0.0.1:*}"
+      SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS: "${SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS:-http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*}"
+      SECOND_BRAIN_WIKI_DELIVERY: "0"
+    volumes:
+      - managed_wiki:/managed-vault
+    ports:
+      - "127.0.0.1:3001:3001"
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     ports:
       - "127.0.0.1:8080:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
+
 volumes:
   managed_wiki:

@@ -7,10 +7,11 @@ remember/recall or the legacy editorial agent. Reads do not invoke remote Git;
 factory-owned background delivery only publishes to an explicitly configured
 target. See [recoverable delivery](managed-delivery.md).
 
-This is an independent, opt-in deployment. Existing legacy MCP production
-routes, authentication, REST API, and configuration remain unchanged. Legacy
-also uses `/mcp`, but its key inputs and OAuth-like registration endpoints are
-not part of this profile. Managed HTTP accepts only `Authorization: Bearer …`
+This is the primary MCP offering for the 2.0 managed wiki. Existing legacy MCP
+production routes, authentication, REST API, and configuration remain available
+only as a separate [optional compatibility profile](legacy-memory-profile.md).
+Legacy also uses `/mcp`, but its key inputs and OAuth-like registration endpoints
+are not part of this profile. Managed HTTP accepts only `Authorization: Bearer …`
 when a key is configured; it never accepts keys in a URL or `X-API-Key` and does
 not publish `/register`, `/token`, or OAuth discovery endpoints. It is a static
 Bearer deployment, not an OAuth authorization server.
@@ -62,6 +63,20 @@ Only a `:*` wildcard for numeric ports is supported; wildcard hosts are rejected
 Empty Host lists are rejected. Host failures return 421, Origin failures 403,
 and missing/incorrect configured Bearer keys 401 without echoing the secret.
 Responses use `Cache-Control: no-store`.
+
+The preview Compose file starts managed HTTP MCP on loopback port 3001 beside
+the browser/API service:
+
+```sh
+cp .env.wiki.example .env.wiki
+docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
+```
+
+The MCP container receives `SECOND_BRAIN_WIKI_API_KEY`; the browser/API
+container deliberately does not. Both mount the same managed vault, while only
+the API process owns the polling delivery worker. The worker reconstructs
+pending work written through either process. Container execution remains a
+deployment check until it has been run in an environment with Docker.
 
 For embedding without environment configuration, construct a `WikiStore` and
 call `create_http_app(store, api_key, allowed_hosts=..., allowed_origins=...)`.

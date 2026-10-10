@@ -1,5 +1,6 @@
 .agents
 .env
+.env.wiki
 __pycache__
 .vscode
 

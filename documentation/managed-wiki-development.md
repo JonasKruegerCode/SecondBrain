@@ -2,9 +2,10 @@
 
 This is an **opt-in development profile**, not the completed 2.0 release. It uses
 real local Markdown content and Git history, without Redis, Neo4j, Qdrant, remote
-Git, an embedding provider, or a chat model. Legacy APIs and workers remain
-unchanged; the default legacy Compose stack serves `legacy.html`. Do not attach
-the legacy worker or a direct file writer to a managed vault.
+Git, an embedding provider, or a chat model. Legacy APIs and workers remain an
+optional compatibility profile; the default legacy Compose stack serves
+`legacy.html`. Do not attach the legacy worker or a direct file writer to a
+managed vault.
 
 ## Start and stop
 
@@ -44,9 +45,12 @@ durable local ledgers and demo metadata, then restores only into a new vault.
 External index providers, secrets and proxy configuration remain separate.
 
 The separate `docker-compose.wiki.yml` describes an empty managed installation
-on `127.0.0.1:8080`. Its container build/start has not yet been verified. It uses
-an independent `managed_wiki` volume and does not expose the backend port. Put
-authenticated HTTPS reverse proxy protection in front before exposing it beyond
+on `127.0.0.1:8080` plus managed HTTP MCP on `127.0.0.1:3001`. Its container
+build/start has not yet been verified. Both services use an independent
+`managed_wiki` volume; the backend port is not exposed. Only the MCP service
+receives the configured Bearer key, while browser/API access remains behind the
+deployment's same-origin reverse-proxy authentication. Put authenticated HTTPS
+reverse-proxy protection in front before exposing either endpoint beyond
 localhost. Existing production proxy credentials are not changed. This milestone
 does not migrate the production vault. Explicit local Git import and independent
 HTTP MCP startup are described below.
@@ -68,7 +72,8 @@ payload fails. Earlier published versions remain in local Git history.
 
 Prepared but unpublished objects are invisible to reads. The reference is the
 publication boundary; there is no export/journal to reconcile at startup.
-Back up the complete managed directory, including hidden `.wiki.git` and the
+Use the [portable backup command](backup-restore.md) to preserve hidden
+`.wiki.git` history, durable request receipts, local SQLite ledgers and the
 demo marker where present. Avoid pruning request/history objects arbitrarily.
 Normal operation requires local Git; remote/provider failure is independent.
 
@@ -124,7 +129,8 @@ This is a local stdio transport. The `wiki://guidance` resource documents concis
 article openings, headings, links at the point of use, stable IDs, source
 discipline, revision conflicts and exact retries. Managed tools are get/list/
 search/save/delete/graph/history. Legacy remember/recall remain in the separate
-legacy profile, and are absent here. No automatic editorial repair runs.
+[optional compatibility profile](legacy-memory-profile.md), and are absent here.
+No automatic editorial repair runs.
 
 Streamable HTTP provides those same tools at `/mcp`, with an optional Bearer
 key and explicit Host/Origin allowlists. See [managed-mcp.md](managed-mcp.md)

@@ -1,302 +1,228 @@
 # SecondBrain
 
-## Managed wiki development profile
+SecondBrain 2.0 is a self-hosted, agent-maintained personal wiki. Markdown and
+Git are the source of truth; people read and edit the same revisioned pages
+through a bright web interface, while agents use direct MCP tools for exact
+reads, search, graph navigation and conflict-safe edits.
 
-The `secondbrain-2.0` branch now includes an isolated, runnable managed-wiki
-milestone with real Markdown/Git content, a light article UI, search, direct
-editing, a curated snapshot galaxy, and bounded read-only wiki chat. It is
-**not yet a complete 2.0 release**. Use the opt-in
-[development guide](documentation/managed-wiki-development.md) and
-[fictional demo](documentation/demo-start.md). Controlled
-[local Git import](documentation/wiki-import.md) preserves source history;
-[managed HTTP MCP](documentation/managed-mcp.md) shares the same content service.
-[PWA installation and updates](documentation/pwa.md) preserve an online-only,
-no-private-cache boundary.
-[First-start profiles](documentation/first-start.md) explicitly choose empty,
-fictional template, or local Git import. [Markdown export](documentation/wiki-export.md)
-produces a separate content-only snapshot.
-[Portable backup and restore](documentation/backup-restore.md) preserves managed
-Git history, request receipts and local operational ledgers without bundling secrets.
-[Explicit Git snapshot sync](documentation/managed-git-sync.md) supports guarded
-push/pull without implicit merging. [Recoverable delivery](documentation/managed-delivery.md)
-connects saves to configured index/remote workers with separate progress.
-Existing legacy services remain
-separate; do not mix their writers with a managed vault.
+> The `secondbrain-2.0` branch is a tested development preview, not the final
+> 2.0 release. Production migration and deployment still require the checks
+> listed in [Current limits](#current-limits).
 
-> A persistent MCP memory layer for AI agents. Store knowledge across sessions, retrieve it semantically, and connect any MCP-compatible agent — claude.ai, OpenClaw, or your own.
+## What works now
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/docker-compose-blue.svg)](docker-compose.yml)
+- Wiki-first Home, safe Markdown articles, expected wikilinks and direct URLs
+- revision-aware editor, local Git history and durable retry receipts
+- lexical search plus optional Qdrant semantic search and Neo4j graph retrieval
+- curated knowledge galaxy with real links, clusters, bridges and large-vault fallback
+- bounded read-only OpenRouter chat with visible sources and browser-local conversations
+- direct stdio or HTTP MCP with ten deterministic wiki tools and editing guidance
+- empty, fictional-template or existing-Git first start
+- explicit Git delivery, content export, and verified portable backup/restore
+- installable online-first PWA without caching private wiki or chat data
 
----
+The managed MCP intentionally has **no `remember` or `recall` tool**. Agents
+read relevant pages, make an exact revision-guarded edit, and verify the result.
+The earlier LLM-ingestion memory service remains available only as a separate
+[legacy compatibility profile](documentation/legacy-memory-profile.md).
+Never point managed and legacy writers at the same vault.
 
-## What is SecondBrain?
+## Try the fictional demo
 
-AI agents are stateless by default — they forget everything when a session ends. SecondBrain solves this by providing a **persistent memory server** that any MCP-compatible agent can use to store and retrieve knowledge.
+Prerequisites are Python 3.12, Git, Node 20+, and the locked backend/frontend
+dependencies:
 
-When an agent calls `remember("I just learned that...")`, SecondBrain:
-1. Splits the input into independent topics
-2. Searches existing knowledge for related pages
-3. Uses an LLM planning agent (Wikipedia-style) to decide what to update or create
-4. Writes free-form Markdown wiki pages to a Git-synced vault
-5. Updates a knowledge graph (Neo4j) and semantic index (Qdrant)
-
-When an agent calls `recall("what do I know about X?")`, SecondBrain runs HybridRAG — combining vector search, graph traversal, and LLM synthesis to return a contextual answer from the wiki.
-
-## Features
-
-- **MCP-native** — plug into claude.ai, OpenClaw, or any MCP client
-- **Wikipedia-agent model** — planning + update agents write and revise wiki pages intelligently
-- **HybridRAG** — vector search (Qdrant) + graph traversal (Neo4j) + Markdown vault
-- **Markdown vault** — Obsidian-compatible, optionally Git-synced to GitHub, Bitbucket, GitLab, Gitea, or a self-hosted Git server
-- **Hourly repair agent** — gardens one page per run: merges duplicates, flags contradictions, adds missing links
-- **Web UI** — knowledge graph visualizer + remember/recall interface
-- **Self-hosted** — runs entirely on your own infrastructure
-
-## Architecture
-
-```
-Agent (claude.ai / OpenClaw / custom)
-  │  MCP protocol (port 3000)
-  ▼
-MCP Server ──remember──▶ Celery Worker ──▶ LLM planning agent
-                                      ──▶ Wiki pages (Markdown vault)
-                                      ──▶ Knowledge graph (Neo4j)
-                                      ──▶ Semantic index (Qdrant)
-
-MCP Server ──recall───▶ HybridRAG ──▶ Qdrant (vector search)
-                                  ──▶ Neo4j (graph traversal)
-                                  ──▶ Vault (Markdown load)
-                                  ──▶ LLM synthesis ──▶ Answer
-```
-
-**Storage:**
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| Vault | Markdown + Git | Human-readable, Obsidian-compatible wiki |
-| Graph | Neo4j | Link structure between pages (`[[wikilinks]]`) |
-| Vectors | Qdrant | Semantic similarity search |
-| Queue | Redis + Celery | Async ingestion, scheduled review |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Docker + Docker Compose
-- An [OpenRouter](https://openrouter.ai/) API key (supports Claude, GPT-4, etc.)
-- Optional: a private Git repository for vault sync (for example Bitbucket)
-
-### 1 — Clone and configure
-
-```bash
+```sh
 git clone https://github.com/JonasKruegerCode/SecondBrain.git
 cd SecondBrain
-cp .env.example .env
+git switch secondbrain-2.0
+cd backend && poetry install && cd ..
+cd frontend && npm ci && cd ..
+cd backend
+PYTHONPATH=src poetry run python ../scripts/run-wiki-demo.py
 ```
 
-Edit `.env` — at minimum set your `OPENROUTER_API_KEY` and a `MCP_API_KEY` (any secret string).
+Open <http://127.0.0.1:5173>. The command creates or reopens an isolated
+12-page fictional Lantern Bay vault under ignored `.demo/` storage and starts
+the real API and frontend. It requires no remote Git, database, embedding model
+or LLM key and never seeds an existing nonempty vault.
 
-### 2 — Start
+The default demo disables external model calls. To test paid OpenRouter chat
+deliberately:
 
-```bash
-docker compose up -d
+```sh
+cd backend
+OPENROUTER_API_KEY=... PYTHONPATH=src poetry run python \
+  ../scripts/run-wiki-demo.py --with-openrouter
 ```
 
-That's it. Services:
-- **Web UI**: `http://localhost` (via frontend container)
-- **REST API**: `http://localhost:8000`
-- **MCP endpoint**: `http://localhost:3000/mcp`
+Use `python scripts/run-wiki-demo.py --help` for custom vault options. See the
+[demo tour](documentation/demo-start.md) and
+[development guide](documentation/managed-wiki-development.md) for the complete
+commands and verification boundary.
 
-### 3 — Connect your agent
+## Choose a persistent first start
 
-#### claude.ai
+The managed wiki requires an explicit destination and supports empty, fictional
+template, or local Git import:
 
-Go to **Settings → Integrations → Add MCP server**:
+```sh
+export PYTHONPATH="$PWD/backend/src"
 
-```
-URL:     https://mcp.your-domain.com/mcp
-API Key: your-secret-key   (set as Bearer token / MCP_API_KEY)
-```
-
-> For local testing without a public URL, use [ngrok](https://ngrok.com/) or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) to expose port 3000.
-
-#### OpenClaw / custom MCP client
-
-```json
-{
-  "mcpServers": {
-    "secondbrain": {
-      "url": "http://localhost:3000/mcp",
-      "headers": {
-        "Authorization": "Bearer your-secret-key"
-      }
-    }
-  }
-}
+python -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode empty
+# or:
+python -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode template
+# or:
+python -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode import \
+  --source /absolute/path/to/local-git-clone --prefix path/to/wiki \
+  --request-id first-import
 ```
 
----
+No mode overwrites a populated wiki. Import validates and preserves the source
+history without copying credentials or remote configuration. Full rules:
+[first-start profiles](documentation/first-start.md) and
+[controlled Git import](documentation/wiki-import.md).
 
-## MCP Tools
+## Run the managed services
 
-| Tool | Description |
-|------|-------------|
-| `remember(text)` | Curate new knowledge into the wiki through the ingestion agent |
-| `recall(query)` | Return the three most relevant pages plus direct graph neighbors |
-| `search_wiki(query, limit?, hpos?)` | Search page ids by semantic similarity |
-| `get_page(id)` | Read one complete Markdown page by id |
-| `get_neighbors(id, hops?)` | Navigate one or two hops from a known page without vector search |
-| `link_page(page_id, target_id, relation_type?)` | Add a deterministic link between existing pages |
-| `unlink_page(page_id, target_id, relation_type?)` | Remove an untyped link or one exact typed relation |
-| `edit_page(...)` | Add, edit, delete, or replace a specific page claim or section |
-| `create_page_manual(title, content)` | Create a page from exact Markdown |
-| `delete_fact(page_id, text)` | Remove an exact claim from a page |
-| `delete_wiki_page(page_id, reason)` | Hard-delete a page; Git remains the audit trail |
-| `get_RAG_response(query, limit?)` | Retrieve synthesized HybridRAG context |
+### Native
 
----
+```sh
+export PYTHONPATH="$PWD/backend/src"
+export SECOND_BRAIN_WIKI_VAULT=/srv/secondbrain/vault
 
-## Configuration
+# Wiki REST API for the web UI
+python -m uvicorn second_brain.wiki.api:app_factory --factory \
+  --host 127.0.0.1 --port 8000
 
-All configuration is via environment variables. Copy `.env.example` to `.env` and adjust.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_PROVIDER` | `openrouter` | Active provider: `openrouter` \| `gcp` |
-| `DEFAULT_MODEL` | `deepseek/deepseek-v4-flash` | LLM model name (format depends on provider) |
-| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model name (format depends on provider) |
-| `MCP_API_KEY` | *(required)* | Secret key protecting the MCP endpoint |
-| **OpenRouter** (`LLM_PROVIDER=openrouter`) | | |
-| `OPENROUTER_API_KEY` | *(required)* | API key from [openrouter.ai](https://openrouter.ai/) |
-| `OPENROUTER_CHAT_PROVIDER` | *(optional)* | Pin chat to one upstream provider, e.g. `Together` |
-| `OPENROUTER_EMBEDDING_PROVIDER` | *(optional)* | Pin embeddings to one upstream provider |
-| **GCP / Google AI** (`LLM_PROVIDER=gcp`) | | |
-| `GCP_API_KEY` | *(required)* | Google AI API key |
-| `GCP_ENDPOINT_URL` | Gemini OpenAI-compat URL | Base URL; swap for Vertex AI or any OAI-compat endpoint |
-| **Vault** | | |
-| `VAULT_PATH` | `/vault` | Filesystem path for the Markdown vault |
-| `VAULT_GITHUB_URL` | *(optional, backwards-compatible default)* | GitHub repository URL for vault sync |
-| `VAULT_GITHUB_PAT` | *(optional)* | GitHub PAT; remains supported for existing installations |
-| `VAULT_GIT_PROVIDER` | `github` | Provider name, e.g. `github` or `bitbucket` |
-| `VAULT_GIT_URL` | *(optional)* | Provider-neutral Git URL; overrides `VAULT_GITHUB_URL` when set |
-| `VAULT_GIT_BRANCH` | *(optional)* | Explicit target branch, e.g. `wiki`; empty keeps the remote default |
-| `VAULT_GIT_AUTH_METHOD` | `auto` | `http`, `ssh`, `none`, or `auto` |
-| `VAULT_GIT_HTTP_USERNAME` | provider-dependent | HTTP username; Bitbucket access tokens commonly use `x-token-auth` |
-| `VAULT_GIT_HTTP_ACCESS_TOKEN` | *(optional)* | HTTP token/password; kept out of `.git/config` |
-| `VAULT_GIT_SSH_KEY_PATH` | *(optional)* | Mounted SSH private-key path |
-| `VAULT_GIT_SSH_KEY` | *(optional)* | Inline SSH key; a mounted file is preferred |
-| **Infrastructure** | | |
-| `NEO4J_PASSWORD` | `secretpassword` | Neo4j database password |
-| `REDIS_URL` | `redis://redis:6379/0` | Celery broker URL |
-| `NEO4J_URI` | `bolt://neo4j:7687` | Neo4j connection URI |
-| `QDRANT_URL` | `http://qdrant:6333` | Qdrant connection URL |
-
-For the standard GitHub setup, continue using `VAULT_GITHUB_URL` and
-`VAULT_GITHUB_PAT`. The provider-neutral `VAULT_GIT_*` settings are only
-needed when selecting another provider, branch, or authentication method.
-
-> **Localhost vs. Docker:** Use `localhost:*` for local dev. On a server with Docker Compose, use service names (`redis`, `neo4j`, `qdrant`) — they resolve inside the Docker network.
-
-> **Switching providers:** Set `LLM_PROVIDER=gcp`, `GCP_API_KEY=...`, and update `DEFAULT_MODEL` / `EMBEDDING_MODEL` to model names your provider understands (e.g. `gemini-3.5-flash` / `-gemini-embedding-2` for Google AI).
-
----
-
-## Deployment (Self-Hosted Server)
-
-You can deploy using the pre-built images — no fork or build step required. Just copy two files to your server.
-
-### Server setup
-
-```bash
-# Copy only these two files to the server
-scp docker-compose.yml .env user@your-server:/opt/secondbrain/
-
-# On the server
-cd /opt/secondbrain
-docker compose pull
-docker compose up -d
+# In another terminal: local stdio MCP
+python -m second_brain.wiki.mcp
 ```
 
-Pre-built images are published automatically from this repository:
-- `ghcr.io/jonaskruegercode/secondbrain-frontend:latest`
-- `ghcr.io/jonaskruegercode/secondbrain-backend:latest`
+For Streamable HTTP MCP, use the explicit factory and a server-side Bearer key:
 
-### Build locally instead
-
-If you prefer to build from source (e.g. after making changes):
-
-```bash
-docker compose up -d --build
+```sh
+SECOND_BRAIN_WIKI_API_KEY=replace-with-a-secret \
+python -m uvicorn second_brain.wiki.mcp:http_app_factory --factory \
+  --host 127.0.0.1 --port 3001
 ```
 
-The `docker-compose.yml` includes `build:` directives pointing to `./frontend` and `./backend`, so this works out of the box.
+The [managed MCP guide](documentation/managed-mcp.md) documents Host/Origin
+allowlists, reverse-proxy use, TLS and the editing contract.
 
-### Updates
+### Docker Compose preview
 
-```bash
-docker compose pull && docker compose up -d
+Copy the synthetic configuration template, set a real MCP secret, then build:
+
+```sh
+cp .env.wiki.example .env.wiki
+docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
 ```
 
-### Nginx Proxy Manager (recommended reverse proxy)
+The web UI is bound to <http://127.0.0.1:8080> and HTTP MCP to
+<http://127.0.0.1:3001/mcp>. Both share only the independent
+`managed_wiki` volume. Put an authenticated HTTPS reverse proxy in front
+before remote exposure. The API deliberately does not receive the MCP Bearer
+key, so browser access remains same-origin and can retain the deployment's
+existing proxy authentication.
 
-| Domain | Forward to | Notes |
-|--------|-----------|-------|
-| `brain.your-domain.com` | `frontend:80` + location `/api` → `backend:8000` | Add Basic Auth |
-| `mcp.your-domain.com` | `backend:3000` | Protected by `MCP_API_KEY` |
-
-Nginx Proxy Manager uses a shared Docker network to reach containers. Create a `docker-compose.override.yml` next to your `docker-compose.yml` on the server — Docker Compose picks it up automatically on every `up`:
+For a containerized reverse proxy on an existing `proxy-network`, attach only
+the public-facing services with a local override:
 
 ```yaml
 services:
   frontend:
-    networks:
-      - proxy-network
-  backend:
-    networks:
-      - proxy-network
+    networks: [default, proxy-network]
+  mcp:
+    networks: [default, proxy-network]
 
 networks:
   proxy-network:
     external: true
+    name: proxy-network
 ```
 
-Create the network once if it doesn't exist yet:
+Route the wiki host to `frontend:80` and the MCP host to `mcp:3001`. Keep the
+existing proxy password on the wiki host, configure HTTPS, and add the exact MCP
+host/origin to `.env.wiki`; do not expose either upstream directly.
 
-```bash
-docker network create proxy-network
+Container build/start is described but not yet accepted in the current
+development environment because no Docker-compatible runtime was available.
+Use [backup and restore](documentation/backup-restore.md) before migration.
+
+## Managed MCP tools
+
+| Tool | Purpose |
+| --- | --- |
+| `get_page` | Read exact Markdown and its revision |
+| `list_pages` | List stable IDs, titles and metadata |
+| `search_wiki` | Lexical, semantic or bounded GraphRAG retrieval |
+| `get_graph` | Read explicit links from one content snapshot |
+| `get_neighbors` | Expand explicit graph neighbors with limits |
+| `save_page` | Save complete Markdown against the revision that was read |
+| `delete_page` | Delete one reviewed revision |
+| `get_history` | Read recent local Git history for a page |
+| `get_index_status` | Inspect graph/vector progress independently |
+| `get_delivery_status` | Inspect publication, index and cached Git delivery state |
+
+Read the `wiki://guidance` MCP resource before editing. Lost responses are
+retried with the same `request_id` and payload; revision conflicts require a
+fresh read and deliberate reconciliation.
+
+## Storage and optional services
+
+| Layer | Required | Role |
+| --- | --- | --- |
+| Managed vault | Yes | Bare local Git repository containing Markdown snapshots and receipts |
+| SQLite ledgers | Created locally | Durable index/delivery progress |
+| Neo4j | Optional | Published graph snapshot |
+| Qdrant + embedder | Optional | Semantic retrieval |
+| Remote Git | Optional | Guarded snapshot delivery |
+| OpenRouter | Optional | Read-only wiki chat |
+
+Core page access, editing, history, lexical search and the Markdown graph work
+without external providers. Configuration and failure semantics are documented
+in [managed indexes](documentation/managed-indexes.md) and
+[recoverable delivery](documentation/managed-delivery.md).
+
+## Operations
+
+- [Portable backup and restore](documentation/backup-restore.md)
+- [Content-only Markdown export](documentation/wiki-export.md)
+- [Explicit managed Git sync](documentation/managed-git-sync.md)
+- [PWA privacy, installation and updates](documentation/pwa.md)
+
+## Current limits
+
+The branch has native backend, browser, large synthetic graph and recovery
+evidence. It does **not** yet claim:
+
+- a real OpenRouter multi-turn acceptance run
+- hosted Neo4j/Qdrant/embedding-provider acceptance
+- physical Android/iOS installation or production HTTPS/update verification
+- verified Compose images, named-volume recovery or off-host disaster recovery
+- completed production authentication, Git credential and legacy-vault migration
+
+Do not treat the preview as a completed production cutover.
+
+## Development
+
+Run the repository checks after relevant changes:
+
+```sh
+cd backend
+poetry run ruff check src/ tests/ benchmark/
+poetry run mypy src/ tests/
+poetry run pytest tests/ --ignore=tests/integration
+
+cd ../frontend
+npx tsc --noEmit
+npm run build
 ```
 
----
-
-## Local Development
-
-See [documentation/local_developement.md](documentation/local_developement.md) for the full local dev setup with hot reload, test instructions, and quality checks.
-
----
-
-## Contributing
-
-Contributions are welcome. Here's what would make this project more production-ready as open source:
-
-- **Additional LLM providers** — OpenAI/Anthropic direct keys, Azure OpenAI, Ollama (local)
-- **Documentation** — usage examples, cookbook for common agent patterns
-- **Git sync: any host** — provider-neutral HTTP-token and SSH authentication are supported; add host-specific integration tests as needed
-- **Tests** — expand integration test coverage (`backend/tests/`)
-- **CI** — add GitHub Actions workflow for `pytest` and `ruff`/`mypy` on PRs
-- **Vault templates** — starter vault structures for different use cases
-
-To contribute:
-1. Fork the repo
-2. Create a feature branch
-3. Run `bash check.sh` to verify lint, types, and tests pass
-4. Open a pull request
-
-Please open an issue before starting work on a significant change.
-
----
+Browser regression uses a disposable synthetic vault; see the
+[development guide](documentation/managed-wiki-development.md). Public tests,
+fixtures and screenshots must contain no private wiki content or credentials.
 
 ## License
 
