@@ -59,6 +59,27 @@ browser offline while the app is open shows the connection notice; a cold offlin
 launch is intentionally unavailable. See the [PWA guide](pwa.md) for Android/iOS
 installation differences and the controlled update path.
 
+## Large synthetic vault check
+
+The polished atlas stays deliberately small. For an opt-in real-service scale
+check, create a fresh generated 320-page vault and start the same API/frontend:
+
+```sh
+make demo-scale PYTHON=backend/.venv/bin/python
+```
+
+In a second terminal, run its separate browser contract:
+
+```sh
+cd frontend
+PLAYWRIGHT_SCALE=1 npm run test:browser -- e2e/scale.spec.ts
+```
+
+This path imports one deterministic synthetic Git snapshot, then reads and
+mutates it through the real REST/graph services. It never seeds the ordinary demo
+or an existing destination. The generated vault is retained under ignored
+`.demo/scale-vault-*` storage for inspection; it is not a personal-wiki fixture.
+
 ## Seeding rules
 
 For the explicit empty/template/local-Git first-start choice, see

@@ -159,8 +159,8 @@ inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
 Not complete: production Git credential provisioning, live provider/deployment integration, index
-retention/scale, frontend title-link ambiguity resolution,
-large-vault galaxy acceptance, physical-device PWA installation, deployment packaging and
+retention/production scale, large-vault galaxy acceptance beyond the 320-page fixture,
+physical-device PWA installation, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.
 
@@ -252,14 +252,25 @@ Overview, focused neighborhood, star selection, local title/ID search and articl
 navigation share a keyboard-accessible sidebar. Zoom/pan are bounded. On narrow
 screens, controls remain reachable and a list view offers a reduced alternative.
 Above 250 pages or 800 links, list view is the default and skips SVG construction.
-A 251-page synthetic browser contract verifies search and selection without an
-SVG allocation; it is not a real large-vault service benchmark. The map can still
-be selected explicitly; large-map performance is not accepted. Curated group IDs
-make high-level placement stable, while stars inside a group can still move after
-a content mutation. Richer overview aggregation and visual depth remain quality
-work for the final galaxy acceptance; this is not that signoff.
+The fast 251-page injected contract still isolates the no-SVG frontend behavior.
+An additional opt-in scale fixture now imports 320 generated pages and 648 links
+as one real managed Git snapshot, starts the actual REST/Vite services, and drives
+the list/search/evidence/mutation/delete path in Chromium at 1440 and 390 px. The
+fixture refuses nonempty destinations and contains only explicit synthetic prose.
+In this development environment the first graph build took about 47 ms and the
+whole browser case about 1.8 seconds; these are single local observations, not a
+production scalability promise. The map can still be selected explicitly;
+large-map performance is not accepted. Curated group IDs make high-level placement
+stable, while stars inside a group can still move after a content mutation.
+Richer overview aggregation and visual depth remain quality work for the final
+galaxy acceptance; this is not that signoff.
 
-Validated against actual isolated demo services: 248 nonintegrative backend tests,
+Run the reproducible scale path with `make demo-scale PYTHON=backend/.venv/bin/python`.
+Then, in another terminal, run
+`cd frontend && PLAYWRIGHT_SCALE=1 npm run test:browser -- e2e/scale.spec.ts`.
+The default twenty-case browser suite skips this costly opt-in fixture.
+
+Validated against actual isolated demo services: 250 nonintegrative backend tests,
 Ruff and strict MyPy, TypeScript and both Vite entries. Twenty Chromium cases in
 total cover reader/editor regressions, title ambiguity/deletion, fragments,
 delayed real responses, galaxy save/link/delete refresh and PWA install/update

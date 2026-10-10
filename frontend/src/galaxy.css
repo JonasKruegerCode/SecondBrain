@@ -12,3 +12,4 @@
 .galaxy-heading .galaxy-eyebrow { color: #287b70; }
 .galaxy .galaxy-return, .galaxy .galaxy-refresh { color: #285f55; border-color: #aec7c0; }
 @media (max-width: 650px) { .galaxy-controls button { min-height: 44px; min-width: 36px; } .galaxy-mapbar { flex-wrap: wrap; } }
+@media (max-width: 680px) { .galaxy-breadcrumb span { flex-basis: 100%; max-width: 100%; } }
