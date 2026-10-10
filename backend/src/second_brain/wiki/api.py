@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import secrets
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -16,11 +18,21 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiError, WikiStore
 
 
-def create_app(vault_path: str | Path, api_key: str = "") -> Starlette:
+def create_app(
+    vault_path: str | Path,
+    api_key: str = "",
+    *,
+    indexes: IndexCoordinator | None = None,
+    close_indexes: bool = False,
+) -> Starlette:
     store = WikiStore(vault_path)
+    indexes = indexes or IndexCoordinator(store)
+    if indexes.store.path != store.path:
+        raise ValueError("Indexes must belong to the same managed vault.")
 
     async def health(request: Request) -> Response:
         return JSONResponse({"status": "ok", "profile": "managed-wiki"})
@@ -75,6 +87,12 @@ def create_app(vault_path: str | Path, api_key: str = "") -> Starlette:
 
     async def search(request: Request) -> Response:
         query = request.query_params.get("q", "")[:500]
+        if request.query_params.get("mode") == "semantic":
+            return JSONResponse(await run_in_threadpool(indexes.semantic_search, query))
+        if request.query_params.get("mode") == "graph_rag":
+            return JSONResponse(await run_in_threadpool(indexes.graph_search, query))
+        if request.query_params.get("mode", "lexical") != "lexical":
+            raise WikiError("invalid_payload", "mode must be lexical, semantic or graph_rag.")
         rows = await run_in_threadpool(store.search, query)
         return JSONResponse(
             {
@@ -85,6 +103,18 @@ def create_app(vault_path: str | Path, api_key: str = "") -> Starlette:
 
     async def graph(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(store.graph))
+
+    async def index_status(request: Request) -> Response:
+        return JSONResponse(await run_in_threadpool(indexes.status))
+
+    async def neighbors(request: Request) -> Response:
+        try:
+            hops = int(request.query_params.get("hops", "1"))
+        except ValueError as exc:
+            raise WikiError("invalid_payload", "hops must be an integer.") from exc
+        return JSONResponse(
+            await run_in_threadpool(indexes.neighbors, [request.path_params["page_id"]], hops)
+        )
 
     async def history(request: Request) -> Response:
         return JSONResponse(
@@ -100,11 +130,21 @@ def create_app(vault_path: str | Path, api_key: str = "") -> Starlette:
             "busy": 503,
             "storage_unavailable": 503,
             "content_too_large": 413,
+            "index_pending": 503,
+            "index_unavailable": 503,
         }
         return JSONResponse(
             {"error": exc.code, "message": exc.message, **exc.details},
             status_code=status.get(exc.code, 400),
         )
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            if close_indexes:
+                indexes.close()
 
     app = Starlette(
         routes=[
@@ -112,12 +152,16 @@ def create_app(vault_path: str | Path, api_key: str = "") -> Starlette:
             Route("/api/wiki/pages", pages),
             Route("/api/wiki/search", search),
             Route("/api/wiki/graph", graph),
+            Route("/api/wiki/index-status", index_status),
+            Route("/api/wiki/pages/{page_id}/neighbors", neighbors),
             Route("/api/wiki/pages/{page_id}/history", history),
             Route("/api/wiki/pages/{page_id}", page, methods=["GET", "POST", "DELETE"]),
         ],
         exception_handlers={WikiError: wiki_error},
+        lifespan=lifespan,
     )
     app.state.wiki_store = store
+    app.state.wiki_indexes = indexes
 
     async def privacy(request: Request, call_next: Any) -> Response:
         if api_key and not secrets.compare_digest(
@@ -139,4 +183,11 @@ def app_factory() -> Starlette:
     path = os.environ.get("SECOND_BRAIN_WIKI_VAULT")
     if not path:
         raise RuntimeError("Set SECOND_BRAIN_WIKI_VAULT to an isolated managed vault directory.")
-    return create_app(path, os.environ.get("SECOND_BRAIN_WIKI_API_KEY", ""))
+    from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
+
+    return create_app(
+        path,
+        os.environ.get("SECOND_BRAIN_WIKI_API_KEY", ""),
+        indexes=configured_indexes(WikiStore(path)),
+        close_indexes=True,
+    )

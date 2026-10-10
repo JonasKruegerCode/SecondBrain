@@ -59,12 +59,14 @@ Back up the complete managed directory, including hidden `.wiki.git` and the
 demo marker where present. Avoid pruning request/history objects arbitrarily.
 Normal operation requires local Git; remote/provider failure is independent.
 
-External Neo4j/vector index receipts are **pending** and remote synchronization
-is **not_configured** in this milestone. The graph endpoint instead derives
-explicit wikilinks directly from a single current content snapshot and reports
-its revision and missing targets. It does not claim a current Neo4j/vector index,
-infer causal dependencies, or generate a galaxy layout. Typed relations,
-title/alias target resolution and index adapters are subsequent work.
+Mutation receipts record external indexes **pending** at publication time; current
+progress is available from `/api/wiki/index-status`. Optional snapshot adapters
+now support Neo4j, vectors, and bounded non-generative GraphRAG retrieval; see
+[managed indexes](managed-indexes.md) for configuration and explicit worker runs.
+Remote synchronization remains **not_configured**. The immediate graph derives
+explicit wikilinks and typed relations from one content snapshot, resolves unique
+titles, and reports missing/ambiguous targets without inferring dependencies.
+Frontend title-link resolution and galaxy layout remain unfinished.
 
 ## REST and MCP
 
@@ -124,7 +126,8 @@ inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
 Not complete: remote Git synchronization and Markdown export workflow,
-external index adapters and retries, richer Markdown navigation/history UI,
+live provider/deployment integration, index scheduling/retention/scale, richer
+Markdown navigation/history UI,
 galaxy, iterative OpenRouter chat, installable PWA, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.
@@ -137,11 +140,13 @@ compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use onl
 a disposable synthetic vault: the suite deliberately creates, edits and deletes
 fixture pages. Test artifacts are kept under the ignored `.demo` directory.
 
-On 2026-10-10: 140 nonintegrative backend tests passed, repository Ruff and MyPy
-passed (57 source/test files), TypeScript and both Vite entries built, and nine
-real-API browser regressions passed in Chromium. Desktop (1440 pixels) and narrow
+On 2026-10-10: 163 nonintegrative backend tests passed, repository Ruff and strict
+MyPy passed (63 source/test files). The prior UI milestone passed TypeScript,
+both Vite builds and nine real-API browser regressions in Chromium; this backend
+index change did not repeat that visual acceptance. Desktop (1440 pixels) and narrow
 (390 pixels) screenshots were inspected. The demo launcher was started and
-stopped against real services. Docker deployment, external index services,
+stopped against real services. New real HTTP REST/MCP semantic regression used
+embedded Qdrant and synthetic embeddings. Docker deployment, hosted index services,
 remote synchronization, real-model chat and device installation remain untested.
 
 The imported atlas was also opened in the running browser, and desktop/mobile

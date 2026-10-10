@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import secrets
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -14,9 +15,10 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiStore
 
-GUIDANCE = """# Managed Wiki editing guide (v1)
+GUIDANCE = """# Managed Wiki editing guide (v2)
 
 Read a page before editing and keep its revision. Use stable IDs, a concise
 opening paragraph, meaningful headings and expected [[page-id|label]] links
@@ -29,9 +31,14 @@ On a lost reply retry exactly that request_id and payload. A different payload
 needs a new request_id. On revision_conflict re-read and reconcile deliberately;
 never replace the base revision without reviewing the newer page. Null revision
 means create-only. Publication, external index progress and remote Git sync are
-separate: this initial isolated profile reports external indices pending and
+separate: mutation receipts record indices pending at publication time and
 remote_sync not_configured. Local content and revision are already committed.
-Graph reads derive explicit links from one current Markdown snapshot.
+Use get_index_status for current graph/vector progress; optional providers need
+an explicit worker run after edits. Lexical search always works without them.
+search_wiki mode semantic uses current vectors; mode graph_rag adds bounded graph
+context without generating an answer. get_neighbors expands explicit links.
+Graph reads derive explicit links and typed relations from one Markdown snapshot;
+ambiguous titles are reported rather than silently assigned to a page.
 
 This profile has no remember/recall, editorial agent, chat writer or repair job.
 Legacy MCP remains a separate deployment; do not point both writers at one vault.
@@ -39,8 +46,14 @@ Legacy MCP remains a separate deployment; do not point both writers at one vault
 
 
 def create_mcp(
-    store: WikiStore, *, http_security: TransportSecuritySettings | None = None
+    store: WikiStore,
+    *,
+    http_security: TransportSecuritySettings | None = None,
+    indexes: IndexCoordinator | None = None,
 ) -> FastMCP:
+    indexes = indexes or IndexCoordinator(store)
+    if indexes.store.path != store.path:
+        raise ValueError("Indexes must belong to the same managed vault.")
     mcp = FastMCP(
         "Second Brain Managed Wiki",
         json_response=True,
@@ -67,9 +80,25 @@ def create_mcp(
         return [{k: v for k, v in page.items() if k != "markdown"} for page in store.list_pages()]
 
     @mcp.tool()
-    def search_wiki(query: str) -> dict[str, Any]:
-        """Lexical search of local pages; no embedding-provider dependency."""
+    def search_wiki(query: str, mode: str = "lexical") -> dict[str, Any]:
+        """Lexical by default; semantic requires a configured current vector index."""
+        if mode == "semantic":
+            return indexes.semantic_search(query)
+        if mode == "graph_rag":
+            return indexes.graph_search(query)
+        if mode != "lexical":
+            raise ValueError("mode must be lexical, semantic or graph_rag")
         return {"mode": "lexical", "results": store.search(query)}
+
+    @mcp.tool()
+    def get_index_status() -> dict[str, Any]:
+        """Content revision and separate graph/vector progress; no provider request."""
+        return indexes.status()
+
+    @mcp.tool()
+    def get_neighbors(ids: list[str], hops: int = 1, limit: int = 50) -> dict[str, Any]:
+        """Bounded graph expansion at the current content revision; 1–3 hops."""
+        return indexes.neighbors(ids, hops, limit)
 
     @mcp.tool()
     def get_graph() -> dict[str, Any]:
@@ -186,6 +215,8 @@ def create_http_app(
     *,
     allowed_hosts: Sequence[str] = LOCAL_HOSTS,
     allowed_origins: Sequence[str] = LOCAL_ORIGINS,
+    indexes: IndexCoordinator | None = None,
+    close_indexes: bool = False,
 ) -> Starlette:
     """Explicit /mcp Streamable HTTP app sharing the same store and editing guidance.
 
@@ -204,8 +235,20 @@ def create_http_app(
         allowed_hosts=list(allowed_hosts),
         allowed_origins=list(allowed_origins),
     )
-    mcp = create_mcp(store, http_security=security)
+    mcp = create_mcp(store, http_security=security, indexes=indexes)
     app = mcp.streamable_http_app()
+    original_lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def lifespan(server: Starlette) -> AsyncIterator[Any]:
+        try:
+            async with original_lifespan(server) as state:
+                yield state
+        finally:
+            if close_indexes and indexes is not None:
+                indexes.close()
+
+    app.router.lifespan_context = lifespan
     app.add_middleware(
         _HttpBoundary,
         api_key=api_key,
@@ -224,8 +267,11 @@ def http_app_factory() -> Starlette:
         raise RuntimeError("Set SECOND_BRAIN_WIKI_VAULT to an isolated managed vault.")
     hosts = os.environ.get("SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS")
     origins = os.environ.get("SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS")
+    from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
+
+    store = WikiStore(path)
     return create_http_app(
-        WikiStore(path),
+        store,
         os.environ.get("SECOND_BRAIN_WIKI_API_KEY", ""),
         allowed_hosts=tuple(v.strip() for v in hosts.split(",") if v.strip())
         if hosts is not None
@@ -233,6 +279,8 @@ def http_app_factory() -> Starlette:
         allowed_origins=tuple(v.strip() for v in origins.split(",") if v.strip())
         if origins is not None
         else LOCAL_ORIGINS,
+        indexes=configured_indexes(store),
+        close_indexes=True,
     )
 
 
@@ -242,7 +290,14 @@ def main() -> None:
         raise RuntimeError("Set SECOND_BRAIN_WIKI_VAULT to an isolated managed vault.")
     # Stdio access is granted by the local host. Do not expose an unauthenticated
     # managed HTTP MCP server as a side effect of starting this module.
-    create_mcp(WikiStore(path)).run(transport="stdio")
+    from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
+
+    store = WikiStore(path)
+    indexes = configured_indexes(store)
+    try:
+        create_mcp(store, indexes=indexes).run(transport="stdio")
+    finally:
+        indexes.close()
 
 
 if __name__ == "__main__":

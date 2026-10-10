@@ -74,8 +74,10 @@ Read `wiki://guidance`, then read a page and retain its revision. Save complete
 Markdown with that `base_revision` and a unique `request_id`. Retry a lost reply
 with the identical ID and payload. A revision conflict requires a fresh read
 and deliberate reconciliation. Creating a page uses null `base_revision`.
-Publication succeeds independently from indexing; indices report pending and
-remote sync reports `not_configured`.
+Publication succeeds independently from indexing; mutation receipts record pending
+at publication and remote sync reports `not_configured`. `get_index_status` reads
+current separate receipts. Optional semantic and `graph_rag` search plus bounded
+`get_neighbors` use the shared services; see [managed indexes](managed-indexes.md).
 
 `backend/tests/test_wiki_mcp_http.py` exercises the actual in-process FastMCP
 HTTP application and lifespan: initialization, tool discovery, guidance, save,

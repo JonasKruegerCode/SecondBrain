@@ -19,6 +19,10 @@ from typing import Any
 REF = "refs/heads/wiki"
 ID_RE = re.compile(r"[\w][\w.-]{0,159}\Z", re.UNICODE)
 LINK_RE = re.compile(r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]")
+TYPED_LINK_RE = re.compile(
+    r"(?m)^\s*(?:[-*]\s+)?([A-Za-z][\w -]*?)::\s*"
+    r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]"
+)
 MAX_BYTES = 1_000_000
 
 
@@ -194,19 +198,69 @@ class WikiStore:
         )[:50]
 
     def graph(self) -> dict[str, Any]:
+        result: dict[str, Any] = self.snapshot()["graph"]
+        return result
+
+    def snapshot(self) -> dict[str, Any]:
+        """Capture content and its derived graph at one immutable Git commit."""
         head = self._head()
         pages = self._pages(head)
+        return {"revision": head or None, "pages": pages, "graph": self._graph(pages, head)}
+
+    @staticmethod
+    def _graph(pages: list[dict[str, Any]], head: str) -> dict[str, Any]:
         ids = {p["id"] for p in pages}
-        edges: set[tuple[str, str]] = set()
-        missing: set[tuple[str, str]] = set()
+        titles: dict[str, set[str]] = {}
         for page in pages:
-            for match in LINK_RE.finditer(prose_links(page["markdown"])):
-                target = match.group(1).strip().split("#", 1)[0]
-                (edges if target in ids else missing).add((page["id"], target))
+            titles.setdefault(page["title"].casefold(), set()).add(page["id"])
+        edges: set[tuple[str, str, str | None]] = set()
+        missing: set[tuple[str, str]] = set()
+        ambiguous: set[tuple[str, str, tuple[str, ...]]] = set()
+        for page in pages:
+            prose = prose_links(page["markdown"])
+            links: list[tuple[str, str | None]] = [
+                (match.group(2), re.sub(r"[^\w]+", "_", match.group(1).strip().lower()).strip("_"))
+                for match in TYPED_LINK_RE.finditer(prose)
+            ]
+            links.extend((match.group(1), None) for match in LINK_RE.finditer(prose))
+            outgoing: set[tuple[str, str | None]] = set()
+            for raw_target, rel in links:
+                target = raw_target.split("#", 1)[0].strip()
+                if not target:
+                    # [[#Heading]] is an explicit link within this page.
+                    if raw_target.strip().startswith("#"):
+                        target = page["id"]
+                    else:
+                        continue
+                if target in ids:
+                    resolved = target
+                else:
+                    candidates = titles.get(target.casefold(), set())
+                    if len(candidates) > 1:
+                        ambiguous.add((page["id"], target, tuple(sorted(candidates))))
+                        continue
+                    if not candidates:
+                        missing.add((page["id"], target))
+                        continue
+                    resolved = next(iter(candidates))
+                outgoing.add((resolved, rel))
+            typed_targets = {target for target, rel in outgoing if rel is not None}
+            edges.update(
+                (page["id"], target, rel)
+                for target, rel in outgoing
+                if rel is not None or target not in typed_targets
+            )
         return {
             "nodes": [{"id": p["id"], "title": p["title"]} for p in pages],
-            "edges": [{"source": a, "target": b, "type": "wikilink"} for a, b in sorted(edges)],
+            "edges": [
+                {"source": a, "target": b, "type": "wikilink", **({"rel": rel} if rel else {})}
+                for a, b, rel in sorted(edges, key=lambda edge: (edge[0], edge[1], edge[2] or ""))
+            ],
             "missing_targets": [{"source": a, "target": b} for a, b in sorted(missing)],
+            "ambiguous_targets": [
+                {"source": a, "target": b, "candidates": list(candidates)}
+                for a, b, candidates in sorted(ambiguous)
+            ],
             "status": "current",
             "source": "markdown",
             "revision": head or None,

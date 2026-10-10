@@ -27,6 +27,8 @@ async def test_managed_mcp_shares_rest_store_and_guidance(tmp_path: Path) -> Non
         "save_page",
         "delete_page",
         "get_history",
+        "get_index_status",
+        "get_neighbors",
     }
     resources = list(await mcp.read_resource("wiki://guidance"))
     assert "base_revision" in str(resources[0].content)

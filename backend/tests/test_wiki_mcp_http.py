@@ -66,6 +66,8 @@ def test_http_initialize_tools_guidance_and_shared_rest_content(tmp_path: Path) 
             "save_page",
             "delete_page",
             "get_history",
+            "get_index_status",
+            "get_neighbors",
         }
         guidance = rpc(client, "resources/read", {"uri": "wiki://guidance"})
         assert guidance["contents"][0]["text"] == GUIDANCE
