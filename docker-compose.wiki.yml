@@ -1,0 +1,19 @@
+# Opt-in managed profile. Legacy Compose and production volumes are unchanged.
+services:
+  backend:
+    build: ./backend
+    command: python -m uvicorn second_brain.wiki.api:app_factory --factory --host 0.0.0.0 --port 8000
+    environment:
+      SECOND_BRAIN_WIKI_VAULT: /managed-vault
+    volumes:
+      - managed_wiki:/managed-vault
+    restart: unless-stopped
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+volumes:
+  managed_wiki:

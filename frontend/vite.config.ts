@@ -10,11 +10,18 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: `http://localhost:${apiPort}`,
-        changeOrigin: true,
+        // Preserve browser host for the managed API's same-origin write guard.
+        changeOrigin: false,
       },
     },
   },
   build: {
     outDir: "dist",
+    rollupOptions: {
+      input: {
+        wiki: new URL("./index.html", import.meta.url).pathname,
+        legacy: new URL("./legacy.html", import.meta.url).pathname,
+      },
+    },
   },
 });

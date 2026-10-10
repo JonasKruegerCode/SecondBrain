@@ -1,5 +1,14 @@
 # SecondBrain
 
+## Managed wiki development profile
+
+The `secondbrain-2.0` branch now includes an isolated, runnable managed-wiki
+milestone with real Markdown/Git content, a light article UI, search and direct
+editing. It is **not yet a complete 2.0 release**. Use the opt-in
+[development guide](documentation/managed-wiki-development.md) and
+[fictional demo](documentation/demo-start.md). Existing legacy services remain
+separate; do not mix their writers with a managed vault.
+
 > A persistent MCP memory layer for AI agents. Store knowledge across sessions, retrieve it semantically, and connect any MCP-compatible agent — claude.ai, OpenClaw, or your own.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

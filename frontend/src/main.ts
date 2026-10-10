@@ -1,581 +1,300 @@
-import cytoscape from "cytoscape";
-// @ts-expect-error — no types for cytoscape-fcose
-import fcose from "cytoscape-fcose";
 import { marked } from "marked";
-
-cytoscape.use(fcose);
-
-const TYPE_COLORS: Record<string, string> = {
-  topic: "#7c3aed",
-  person: "#0ea5e9",
-  project: "#10b981",
-  tool: "#f59e0b",
-  event: "#ef4444",
+import "./style.css";
+type Page = {
+  id: string;
+  title: string;
+  revision: string;
+  markdown?: string;
+  excerpt?: string;
 };
-
-// ---------------------------------------------------------------------------
-// Graph
-// ---------------------------------------------------------------------------
-
-const cy = cytoscape({
-  container: document.getElementById("cy"),
-  style: [
+const app = document.querySelector<HTMLDivElement>("#app")!;
+let page: Page | null = null,
+  draft = "",
+  editing = false,
+  saving = false,
+  requestId = "",
+  notice = "",
+  generation = 0,
+  activeUrl = location.pathname + location.search;
+const esc = (s: string) =>
+  s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ]!,
+  );
+const url = (id: string) => "/wiki/" + encodeURIComponent(id);
+// Marked invokes inline tokenizers only in prose, leaving code blocks and spans intact.
+marked.use({
+  extensions: [
     {
-      selector: "node",
-      style: {
-        "background-color": "data(color)",
-        label: "data(label)",
-        color: "#ccc",
-        "font-size": 10,
-        "text-valign": "bottom",
-        "text-margin-y": 4,
-        width: 22,
-        height: 22,
-        "border-width": 0,
+      name: "wikilink",
+      level: "inline",
+      start(source: string) {
+        return source.indexOf("[[");
       },
-    },
-    {
-      selector: "node:selected",
-      style: { "border-width": 2, "border-color": "#fff", width: 28, height: 28 },
-    },
-    {
-      selector: "edge",
-      style: {
-        width: 1,
-        "line-color": "#2a2a40",
-        "target-arrow-color": "#2a2a40",
-        "target-arrow-shape": "triangle",
-        "curve-style": "bezier",
-        "arrow-scale": 0.8,
+      tokenizer(source: string) {
+        const match = /^\[\[([^\]\|\r\n]+)(?:\|([^\]\r\n]+))?\]\]/.exec(source);
+        if (!match || !match[1].trim()) return;
+        return {
+          type: "wikilink",
+          raw: match[0],
+          id: match[1].trim(),
+          label: match[2] || match[1].trim(),
+        };
       },
-    },
-    {
-      selector: "edge[rel]",
-      style: {
-        label: "data(rel)",
-        "font-size": 7,
-        color: "#8888aa",
-        "text-rotation": "autorotate",
-        "text-background-color": "#12121c",
-        "text-background-opacity": 0.8,
-        "text-background-padding": "1px",
+      renderer(token) {
+        return `<a href="${esc(url(token.id as string))}">${esc(token.label as string)}</a>`;
       },
     },
   ],
-  layout: { name: "fcose" },
 });
-
-cy.on("tap", "node", (evt: cytoscape.EventObject) => {
-  const d = evt.target.data() as { id: string; label: string };
-  void openPageModal(d.id, d.label);
-});
-
-// ---------------------------------------------------------------------------
-// Graph refresh
-// ---------------------------------------------------------------------------
-
-interface GraphData {
-  nodes: Array<{ id: string; title?: string; type?: string }>;
-  edges: Array<{ source: string; target: string; rel?: string | null }>;
-}
-
-function graphFingerprint(data: GraphData): string {
-  const nodeIds = [...(data.nodes ?? [])].map((n) => n.id).sort().join(",");
-  const edgeIds = [...(data.edges ?? [])]
-    .map((e) => `${e.source}-${e.rel ?? ""}->${e.target}`)
-    .sort()
-    .join(",");
-  return `${nodeIds}|${edgeIds}`;
-}
-
-let lastFingerprint = "";
-
-async function loadGraph(force = false): Promise<void> {
-  const btn = document.getElementById("refresh-btn") as HTMLButtonElement;
-  btn.disabled = true;
-  try {
-    const r = await fetch("/api/graph");
-    if (!r.ok) throw new Error(String(r.status));
-    const data = (await r.json()) as GraphData;
-
-    const fp = graphFingerprint(data);
-    if (!force && fp === lastFingerprint) return;
-    lastFingerprint = fp;
-
-    const elements: cytoscape.ElementDefinition[] = [];
-    (data.nodes ?? []).forEach((n) => {
-      const type = n.type ?? "topic";
-      elements.push({
-        data: { id: n.id, label: n.title ?? n.id, type, color: TYPE_COLORS[type] ?? "#7c3aed" },
-      });
+async function api(path: string, options?: RequestInit) {
+  const r = await fetch("/api/wiki" + path, options);
+  const b = await r.json();
+  if (!r.ok)
+    throw Object.assign(new Error(b.message || "Unable to open this page."), {
+      status: r.status,
     });
-    (data.edges ?? []).forEach((e) => {
-      if (e.source && e.target)
-        elements.push({
-          data: e.rel
-            ? { source: e.source, target: e.target, rel: e.rel }
-            : { source: e.source, target: e.target },
-        });
-    });
-
-    cy.elements().remove();
-    cy.add(elements);
-    cy.layout({
-      name: "fcose",
-      animate: true,
-      animationDuration: 800,
-      quality: "default",
-      randomize: true,
-      fit: true,
-      padding: 40,
-      nodeRepulsion: () => 450000,
-      idealEdgeLength: () => 80,
-      edgeElasticity: () => 0.45,
-      nodeSeparation: 75,
-      numIter: 2500,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any).run();
-
-    const n = data.nodes?.length ?? 0;
-    const e = data.edges?.length ?? 0;
-    const msg = `${n} nodes · ${e} edges`;
-    document.getElementById("node-count")!.textContent = msg;
-    const mCount = document.getElementById("m-node-count");
-    if (mCount) mCount.textContent = msg;
-  } catch {
-    const err = "Graph unavailable";
-    document.getElementById("node-count")!.textContent = err;
-    const mCount = document.getElementById("m-node-count");
-    if (mCount) mCount.textContent = err;
-  }
-  btn.disabled = false;
+  return b;
 }
-
-// ---------------------------------------------------------------------------
-// Wiki-Page Modal — View + Edit mode
-// ---------------------------------------------------------------------------
-
-let _modalSlug = "";
-let _modalRawContent = "";
-let _editMode = false;
-
-async function openPageModal(slug: string, title: string): Promise<void> {
-  _modalSlug = slug;
-  _editMode = false;
-
-  document.getElementById("modal-title")!.textContent = title;
-  document.getElementById("modal-body")!.innerHTML =
-    '<div id="modal-loading">Loading…</div>';
-  setEditMode(false);
-  document.getElementById("modal-delete-bar")!.classList.remove("visible");
-  document.getElementById("modal-overlay")!.classList.add("open");
-
-  try {
-    const r = await fetch(`/api/page/${encodeURIComponent(slug)}`);
-    const data = (await r.json()) as { content: string };
-    _modalRawContent = data.content;
-    document.getElementById("modal-body")!.innerHTML =
-      await marked.parse(data.content);
-    document.getElementById("modal-delete-bar")!.classList.add("visible");
-    document.getElementById("modal-save-status")!.textContent = "";
-  } catch {
-    document.getElementById("modal-body")!.innerHTML =
-      "<p>Page could not be loaded.</p>";
-  }
-}
-
-function setEditMode(on: boolean): void {
-  _editMode = on;
-  const body = document.getElementById("modal-body")!;
-  const editArea = document.getElementById("modal-edit-area")!;
-  const modeBtn = document.getElementById("modal-mode-btn")!;
-
-  if (on) {
-    body.style.display = "none";
-    editArea.classList.add("visible");
-    modeBtn.style.display = "none";
-    const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
-    ta.value = _modalRawContent;
-    ta.focus();
-  } else {
-    body.style.display = "";
-    editArea.classList.remove("visible");
-    modeBtn.style.display = "";
-    modeBtn.textContent = "✎ Edit";
-  }
-}
-
-document.getElementById("modal-mode-btn")!.addEventListener("click", () => {
-  if (!_modalSlug) return;
-  setEditMode(true);
-});
-
-document.getElementById("modal-save-btn")!.addEventListener("click", () => {
-  void savePageRaw();
-});
-
-document.getElementById("modal-discard-btn")!.addEventListener("click", () => {
-  setEditMode(false);
-  document.getElementById("modal-save-status")!.textContent = "";
-});
-
-async function savePageRaw(): Promise<void> {
-  const ta = document.getElementById("modal-raw-textarea") as HTMLTextAreaElement;
-  const content = ta.value;
-  const statusEl = document.getElementById("modal-save-status")!;
-  const saveBtn = document.getElementById("modal-save-btn") as HTMLButtonElement;
-
-  saveBtn.disabled = true;
-  statusEl.textContent = "Saving…";
-
-  try {
-    const r = await fetch("/api/save-page", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ page_id: _modalSlug, content }),
-    });
-    const data = (await r.json()) as { result?: string; error?: string };
-    if (data.error) {
-      statusEl.textContent = "❌ " + data.error;
-    } else {
-      _modalRawContent = content;
-      statusEl.textContent = "✓ Saved";
-      // Switch back to view, re-render
-      document.getElementById("modal-body")!.innerHTML =
-        await marked.parse(content);
-      setEditMode(false);
-      setTimeout(() => void loadGraph(true), 1500);
+function markdown(s: string) {
+  const doc = new DOMParser().parseFromString(
+    marked.parse(s, { async: false }) as string,
+    "text/html",
+  );
+  const allow = new Set(
+    "P H1 H2 H3 H4 H5 H6 UL OL LI BLOCKQUOTE PRE CODE STRONG EM DEL A IMG HR BR TABLE THEAD TBODY TR TD TH".split(
+      " ",
+    ),
+  );
+  function clean(n: Node): Node {
+    if (n.nodeType === 3) return document.createTextNode(n.textContent || "");
+    const el = n as HTMLElement;
+    if (!allow.has(el.tagName))
+      return document.createTextNode(el.textContent || "");
+    const out = document.createElement(el.tagName.toLowerCase());
+    if (el.tagName === "A") {
+      const href = el.getAttribute("href") || "";
+      if (/^\/wiki\//.test(href) || /^https?:\/\//.test(href)) {
+        out.setAttribute("href", href);
+        if (href.startsWith("http")) {
+          out.setAttribute("target", "_blank");
+          out.setAttribute("rel", "noopener noreferrer");
+        }
+      }
     }
-  } catch (err) {
-    statusEl.textContent = "Error: " + String(err);
+    if (el.tagName === "IMG") {
+      const src = el.getAttribute("src") || "";
+      try {
+        const resolved = new URL(src, location.href);
+        if (
+          (/^https?:\/\//.test(src) ||
+            (!/^([a-z][a-z0-9+.-]*:|\/\/)/i.test(src) &&
+              resolved.origin === location.origin)) &&
+          ["http:", "https:"].includes(resolved.protocol)
+        ) {
+          out.setAttribute("src", resolved.href);
+          out.setAttribute("alt", el.getAttribute("alt") || "");
+          out.setAttribute("loading", "lazy");
+        }
+      } catch {}
+    }
+    el.childNodes.forEach((c) => out.append(clean(c)));
+    return out;
   }
-  saveBtn.disabled = false;
+  const f = document.createDocumentFragment();
+  doc.body.childNodes.forEach((n) => f.append(clean(n)));
+  return f;
 }
-
-document.getElementById("modal-delete-page-btn")!.addEventListener("click", () => {
-  if (!_modalSlug) return;
-  if (!confirm(`Delete page "${_modalSlug}"? Git keeps the history.`)) return;
-  void deletePage();
-});
-
-async function deletePage(): Promise<void> {
-  const r = await fetch("/api/delete-page", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ page_id: _modalSlug, reason: "manual delete" }),
-  });
-  const data = (await r.json()) as { result?: string; error?: string };
-  if (data.error) {
-    alert("Error: " + data.error);
-  } else {
-    closeModalBtn();
-    setTimeout(() => void loadGraph(true), 1000);
-  }
+function navigate(path: string) {
+  if (saving) return;
+  if (
+    editing &&
+    draft !== page?.markdown &&
+    !confirm("Leave this page? Unsaved changes will be lost.")
+  )
+    return;
+  history.pushState({}, "", path);
+  activeUrl = path;
+  void route();
 }
-
-function closeModalBtn(): void {
-  document.getElementById("modal-overlay")!.classList.remove("open");
-  _modalSlug = "";
-  _editMode = false;
-}
-
-function closeModal(evt: MouseEvent): void {
-  if ((evt.target as HTMLElement).id === "modal-overlay") closeModalBtn();
-}
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeModalBtn();
-  // Ctrl+S / Cmd+S im Edit-Modus speichern
-  if ((e.ctrlKey || e.metaKey) && e.key === "s" && _editMode) {
+app.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest("a");
+  const href = a?.getAttribute("href");
+  if (href?.startsWith("/") && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
-    void savePageRaw();
+    navigate(href);
   }
 });
-
-// ---------------------------------------------------------------------------
-// Remember / Recall
-// ---------------------------------------------------------------------------
-
-async function doRemember(): Promise<void> {
-  const input = document.getElementById("remember-input") as HTMLTextAreaElement;
-  const text = input.value.trim();
-  if (!text) return;
-  const btn = document.getElementById("remember-btn") as HTMLButtonElement;
-  const status = document.getElementById("remember-status")!;
-  btn.disabled = true;
-  status.textContent = "Processing…";
+function shell() {
+  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${location.pathname === "/search" ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a></nav><div class="workspace"><i></i>Personal workspace</div></header><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+}
+function cards(pages: Page[]) {
+  return pages
+    .map(
+      (p, i) =>
+        `<a class="card" href="${url(p.id)}"><div class="card-meta"><span>${String(i + 1).padStart(2, "0")}</span><span>↗</span></div><h3>${esc(p.title)}</h3><p>${esc(p.excerpt || "Open this page and follow a thought.")}</p><div class="card-foot">Read page <span>→</span></div></a>`,
+    )
+    .join("");
+}
+async function route() {
+  const run = ++generation;
+  page = null;
+  editing = false;
+  notice = "";
+  shell();
+  const main = app.querySelector("main")!;
+  main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
   try {
-    const r = await fetch("/api/remember", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    const data = (await r.json()) as { result?: string; error?: string };
-    if (data.error) {
-      status.textContent = "❌ " + data.error;
-    } else {
-      status.textContent = "✓ " + (data.result ?? "Saved");
-      input.value = "";
-      setTimeout(() => void loadGraph(true), 2000);
-    }
-  } catch (err) {
-    status.textContent = "Error: " + String(err);
-  }
-  btn.disabled = false;
-}
-
-async function doRecall(): Promise<void> {
-  const input = document.getElementById("recall-input") as HTMLInputElement;
-  const query = input.value.trim();
-  if (!query) return;
-  const btn = document.getElementById("recall-btn") as HTMLButtonElement;
-  const result = document.getElementById("recall-result")!;
-  btn.disabled = true;
-  result.style.display = "none";
-  try {
-    const r = await fetch("/api/recall", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-    const data = (await r.json()) as { result: string };
-    result.textContent = data.result;
-    result.style.display = "block";
-  } catch (err) {
-    result.textContent = "Error: " + String(err);
-    result.style.display = "block";
-  }
-  btn.disabled = false;
-}
-
-async function doRag(): Promise<void> {
-  const input = document.getElementById("recall-input") as HTMLInputElement;
-  const query = input.value.trim();
-  if (!query) return;
-  const btn = document.getElementById("rag-btn") as HTMLButtonElement;
-  const result = document.getElementById("recall-result")!;
-  btn.disabled = true;
-  result.textContent = "Generating answer…";
-  result.style.display = "block";
-  try {
-    const r = await fetch("/api/rag", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-    const data = (await r.json()) as { result: string };
-    result.innerHTML = await marked.parse(data.result);
-  } catch (err) {
-    result.textContent = "Error: " + String(err);
-  }
-  btn.disabled = false;
-}
-
-// ---------------------------------------------------------------------------
-// Ingestion log
-// ---------------------------------------------------------------------------
-
-interface PageEntry {
-  slug: string;
-  title: string;
-  changes?: string;
-  preview?: string;
-}
-
-interface IngestionLog {
-  task_id: string;
-  status: "running" | "done" | "failed";
-  started: string;
-  finished: string | null;
-  input_preview: string;
-  input?: string | null;
-  pages_updated: PageEntry[];
-  pages_created: PageEntry[];
-  error: string | null;
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-}
-
-function logSummary(log: IngestionLog): string {
-  if (log.status === "running") return "running…";
-  if (log.status === "failed") return `Error: ${log.error ?? "unknown"}`;
-  const u = log.pages_updated?.length ?? 0;
-  const c = log.pages_created?.length ?? 0;
-  const parts: string[] = [];
-  if (u > 0) parts.push(`${u} updated`);
-  if (c > 0) parts.push(`${c} new`);
-  return parts.length ? parts.join(", ") : "no changes";
-}
-
-function openIngestionModal(log: IngestionLog): void {
-  document.getElementById("modal-title")!.textContent =
-    `Ingestion · ${formatDateTime(log.started)}`;
-  _modalSlug = "";
-  setEditMode(false);
-  document.getElementById("modal-delete-bar")!.classList.remove("visible");
-
-  const statusLabel: Record<string, string> = {
-    done: "✅ Done", running: "🟠 Running", failed: "❌ Error",
-  };
-  const duration = log.finished
-    ? `${Math.round(
-        (new Date(log.finished).getTime() - new Date(log.started).getTime()) / 1000
-      )}s`
-    : "—";
-
-  const pageList = (pages: (PageEntry | string)[], label: string) => {
-    if (!pages.length) return "";
-    const items = pages.map((raw) => {
-      const p: PageEntry = typeof raw === "string" ? { slug: raw, title: raw } : raw;
-      const diff = p.changes ?? p.preview ?? "";
-      const titlePart = p.title && p.title !== p.slug ? ` — ${p.title}` : "";
-      const body = diff
-        ? `<pre style="font-size:0.76rem;margin:4px 0 0;white-space:pre-wrap">${diff}</pre>`
-        : "<em style='font-size:0.76rem'>no text changes</em>";
-      return `<details style="margin:6px 0"><summary style="cursor:pointer;font-size:0.82rem"><code>${p.slug}</code>${titlePart}</summary>${body}</details>`;
-    });
-    return `<h3>${label}</h3>${items.join("")}`;
-  };
-
-  const preview = log.input_preview ?? "";
-  const fullInput = log.input ?? "";
-  const inputHtml =
-    fullInput.length > preview.length
-      ? `<p style="white-space:pre-wrap">${preview}…</p>
-         <details style="margin:4px 0">
-           <summary style="cursor:pointer;font-size:0.8rem;color:#7c3aed">
-             Show full input (${fullInput.length} chars)
-           </summary>
-           <pre style="font-size:0.78rem;white-space:pre-wrap;margin:4px 0 0">${fullInput}</pre>
-         </details>`
-      : `<p style="white-space:pre-wrap">${fullInput || preview || "—"}</p>`;
-
-  document.getElementById("modal-body")!.innerHTML = `
-    <p><strong>Status:</strong> ${statusLabel[log.status] ?? log.status}
-       &nbsp;·&nbsp; <strong>Duration:</strong> ${duration}</p>
-    <h3>Input</h3>
-    ${inputHtml}
-    ${pageList(log.pages_updated ?? [], "Updated")}
-    ${pageList(log.pages_created ?? [], "Created")}
-    ${log.error ? `<h3>Error</h3><pre>${log.error}</pre>` : ""}
-  `;
-  document.getElementById("modal-overlay")!.classList.add("open");
-}
-
-async function loadIngestionLogs(): Promise<void> {
-  const list = document.getElementById("ingestion-log-list")!;
-  try {
-    const r = await fetch("/api/ingestion-logs");
-    if (!r.ok) throw new Error(String(r.status));
-    const raw = (await r.json()) as IngestionLog[];
-    if (!raw.length) {
-      list.innerHTML = '<div class="status">No entries yet</div>';
+    if (location.pathname === "/search") {
+      main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW YOUR CURIOSITY</div><h1>Find a thought.</h1><p>Search your pages, pick up a thread, and keep going.</p></section><form><span>⌕</span><input aria-label="Search pages" placeholder="Search your knowledge…" value="${esc(new URLSearchParams(location.search).get("q") || "")}"><button class="primary">Search →</button></form><div id="results"><p class="quiet">A name, an idea, a phrase. Start anywhere.</p></div>`;
+      const input = main.querySelector("input")!;
+      const search = async () => {
+        const q = input.value.trim();
+        history.replaceState(
+          {},
+          "",
+          q ? "/search?q=" + encodeURIComponent(q) : "/search",
+        );
+        const results = main.querySelector("#results")!;
+        results.innerHTML = '<p class="quiet">Searching…</p>';
+        try {
+          const data = await api("/search?q=" + encodeURIComponent(q));
+          if (run !== generation || input.value.trim() !== q) return;
+          results.innerHTML = `<div class="section-heading"><h2>${data.results.length} results</h2></div><div class="grid">${data.results.length ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
+        } catch (e) {
+          results.innerHTML = `<p class="error">${esc((e as Error).message)}</p>`;
+        }
+      };
+      main.querySelector("form")!.onsubmit = (e) => {
+        e.preventDefault();
+        void search();
+      };
+      if (input.value) void search();
       return;
     }
-    const logs = [...raw]
-      .sort((a, b) => (a.status === "running" ? 0 : 1) - (b.status === "running" ? 0 : 1))
-      .slice(0, 3);
-    list.innerHTML = logs
-      .map(
-        (log) => `
-      <div class="log-item" style="cursor:pointer">
-        <div class="log-dot ${log.status}"></div>
-        <div class="log-meta">
-          <span>${(log.input_preview ?? "").slice(0, 110)}</span>
-          <span class="log-time">${formatDateTime(log.started)} · ${logSummary(log)}</span>
-        </div>
-      </div>`
-      )
-      .join("");
-
-    list.querySelectorAll<HTMLElement>(".log-item").forEach((el, i) => {
-      el.addEventListener("click", () => openIngestionModal(logs[i]));
-    });
-  } catch {
-    list.innerHTML = '<div class="status">Logs unavailable</div>';
+    if (location.pathname.startsWith("/wiki/")) {
+      page = await api(
+        "/pages/" +
+          encodeURIComponent(decodeURIComponent(location.pathname.slice(6))),
+      );
+      if (run !== generation) return;
+      renderPage();
+      return;
+    }
+    const { pages } = await api("/pages");
+    if (run !== generation) return;
+    let preferred = "";
+    try {
+      preferred = localStorage.getItem("secondbrain.startpage") || "";
+    } catch {}
+    const start =
+      pages.find((p: Page) => p.id === preferred) ||
+      pages.find((p: Page) => p.id === "home");
+    if (
+      preferred &&
+      start?.id === preferred &&
+      !new URLSearchParams(location.search).has("overview")
+    ) {
+      history.replaceState({}, "", url(preferred));
+      activeUrl = url(preferred);
+      void route();
+      return;
+    }
+    main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
+  } catch (e) {
+    if (run !== generation) return;
+    main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${(e as any).status === 404 ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc((e as Error).message)}</p><a href="/?overview=1" class="primary">Back to home →</a></section>`;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Resizable sidebar
-// ---------------------------------------------------------------------------
-
-function setupSidebarResize(): void {
-  const sidebar = document.getElementById("sidebar")!;
-  const handle = document.getElementById("sidebar-resize")!;
-  let dragging = false;
-  let startX = 0;
-  let startWidth = 0;
-
-  handle.addEventListener("mousedown", (e) => {
+function renderPage() {
+  if (!page) return;
+  const main = app.querySelector("main")!;
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1>${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="prose"></div>'}</article>`;
+  if (!editing)
+    main
+      .querySelector(".prose")!
+      .append(markdown((page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
+  main.querySelector("#start")!.addEventListener("click", () => {
+    try {
+      localStorage.setItem("secondbrain.startpage", page!.id);
+      notice = "This is now your start page.";
+    } catch {
+      notice = "Your browser could not remember this preference.";
+    }
+    renderPage();
+  });
+  main.querySelector("#edit")!.addEventListener("click", () => {
+    if (saving) return;
+    if (
+      editing &&
+      draft !== page!.markdown &&
+      !confirm("Discard unsaved changes?")
+    )
+      return;
+    editing = !editing;
+    if (editing) {
+      draft = page!.markdown || "";
+      requestId = crypto.randomUUID();
+    }
+    notice = "";
+    renderPage();
+  });
+  if (editing) {
+    main.querySelector("textarea")!.addEventListener("input", (e) => {
+      draft = (e.target as HTMLTextAreaElement).value;
+      requestId = crypto.randomUUID();
+    });
+    main.querySelector("#save")!.addEventListener("click", () => void save());
+  }
+}
+async function save() {
+  if (!page || saving) return;
+  saving = true;
+  notice = "";
+  renderPage();
+  try {
+    const result = await api("/pages/" + encodeURIComponent(page.id), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        markdown: draft,
+        base_revision: page.revision,
+        request_id: requestId,
+      }),
+    });
+    page = result;
+    editing = false;
+    notice = `Saved · revision ${String(result.revision).slice(0, 8)}. Graph indexing: ${result.index?.graph || "unknown"}; vector indexing: ${result.index?.vector || "unknown"}. Remote sync: ${result.remote_sync === "not_configured" ? "not configured" : result.remote_sync || "unknown"}.`;
+  } catch (e) {
+    notice =
+      (e as any).status === 409
+        ? "Conflict: this page has a newer revision. Your draft is preserved. Copy it before reloading to review the latest version."
+        : (e as Error).message + " Your draft is preserved. Try saving again.";
+  } finally {
+    saving = false;
+    renderPage();
+  }
+}
+window.addEventListener("popstate", () => {
+  if (
+    saving ||
+    (editing &&
+      draft !== page?.markdown &&
+      !confirm("Leave this page? Unsaved changes will be lost."))
+  ) {
+    history.pushState({}, "", activeUrl);
+    return;
+  }
+  activeUrl = location.pathname + location.search;
+  void route();
+});
+window.addEventListener("beforeunload", (e) => {
+  if (editing && draft !== page?.markdown) {
     e.preventDefault();
-    dragging = true;
-    startX = e.clientX;
-    startWidth = sidebar.offsetWidth;
-    document.body.classList.add("resizing");
-  });
-
-  document.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    const w = Math.max(180, Math.min(window.innerWidth * 0.6, startWidth + (e.clientX - startX)));
-    sidebar.style.width = `${w}px`;
-  });
-
-  document.addEventListener("mouseup", () => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.classList.remove("resizing");
-    cy.resize();
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Mobile nav
-// ---------------------------------------------------------------------------
-
-function setupMobileNav(): void {
-  const tabs = document.querySelectorAll<HTMLElement>(".m-tab");
-  tabs.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tab = btn.dataset.tab ?? "graph";
-      tabs.forEach((t) => t.classList.remove("active"));
-      btn.classList.add("active");
-      document.body.className = `tab-${tab}`;
-      if (tab === "graph") requestAnimationFrame(() => cy.resize());
-    });
-  });
-  document.getElementById("m-refresh-btn")?.addEventListener("click", () => void loadGraph(true));
-  document.getElementById("refresh-btn")?.addEventListener("click", () => void loadGraph(true));
-}
-
-// ---------------------------------------------------------------------------
-// Global + init
-// ---------------------------------------------------------------------------
-
-declare global {
-  interface Window {
-    loadGraph: (force?: boolean) => Promise<void>;
-    doRemember: () => Promise<void>;
-    doRecall: () => Promise<void>;
-    doRag: () => Promise<void>;
-    closeModal: (evt: MouseEvent) => void;
-    closeModalBtn: () => void;
+    e.returnValue = "";
   }
-}
-window.loadGraph = loadGraph;
-window.doRemember = doRemember;
-window.doRecall = doRecall;
-window.doRag = doRag;
-window.closeModal = closeModal;
-window.closeModalBtn = closeModalBtn;
-
-setupMobileNav();
-setupSidebarResize();
-
-void loadGraph(true);
-setInterval(() => void loadGraph(), 30_000);
-
-void loadIngestionLogs();
-setInterval(() => void loadIngestionLogs(), 5_000);
+});
+void route();

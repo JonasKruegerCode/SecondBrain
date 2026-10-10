@@ -1,4 +1,11 @@
 # SecondBrain Dev Makefile
+PYTHON ?= python3
+
+# Opt-in managed wiki; does not stop or touch production containers/volumes.
+.PHONY: demo
+demo:
+	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-demo.py
+
 # Prerequisites: poetry install (backend), npm install (frontend), .env in repo root
 
 # Stop the prod backend + worker containers to free ports 8000/3000.
