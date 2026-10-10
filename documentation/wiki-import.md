@@ -32,6 +32,31 @@ python -m second_brain.wiki.importer \
 
 The Python entry point is `import_vault(store, source, prefix="", base_revision=None, request_id="...")`. Use `WikiStore` for the explicitly selected managed destination. `base_revision=None` corresponds to the CLI's `--empty` guard.
 
+## Verify the migration evidence
+
+Pin the `revision` returned by the importer and run the read-only audit against
+the same clean source checkout and prefix:
+
+```bash
+python -m second_brain.wiki.import_audit \
+  --source /absolute/path/to/source-repository \
+  --vault .managed/wiki \
+  --prefix 1_knowledge/wiki \
+  --revision PASTE_THE_IMPORTED_MANAGED_REVISION
+```
+
+The audit accepts only a full managed commit that remains in the current
+first-parent history. It rereads the current committed source revision, then
+checks the exact page-ID set and Markdown bytes, the recorded source-path map,
+the direct retained source parent and Git object integrity. Its JSON evidence
+includes both immutable revisions, the sorted page IDs and a deterministic
+content digest. It does not modify either repository or advance indexes.
+
+If the source checkout has advanced since the reviewed import, audit the
+original commit from a separate clean checkout rather than resetting working
+data blindly. A changed source, a managed-only revision, missing provenance or
+missing Git history is a failed migration acceptance, not a warning.
+
 ## Replace an existing managed snapshot
 
 An import replaces the **entire managed page set** with the selected source snapshot. Pages not present in that snapshot are removed from the current view; prior managed snapshots remain in Git history. A zero-page import into a destination that currently contains pages is refused, so an empty selection cannot erase its content. Zero-page imports are permitted when the current page set is empty; a previously published empty snapshot still requires its exact HEAD as the expected base. The prefix limits the imported source, not which existing managed pages may be replaced.
@@ -48,6 +73,16 @@ python -m second_brain.wiki.importer \
 ```
 
 This value is the managed **snapshot HEAD**, not a page's revision token. If another writer saves while the import is being prepared, publication fails with a conflict and that writer's snapshot remains current. Review the new state before submitting a new operation. Do not automatically read a newer HEAD and blindly retry a replacement.
+
+Before a replacement, create a [portable backup](backup-restore.md) of the
+managed vault. Keep the returned archive and revision until the imported
+revision passes the audit above, index delivery completes, and the real user
+paths have been checked. Rollback is an operator action: stop writers, restore
+the archive into a **new** vault directory, verify its reported revision, point
+the service configuration back to that restored directory, and rebuild derived
+providers. Restore deliberately refuses to overwrite the current vault. For a
+first migration from the legacy service, the untouched source clone remains the
+content fallback; do not delete or repurpose it during acceptance.
 
 ## Retry and interruption behavior
 

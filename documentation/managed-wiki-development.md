@@ -148,7 +148,10 @@ source commits, including history outside the selected prefix, remain reachable
 and appear in page history through the source-path mapping. No remote credentials
 or Git configuration are copied. Shallow/incomplete history, duplicate IDs,
 dirty sources, invalid Markdown and missing prefixes are refused. Empty input
-cannot erase a populated wiki. This is not automatic remote synchronization.
+cannot erase a populated wiki. A separate read-only audit pins the publication
+revision and proves page IDs, exact Markdown bytes, path provenance, retained
+source parent and object integrity. Replacement rollback uses a portable backup
+restored into a new vault. This is not automatic remote synchronization.
 
 ## Verification and remaining work
 
