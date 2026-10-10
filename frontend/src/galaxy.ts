@@ -108,7 +108,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const matching = (id: string) => !query || `${name(id)} ${id}`.toLowerCase().includes(query);
   const color = (c: Cluster) => c.isolated ? "#a6afc2" : colors[c.id % colors.length];
   const button = (id: string) => `<button type="button" class="galaxy-page${selectedNode === id ? " is-selected" : ""}" data-node="${escape(id)}" aria-pressed="${selectedNode === id}"><i style="--cluster-color:${color(clusters[membership.get(id)!])}"></i><span>${escape(name(id))}<small>${adjacency.get(id)!.size} neighbor${adjacency.get(id)!.size === 1 ? "" : "s"}</small></span><b>→</b></button>`;
-  main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: list view opens first to keep browsing readable. Switch to Map view to inspect the topology.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button><button type="button" data-action="list" aria-pressed="${listOnly}">${listOnly ? "Map view" : "List view"}</button></div></div><div class="galaxy-stage"></div><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag to pan · + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
+  main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: list view opens first. Map view shows one core per constellation and counts only real links between them; choose a constellation to expand its pages.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button><button type="button" data-action="list" aria-pressed="${listOnly}">${listOnly ? "Map view" : "List view"}</button></div></div><div class="galaxy-stage"></div><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag to pan · + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
   const root = main.querySelector<HTMLElement>(".galaxy")!;
   const stage = root.querySelector<HTMLElement>(".galaxy-stage")!;
   const sidebar = root.querySelector<HTMLElement>(".galaxy-sidebar-content")!;
@@ -121,6 +121,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   };
   function renderMap() {
     const active = selectedCluster === null ? null : clusters[selectedCluster];
+    const compactOverview = largeGraph && !active;
     stage.hidden = listOnly;
     root.classList.toggle("is-list-view", listOnly);
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
@@ -133,6 +134,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     shown.forEach((c, i) => {
       const center = active ? { x: 550, y: 300 } : { x: (i % columns + .5) * 1100 / columns, y: Math.floor(i / columns) * 300 + 145 };
       centers.set(c.id, center); positions.set(c.core, center);
+      if (compactOverview) return;
       const rest = c.members.filter(id => id !== c.core);
       const ringCapacity = active ? 16 : 12;
       rest.forEach((id, j) => {
@@ -145,7 +147,24 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     });
     if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: Math.max(340, rows * 300) + 55 + Math.floor(i / 15) * 55 }));
     if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
-    const svgLinks = edges.map(e => {
+    const svgLinks = compactOverview ? (() => {
+      const grouped = new Map<string, { from: number; to: number; count: number }>();
+      bridges.forEach(e => {
+        const source = membership.get(e.source)!;
+        const target = membership.get(e.target)!;
+        const from = Math.min(source, target), to = Math.max(source, target);
+        const key = `${from}:${to}`;
+        const previous = grouped.get(key);
+        grouped.set(key, { from, to, count: (previous?.count || 0) + 1 });
+      });
+      return [...grouped.values()].map(link => {
+        const a = centers.get(link.from), b = centers.get(link.to);
+        if (!a || !b) return "";
+        const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+        const label = `${link.count} explicit link${link.count === 1 ? "" : "s"} between ${clusterName(clusters[link.from])} and ${clusterName(clusters[link.to])}`;
+        return `<g class="galaxy-aggregate-link"><line class="galaxy-edge is-bridge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(label)}</title></line>${link.count > 1 ? `<text class="galaxy-bridge-count" x="${x}" y="${y - 6}" text-anchor="middle">${link.count}</text>` : ""}</g>`;
+      }).join("");
+    })() : edges.map(e => {
       const a = positions.get(e.source), b = positions.get(e.target);
       if (!a || !b || e.source === e.target) return "";
       const cross = membership.get(e.source) !== membership.get(e.target);

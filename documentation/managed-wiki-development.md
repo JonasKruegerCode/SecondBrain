@@ -258,12 +258,13 @@ as one real managed Git snapshot, starts the actual REST/Vite services, and driv
 the list/search/evidence/mutation/delete path in Chromium at 1440 and 390 px. The
 fixture refuses nonempty destinations and contains only explicit synthetic prose.
 In this development environment the first graph build took about 47 ms and the
-whole browser case about 1.8 seconds; these are single local observations, not a
-production scalability promise. The map can still be selected explicitly;
-large-map performance is not accepted. Curated group IDs make high-level placement
-stable, while stars inside a group can still move after a content mutation.
-Richer overview aggregation and visual depth remain quality work for the final
-galaxy acceptance; this is not that signoff.
+expanded browser case about 2.6 seconds; these are single local observations, not
+a production scalability promise. Selecting the map on this fixture now renders
+one core per curated constellation and aggregates only the real cross-constellation
+links, including their counts. Selecting one constellation expands its 40 pages and
+their individual links. The browser contract also confirms that core positions stay
+stable after a real page mutation. This is useful evidence for the checked fixture,
+not production-scale or final galaxy acceptance.
 
 Run the reproducible scale path with `make demo-scale PYTHON=backend/.venv/bin/python`.
 Then, in another terminal, run

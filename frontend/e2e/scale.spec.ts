@@ -6,7 +6,7 @@ test.skip(
   "Run against a generated scale vault with PLAYWRIGHT_SCALE=1.",
 );
 
-test("large real vault stays usable in list and narrow views after a mutation", async ({
+test("large real vault has a compact stable map and usable mutation path", async ({
   page,
   request,
 }) => {
@@ -26,6 +26,32 @@ test("large real vault stays usable in list and narrow views after a mutation", 
   await expect(page.locator(".galaxy-stage")).toBeHidden();
   await expect(page.getByRole("heading", { name: "Choose a constellation" })).toBeVisible();
   await expect(page.locator(".galaxy-cluster")).toHaveCount(8);
+
+  const mapStarted = Date.now();
+  await page.getByRole("button", { name: "Map view" }).click();
+  await expect(page.locator(".galaxy-stage")).toBeVisible();
+  await expect(page.locator(".galaxy-neighborhood")).toHaveCount(8);
+  await expect(page.locator(".galaxy-star")).toHaveCount(8);
+  await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(8);
+  expect(Date.now() - mapStarted).toBeLessThan(5_000);
+  const corePositions = await page.locator(".galaxy-star").evaluateAll(elements =>
+    Object.fromEntries(elements.map(element => [
+      element.getAttribute("data-node"),
+      element.getAttribute("transform"),
+    ])),
+  );
+  await page.screenshot({ path: "../.demo/scale-map-overview.png", fullPage: true });
+
+  await page.locator(".galaxy-cluster").last().click();
+  await expect(page.locator(".galaxy-breadcrumb")).toContainText(
+    "Synthetic constellation 8",
+  );
+  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: "../.demo/scale-map-cluster.png", fullPage: true });
+  await page.getByRole("button", { name: "All constellations" }).click();
+  await page.getByRole("button", { name: "List view" }).click();
 
   const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
   await search.fill("scale-0319");
@@ -51,6 +77,17 @@ test("large real vault stays usable in list and narrow views after a mutation", 
   expect(created.ok()).toBeTruthy();
   const saved = await created.json();
   await page.goto("/galaxy");
+  await page.getByRole("button", { name: "Map view" }).click();
+  await expect(page.locator(".galaxy-star")).toHaveCount(8);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect(await page.locator(".galaxy-star").evaluateAll(elements =>
+    Object.fromEntries(elements.map(element => [
+      element.getAttribute("data-node"),
+      element.getAttribute("transform"),
+    ])),
+  )).toEqual(corePositions);
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: "../.demo/scale-map-mobile.png", fullPage: true });
   await search.fill(id);
   await expect(page.locator(".galaxy-page")).toHaveCount(1);
   await page.locator(".galaxy-page").click();

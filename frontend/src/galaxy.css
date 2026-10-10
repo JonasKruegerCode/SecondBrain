@@ -5,6 +5,7 @@
 @media(prefers-reduced-motion:reduce){.galaxy *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .galaxy-refresh{font-size:10px;text-decoration:none;border-bottom:1px solid #62758f;padding-bottom:2px;white-space:nowrap}
 .galaxy .galaxy-scale-note{font-size:11px;line-height:1.6;color:#a5b8d3;background:#15243b;border:1px solid var(--g-border);padding:12px 15px;border-radius:7px;margin:0 0 14px}
+.galaxy-bridge-count{fill:#f2cfaa;font-size:10px;font-weight:700;paint-order:stroke;stroke:#0b1221;stroke-width:5px;stroke-linejoin:round;pointer-events:none}
 
 /* The introduction sits on the light wiki shell; the map owns its space palette. */
 .galaxy .galaxy-heading h1 { color: #243b3b; }
