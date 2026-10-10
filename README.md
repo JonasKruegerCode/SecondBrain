@@ -15,6 +15,8 @@ no-private-cache boundary.
 [First-start profiles](documentation/first-start.md) explicitly choose empty,
 fictional template, or local Git import. [Markdown export](documentation/wiki-export.md)
 produces a separate content-only snapshot.
+[Portable backup and restore](documentation/backup-restore.md) preserves managed
+Git history, request receipts and local operational ledgers without bundling secrets.
 [Explicit Git snapshot sync](documentation/managed-git-sync.md) supports guarded
 push/pull without implicit merging. [Recoverable delivery](documentation/managed-delivery.md)
 connects saves to configured index/remote workers with separate progress.

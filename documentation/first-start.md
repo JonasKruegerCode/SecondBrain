@@ -54,8 +54,9 @@ with `--template PATH`. Source/prefix flags apply only to import; template/resum
 flags apply only to template, so unrelated arguments are refused.
 
 Raw Markdown folders require deliberate migration; they are not adopted silently.
-Backup and restore the whole managed directory, including `.wiki.git` and local
-metadata. [Optional index providers](managed-indexes.md) remain separate: initial
+Use the [verified backup/restore command](backup-restore.md) to preserve the
+authoritative Git history, request receipts and known local metadata without
+overwriting a live vault. [Optional index providers](managed-indexes.md) remain separate: initial
 content is available even when they are disabled or pending. Chat, galaxy and PWA
 are separate runtime capabilities rather than setup modes. The [PWA guide](pwa.md)
 documents HTTPS, installation, privacy and updates; first-start itself does not

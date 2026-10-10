@@ -39,6 +39,9 @@ a separate, revision-guarded content-only directory without copying Git internal
 [Explicit managed Git sync](managed-git-sync.md) publishes or imports reviewed
 snapshots with durable acknowledgements and a guarded normal push. See [recoverable delivery](managed-delivery.md) for the factory-owned worker
 and explicit opt-in remote bootstrap.
+[Portable backup and restore](backup-restore.md) captures a verified Git bundle,
+durable local ledgers and demo metadata, then restores only into a new vault.
+External index providers, secrets and proxy configuration remain separate.
 
 The separate `docker-compose.wiki.yml` describes an empty managed installation
 on `127.0.0.1:8080`. Its container build/start has not yet been verified. It uses
