@@ -222,3 +222,49 @@ test("canceling browser back keeps the unsaved editor draft and URL", async ({
     "# Back navigation fixture\nKeep this draft.",
   );
 });
+
+test("real demo table stays readable and keyboard-scrollable on mobile", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/wiki/night-sky-survey");
+  const region = page.getByRole("region", {
+    name: "Table; scroll horizontally to read all columns",
+  });
+  await expect(region).toBeVisible();
+  const session = region.getByRole("columnheader", {
+    name: "Session",
+    exact: true,
+  });
+  await expect(session).toBeVisible();
+  const geometry = await region.evaluate((el) => ({
+    width: el.clientWidth,
+    content: el.scrollWidth,
+  }));
+  expect(geometry.content).toBeGreaterThan(geometry.width);
+  expect(
+    await session.evaluate((el) => el.getBoundingClientRect().width),
+  ).toBeGreaterThanOrEqual(120);
+  expect(
+    await session.evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return range.getClientRects().length;
+    }),
+  ).toBe(1);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await region.focus();
+  await expect(region).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect
+    .poll(() => region.evaluate((el) => el.scrollLeft))
+    .toBeGreaterThan(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect
+    .poll(() => region.evaluate((el) => el.scrollWidth <= el.clientWidth))
+    .toBeTruthy();
+});

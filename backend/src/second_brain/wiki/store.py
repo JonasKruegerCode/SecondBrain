@@ -65,7 +65,9 @@ class WikiStore:
                     "import_required", "Existing Markdown requires a controlled import."
                 )
             result = subprocess.run(
-                ["git", "init", "--bare", str(self.repo)], capture_output=True, check=False
+                ["git", "init", "--bare", "--initial-branch=wiki", str(self.repo)],
+                capture_output=True,
+                check=False,
             )
             if result.returncode:
                 raise WikiError("storage_unavailable", "Unable to initialize local history.")
@@ -83,6 +85,7 @@ class WikiStore:
             "GIT_AUTHOR_EMAIL": "wiki@localhost",
             "GIT_COMMITTER_NAME": "Managed Wiki",
             "GIT_COMMITTER_EMAIL": "wiki@localhost",
+            "GIT_LITERAL_PATHSPECS": "1",
             **(env or {}),
         }
         result = subprocess.run(
@@ -139,19 +142,37 @@ class WikiStore:
         )
 
     def _pages(self, head: str) -> list[dict[str, Any]]:
-        if not head:
-            return []
-        names = self._git("ls-tree", "-r", "--name-only", "-z", head, "--", "pages/")
+        blobs = self._snapshot_blobs(head, "pages/", "revisions/")
         pages = []
-        for raw in names.split(b"\0"):
-            if raw and raw.endswith(b".md"):
-                name = raw.decode()
-                data = self._blob(head, name)
-                if data is not None:
-                    page_id = name.removeprefix("pages/").removesuffix(".md")
-                    revision = self._blob(head, f"revisions/{page_id}")
-                    pages.append(self._page(page_id, data, revision.decode() if revision else ""))
+        for name, data in blobs.items():
+            if name.startswith("pages/") and name.endswith(".md"):
+                page_id = name.removeprefix("pages/").removesuffix(".md")
+                revision = blobs.get(f"revisions/{page_id}", b"").decode()
+                pages.append(self._page(page_id, data, revision))
         return sorted(pages, key=lambda page: (page["title"].casefold(), page["id"]))
+
+    def _snapshot_blobs(self, head: str, *prefixes: str) -> dict[str, bytes]:
+        """Read one tree with two Git processes, rather than four per page."""
+        if not head:
+            return {}
+        rows = self._git("ls-tree", "-r", "-z", head, "--", *prefixes)
+        entries: list[tuple[str, bytes]] = []
+        for row in rows.split(b"\0"):
+            if row:
+                metadata, raw_path = row.split(b"\t", 1)
+                _, kind, sha = metadata.split()
+                if kind == b"blob":
+                    entries.append((raw_path.decode(), sha))
+        batch = self._git("cat-file", "--batch", data=b"".join(sha + b"\n" for _, sha in entries))
+        blobs: dict[str, bytes] = {}
+        offset = 0
+        for path, _ in entries:
+            end = batch.index(b"\n", offset)
+            size = int(batch[offset:end].split()[2])
+            offset = end + 1
+            blobs[path] = batch[offset : offset + size]
+            offset += size + 1
+        return blobs
 
     def list_pages(self) -> list[dict[str, Any]]:
         return self._pages(self._head())
@@ -315,12 +336,31 @@ class WikiStore:
         head = self._head()
         if not head:
             return []
+        format_arg = "--format=%H%x09%aI%x09%at%x09%s"
         rows = (
-            self._git("log", "-20", "--format=%H%x09%aI%x09%s", head, "--", f"pages/{page_id}.md")
+            self._git("log", "-20", "--first-parent", format_arg, head, "--", f"pages/{page_id}.md")
             .decode()
             .splitlines()
         )
+        # Imports retain original objects and their path map. Include source
+        # history even though managed page paths can differ from source paths.
+        for data in self._snapshot_blobs(head, "imports/").values():
+            provenance = json.loads(data)
+            path = provenance["paths"].get(page_id)
+            source = provenance["source_revision"]
+            if path and source:
+                rows.extend(
+                    self._git("log", "-20", format_arg, source, "--", path).decode().splitlines()
+                )
+        seen: set[str] = set()
+        changes = []
+        for row in rows:
+            commit, date, timestamp, message = row.split("\t", 3)
+            if commit not in seen:
+                seen.add(commit)
+                changes.append(
+                    (int(timestamp), {"commit": commit, "date": date, "message": message})
+                )
         return [
-            dict(zip(("commit", "date", "message"), row.split("\t", 2), strict=True))
-            for row in rows
+            change for _, change in sorted(changes, key=lambda item: item[0], reverse=True)[:20]
         ]

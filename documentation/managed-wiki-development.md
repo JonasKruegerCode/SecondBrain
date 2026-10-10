@@ -35,7 +35,8 @@ on `127.0.0.1:8080`. Its container build/start has not yet been verified. It use
 an independent `managed_wiki` volume and does not expose the backend port. Put
 authenticated HTTPS reverse proxy protection in front before exposing it beyond
 localhost. Existing production proxy credentials are not changed. This milestone
-does not yet provide remote HTTP managed MCP or migrate the production vault.
+does not migrate the production vault. Explicit local Git import and independent
+HTTP MCP startup are described below.
 
 ## Publication contract
 
@@ -88,6 +89,24 @@ discipline, revision conflicts and exact retries. Managed tools are get/list/
 search/save/delete/graph/history. Legacy remember/recall remain in the separate
 legacy profile, and are absent here. No automatic editorial repair runs.
 
+Streamable HTTP provides those same tools at `/mcp`, with an optional Bearer
+key and explicit Host/Origin allowlists. See [managed-mcp.md](managed-mcp.md)
+for local startup, reverse-proxy configuration and transport differences from
+legacy. A real SDK client against a running MCP server was checked alongside
+REST against the same isolated vault.
+
+## Controlled local Git import
+
+See [wiki-import.md](wiki-import.md) for importing a complete clean local Git
+repository with an optional page-directory prefix. An import validates all
+pages before atomically replacing the managed page set; an existing destination
+requires its reviewed snapshot head. The source stays unchanged. Original
+source commits, including history outside the selected prefix, remain reachable
+and appear in page history through the source-path mapping. No remote credentials
+or Git configuration are copied. Shallow/incomplete history, duplicate IDs,
+dirty sources, invalid Markdown and missing prefixes are refused. Empty input
+cannot erase a populated wiki. This is not automatic remote synchronization.
+
 ## Verification and remaining work
 
 Backend tests exercise real local Git, genuine separate-process writers, stale
@@ -104,7 +123,7 @@ frontend is retained as a separate build entry for legacy deployment. Screenshot
 inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
-Not complete: existing-vault controlled Git import/export and remote sync,
+Not complete: remote Git synchronization and Markdown export workflow,
 external index adapters and retries, richer Markdown navigation/history UI,
 galaxy, iterative OpenRouter chat, installable PWA, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
@@ -118,9 +137,24 @@ compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use onl
 a disposable synthetic vault: the suite deliberately creates, edits and deletes
 fixture pages. Test artifacts are kept under the ignored `.demo` directory.
 
-On 2026-10-10: 99 nonintegrative backend tests passed, repository Ruff and MyPy
-passed (54 source/test files), TypeScript and both Vite entries built, and eight
+On 2026-10-10: 140 nonintegrative backend tests passed, repository Ruff and MyPy
+passed (57 source/test files), TypeScript and both Vite entries built, and nine
 real-API browser regressions passed in Chromium. Desktop (1440 pixels) and narrow
 (390 pixels) screenshots were inspected. The demo launcher was started and
 stopped against real services. Docker deployment, external index services,
 remote synchronization, real-model chat and device installation remain untested.
+
+The imported atlas was also opened in the running browser, and desktop/mobile
+screenshots were inspected. The narrow-view table inspection exposed excessive
+word wrapping; tables now scroll inside a keyboard-focusable region with readable
+column widths. A real demo-table regression covers 390px and 1440px views,
+keyboard scrolling and absence of page overflow.
+
+A synthetic 500-page Git import took 8.8 seconds in the development environment.
+Listing, current Markdown graph and lexical search took approximately 42–56 ms.
+Batched reads use one immutable tree and two Git processes; an equivalent
+previous 500-page listing took 5.22 seconds versus 0.049 seconds with the batch
+reader and identical content/revision results. These are local fixture timings,
+not a production scalability guarantee. Concurrent publication during a batch
+read is covered by a regression ensuring the returned graph remains on its
+declared snapshot.

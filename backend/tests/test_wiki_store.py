@@ -153,3 +153,29 @@ def test_graph_does_not_treat_code_examples_as_links(tmp_path: Path) -> None:
         "create",
     )
     assert store.graph()["missing_targets"] == [{"source": "home", "target": "real"}]
+
+
+def test_batch_read_remains_on_one_snapshot_during_concurrent_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = WikiStore(tmp_path)
+    home = store.save_page("home", "# Home\r\n\n[[old]]\n", None, "initial")
+    before = store._head()
+    original_git = store._git
+    competitor = WikiStore(tmp_path)
+    intercepted = False
+
+    def raced_git(*args: str, **kwargs: Any) -> bytes:
+        nonlocal intercepted
+        if args[0] == "cat-file" and not intercepted:
+            intercepted = True
+            competitor.save_page("home", "# Home\n[[new]]\n", home["revision"], "changed")
+        return original_git(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_git", raced_git)
+    graph = store.graph()
+    assert intercepted
+    assert graph["revision"] == before
+    assert graph["missing_targets"] == [{"source": "home", "target": "old"}]
+    assert competitor.graph()["missing_targets"] == [{"source": "home", "target": "new"}]

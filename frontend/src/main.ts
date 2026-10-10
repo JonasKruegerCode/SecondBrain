@@ -102,6 +102,18 @@ function markdown(s: string) {
       } catch {}
     }
     el.childNodes.forEach((c) => out.append(clean(c)));
+    if (el.tagName === "TABLE") {
+      const region = document.createElement("div");
+      region.className = "table-scroll";
+      region.tabIndex = 0;
+      region.setAttribute("role", "region");
+      region.setAttribute(
+        "aria-label",
+        "Table; scroll horizontally to read all columns",
+      );
+      region.append(out);
+      return region;
+    }
     return out;
   }
   const f = document.createDocumentFragment();
