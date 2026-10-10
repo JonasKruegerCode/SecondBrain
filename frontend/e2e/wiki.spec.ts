@@ -1,5 +1,7 @@
 import { test, expect, APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import { AddressInfo } from "node:net";
 
 async function create(request: APIRequestContext, markdown: string) {
   const id = `e2e-${randomUUID()}`;
@@ -21,6 +23,53 @@ async function update(
   });
   expect(response.ok()).toBeTruthy();
   return response.json();
+}
+
+async function pwaUpdateProxy() {
+  let release = 1;
+  const server = createServer(async (request, response) => {
+    try {
+      const path = request.url || "/";
+      const upstream = await fetch(`http://127.0.0.1:5173${path}`, {
+        headers: { accept: request.headers.accept || "*/*" },
+      });
+      let body = Buffer.from(await upstream.arrayBuffer());
+      if (path.startsWith("/service-worker.js")) {
+        body = Buffer.from(
+          body
+            .toString()
+            .replace("secondbrain-pwa-2026-10-10-1", `pwa-browser-test-${release}`),
+        );
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Content-Type", "application/javascript");
+        response.setHeader("Service-Worker-Allowed", "/");
+      } else {
+        upstream.headers.forEach((value, key) => {
+          if (!["content-encoding", "content-length", "transfer-encoding"].includes(key)) {
+            response.setHeader(key, value);
+          }
+        });
+      }
+      response.writeHead(upstream.status);
+      response.end(body);
+    } catch {
+      response.writeHead(502);
+      response.end("PWA test proxy failed");
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address() as AddressInfo;
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    bump: () => release++,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
 }
 
 test("home opens a wiki page, resolves an alias, and survives back and reload", async ({
@@ -493,4 +542,95 @@ test("read-only chat keeps multi-turn context and conversations in this browser"
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.getByRole("button", { name: "Delete conversation" }).click();
   await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
+});
+
+test("PWA metadata registers an online-only worker without private caches", async ({
+  page,
+  request,
+  context,
+}) => {
+  await page.goto("/?overview=1");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    "href",
+    "/manifest.webmanifest",
+  );
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
+    "href",
+    "/apple-touch-icon.png",
+  );
+
+  const manifestResponse = await request.get("/manifest.webmanifest");
+  expect(manifestResponse.ok()).toBeTruthy();
+  const manifest = await manifestResponse.json();
+  expect(manifest).toMatchObject({
+    id: "/",
+    start_url: "/?source=pwa",
+    scope: "/",
+    display: "standalone",
+  });
+  expect(manifest.icons).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ sizes: "192x192", purpose: "any maskable" }),
+      expect.objectContaining({ sizes: "512x512", purpose: "any maskable" }),
+    ]),
+  );
+
+  const session = await context.newCDPSession(page);
+  const appManifest = await session.send("Page.getAppManifest");
+  expect(appManifest.errors).toEqual([]);
+  const installability = await session.send("Page.getInstallabilityErrors");
+  expect(installability.installabilityErrors).toEqual([]);
+  const worker = await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    await new Promise<void>(resolve => {
+      if (navigator.serviceWorker.controller) return resolve();
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), {
+        once: true,
+      });
+    });
+    return {
+      scope: registration.scope,
+      script: registration.active?.scriptURL,
+      caches: await caches.keys(),
+    };
+  });
+  expect(worker.scope).toBe("http://127.0.0.1:5173/");
+  expect(worker.script).toMatch(/\/service-worker\.js$/);
+  expect(worker.caches).toEqual([]);
+
+  const serviceWorker = await (await request.get("/service-worker.js")).text();
+  expect(serviceWorker).toContain("SKIP_WAITING");
+  expect(serviceWorker).not.toContain('addEventListener("fetch"');
+  expect(serviceWorker).not.toContain("caches.");
+
+  await context.setOffline(true);
+  await expect(page.locator('.pwa-notice[data-kind="offline"]')).toContainText(
+    "wiki and chat need a connection",
+  );
+  await context.setOffline(false);
+  await expect(page.locator(".pwa-notice")).toBeHidden();
+});
+
+test("PWA offers and applies a waiting worker update", async ({ page }) => {
+  const proxy = await pwaUpdateProxy();
+  try {
+    await page.goto(`${proxy.origin}/?overview=1`);
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    proxy.bump();
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    const update = page.locator('.pwa-notice[data-kind="update"]');
+    await expect(update).toContainText("new version");
+    await Promise.all([
+      page.waitForEvent("load"),
+      update.getByRole("button", { name: "Update now" }).click(),
+    ]);
+    await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+    await expect(page.locator(".pwa-notice")).toBeHidden();
+    expect(await page.evaluate(() => caches.keys())).toEqual([]);
+  } finally {
+    await proxy.close();
+  }
 });

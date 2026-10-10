@@ -56,5 +56,7 @@ flags apply only to template, so unrelated arguments are refused.
 Raw Markdown folders require deliberate migration; they are not adopted silently.
 Backup and restore the whole managed directory, including `.wiki.git` and local
 metadata. [Optional index providers](managed-indexes.md) remain separate: initial
-content is available even when they are disabled or pending. Chat, galaxy, and
-installable PWA are not claimed as complete by this setup path.
+content is available even when they are disabled or pending. Chat, galaxy and PWA
+are separate runtime capabilities rather than setup modes. The [PWA guide](pwa.md)
+documents HTTPS, installation, privacy and updates; first-start itself does not
+verify a physical-device installation.

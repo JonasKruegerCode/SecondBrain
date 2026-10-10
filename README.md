@@ -10,6 +10,8 @@ editing, a curated snapshot galaxy, and bounded read-only wiki chat. It is
 [fictional demo](documentation/demo-start.md). Controlled
 [local Git import](documentation/wiki-import.md) preserves source history;
 [managed HTTP MCP](documentation/managed-mcp.md) shares the same content service.
+[PWA installation and updates](documentation/pwa.md) preserve an online-only,
+no-private-cache boundary.
 [First-start profiles](documentation/first-start.md) explicitly choose empty,
 fictional template, or local Git import. [Markdown export](documentation/wiki-export.md)
 produces a separate content-only snapshot.

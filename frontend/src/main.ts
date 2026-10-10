@@ -2,6 +2,7 @@ import { marked } from "marked";
 import "./style.css";
 import { renderGalaxy, Graph } from "./galaxy";
 import { renderChat } from "./chat";
+import { applyUpdate, installApp, observePwa, PwaState, startPwa } from "./pwa";
 type HistoryEntry = { commit: string; date: string; message: string };
 type Page = {
   id: string;
@@ -33,6 +34,7 @@ const url = (id: string) => "/wiki/" + encodeURIComponent(id);
 const linkUrl = (target: string, source = page?.id || "") =>
   `/resolve?${new URLSearchParams({ target, source })}`;
 let cleanupView: (() => void) | undefined;
+let pwaState: PwaState = { offline: !navigator.onLine, installable: false, updateAvailable: false };
 // Marked invokes inline tokenizers only in prose, leaving code blocks and spans intact.
 marked.use({
   extensions: [
@@ -156,7 +158,36 @@ app.addEventListener("click", (e) => {
   }
 });
 function shell() {
-  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${["/search", "/galaxy", "/chat"].includes(location.pathname) ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a><a href="/galaxy" class="${location.pathname === "/galaxy" ? "active" : ""}">Galaxy</a><a href="/chat" class="${location.pathname === "/chat" ? "active" : ""}">Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${["/search", "/galaxy", "/chat"].includes(location.pathname) ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a><a href="/galaxy" class="${location.pathname === "/galaxy" ? "active" : ""}">Galaxy</a><a href="/chat" class="${location.pathname === "/chat" ? "active" : ""}">Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><div class="pwa-notice" role="status" hidden><span></span><button type="button"></button></div><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+  renderPwaState();
+}
+
+function renderPwaState() {
+  const notice = app.querySelector<HTMLElement>(".pwa-notice");
+  if (!notice) return;
+  const label = notice.querySelector("span")!;
+  const button = notice.querySelector<HTMLButtonElement>("button")!;
+  notice.hidden = false;
+  button.hidden = true;
+  if (pwaState.offline) {
+    notice.dataset.kind = "offline";
+    label.textContent = "You’re offline. Saved browser drafts remain local; wiki and chat need a connection.";
+  } else if (pwaState.updateAvailable) {
+    notice.dataset.kind = "update";
+    label.textContent = "A new version of Secondbrain is ready.";
+    button.hidden = false;
+    button.textContent = "Update now";
+    button.onclick = applyUpdate;
+  } else if (pwaState.installable) {
+    notice.dataset.kind = "install";
+    label.textContent = "Install Secondbrain for a focused app window and quick access.";
+    button.hidden = false;
+    button.textContent = "Install app";
+    button.onclick = () => void installApp();
+  } else {
+    notice.hidden = true;
+    delete notice.dataset.kind;
+  }
 }
 
 function focusFragment() {
@@ -472,5 +503,10 @@ window.addEventListener("beforeunload", (e) => {
     e.preventDefault();
     e.returnValue = "";
   }
+});
+startPwa();
+observePwa(state => {
+  pwaState = state;
+  renderPwaState();
 });
 void route();

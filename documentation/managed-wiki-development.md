@@ -160,7 +160,7 @@ checks alone do not establish visual quality.
 
 Not complete: production Git credential provisioning, live provider/deployment integration, index
 retention/scale, frontend title-link ambiguity resolution,
-large-vault galaxy acceptance, installable PWA, deployment packaging and
+large-vault galaxy acceptance, physical-device PWA installation, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.
 
@@ -260,14 +260,14 @@ a content mutation. Richer overview aggregation and visual depth remain quality
 work for the final galaxy acceptance; this is not that signoff.
 
 Validated against actual isolated demo services: 248 nonintegrative backend tests,
-Ruff and strict MyPy, TypeScript and both Vite entries. Eighteen Chromium cases in
+Ruff and strict MyPy, TypeScript and both Vite entries. Twenty Chromium cases in
 total cover reader/editor regressions, title ambiguity/deletion, fragments,
-delayed real responses and galaxy save/link/delete refresh. Desktop 1440 and
-mobile viewport 390 screenshots were inspected; light-shell contrast, label
-collisions and navigation overflow were corrected. Browser emulation is not a
-physical-device installation or hosted-provider/model test. One history response
-uses a synthetic error and one real page response is delayed; the remaining
-content and mutations use real services.
+delayed real responses, galaxy save/link/delete refresh and PWA install/update
+contracts. Desktop 1440 and mobile viewport 390 screenshots were inspected;
+light-shell contrast, label collisions and navigation overflow were corrected.
+Browser emulation is not a physical-device installation or hosted-provider/model
+test. One history response uses a synthetic error and one real page response is
+delayed; the remaining content and mutations use real services.
 
 ## Read-only chat evidence
 
@@ -282,3 +282,27 @@ runtime path contains a fake answer. Desktop 1440px and mobile 390px screenshots
 of that UI contract were inspected. `OPENROUTER_API_KEY` was unavailable in this
 environment, so real provider/model quality, billing behavior, and tool-call
 compatibility are not claimed.
+
+## Installable PWA evidence
+
+The managed frontend now ships a web-app manifest, safe-zone icons at 192/512 px,
+an Apple touch icon and standalone launch metadata. A small runtime exposes an
+install action only when the browser supplies `beforeinstallprompt`, distinguishes
+offline/update/install states, and preserves the selected wiki start page on app
+launch. Android/Chromium and iOS/Safari installation steps are documented in the
+[PWA guide](pwa.md); production still requires HTTPS.
+
+The service worker is intentionally online-only: no fetch handler, no CacheStorage
+and no private wiki/chat/auth responses copied for offline use. Nginx forces worker
+revalidation. A changed worker waits, the UI offers **Update now**, and accepting
+it activates the worker before one controlled reload. The release marker must be
+bumped with deployments that should surface this notice.
+
+A real Chromium secure-context regression validates the manifest through the
+DevTools app-manifest and installability APIs, root-scope registration, empty
+CacheStorage, no fetch interception, and the visible 390-px offline notice. A
+same-origin test proxy then serves two real worker revisions, observes the waiting
+update, applies it through the UI and confirms the app reloads without a private
+cache. The icon and offline mobile UI were inspected. This is not evidence of an
+Android/iOS homescreen installation, OS icon rendering, or production HTTPS;
+those remain explicit release checks.

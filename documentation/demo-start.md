@@ -35,6 +35,8 @@ The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importi
 3. Follow the tide clock, archive method, harvest calendar, and festival links to see the bridges between subjects. Open `/galaxy` to compare the four curated constellations and inspect the actual Markdown links that cross between them.
 4. Edit a page, save, and reload it. The saved Markdown remains available from the same local vault.
 5. Keep two tabs open on the same page to try revision conflict handling.
+6. On a compatible browser, inspect the install action and launch metadata. The
+   local host is a secure-context exception; production installation requires HTTPS.
 
 The Chat tab is present but the default demo deliberately clears an inherited
 provider key, so opening the fictional wiki never creates external model cost.
@@ -51,6 +53,11 @@ bounded search, page-read, and graph-neighbor tools. The browser keeps and can
 delete conversation history locally; the backend stores no chat transcript.
 This is a paid external call, distinct from the deterministic demo and browser
 regression suite.
+
+The service worker does not cache the demo or its API responses. Turning the
+browser offline while the app is open shows the connection notice; a cold offline
+launch is intentionally unavailable. See the [PWA guide](pwa.md) for Android/iOS
+installation differences and the controlled update path.
 
 ## Seeding rules
 
