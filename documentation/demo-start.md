@@ -32,7 +32,7 @@ The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importi
 
 1. Open **Lantern Bay field atlas** and follow the night-sky route.
 2. Search for `tide` and inspect how it connects astronomy, ecology, and history.
-3. Follow the tide clock, archive method, harvest calendar, and festival links to see the bridges between subjects. The galaxy UI is still pending; the current Markdown graph is available through `/api/wiki/graph`.
+3. Follow the tide clock, archive method, harvest calendar, and festival links to see the bridges between subjects. Open `/galaxy` to compare the four curated constellations and inspect the actual Markdown links that cross between them.
 4. Edit a page, save, and reload it. The saved Markdown remains available from the same local vault.
 5. Keep two tabs open on the same page to try revision conflict handling.
 

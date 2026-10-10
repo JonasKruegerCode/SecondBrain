@@ -1,3 +1,9 @@
+---
+galaxy_group: archive-practice
+galaxy_label: Archive practice
+galaxy_anchor: true
+---
+
 # Archive method: observation, source, interpretation
 
 > Fictional demonstration. This method belongs to an invented archive.

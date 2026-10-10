@@ -1,3 +1,8 @@
+---
+galaxy_group: sky-navigation
+galaxy_label: Sky & navigation
+---
+
 # Tide clock project
 
 > Fictional demonstration. This model is invented and must not be used for real navigation or shore access.

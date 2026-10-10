@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from second_brain.wiki.store import WikiError, WikiStore
+from second_brain.wiki.store import WikiError, WikiStore, split_frontmatter
 
 MARKER = ".second-brain-demo.json"
 FORMAT_VERSION = 1
@@ -39,7 +39,8 @@ def _read_template(template: Path) -> dict[str, str]:
         if not path.is_file() or path.is_symlink():
             raise DemoSeedError(f"Template pages must be regular files: {path}")
         markdown = path.read_text(encoding="utf-8")
-        if not markdown.startswith("# ") or not markdown.strip():
+        content, _ = split_frontmatter(markdown)
+        if not content.lstrip().startswith("# ") or not markdown.strip():
             raise DemoSeedError(f"Template page needs a level-one title: {path.name}")
         pages[path.stem] = markdown
     if not pages:

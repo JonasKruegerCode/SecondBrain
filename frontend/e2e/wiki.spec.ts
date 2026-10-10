@@ -402,3 +402,49 @@ test("galaxy snapshot refresh reflects real save, link and delete operations", a
   await page.getByRole("button", { name: "List view", exact: true }).click();
   await expect(page.locator(".galaxy-stage")).toBeHidden();
 });
+
+test("demo frontmatter curates named constellations but stays out of article prose", async ({ page }) => {
+  await page.goto("/wiki/night-sky-survey");
+  await expect(page.locator(".prose")).not.toContainText("galaxy_group");
+  await page.getByRole("button", { name: "Edit page" }).click();
+  await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(/galaxy_group: sky-navigation/);
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await page.goto("/galaxy");
+  await expect(page.getByRole("heading", { name: "Choose a constellation" })).toBeVisible();
+  const groups = page.locator(".galaxy-cluster");
+  await expect(groups.filter({ hasText: "curated" })).toHaveCount(4);
+  const sky = groups.filter({ hasText: "Sky & navigation" });
+  await expect(sky).toContainText("3 pages · curated");
+  await sky.click();
+  await expect(page.locator(".galaxy-sidebar-content")).toContainText(
+    "Curated in Markdown frontmatter",
+  );
+  await expect(page.locator(".galaxy-sidebar-content .galaxy-page")).toHaveCount(3);
+});
+
+test("large synthetic graph opens a usable list without constructing SVG", async ({ page }) => {
+  const nodes = Array.from({ length: 251 }, (_, index) => ({
+    id: `scale-${String(index).padStart(3, "0")}`,
+    title: `Scale page ${index}`,
+  }));
+  await page.route("**/api/wiki/graph", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      nodes,
+      edges: [],
+      revision: "synthetic-scale-fixture",
+      status: "current",
+      missing_targets: [],
+      ambiguous_targets: [],
+    }),
+  }));
+  await page.goto("/galaxy");
+  await expect(page.locator(".galaxy-scale-note")).toContainText("Large snapshot");
+  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-stage svg")).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Find a page in this snapshot" }).fill("Scale page 250");
+  await expect(page.locator(".galaxy-page")).toHaveCount(1);
+  await page.locator(".galaxy-page").click();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Scale page 250");
+});

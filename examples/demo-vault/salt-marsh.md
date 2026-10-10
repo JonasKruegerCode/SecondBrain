@@ -1,3 +1,9 @@
+---
+galaxy_group: shore-observation
+galaxy_label: Shore observations
+galaxy_anchor: true
+---
+
 # Salt marsh listening station
 
 > Fictional demonstration. The marsh, species records, and trial below are invented.

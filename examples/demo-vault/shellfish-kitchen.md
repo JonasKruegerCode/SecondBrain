@@ -1,3 +1,8 @@
+---
+galaxy_group: shore-observation
+galaxy_label: Shore observations
+---
+
 # Shellfish kitchen notebook
 
 > Fictional demonstration. This is an invented cultural project, not food safety or harvesting advice.

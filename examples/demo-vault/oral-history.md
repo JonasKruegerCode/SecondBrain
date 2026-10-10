@@ -1,3 +1,8 @@
+---
+galaxy_group: archive-practice
+galaxy_label: Archive practice
+---
+
 # Oral history collection
 
 > Fictional demonstration. Every speaker and quotation in this collection is invented.

@@ -201,25 +201,45 @@ in small batches; their resolution route remains available on request failure.
 A late response for an abandoned article cannot replace the current edit target.
 
 The galaxy reads `/api/wiki/graph`, which derives resolved edges from one
-immutable Markdown snapshot. Cores and groups are deterministic link-topology
-neighborhoods: prefer highly linked local hubs over connectors spanning at least
-80% of a component; additional cores are separated by at least two links. Assign
-pages to their nearest core, with deterministic ties. A generic wikilink never
-implies a dependency. The evidence panel preserves actual source/target direction
-and declared relation labels. Unresolved targets do not become invented stars.
-Use the explicit refresh link to read a newer revision after saves/deletions.
+immutable Markdown snapshot. Optional YAML frontmatter makes editorial grouping
+explicit without changing the Markdown/Git source:
+
+```yaml
+---
+galaxy_group: sky-navigation
+galaxy_label: Sky & navigation
+galaxy_anchor: true
+---
+```
+
+`galaxy_group` is a stable 1–80 character ID using letters, numbers, dots,
+underscores or hyphens. `galaxy_label` is an optional reader-facing label and
+`galaxy_anchor: true` selects the core page. Unknown YAML is preserved and
+ignored; malformed galaxy values never prevent reading the article. Frontmatter
+remains visible in the raw editor and history but is hidden from rendered prose.
+
+Pages without this metadata use deterministic link-topology neighborhoods:
+prefer highly linked local hubs over connectors spanning at least 80% of a
+component; additional cores are separated by at least two links. Assign pages to
+their nearest core, with deterministic ties. The UI labels each group as curated
+or topology-derived. A generic wikilink never implies a dependency. The evidence
+panel preserves actual source/target direction and declared relation labels.
+Unresolved targets do not become invented stars. Use the explicit refresh link
+to read a newer revision after saves/deletions.
 
 Overview, focused neighborhood, star selection, local title/ID search and article
 navigation share a keyboard-accessible sidebar. Zoom/pan are bounded. On narrow
 screens, controls remain reachable and a list view offers a reduced alternative.
 Above 250 pages or 800 links, list view is the default and skips SVG construction.
-The map can still be selected explicitly; large-map performance is not accepted.
-Grouping changes may move stars after a content mutation. Semantic communities,
-stable incremental placement, richer overview aggregation and visual depth remain
-quality work for the final galaxy acceptance; this first view is not that signoff.
+A 251-page synthetic browser contract verifies search and selection without an
+SVG allocation; it is not a real large-vault service benchmark. The map can still
+be selected explicitly; large-map performance is not accepted. Curated group IDs
+make high-level placement stable, while stars inside a group can still move after
+a content mutation. Richer overview aggregation and visual depth remain quality
+work for the final galaxy acceptance; this is not that signoff.
 
-Validated against actual isolated demo services: 235 nonintegrative backend tests,
-Ruff and strict MyPy, TypeScript and both Vite entries. Fifteen Chromium cases in
+Validated against actual isolated demo services: 237 nonintegrative backend tests,
+Ruff and strict MyPy, TypeScript and both Vite entries. Seventeen Chromium cases in
 total cover reader/editor regressions, title ambiguity/deletion, fragments,
 delayed real responses and galaxy save/link/delete refresh. Desktop 1440 and
 mobile viewport 390 screenshots were inspected; light-shell contrast, label

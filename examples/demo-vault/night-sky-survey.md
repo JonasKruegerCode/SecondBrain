@@ -1,3 +1,9 @@
+---
+galaxy_group: sky-navigation
+galaxy_label: Sky & navigation
+galaxy_anchor: true
+---
+
 # Night sky survey
 
 > Fictional demonstration. These observations and plans are invented, not an observing forecast.

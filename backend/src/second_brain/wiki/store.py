@@ -24,6 +24,40 @@ TYPED_LINK_RE = re.compile(
     r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]"
 )
 MAX_BYTES = 1_000_000
+FRONTMATTER_RE = re.compile(
+    r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL
+)
+GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
+
+
+def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
+    """Read the tiny, documented galaxy subset without rewriting user YAML.
+
+    The Markdown/Git bytes remain authoritative. Unknown or malformed fields are
+    ignored so opening an existing Obsidian-style page never makes it unreadable.
+    """
+    match = FRONTMATTER_RE.match(markdown)
+    if match is None:
+        return markdown, {}
+    fields: dict[str, str] = {}
+    for line in match.group("body").splitlines():
+        item = re.fullmatch(r"([a-z][a-z0-9_-]{0,63}):[ \t]*(.*)", line.strip())
+        if item is None:
+            continue
+        value = item.group(2).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        fields[item.group(1)] = value
+    group = fields.get("galaxy_group", "")
+    label = fields.get("galaxy_label", "")
+    if not GALAXY_GROUP_RE.fullmatch(group):
+        return markdown[match.end() :], {}
+    galaxy: dict[str, Any] = {"group": group}
+    if label and len(label) <= 80 and "\n" not in label:
+        galaxy["label"] = label
+    if fields.get("galaxy_anchor", "").casefold() == "true":
+        galaxy["anchor"] = True
+    return markdown[match.end() :], galaxy
 
 
 def prose_links(markdown: str) -> str:
@@ -121,18 +155,22 @@ class WikiStore:
     @staticmethod
     def _page(page_id: str, data: bytes, revision: str) -> dict[str, Any]:
         markdown = data.decode("utf-8")
-        heading = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)
+        content, galaxy = split_frontmatter(markdown)
+        heading = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
         title = heading.group(1).strip() if heading else page_id
-        prose = "\n".join(line for line in markdown.splitlines() if not line.startswith(("#", ">")))
+        prose = "\n".join(line for line in content.splitlines() if not line.startswith(("#", ">")))
         prose = re.sub(r"\[\[([^|\]]+)\|([^\]]+)\]\]", r"\2", prose)
         prose = re.sub(r"\[\[([^\]]+)\]\]", r"\1", prose)
-        return {
+        page = {
             "id": page_id,
             "title": title,
             "markdown": markdown,
             "revision": revision,
             "excerpt": " ".join(prose.split())[:220],
         }
+        if galaxy:
+            page["galaxy"] = galaxy
+        return page
 
     def get_page(self, page_id: str) -> dict[str, Any] | None:
         self._validate_id(page_id)
@@ -251,7 +289,8 @@ class WikiStore:
         missing: set[tuple[str, str]] = set()
         ambiguous: set[tuple[str, str, tuple[str, ...]]] = set()
         for page in pages:
-            prose = prose_links(page["markdown"])
+            content, _ = split_frontmatter(page["markdown"])
+            prose = prose_links(content)
             links: list[tuple[str, str | None]] = [
                 (match.group(2), re.sub(r"[^\w]+", "_", match.group(1).strip().lower()).strip("_"))
                 for match in TYPED_LINK_RE.finditer(prose)
@@ -277,7 +316,14 @@ class WikiStore:
                 if rel is not None or target not in typed_targets
             )
         return {
-            "nodes": [{"id": p["id"], "title": p["title"]} for p in pages],
+            "nodes": [
+                {
+                    "id": p["id"],
+                    "title": p["title"],
+                    **({"galaxy": p["galaxy"]} if "galaxy" in p else {}),
+                }
+                for p in pages
+            ],
             "edges": [
                 {"source": a, "target": b, "type": "wikilink", **({"rel": rel} if rel else {})}
                 for a, b, rel in sorted(edges, key=lambda edge: (edge[0], edge[1], edge[2] or ""))

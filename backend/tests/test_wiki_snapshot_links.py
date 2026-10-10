@@ -52,6 +52,48 @@ def test_graph_delegates_to_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert store.graph() is graph
 
 
+def test_galaxy_frontmatter_is_structured_without_changing_markdown(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    markdown = (
+        "---\n"
+        "galaxy_group: sky-navigation\n"
+        'galaxy_label: "Sky & navigation"\n'
+        "galaxy_anchor: true\n"
+        "unrelated_reference: '[[missing-metadata-target]]'\n"
+        "unknown_field: preserved\n"
+        "---\n\n"
+        "# Night sky survey\n\n"
+        "A synthetic observation."
+    )
+    saved = store.save_page("night-sky", markdown, None, "night-sky")
+    assert saved["markdown"] == markdown
+    assert saved["title"] == "Night sky survey"
+    assert saved["excerpt"] == "A synthetic observation."
+    assert saved["galaxy"] == {
+        "group": "sky-navigation",
+        "label": "Sky & navigation",
+        "anchor": True,
+    }
+    assert store.graph()["nodes"] == [
+        {
+            "id": "night-sky",
+            "title": "Night sky survey",
+            "galaxy": saved["galaxy"],
+        }
+    ]
+    assert store.graph()["missing_targets"] == []
+    assert (store.get_page("night-sky") or {})["markdown"] == markdown
+
+
+def test_invalid_galaxy_frontmatter_is_ignored_not_rejected(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    markdown = "---\ngalaxy_group: ../escape\ngalaxy_anchor: true\n---\n# Safe page"
+    saved = store.save_page("safe", markdown, None, "safe")
+    assert "galaxy" not in saved
+    assert saved["title"] == "Safe page"
+    assert saved["markdown"] == markdown
+
+
 def test_typed_relations_resolve_aliases_and_take_precedence(tmp_path: Path) -> None:
     store = WikiStore(tmp_path)
     store.save_page("docker", "# Container Engine", None, "docker")

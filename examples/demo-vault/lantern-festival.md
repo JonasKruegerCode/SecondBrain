@@ -1,3 +1,8 @@
+---
+galaxy_group: atlas
+galaxy_label: Atlas crossroads
+---
+
 # Lantern festival project
 
 > Fictional demonstration. This event is invented; there is no real registration or schedule.

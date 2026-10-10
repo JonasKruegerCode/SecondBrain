@@ -129,6 +129,11 @@ function markdown(s: string) {
   doc.body.childNodes.forEach((n) => f.append(clean(n)));
   return f;
 }
+
+function articleMarkdown(s: string) {
+  // Frontmatter remains visible in the raw editor and Git history, but is not article prose.
+  return s.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, "");
+}
 function navigate(path: string) {
   if (saving) return;
   if (
@@ -307,7 +312,7 @@ function renderPage() {
   main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1>${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
   if (!editing) {
     const prose = main.querySelector(".prose")!;
-    prose.append(markdown((page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
+    prose.append(markdown(articleMarkdown(page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
     void hydrateLinks(prose, page.id);
     const headings = Array.from(prose.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
     if (headings.length) {

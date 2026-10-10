@@ -1,3 +1,8 @@
+---
+galaxy_group: shore-observation
+galaxy_label: Shore observations
+---
+
 # Harvest calendar — a bridge between records
 
 > Fictional demonstration. Dates and seasons here are narrative devices, not real harvesting guidance.

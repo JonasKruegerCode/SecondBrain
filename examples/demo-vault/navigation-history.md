@@ -1,3 +1,8 @@
+---
+galaxy_group: sky-navigation
+galaxy_label: Sky & navigation
+---
+
 # Navigation stories of Lantern Bay
 
 > Fictional demonstration. The port and its history are invented.

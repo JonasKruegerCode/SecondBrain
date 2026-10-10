@@ -1,3 +1,8 @@
+---
+galaxy_group: archive-practice
+galaxy_label: Archive practice
+---
+
 # Field notebook
 
 > Fictional demonstration. All entries below are invented examples.

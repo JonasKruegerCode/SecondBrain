@@ -1,3 +1,8 @@
+---
+galaxy_group: archive-practice
+galaxy_label: Archive practice
+---
+
 # Mira Quill — fictional archivist
 
 > Fictional demonstration. Mira Quill is an invented character.

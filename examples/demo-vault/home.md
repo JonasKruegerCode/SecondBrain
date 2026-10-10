@@ -1,3 +1,9 @@
+---
+galaxy_group: atlas
+galaxy_label: Atlas crossroads
+galaxy_anchor: true
+---
+
 # Lantern Bay field atlas
 
 > Fictional demonstration: every place, person, observation, and project in this atlas is invented.
