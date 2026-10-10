@@ -62,7 +62,7 @@ test("search finds a unique real page and opens its direct route", async ({
   await expect(page.locator(".prose")).toContainText(term);
 });
 
-test("editor publishes Markdown and reports actual pending/not-configured state", async ({
+test("editor saves Markdown and reads current delivery status", async ({
   page,
   request,
 }) => {
@@ -74,8 +74,11 @@ test("editor publishes Markdown and reports actual pending/not-configured state"
     .fill("# Editable fixture\nAfter the edit.");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("status")).toContainText("Saved");
-  await expect(page.getByRole("status")).toContainText(
-    "Remote sync: not configured",
+  const deliveryStatus = await request.get("/api/wiki/delivery-status");
+  const configured = (await deliveryStatus.json()).remote.state !== "not_configured";
+  await expect(page.locator(".delivery-notice")).toContainText(
+    configured ? "Remote delivery: current (cached acknowledgement)" : "Remote delivery: not configured",
+    { timeout: 15000 },
   );
   await expect(page.locator(".prose")).toContainText("After the edit.");
   const saved = await (
@@ -267,4 +270,43 @@ test("real demo table stays readable and keyboard-scrollable on mobile", async (
   await expect
     .poll(() => region.evaluate((el) => el.scrollWidth <= el.clientWidth))
     .toBeTruthy();
+});
+
+test("article contents links focus unique sections and history preserves an editor draft", async ({ page, request }) => {
+  const fixture = await create(request, "# Synthetic article\n\n## First section\n\nA short note.\n\n### Detail\n\nMore notes.\n\n## First section\n\nAnother note.\n");
+  await page.goto(`/wiki/${fixture.id}`);
+  const contents = page.getByRole("navigation", { name: "On this page" });
+  await expect(contents.getByRole("link")).toHaveCount(3);
+  await contents.getByRole("link", { name: "First section", exact: true }).last().click();
+  await expect(page.locator("#section-3")).toBeFocused();
+  await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(contents).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.getByRole("button", { name: "Edit page" }).click();
+  const editor = page.locator("#editor");
+  await editor.fill("# Synthetic article\n\nUnsaved synthetic draft.");
+  await page.getByText("Local Git history", { exact: true }).click();
+  await expect(page.locator(".history-list li")).toHaveCount(1);
+  const historyResponse = await request.get(`/api/wiki/pages/${fixture.id}/history`);
+  const historyData = await historyResponse.json();
+  await expect(page.locator(".history-list code")).toHaveText(historyData.history[0].commit.slice(0, 8));
+  await expect(editor).toHaveValue("# Synthetic article\n\nUnsaved synthetic draft.");
+});
+
+test("history errors can be retried without leaving the page", async ({ page, request }) => {
+  const fixture = await create(request, "# Synthetic history\n\nNo sections here.");
+  let attempts = 0;
+  await page.route(`**/api/wiki/pages/${fixture.id}/history`, async route => {
+    if (++attempts === 1) await route.fulfill({ status: 503, json: { message: "History temporarily unavailable." } });
+    else await route.continue();
+  });
+  await page.goto(`/wiki/${fixture.id}`);
+  await expect(page.getByRole("navigation", { name: "On this page" })).toHaveCount(0);
+  const history = page.getByText("Local Git history", { exact: true });
+  await history.click();
+  await expect(page.locator(".history-content")).toContainText("Close and reopen history to retry.");
+  await history.click();
+  await history.click();
+  await expect(page.locator(".history-list li")).toHaveCount(1);
 });

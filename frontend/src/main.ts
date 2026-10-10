@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import "./style.css";
+type HistoryEntry = { commit: string; date: string; message: string };
 type Page = {
   id: string;
   title: string;
@@ -14,7 +15,9 @@ let page: Page | null = null,
   saving = false,
   requestId = "",
   notice = "",
+  deliveryNotice = "",
   generation = 0,
+  deliveryGeneration = 0,
   activeUrl = location.pathname + location.search;
 const esc = (s: string) =>
   s.replace(
@@ -156,6 +159,7 @@ async function route() {
   page = null;
   editing = false;
   notice = "";
+  deliveryNotice = "";
   shell();
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
@@ -224,11 +228,50 @@ async function route() {
 function renderPage() {
   if (!page) return;
   const main = app.querySelector("main")!;
-  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1>${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="prose"></div>'}</article>`;
-  if (!editing)
-    main
-      .querySelector(".prose")!
-      .append(markdown((page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1>${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
+  if (!editing) {
+    const prose = main.querySelector(".prose")!;
+    prose.append(markdown((page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
+    const headings = Array.from(prose.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
+    if (headings.length) {
+      headings.forEach((heading, i) => {
+        heading.id = `section-${i + 1}`;
+        heading.tabIndex = -1;
+      });
+      const toc = main.querySelector(".article-toc")!;
+      toc.innerHTML = `<nav aria-label="On this page"><div class="eyebrow">ON THIS PAGE</div><ol>${headings.map(h => `<li class="toc-level-${h.tagName.slice(1)}"><a href="#${h.id}">${esc(h.textContent || "Untitled section")}</a></li>`).join("")}</ol></nav>`;
+      toc.addEventListener("click", (event) => {
+        const link = (event.target as HTMLElement).closest("a");
+        if (!link) return;
+        event.preventDefault();
+        const target = headings.find(h => `#${h.id}` === link.getAttribute("href"));
+        target?.focus({ preventScroll: true });
+        target?.scrollIntoView({ block: "start" });
+      });
+    }
+  }
+  const historyPanel = main.querySelector<HTMLDetailsElement>(".page-history")!;
+  const historyPageId = page.id;
+  let historyLoaded = false;
+  historyPanel.addEventListener("toggle", async () => {
+    if (!historyPanel.open || historyLoaded) return;
+    historyLoaded = true;
+    const content = historyPanel.querySelector(".history-content")!;
+    content.textContent = "Loading recent changes…";
+    try {
+      const data: { history: HistoryEntry[] } = await api(`/pages/${encodeURIComponent(historyPageId)}/history`);
+      if (!historyPanel.isConnected) return;
+      content.innerHTML = data.history.length ? `<ol class="history-list">${data.history.map(entry => {
+        const date = new Date(entry.date);
+        const label = Number.isNaN(date.getTime()) ? entry.date : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        return `<li><p>${esc(entry.message)}</p><div><code title="${esc(entry.commit)}">${esc(entry.commit.slice(0, 8))}</code><time datetime="${esc(entry.date)}">${esc(label)}</time></div></li>`;
+      }).join("")}</ol>` : '<p>No local commits for this page yet.</p>';
+    } catch (e) {
+      if (!historyPanel.isConnected) return;
+      historyLoaded = false;
+      content.innerHTML = `<p class="error">${esc((e as Error).message)} Close and reopen history to retry.</p>`;
+    }
+  });
   main.querySelector("#start")!.addEventListener("click", () => {
     try {
       localStorage.setItem("secondbrain.startpage", page!.id);
@@ -262,6 +305,34 @@ function renderPage() {
     main.querySelector("#save")!.addEventListener("click", () => void save());
   }
 }
+async function refreshDelivery(run: number, token: number, attempt = 0) {
+  try {
+    const status = await api("/delivery-status");
+    if (run !== generation || token !== deliveryGeneration) return;
+    const states: Record<string, string> = {
+      not_configured: "not configured", pending: "pending", current: "current",
+      error: "needs attention", conflict: "conflict — needs attention",
+    };
+    const graph = status.indexes.graph.state as string;
+    const vector = status.indexes.vector.state as string;
+    const remote = status.remote.state as string;
+    deliveryNotice = `Workspace indexing: graph ${states[graph] || graph}; vector ${states[vector] || vector}. Remote delivery: ${states[remote] || remote}${remote === "current" ? " (cached acknowledgement)" : ""}.`;
+    const pending = [graph, vector, remote].includes("pending");
+    if (pending && attempt >= 15) deliveryNotice += " Still processing; check again later.";
+    const el = app.querySelector(".delivery-notice");
+    if (el) el.textContent = deliveryNotice;
+    if (pending && attempt < 15 && ![graph, vector, remote].some(s => s === "error" || s === "conflict")) {
+      window.setTimeout(() => {
+        if (run === generation && token === deliveryGeneration) void refreshDelivery(run, token, attempt + 1);
+      }, 2000);
+    }
+  } catch {
+    if (run !== generation || token !== deliveryGeneration) return;
+    deliveryNotice = "Saved content is safe locally. Workspace delivery status is temporarily unavailable.";
+    const el = app.querySelector(".delivery-notice");
+    if (el) el.textContent = deliveryNotice;
+  }
+}
 async function save() {
   if (!page || saving) return;
   saving = true;
@@ -279,7 +350,9 @@ async function save() {
     });
     page = result;
     editing = false;
-    notice = `Saved · revision ${String(result.revision).slice(0, 8)}. Graph indexing: ${result.index?.graph || "unknown"}; vector indexing: ${result.index?.vector || "unknown"}. Remote sync: ${result.remote_sync === "not_configured" ? "not configured" : result.remote_sync || "unknown"}.`;
+    notice = `Saved locally · revision ${String(result.revision).slice(0, 8)}.`;
+    deliveryNotice = "Checking workspace indexing and remote delivery…";
+    void refreshDelivery(generation, ++deliveryGeneration);
   } catch (e) {
     notice =
       (e as any).status === 409

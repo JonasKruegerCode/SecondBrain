@@ -27,6 +27,11 @@ def main() -> None:
         "SECOND_BRAIN_WIKI_VAULT": str(vault),
         "PYTHONPATH": str(root / "backend" / "src"),
         "API_PORT": "8000",
+        # A demonstration never inherits a real remote or hosted provider target.
+        "SECOND_BRAIN_WIKI_GIT_SYNC": "0",
+        "SECOND_BRAIN_WIKI_GRAPH_INDEX": "0",
+        "SECOND_BRAIN_WIKI_VECTOR_INDEX": "0",
+        "SECOND_BRAIN_WIKI_DELIVERY": "1",
     }
     children: list[subprocess.Popen[bytes]] = []
 

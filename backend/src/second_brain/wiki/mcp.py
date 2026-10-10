@@ -15,6 +15,8 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from second_brain.wiki.delivery import DeliveryCoordinator
+from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiStore
 
@@ -33,8 +35,11 @@ never replace the base revision without reviewing the newer page. Null revision
 means create-only. Publication, external index progress and remote Git sync are
 separate: mutation receipts record indices pending at publication time and
 remote_sync not_configured. Local content and revision are already committed.
-Use get_index_status for current graph/vector progress; optional providers need
-an explicit worker run after edits. Lexical search always works without them.
+Use get_delivery_status for current publication/index progress and cached Git
+verification. Server factories own a recoverable worker unless explicitly disabled;
+optional providers and remote Git must be configured by the operator.
+A current Git acknowledgement is a past verification, never a live remote claim.
+Lexical search always works without optional providers.
 search_wiki mode semantic uses current vectors; mode graph_rag adds bounded graph
 context without generating an answer. get_neighbors expands explicit links.
 Graph reads derive explicit links and typed relations from one Markdown snapshot;
@@ -50,10 +55,17 @@ def create_mcp(
     *,
     http_security: TransportSecuritySettings | None = None,
     indexes: IndexCoordinator | None = None,
+    delivery: DeliveryCoordinator | None = None,
+    worker: DeliveryWorker | None = None,
 ) -> FastMCP:
     indexes = indexes or IndexCoordinator(store)
     if indexes.store.path != store.path:
         raise ValueError("Indexes must belong to the same managed vault.")
+    delivery = delivery or DeliveryCoordinator(store, indexes)
+    if delivery.store.path != store.path or delivery.indexes is not indexes:
+        raise ValueError("Delivery must use the same managed vault and indexes.")
+    if worker is not None and worker.delivery is not delivery:
+        raise ValueError("Worker must belong to the same delivery service.")
     mcp = FastMCP(
         "Second Brain Managed Wiki",
         json_response=True,
@@ -96,6 +108,11 @@ def create_mcp(
         return indexes.status()
 
     @mcp.tool()
+    def get_delivery_status() -> dict[str, Any]:
+        """Current local publication/index progress and cached Git verification; no network."""
+        return worker.status() if worker else delivery.status()
+
+    @mcp.tool()
     def get_neighbors(ids: list[str], hops: int = 1, limit: int = 50) -> dict[str, Any]:
         """Bounded graph expansion at the current content revision; 1–3 hops."""
         return indexes.neighbors(ids, hops, limit)
@@ -113,12 +130,18 @@ def create_mcp(
 
         Retry an identical request after a lost reply. Conflict means read again.
         """
-        return store.save_page(id, markdown, base_revision, request_id)
+        result = delivery.save_page(id, markdown, base_revision, request_id)
+        if worker is not None:
+            worker.notify()
+        return result
 
     @mcp.tool()
     def delete_page(id: str, base_revision: str, request_id: str) -> dict[str, Any]:
         """Delete only the read revision. Git history preserves earlier Markdown."""
-        return store.delete_page(id, base_revision, request_id)
+        result = delivery.delete_page(id, base_revision, request_id)
+        if worker is not None:
+            worker.notify()
+        return result
 
     @mcp.tool()
     def get_history(id: str) -> list[dict[str, str]]:
@@ -217,6 +240,8 @@ def create_http_app(
     allowed_origins: Sequence[str] = LOCAL_ORIGINS,
     indexes: IndexCoordinator | None = None,
     close_indexes: bool = False,
+    delivery: DeliveryCoordinator | None = None,
+    automatic_delivery: bool = False,
 ) -> Starlette:
     """Explicit /mcp Streamable HTTP app sharing the same store and editing guidance.
 
@@ -235,17 +260,28 @@ def create_http_app(
         allowed_hosts=list(allowed_hosts),
         allowed_origins=list(allowed_origins),
     )
-    mcp = create_mcp(store, http_security=security, indexes=indexes)
+    indexes = indexes or IndexCoordinator(store)
+    delivery = delivery or DeliveryCoordinator(store, indexes)
+    worker = DeliveryWorker(delivery) if automatic_delivery else None
+    mcp = create_mcp(
+        store, http_security=security, indexes=indexes, delivery=delivery, worker=worker
+    )
     app = mcp.streamable_http_app()
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
     async def lifespan(server: Starlette) -> AsyncIterator[Any]:
+        if worker is not None:
+            worker.start()
         try:
             async with original_lifespan(server) as state:
                 yield state
         finally:
-            if close_indexes and indexes is not None:
+            if worker is not None:
+                from starlette.concurrency import run_in_threadpool  # noqa: PLC0415
+
+                await run_in_threadpool(worker.stop)
+            if close_indexes:
                 indexes.close()
 
     app.router.lifespan_context = lifespan
@@ -257,6 +293,7 @@ def create_http_app(
     )
     app.state.wiki_store = store
     app.state.wiki_mcp = mcp
+    app.state.wiki_delivery = delivery
     return app
 
 
@@ -267,9 +304,16 @@ def http_app_factory() -> Starlette:
         raise RuntimeError("Set SECOND_BRAIN_WIKI_VAULT to an isolated managed vault.")
     hosts = os.environ.get("SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS")
     origins = os.environ.get("SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS")
+    from second_brain.wiki.delivery_runtime import configured_delivery  # noqa: PLC0415
     from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
 
     store = WikiStore(path)
+    indexes = configured_indexes(store)
+    try:
+        delivery = configured_delivery(store, indexes)
+    except Exception:
+        indexes.close()
+        raise
     return create_http_app(
         store,
         os.environ.get("SECOND_BRAIN_WIKI_API_KEY", ""),
@@ -279,7 +323,9 @@ def http_app_factory() -> Starlette:
         allowed_origins=tuple(v.strip() for v in origins.split(",") if v.strip())
         if origins is not None
         else LOCAL_ORIGINS,
-        indexes=configured_indexes(store),
+        indexes=indexes,
+        delivery=delivery,
+        automatic_delivery=os.environ.get("SECOND_BRAIN_WIKI_DELIVERY", "1") != "0",
         close_indexes=True,
     )
 
@@ -294,9 +340,18 @@ def main() -> None:
 
     store = WikiStore(path)
     indexes = configured_indexes(store)
+    from second_brain.wiki.delivery_runtime import configured_delivery  # noqa: PLC0415
+
+    worker = None
     try:
-        create_mcp(store, indexes=indexes).run(transport="stdio")
+        delivery = configured_delivery(store, indexes)
+        if os.environ.get("SECOND_BRAIN_WIKI_DELIVERY", "1") != "0":
+            worker = DeliveryWorker(delivery)
+            worker.start()
+        create_mcp(store, indexes=indexes, delivery=delivery, worker=worker).run(transport="stdio")
     finally:
+        if worker is not None:
+            worker.stop()
         indexes.close()
 
 

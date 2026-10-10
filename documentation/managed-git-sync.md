@@ -1,8 +1,9 @@
 # Explicit managed Git snapshot sync
 
-`second_brain.wiki.remote.ManagedGitSync` is an opt-in Python API. No background
-worker, implicit merge, scheduler, remote URL persistence, or automatic deployment
-is enabled. Existing legacy Git workflows are separate.
+`second_brain.wiki.remote.ManagedGitSync` is an explicit Python API; invoking it
+alone starts no worker, implicit merge, scheduler or deployment. Managed factories
+can separately enable [recoverable delivery](managed-delivery.md). No remote URL
+or credentials are persisted. Existing legacy Git workflows are separate.
 
 ```python
 sync = ManagedGitSync(store, remote=caller_selected_target,
@@ -102,8 +103,9 @@ scopes the remote Markdown folder; choose it deliberately because a push replace
 all Markdown within that scope. Reuse exact arguments after a lost response.
 
 These commands do not start services, configure background sync, or deploy the
-application. REST/MCP mutations still report remote sync as not configured; this
-explicit external publication path is not yet connected to their delivery status.
+application. REST/MCP immutable mutation receipts retain their publication-time
+state; current delivery status is available separately through the configured
+[delivery coordinator](managed-delivery.md).
 
 ## Operational limits
 
@@ -121,3 +123,10 @@ lost acknowledgements, restart, prepared retries, edits during push, forward
 conflicts including the comparison/push race, branch deletion/recreation,
 explicit pull guards and retries, object retention, target validation, duplicate
 IDs, and the absence of managed-internal objects from exported history.
+
+## Runtime delivery
+
+The explicit CLI remains available. Managed server factories can now publish
+after saves through [recoverable delivery](managed-delivery.md), only after an
+explicit target/baseline opt-in. No automatic pull or merge is added. Persistent conflicts block automatic writes until deliberate reviewed operator
+reconciliation; see its guarded CLI and remaining production limits.

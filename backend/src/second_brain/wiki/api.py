@@ -18,6 +18,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from second_brain.wiki.delivery import DeliveryCoordinator
+from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiError, WikiStore
 
@@ -28,11 +30,18 @@ def create_app(
     *,
     indexes: IndexCoordinator | None = None,
     close_indexes: bool = False,
+    delivery: DeliveryCoordinator | None = None,
+    automatic_delivery: bool = False,
 ) -> Starlette:
     store = WikiStore(vault_path)
     indexes = indexes or IndexCoordinator(store)
     if indexes.store.path != store.path:
         raise ValueError("Indexes must belong to the same managed vault.")
+
+    delivery = delivery or DeliveryCoordinator(store, indexes)
+    if delivery.store.path != store.path or delivery.indexes is not indexes:
+        raise ValueError("Delivery must use the same managed vault and indexes.")
+    worker = DeliveryWorker(delivery) if automatic_delivery else None
 
     async def health(request: Request) -> Response:
         return JSONResponse({"status": "ok", "profile": "managed-wiki"})
@@ -75,14 +84,16 @@ def create_app(
         if request.method == "DELETE":
             if not isinstance(revision, str):
                 raise WikiError("invalid_payload", "Deletion requires the read revision.")
-            result = await run_in_threadpool(store.delete_page, page_id, revision, request_id)
+            result = await run_in_threadpool(delivery.delete_page, page_id, revision, request_id)
         else:
             markdown = body.get("markdown")
             if not isinstance(markdown, str):
                 raise WikiError("invalid_payload", "markdown must be a string.")
             result = await run_in_threadpool(
-                store.save_page, page_id, markdown, revision, request_id
+                delivery.save_page, page_id, markdown, revision, request_id
             )
+        if worker is not None:
+            worker.notify()
         return JSONResponse(result)
 
     async def search(request: Request) -> Response:
@@ -106,6 +117,9 @@ def create_app(
 
     async def index_status(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(indexes.status))
+
+    async def delivery_status(request: Request) -> Response:
+        return JSONResponse(await run_in_threadpool(worker.status if worker else delivery.status))
 
     async def neighbors(request: Request) -> Response:
         try:
@@ -140,9 +154,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        if worker is not None:
+            worker.start()
         try:
             yield
         finally:
+            if worker is not None:
+                await run_in_threadpool(worker.stop)
             if close_indexes:
                 indexes.close()
 
@@ -153,6 +171,7 @@ def create_app(
             Route("/api/wiki/search", search),
             Route("/api/wiki/graph", graph),
             Route("/api/wiki/index-status", index_status),
+            Route("/api/wiki/delivery-status", delivery_status),
             Route("/api/wiki/pages/{page_id}/neighbors", neighbors),
             Route("/api/wiki/pages/{page_id}/history", history),
             Route("/api/wiki/pages/{page_id}", page, methods=["GET", "POST", "DELETE"]),
@@ -162,6 +181,7 @@ def create_app(
     )
     app.state.wiki_store = store
     app.state.wiki_indexes = indexes
+    app.state.wiki_delivery = delivery
 
     async def privacy(request: Request, call_next: Any) -> Response:
         if api_key and not secrets.compare_digest(
@@ -183,11 +203,21 @@ def app_factory() -> Starlette:
     path = os.environ.get("SECOND_BRAIN_WIKI_VAULT")
     if not path:
         raise RuntimeError("Set SECOND_BRAIN_WIKI_VAULT to an isolated managed vault directory.")
+    from second_brain.wiki.delivery_runtime import configured_delivery  # noqa: PLC0415
     from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
 
+    store = WikiStore(path)
+    indexes = configured_indexes(store)
+    try:
+        delivery = configured_delivery(store, indexes)
+    except Exception:
+        indexes.close()
+        raise
     return create_app(
         path,
         os.environ.get("SECOND_BRAIN_WIKI_API_KEY", ""),
-        indexes=configured_indexes(WikiStore(path)),
+        indexes=indexes,
+        delivery=delivery,
+        automatic_delivery=os.environ.get("SECOND_BRAIN_WIKI_DELIVERY", "1") != "0",
         close_indexes=True,
     )

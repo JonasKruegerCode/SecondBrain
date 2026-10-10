@@ -35,8 +35,8 @@ For a deliberate empty/template/local-Git installation choice, use the
 startup, or replace a populated wiki. [Markdown export](wiki-export.md) prepares
 a separate, revision-guarded content-only directory without copying Git internals.
 [Explicit managed Git sync](managed-git-sync.md) publishes or imports reviewed
-snapshots with durable acknowledgements and a guarded normal push. It is not yet
-connected to automatic UI/MCP save delivery.
+snapshots with durable acknowledgements and a guarded normal push. See [recoverable delivery](managed-delivery.md) for the factory-owned worker
+and explicit opt-in remote bootstrap.
 
 The separate `docker-compose.wiki.yml` describes an empty managed installation
 on `127.0.0.1:8080`. Its container build/start has not yet been verified. It uses
@@ -71,7 +71,10 @@ Mutation receipts record external indexes **pending** at publication time; curre
 progress is available from `/api/wiki/index-status`. Optional snapshot adapters
 now support Neo4j, vectors, and bounded non-generative GraphRAG retrieval; see
 [managed indexes](managed-indexes.md) for configuration and explicit worker runs.
-Remote synchronization remains **not_configured**. The immediate graph derives
+Remote synchronization is **not_configured** unless deliberately opted in;
+`/api/wiki/delivery-status` reports fresh workspace index progress and cached Git
+verification separately. Factory-owned workers reconstruct pending work after
+saves and restarts. The immutable save receipt remains publication-time evidence. The immediate graph derives
 explicit wikilinks and typed relations from one content snapshot, resolves unique
 titles, and reports missing/ambiguous targets without inferring dependencies.
 Frontend title-link resolution and galaxy layout remain unfinished.
@@ -128,14 +131,14 @@ have not been tested by these cases.
 
 The frontend provides a bright responsive Home, safe rendered Markdown,
 aliased wikilinks, direct URLs, browser navigation, persisted start page,
-lexical search and a revision-aware editor with conflict drafts. The original
+lexical search, article contents, on-demand local Git history, and a revision-aware
+editor with conflict drafts and separate delivery progress. The original
 frontend is retained as a separate build entry for legacy deployment. Screenshot
 inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
-Not complete: automatic remote/index delivery after saves, production Git
-credential provisioning, live provider/deployment integration, index retention/scale, richer
-Markdown navigation/history UI,
+Not complete: production Git credential provisioning, live provider/deployment integration, index
+retention/scale, frontend title-link ambiguity resolution,
 galaxy, iterative OpenRouter chat, installable PWA, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.
@@ -148,8 +151,8 @@ compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use onl
 a disposable synthetic vault: the suite deliberately creates, edits and deletes
 fixture pages. Test artifacts are kept under the ignored `.demo` directory.
 
-On 2026-10-10: 212 nonintegrative backend tests passed; repository Ruff and strict
-MyPy passed (71 source/test files). New exporter/setup/remote/CLI coverage uses
+On 2026-10-10: 234 nonintegrative backend tests passed; repository Ruff and strict
+MyPy passed (75 source/test files). New exporter/setup/remote/CLI coverage uses
 real local Git, with frozen snapshots, no-replace outputs, byte preservation,
 conflicts, lost acknowledgements, restart, request identity, and prepared-object
 retention. A trusted generated pre-push guard validates Git's advertised remote
@@ -157,10 +160,13 @@ OID before a normal non-force push; actual deletion/rewind race tests passed.
 
 A new twelve-page template -> plain export -> committed Git -> managed import
 roundtrip preserved every Markdown byte. The imported app was actually started;
-nine real-API browser tests passed, desktop 1440px/mobile 390px screenshots were
+eleven browser tests against the actual API passed (one deliberate history-error
+injection uses an intercepted failed response), desktop 1440px/mobile 390px screenshots were
 inspected, and real network MCP SDK initialize/read/guidance/save agreed with
-REST revisions. No observed JavaScript errors or page overflow. Earlier frontend
-TypeScript and both Vite build checks remain the unchanged-UI baseline.
+REST revisions. No observed JavaScript errors or page overflow. Frontend TypeScript and both Vite builds passed for the updated UI. A new
+read-only review found and corrected worker lifecycle restart and baseline
+validation issues; pending payloads and external-change conflicts have real Git
+regressions.
 
 The preceding index milestone started real REST/MCP semantic services with
 embedded Qdrant and synthetic embeddings. Docker is unavailable here; container

@@ -1,9 +1,11 @@
 # Managed Wiki MCP over HTTP
 
-The managed profile provides the same seven revision-aware WikiStore tools and
+The managed profile provides the same ten revision-aware content/retrieval/status tools and
 `wiki://guidance` resource over stdio or Streamable HTTP. HTTP uses `/mcp`,
 stateless requests, and JSON responses. It does not invoke model providers,
-remember/recall, remote Git, or the legacy editorial agent.
+remember/recall or the legacy editorial agent. Reads do not invoke remote Git;
+factory-owned background delivery only publishes to an explicitly configured
+target. See [recoverable delivery](managed-delivery.md).
 
 This is an independent, opt-in deployment. Existing legacy MCP production
 routes, authentication, REST API, and configuration remain unchanged. Legacy
@@ -76,7 +78,9 @@ with the identical ID and payload. A revision conflict requires a fresh read
 and deliberate reconciliation. Creating a page uses null `base_revision`.
 Publication succeeds independently from indexing; mutation receipts record pending
 at publication and remote sync reports `not_configured`. `get_index_status` reads
-current separate receipts. Optional semantic and `graph_rag` search plus bounded
+current separate index receipts; `get_delivery_status` also reports cached Git
+acknowledgements and worker progress. Factory-owned workers recover after saves
+unless explicitly disabled. Optional semantic and `graph_rag` search plus bounded
 `get_neighbors` use the shared services; see [managed indexes](managed-indexes.md).
 
 `backend/tests/test_wiki_mcp_http.py` exercises the actual in-process FastMCP

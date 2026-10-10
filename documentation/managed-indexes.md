@@ -103,9 +103,12 @@ Force fresh builds even for an already current snapshot:
 python -m second_brain.wiki.indexes --rebuild
 ```
 
-There is no automatic scheduler. Repeat the worker explicitly after edits or
-failures; it discovers the latest authoritative Git snapshot and skips ready
-indexes unless `--rebuild` is supplied. Publication and index completion are
+The index module remains an explicit one-shot worker. Managed REST/MCP/stdio
+factories now own [recoverable delivery](managed-delivery.md) by default, which
+runs configured indexes after saves and startup. Disable it with
+`SECOND_BRAIN_WIKI_DELIVERY=0` for manual operation. One-shot runs discover the
+latest authoritative Git snapshot and skip ready indexes unless `--rebuild` is
+supplied. Publication and index completion are
 separate: Markdown writes succeed independently of indexing.
 
 REST exposes `GET /api/wiki/index-status`,

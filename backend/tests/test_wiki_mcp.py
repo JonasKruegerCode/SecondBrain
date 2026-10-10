@@ -28,6 +28,7 @@ async def test_managed_mcp_shares_rest_store_and_guidance(tmp_path: Path) -> Non
         "delete_page",
         "get_history",
         "get_index_status",
+        "get_delivery_status",
         "get_neighbors",
     }
     resources = list(await mcp.read_resource("wiki://guidance"))
