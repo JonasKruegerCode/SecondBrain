@@ -448,3 +448,49 @@ test("large synthetic graph opens a usable list without constructing SVG", async
   await page.locator(".galaxy-page").click();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Scale page 250");
 });
+
+test("read-only chat keeps multi-turn context and conversations in this browser", async ({ page }) => {
+  const requests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+  await page.route("**/api/wiki/chat", async route => {
+    requests.push(route.request().postDataJSON());
+    const followUp = requests.length > 1;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        answer: followUp
+          ? "The follow-up connects the atlas to the night sky survey."
+          : "The atlas begins at Lantern Bay.",
+        activity: followUp ? ["Read “Night sky survey”."] : ["Searched the wiki for “atlas”."],
+        sources: [
+          followUp
+            ? { id: "night-sky-survey", title: "Night sky survey", evidence: "read" }
+            : { id: "home", title: "Lantern Bay field atlas", evidence: "search" },
+        ],
+        limits: { tool_calls: 1, max_tool_calls: 8 },
+      }),
+    });
+  });
+
+  await page.goto("/chat");
+  await expect(page.getByRole("heading", { name: "Ask, then follow the evidence." })).toBeVisible();
+  await page.getByLabel("Message").fill("Where does the atlas begin?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("Lantern Bay");
+  await expect(page.getByRole("link", { name: /Lantern Bay field atlas/ })).toBeVisible();
+
+  await page.getByLabel("Message").fill("What does that connect to?");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toHaveCount(2);
+  expect(requests[1].messages.map(message => message.role)).toEqual([
+    "user",
+    "assistant",
+    "user",
+  ]);
+
+  await page.reload();
+  await expect(page.locator(".chat-message.assistant")).toHaveCount(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.getByRole("button", { name: "Delete conversation" }).click();
+  await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
+});

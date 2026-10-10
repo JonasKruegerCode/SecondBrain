@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
@@ -18,6 +19,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from second_brain.wiki.chat import WikiChat
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
@@ -32,11 +34,14 @@ def create_app(
     close_indexes: bool = False,
     delivery: DeliveryCoordinator | None = None,
     automatic_delivery: bool = False,
+    chat: WikiChat | None = None,
 ) -> Starlette:
     store = WikiStore(vault_path)
     indexes = indexes or IndexCoordinator(store)
     if indexes.store.path != store.path:
         raise ValueError("Indexes must belong to the same managed vault.")
+    if chat is not None and (chat.store.path != store.path or chat.indexes is not indexes):
+        raise ValueError("Chat must use this managed vault and index coordinator.")
 
     delivery = delivery or DeliveryCoordinator(store, indexes)
     if delivery.store.path != store.path or delivery.indexes is not indexes:
@@ -142,6 +147,43 @@ def create_app(
             {"history": await run_in_threadpool(store.history, request.path_params["page_id"])}
         )
 
+    async def chat_answer(request: Request) -> Response:
+        nonlocal chat
+        origin = request.headers.get("origin")
+        if origin and urlsplit(origin).netloc != request.headers.get("host"):
+            return JSONResponse({"error": "origin_rejected"}, status_code=403)
+        chunks = bytearray()
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > 25_000:
+                return JSONResponse({"error": "content_too_large"}, status_code=413)
+        try:
+            body = json.loads(chunks)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise WikiError("invalid_payload", "Provide a JSON request.") from exc
+        if not isinstance(body, dict):
+            raise WikiError("invalid_payload", "Provide a JSON object.")
+        if chat is None:
+            try:
+                from second_brain.llm.providers.openrouter.client import OpenRouterClient
+
+                chat = WikiChat(store, indexes, OpenRouterClient())
+            except Exception as exc:
+                raise WikiError(
+                    "chat_unavailable", "Wiki chat is not configured on this server."
+                ) from exc
+        try:
+            async with asyncio.timeout(55):
+                return JSONResponse(await chat.answer(body.get("messages")))
+        except TimeoutError as exc:
+            raise WikiError("chat_unavailable", "Wiki chat timed out. Try again.") from exc
+        except WikiError:
+            raise
+        except Exception as exc:
+            raise WikiError(
+                "chat_unavailable", "The model provider is temporarily unavailable."
+            ) from exc
+
     async def wiki_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, WikiError)
         status = {
@@ -153,6 +195,8 @@ def create_app(
             "content_too_large": 413,
             "index_pending": 503,
             "index_unavailable": 503,
+            "chat_unavailable": 503,
+            "chat_limit": 422,
         }
         return JSONResponse(
             {"error": exc.code, "message": exc.message, **exc.details},
@@ -182,6 +226,7 @@ def create_app(
             Route("/api/wiki/delivery-status", delivery_status),
             Route("/api/wiki/pages/{page_id}/neighbors", neighbors),
             Route("/api/wiki/pages/{page_id}/history", history),
+            Route("/api/wiki/chat", chat_answer, methods=["POST"]),
             Route("/api/wiki/pages/{page_id}", page, methods=["GET", "POST", "DELETE"]),
         ],
         exception_handlers={WikiError: wiki_error},

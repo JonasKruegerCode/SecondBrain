@@ -28,7 +28,9 @@ PYTHONPATH=backend/src backend/.venv/bin/python scripts/run-wiki-demo.py \
 
 The seeder's repeat-verification and interrupted `--resume` behavior are in
 [demo-start.md](demo-start.md). It never overwrites an existing nonempty wiki.
-No chat response or external semantic index is simulated by the demo.
+No chat response or external semantic index is simulated by the demo. The
+default runner also clears any inherited OpenRouter key; `--with-openrouter` is
+an explicit paid-provider opt-in.
 
 For a deliberate empty/template/local-Git installation choice, use the
 [first-start command](first-start.md). It does not start services, seed on API
@@ -82,12 +84,31 @@ The browser uses the same target resolver for ID/title links, ambiguous choices 
 ## REST and MCP
 
 Managed REST is `/api/wiki`: page listing, page read/create/save/delete, lexical
-search, snapshot graph, and recent page history. Saves require `markdown`,
+search, snapshot graph, recent page history, and bounded read-only chat. Saves require `markdown`,
 `base_revision`, and `request_id`. Reads are independent of Git pulls and models.
 All responses use `Cache-Control: no-store`. Browser writes reject foreign
 origins; the optional `SECOND_BRAIN_WIKI_API_KEY` requires a server-side Bearer
 credential on all managed endpoints. Ordinary browser use should retain
 reverse-proxy authentication; no provider key is sent to the frontend.
+
+### Read-only wiki chat
+
+`POST /api/wiki/chat` accepts the most recent 1–12 user/assistant messages, ending
+with the user turn. The server invokes the configured OpenRouter model with only
+three tools: lexical/semantic/GraphRAG search, exact page read, and bounded graph
+neighbors. There is no save, delete, memory, or arbitrary MCP tool. Tool arguments,
+message count/size, rounds, calls, output, runtime, and response body size are
+bounded. Page results are model content rather than instructions. Provider errors,
+empty answers, timeouts, unavailable indexes, and exhausted limits become clean
+API failures without exposing credentials or raw provider errors.
+
+The response separates the answer, short observable activity labels, and exact
+page sources; it never returns hidden reasoning. The browser renders source links
+and stores conversations only in local storage, with new/delete controls. It sends
+at most 12 recent messages for multi-turn context. The backend has no conversation
+archive and the service worker must not cache these private messages when PWA work
+lands. Chat remains available only through the same origin/authentication boundary
+as the rest of the managed API.
 
 Local MCP uses the **same** WikiStore:
 
@@ -139,7 +160,7 @@ checks alone do not establish visual quality.
 
 Not complete: production Git credential provisioning, live provider/deployment integration, index
 retention/scale, frontend title-link ambiguity resolution,
-galaxy, iterative OpenRouter chat, installable PWA, deployment packaging and
+large-vault galaxy acceptance, installable PWA, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.
 
@@ -238,8 +259,8 @@ make high-level placement stable, while stars inside a group can still move afte
 a content mutation. Richer overview aggregation and visual depth remain quality
 work for the final galaxy acceptance; this is not that signoff.
 
-Validated against actual isolated demo services: 237 nonintegrative backend tests,
-Ruff and strict MyPy, TypeScript and both Vite entries. Seventeen Chromium cases in
+Validated against actual isolated demo services: 248 nonintegrative backend tests,
+Ruff and strict MyPy, TypeScript and both Vite entries. Eighteen Chromium cases in
 total cover reader/editor regressions, title ambiguity/deletion, fragments,
 delayed real responses and galaxy save/link/delete refresh. Desktop 1440 and
 mobile viewport 390 screenshots were inspected; light-shell contrast, label
@@ -247,3 +268,17 @@ collisions and navigation overflow were corrected. Browser emulation is not a
 physical-device installation or hosted-provider/model test. One history response
 uses a synthetic error and one real page response is delayed; the remaining
 content and mutations use real services.
+
+## Read-only chat evidence
+
+The iterative OpenRouter function-calling loop now uses the same managed store
+and optional index coordinator as REST/MCP. Backend regressions drive search and
+page reads through the real Git-backed services, verify multi-round tool messages
+and source upgrades, reject an attempted write tool, preserve page content, and
+cover origin/payload/unconfigured-provider failures. A browser regression checks
+multi-turn payloads, local persistence/deletion, source links, and 390px overflow.
+Its model response is explicitly intercepted synthetic data; no demo fixture or
+runtime path contains a fake answer. Desktop 1440px and mobile 390px screenshots
+of that UI contract were inspected. `OPENROUTER_API_KEY` was unavailable in this
+environment, so real provider/model quality, billing behavior, and tool-call
+compatibility are not claimed.

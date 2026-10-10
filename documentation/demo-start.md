@@ -36,6 +36,22 @@ The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importi
 4. Edit a page, save, and reload it. The saved Markdown remains available from the same local vault.
 5. Keep two tabs open on the same page to try revision conflict handling.
 
+The Chat tab is present but the default demo deliberately clears an inherited
+provider key, so opening the fictional wiki never creates external model cost.
+To run the same demo with real server-side OpenRouter calls, explicitly provide
+the key and opt in:
+
+```bash
+OPENROUTER_API_KEY=... PYTHONPATH=backend/src \
+  python scripts/run-wiki-demo.py --with-openrouter
+```
+
+Then ask a question about the atlas and a follow-up. The model can only call the
+bounded search, page-read, and graph-neighbor tools. The browser keeps and can
+delete conversation history locally; the backend stores no chat transcript.
+This is a paid external call, distinct from the deterministic demo and browser
+regression suite.
+
 ## Seeding rules
 
 For the explicit empty/template/local-Git first-start choice, see

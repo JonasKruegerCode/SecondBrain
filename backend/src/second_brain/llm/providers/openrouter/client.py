@@ -1,4 +1,5 @@
 """OpenRouter LLM client — implements the generic LLMClient interface."""
+
 from __future__ import annotations
 
 import asyncio
@@ -74,7 +75,40 @@ class OpenRouterClient(LLMClient):
         except json.JSONDecodeError as exc:
             raise OpenRouterError(f"Invalid JSON from LLM: {raw[:200]}") from exc
 
+    async def tool_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        model: str | None = None,
+        max_tokens: int = 1200,
+    ) -> dict[str, Any]:
+        """Return one OpenAI-compatible assistant message, including tool calls."""
+        payload = {
+            "model": model or settings.DEFAULT_MODEL,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "max_tokens": max_tokens,
+            **provider_routing(settings.OPENROUTER_CHAT_PROVIDER),
+        }
+        data = await self._post_json_with_retry(payload)
+        try:
+            message = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise OpenRouterError("OpenRouter returned no assistant message.") from exc
+        if not isinstance(message, dict):
+            raise OpenRouterError("OpenRouter returned an invalid assistant message.")
+        return message
+
     async def _post_with_retry(self, payload: dict[str, Any]) -> str:
+        data = await self._post_json_with_retry(payload)
+        try:
+            return str(data["choices"][0]["message"]["content"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise OpenRouterError("OpenRouter returned no text response.") from exc
+
+    async def _post_json_with_retry(self, payload: dict[str, Any]) -> dict[str, Any]:
         with tracer.start_as_current_span("openrouter.post_with_retry") as root_span:
             root_span.set_attribute("model", str(payload.get("model", "")))
             last_exc: Exception | None = None
@@ -83,9 +117,7 @@ class OpenRouterClient(LLMClient):
                     span.set_attribute("attempt", attempt)
                     try:
                         async with httpx.AsyncClient(timeout=60.0) as client:
-                            with tracer.start_as_current_span(
-                                "openrouter.http_request"
-                            ) as rs:
+                            with tracer.start_as_current_span("openrouter.http_request") as rs:
                                 resp = await client.post(
                                     f"{_BASE_URL}/chat/completions",
                                     headers=self._headers,
@@ -95,8 +127,9 @@ class OpenRouterClient(LLMClient):
                         with tracer.start_as_current_span("openrouter.parse_response"):
                             resp.raise_for_status()
                             data = resp.json()
-                            content = str(data["choices"][0]["message"]["content"])
-                        return content
+                            if not isinstance(data, dict):
+                                raise OpenRouterError("OpenRouter returned an invalid response.")
+                        return data
                     except Exception as exc:
                         last_exc = exc
                         span.record_exception(exc)
@@ -105,6 +138,4 @@ class OpenRouterClient(LLMClient):
                     with tracer.start_as_current_span("openrouter.retry_backoff") as span:
                         span.set_attribute("delay_seconds", delay)
                         await asyncio.sleep(delay)
-            raise OpenRouterError(
-                f"All {len(_RETRY_DELAYS) + 1} attempts failed."
-            ) from last_exc
+            raise OpenRouterError(f"All {len(_RETRY_DELAYS) + 1} attempts failed.") from last_exc

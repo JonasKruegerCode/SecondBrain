@@ -3,8 +3,9 @@
 ## Managed wiki development profile
 
 The `secondbrain-2.0` branch now includes an isolated, runnable managed-wiki
-milestone with real Markdown/Git content, a light article UI, search and direct
-editing. It is **not yet a complete 2.0 release**. Use the opt-in
+milestone with real Markdown/Git content, a light article UI, search, direct
+editing, a curated snapshot galaxy, and bounded read-only wiki chat. It is
+**not yet a complete 2.0 release**. Use the opt-in
 [development guide](documentation/managed-wiki-development.md) and
 [fictional demo](documentation/demo-start.md). Controlled
 [local Git import](documentation/wiki-import.md) preserves source history;

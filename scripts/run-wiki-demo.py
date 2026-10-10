@@ -15,8 +15,17 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", type=Path, default=root / ".demo" / "vault")
-    parser.add_argument("--empty", action="store_true", help="Start without the fictional template")
+    parser.add_argument(
+        "--empty", action="store_true", help="Start without the fictional template"
+    )
+    parser.add_argument(
+        "--with-openrouter",
+        action="store_true",
+        help="Allow the chat to use the explicitly configured OPENROUTER_API_KEY",
+    )
     args = parser.parse_args()
+    if args.with_openrouter and not os.environ.get("OPENROUTER_API_KEY"):
+        parser.error("--with-openrouter requires OPENROUTER_API_KEY")
     vault = args.vault.resolve()
     if not (vault / ".wiki.git").exists() and not args.empty:
         seed_vault(vault)
@@ -33,6 +42,8 @@ def main() -> None:
         "SECOND_BRAIN_WIKI_VECTOR_INDEX": "0",
         "SECOND_BRAIN_WIKI_DELIVERY": "1",
     }
+    if not args.with_openrouter:
+        env["OPENROUTER_API_KEY"] = ""
     children: list[subprocess.Popen[bytes]] = []
 
     def stop(signum: int, frame: object) -> None:

@@ -1,6 +1,7 @@
 import { marked } from "marked";
 import "./style.css";
 import { renderGalaxy, Graph } from "./galaxy";
+import { renderChat } from "./chat";
 type HistoryEntry = { commit: string; date: string; message: string };
 type Page = {
   id: string;
@@ -155,7 +156,7 @@ app.addEventListener("click", (e) => {
   }
 });
 function shell() {
-  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${location.pathname === "/search" || location.pathname === "/galaxy" ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a><a href="/galaxy" class="${location.pathname === "/galaxy" ? "active" : ""}">Galaxy</a></nav><div class="workspace"><i></i>Personal workspace</div></header><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${["/search", "/galaxy", "/chat"].includes(location.pathname) ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a><a href="/galaxy" class="${location.pathname === "/galaxy" ? "active" : ""}">Galaxy</a><a href="/chat" class="${location.pathname === "/chat" ? "active" : ""}">Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
 }
 
 function focusFragment() {
@@ -221,6 +222,10 @@ async function route() {
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
   try {
+    if (location.pathname === "/chat") {
+      cleanupView = renderChat(main, api);
+      return;
+    }
     if (location.pathname === "/galaxy") {
       const graph: Graph = await api("/graph");
       if (run !== generation) return;
