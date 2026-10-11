@@ -285,6 +285,8 @@ class Run:
         )
         self.command([*compose, "restart", "backend", "mcp"])
         self.wait(base + "/api/wiki/health")
+        # Docker may allocate a new ephemeral host port when a container restarts.
+        mcp = self.port(compose, "mcp", 3001) + "/mcp"
         self.initialize(mcp)
         self.check(
             "restart-page", self.data(base + "/api/wiki/pages/stack-fixture") == page
