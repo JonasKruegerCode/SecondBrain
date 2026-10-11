@@ -42,7 +42,7 @@ CONTAINER_SNAPSHOT = (
     '"status":{{json .State.Status}},"running":{{json .State.Running}},'
     '"exit_code":{{json .State.ExitCode}},"restart_count":{{json .RestartCount}},'
     '"started_at":{{json .State.StartedAt}},'
-    '"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},'
+    '"health":{{with (index .State "Health")}}{{json .Status}}{{else}}null{{end}},'
     '"networks":{{json .NetworkSettings.Networks}}}'
 )
 NETWORK_SNAPSHOT = (
