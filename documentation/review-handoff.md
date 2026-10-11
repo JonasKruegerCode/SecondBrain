@@ -68,6 +68,12 @@ make acceptance PYTHON=backend/.venv/bin/python
 make check
 ```
 
+With a local Docker Engine and Compose v2, `make acceptance-stack` builds and
+exercises disposable managed containers, the nginx boundary, shared REST/MCP
+writes, restart persistence and independent-volume backup/restore. See the
+[stack acceptance guide](managed-stack-acceptance.md) for isolation and CI
+evidence. Adding the runner does not itself establish a passing Docker gate.
+
 The demo and acceptance commands use only the public fictional Lantern Bay
 fixture. The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below

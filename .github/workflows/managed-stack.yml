@@ -1,0 +1,35 @@
+name: Managed stack acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run disposable Docker stack acceptance
+        run: python3 scripts/run-wiki-stack-acceptance.py
+
+      # The runner uses only synthetic data and writes credential-free evidence.
+      # Never upload its generated Compose configuration or a vault snapshot.
+      - name: Upload structural results and synthetic service logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-stack-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .demo/stack-acceptance/*/result.json
+            .demo/stack-acceptance/*/*.log
+          if-no-files-found: warn
+          retention-days: 7

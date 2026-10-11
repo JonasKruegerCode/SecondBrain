@@ -57,6 +57,10 @@ vault is restored into that volume by an explicit operator procedure. It never
 auto-seeds template content. Container execution and named-volume restore remain
 unverified until run with a Docker-compatible runtime.
 
+For a disposable synthetic container rehearsal, use `make acceptance-stack`;
+the [stack guide](managed-stack-acceptance.md) covers its separate project,
+dynamic loopback ports, restart and independent-volume restore checks.
+
 Repeating an empty setup checks that no pages exist. A populated wiki is refused.
 Repeating a template setup verifies unchanged content; edits, extra pages and
 missing pages are preserved and cause refusal. An interrupted template requires
