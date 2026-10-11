@@ -1,10 +1,10 @@
 .chat-page { display: grid; grid-template-columns: 245px minmax(0, 1fr); gap: 26px; padding: 38px 0 55px; min-height: 700px; }
 .chat-history, .chat-workspace { border: 1px solid #dce6dd; background: #ffffffa8; backdrop-filter: blur(18px); box-shadow: 0 18px 60px #315f4b0d; }
-.chat-history { border-radius: 18px; padding: 18px 12px; display: flex; flex-direction: column; min-height: 620px; }
+.chat-history { border-radius: 18px; padding: 18px 12px; display: flex; flex-direction: column; min-height: 620px; min-width: 0; }
 .chat-history-heading { display: flex; align-items: center; justify-content: space-between; padding: 3px 8px 15px; color: var(--muted-text); font-size: 9px; font-weight: 700; letter-spacing: 1.5px; }
 .chat-history-heading button { background: #e4eee7; color: #315e51; border-radius: 20px; padding: 8px 12px; font-size: 11px; }
 .chat-history-list { display: grid; gap: 5px; }
-.chat-history-list button { text-align: left; padding: 13px 12px; border-radius: 10px; background: transparent; color: #4d625a; min-height: 58px; }
+.chat-history-list button { text-align: left; padding: 13px 12px; border-radius: 10px; background: transparent; color: #4d625a; min-height: 58px; min-width: 0; }
 .chat-history-list button.active { background: #edf3ec; color: #244c42; }
 .chat-history-list span, .chat-history-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-history-list span { font-size: 13px; font-weight: 600; }
@@ -20,7 +20,7 @@
 .chat-empty > span { color: #3c7b6d; font-size: 38px; }
 .chat-empty h2 { color: #345349; font-weight: 550; font-size: 22px; }
 .chat-empty p { font-size: 13px; line-height: 1.7; }
-.chat-message { max-width: 82%; border-radius: 14px; padding: 16px 18px; overflow-wrap: anywhere; }
+.chat-message { max-width: 82%; border-radius: 14px; padding: 16px 18px; overflow-wrap: anywhere; margin: 0; flex-shrink: 0; box-shadow: none; }
 .chat-message.user { align-self: flex-end; background: #2e665b; color: white; }
 .chat-message.assistant { align-self: flex-start; background: #f1f5ef; border: 1px solid #e1e9df; color: #29473e; }
 .chat-role { text-transform: uppercase; letter-spacing: 1.5px; font-size: 8px; opacity: .68; font-weight: 700; }
@@ -56,3 +56,6 @@
   .chat-composer .primary { justify-content: center; min-height: 44px; }
   .chat-error { margin: 0 18px 14px; }
 }
+
+.chat-storage-notice { margin: 0 34px 15px; padding: 12px 14px; background: #fff5df; color: #72582c; border-radius: 9px; font-size: 12px; line-height: 1.5; flex-shrink: 0; }
+@media (max-width: 760px) { .chat-storage-notice { margin: 0 18px 14px; } }

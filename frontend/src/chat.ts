@@ -23,23 +23,77 @@ const esc = (value: string) =>
   );
 const pageUrl = (id: string) => "/wiki/" + encodeURIComponent(id);
 
-function load(): Conversation[] {
+const MAX_CONVERSATIONS = 20;
+const MAX_MESSAGES = 24;
+// Each backend wiki action can add at most one read source and activity entry.
+const MAX_WIKI_ACTIONS = 8;
+// Failed browser writes must not discard a chat when following a wiki source.
+// This bounded fallback disappears on document reload and is never sent to an archive.
+let tabConversations: Conversation[] | undefined;
+const record = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function validMessage(value: unknown): value is Message {
+  if (!record(value) || (value.role !== "user" && value.role !== "assistant") ||
+      typeof value.content !== "string" || !value.content.trim()) return false;
+  if (value.role === "user" && value.content.length > 4000) return false;
+  if (value.sources !== undefined && (!Array.isArray(value.sources) ||
+      !value.sources.every(source => record(source) && typeof source.id === "string" &&
+        /^[\p{L}\p{N}_][\p{L}\p{N}_.-]{0,159}$/u.test(source.id) && typeof source.title === "string" &&
+        source.evidence === "read"))) return false;
+  if (value.activity !== undefined && (!Array.isArray(value.activity) ||
+      !value.activity.every(item => typeof item === "string"))) return false;
+  return true;
+}
+
+function boundedMessages(messages: Message[]): Message[] {
+  return messages.slice(-MAX_MESSAGES).map(message => ({
+    role: message.role,
+    content: message.content,
+    ...(message.sources === undefined ? {} : {
+      sources: message.sources.slice(0, MAX_WIKI_ACTIONS).map(({ id, title, evidence }) => ({ id, title, evidence })),
+    }),
+    ...(message.activity === undefined ? {} : { activity: message.activity.slice(0, MAX_WIKI_ACTIONS) }),
+  }));
+}
+
+function load(): { conversations: Conversation[]; unavailable: boolean } {
+  if (tabConversations) return { conversations: tabConversations, unavailable: true };
+  let raw: string | null;
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    if (!Array.isArray(value)) return [];
-    return value
-      .filter(item => item && typeof item.id === "string" && Array.isArray(item.messages))
-      .slice(0, 20);
+    raw = localStorage.getItem(STORAGE_KEY);
   } catch {
-    return [];
+    return { conversations: [], unavailable: true };
+  }
+  try {
+    const value: unknown = JSON.parse(raw || "[]");
+    if (!Array.isArray(value)) return { conversations: [], unavailable: false };
+    const conversations: Conversation[] = [];
+    const ids = new Set<string>();
+    for (const item of value) {
+      if (!record(item) || typeof item.id !== "string" || !item.id || ids.has(item.id) ||
+          typeof item.title !== "string" || typeof item.updated !== "number" ||
+          !Number.isFinite(item.updated) || item.updated < 0 ||
+          !Array.isArray(item.messages) || !item.messages.every(validMessage)) continue;
+      ids.add(item.id);
+      conversations.push({ id: item.id, title: item.title, updated: item.updated,
+        messages: boundedMessages(item.messages) });
+      if (conversations.length === MAX_CONVERSATIONS) break;
+    }
+    return { conversations, unavailable: false };
+  } catch {
+    return { conversations: [], unavailable: false };
   }
 }
 
-function save(conversations: Conversation[]) {
+function save(conversations: Conversation[]): boolean {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations.slice(0, 20)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    tabConversations = undefined;
+    return true;
   } catch {
-    // Chat remains usable for this tab when browser storage is unavailable.
+    tabConversations = conversations;
+    return false;
   }
 }
 
@@ -48,7 +102,9 @@ function freshConversation(): Conversation {
 }
 
 export function renderChat(main: Element, api: Api): () => void {
-  let conversations = load();
+  const loaded = load();
+  let conversations = loaded.conversations;
+  let storageUnavailable = loaded.unavailable;
   if (!conversations.length) conversations = [freshConversation()];
   let activeId = conversations[0].id;
   let busy = false;
@@ -57,8 +113,13 @@ export function renderChat(main: Element, api: Api): () => void {
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
   const persist = () => {
+    const active = current();
     conversations.sort((a, b) => b.updated - a.updated);
-    save(conversations);
+    // Keep the active conversation even if an earlier device saved future timestamps.
+    conversations = [active, ...conversations.filter(item => item.id !== active.id)]
+      .slice(0, MAX_CONVERSATIONS);
+    conversations.forEach(item => { item.messages = boundedMessages(item.messages); });
+    storageUnavailable = !save(conversations);
   };
   const render = (focusComposer = false) => {
     const conversation = current();
@@ -75,7 +136,8 @@ export function renderChat(main: Element, api: Api): () => void {
           ${busy ? `<div class="chat-thinking"><i></i>Searching and reading…</div>` : ""}
         </div>
         ${error ? `<div class="chat-error" role="alert"><span>${esc(error)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
-        <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy ? "disabled" : ""}></textarea><button class="primary" ${busy ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. Chats are saved only in local browser storage.</small></form>
+        ${storageUnavailable ? `<div class="chat-storage-notice" role="status">Browser storage is unavailable. New messages stay only in this tab until it is reloaded; previously saved conversations may remain after deletion.</div>` : ""}
+        <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy ? "disabled" : ""}></textarea><button class="primary" ${busy ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
       </div>
     </section>`;
     main.querySelectorAll<HTMLButtonElement>("[data-conversation]").forEach(button => {
@@ -109,7 +171,7 @@ export function renderChat(main: Element, api: Api): () => void {
       if (!content || busy) return;
       const item = current();
       item.messages.push({ role: "user", content });
-      item.messages = item.messages.slice(-24);
+      item.messages = item.messages.slice(-MAX_MESSAGES);
       item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
       item.updated = Date.now();
       error = "";

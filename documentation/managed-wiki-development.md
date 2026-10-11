@@ -322,7 +322,16 @@ reject an attempted write tool, preserve page content, and cover
 origin/payload/provider/step-limit failures. A browser regression checks
 multi-turn payloads, local persistence/deletion, source links, and 390px overflow.
 Its model response is explicitly intercepted synthetic data; no demo fixture or
-runtime path contains a fake answer. Desktop 1440px and mobile 390px screenshots
+runtime path contains a fake answer. Saved chat records are validated before
+rendering and bounded to 20 conversations with 24 messages each. Malformed
+records are skipped; valid records remain available. If browser storage refuses
+a write, answers remain usable in the tab and a visible notice explains that
+new messages are not persisted and earlier saved deletions may remain. A bounded
+tab-memory fallback preserves answers and deletions while following wiki links
+and returning to Chat; a document reload loses that fallback. A later
+successful write persists the current state and clears that notice. Browser
+regressions cover corrupt records, the same runtime limits, rejected storage
+writes, deletion and recovery. Desktop 1440px and mobile 390px screenshots
 of that UI contract were inspected. `OPENROUTER_API_KEY` was unavailable in this
 environment, so real provider/model quality, billing behavior, and tool-call
 compatibility are not claimed.

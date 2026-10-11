@@ -419,7 +419,24 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
         const result: Backlinks = await api(`/pages/${encodeURIComponent(targetId)}/backlinks`);
         if (!panel.isConnected || page?.id !== targetId || page.revision !== targetRevision) return;
         if (result.target_revision !== targetRevision) {
-          content.innerHTML = '<p>This article has changed. Reload it to review its current links.</p>';
+          content.innerHTML = '<p>This article has changed. Reload it to review its current links.</p><button type="button" class="subtle">Reload article</button>';
+          const reload = content.querySelector<HTMLButtonElement>("button")!;
+          reload.onclick = async () => {
+            reload.disabled = true;
+            try {
+              const latest: Page = await api(`/pages/${encodeURIComponent(targetId)}`);
+              if (!panel.isConnected || page?.id !== targetId || page.revision !== targetRevision) return;
+              page = latest;
+              renderPage("heading");
+              viewReady(latest.title);
+            } catch {
+              if (!panel.isConnected) return;
+              content.querySelector("p")!.textContent = "Couldn’t reload this article. Try again when your connection is ready.";
+              reload.disabled = false;
+              reload.focus();
+            }
+          };
+          if (restoreFocus) reload.focus();
           return;
         }
         content.innerHTML = result.backlinks.length

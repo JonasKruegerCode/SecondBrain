@@ -880,6 +880,113 @@ test("late backlink response cannot replace a newer article and read failures ca
   await update(request, current.id, "# Current backlink article\nChanged after this read.", current.revision);
   await page.getByRole("button", { name: "Refresh links" }).click();
   await expect(page.locator(".page-backlinks")).toContainText("This article has changed");
+  const reload = page.getByRole("button", { name: "Reload article", exact: true });
+  await expect(reload).toBeFocused();
+  let failReload = true;
+  await page.route(`**/api/wiki/pages/${current.id}`, async route => {
+    if (failReload) { failReload = false; await route.abort(); } else await route.continue();
+  });
+  await reload.press("Enter");
+  await expect(page.locator(".page-backlinks")).toContainText("Couldn’t reload this article");
+  await expect(reload).toBeFocused();
+  await reload.press("Enter");
+  await expect(page.locator(".prose")).toContainText("Changed after this read.");
+  await expect(page.locator("article h1")).toBeFocused();
+  await page.locator(".page-backlinks summary").click();
+  await expect(page.locator(".page-backlinks")).toContainText("No other pages link here yet.");
+});
+
+test("chat ignores malformed saved records and keeps a valid bounded conversation", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.addInitScript(() => {
+    const valid = { id: "synthetic-valid", title: "Synthetic saved question", updated: 1,
+      messages: Array.from({ length: 26 }, () => ({ role: "user", content: "A retained synthetic question." })) };
+    const invalid = [
+      { ...valid, id: "bad-title", title: 42 },
+      { ...valid, id: "bad-content", messages: [{ role: "user", content: null }] },
+      { ...valid, id: "bad-source", messages: [{ role: "assistant", content: "Invalid source", sources: [{ id: null, title: "bad", evidence: "read" }] }] },
+      { ...valid, id: "bad-activity", messages: [{ role: "assistant", content: "Invalid activity", activity: [42] }] },
+      { ...valid, id: "bad-surrogate", messages: [{ role: "assistant", content: "Invalid source", sources: [{ id: "\ud800", title: "bad", evidence: "read" }] }] },
+    ];
+    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([...invalid, valid]));
+  });
+  await page.goto("/chat");
+  await expect(page.locator(".chat-message.user")).toHaveCount(24);
+  await expect(page.locator(".chat-message.user").first()).toContainText("A retained synthetic question.");
+  await expect(page.locator(".chat-history-list button")).toHaveCount(1);
+  expect(errors).toEqual([]);
+  for (let i = 0; i < 22; i++) await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.locator(".chat-history-list button")).toHaveCount(20);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).length)).toBe(20);
+});
+
+test("new chat remains active at the limit even with future-dated saved conversations", async ({ page }) => {
+  await page.addInitScript(() => { if (!localStorage.getItem("secondbrain.chat.conversations.v1")) localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+    Array.from({ length: 20 }, (_, i) => ({ id: `synthetic-future-${i}`, title: `Earlier synthetic chat ${i}`, updated: Date.now() + 86400000,
+      messages: [{ role: "user", content: "Earlier synthetic question." }] })),
+  )); });
+  let submitted: unknown;
+  await page.route("**/api/wiki/chat", route => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ answer: "Synthetic new answer.", sources: [], activity: [] }) });
+  });
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.locator(".chat-message")).toHaveCount(0);
+  await page.getByLabel("Message").fill("New synthetic question.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic new answer.");
+  expect(submitted).toEqual({ messages: [{ role: "user", content: "New synthetic question." }] });
+  await expect(page.locator(".chat-history-list button")).toHaveCount(20);
+  await page.reload();
+  await expect(page.locator(".chat-message.user")).toHaveText(/New synthetic question/);
+});
+
+test("chat storage failure explains session-only answers and unsuccessful persisted deletion", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    const key = "secondbrain.chat.conversations.v1";
+    localStorage.setItem(key, JSON.stringify([{ id: "synthetic-storage", title: "Synthetic saved question", updated: 1,
+      messages: [{ role: "user", content: "Previously saved synthetic question." }] }]));
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "secondbrain.chat.conversations.v1") throw new DOMException("Synthetic unavailable storage", "QuotaExceededError");
+      return set.call(this, key, value);
+    };
+    window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+  });
+  // Scripted transport only: this checks local persistence, not model behavior.
+  await page.route("**/api/wiki/chat", route => route.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ answer: "A synthetic session answer.", sources: [], activity: [] }) }));
+  await page.goto("/chat");
+  await page.getByLabel("Message").fill("Synthetic follow-up.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("A synthetic session answer.");
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("A synthetic session answer.");
+  await expect(page.locator(".chat-storage-notice")).toContainText("only in this tab");
+  const historyBox = (await page.locator(".chat-history").boundingBox())!;
+  const titleBox = (await page.locator(".chat-history-list button").boundingBox())!;
+  expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(historyBox.x + historyBox.width);
+  expect((await page.locator(".chat-storage-notice").boundingBox())!.height).toBeGreaterThanOrEqual(40);
+  await page.screenshot({ path: testInfo.outputPath("chat-session-only-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".chat-storage-notice")).toBeVisible();
+  expect((await page.locator(".chat-storage-notice").boundingBox())!.height).toBeGreaterThanOrEqual(50);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: testInfo.outputPath("chat-session-only-mobile.png"), fullPage: true });
+  await page.getByRole("button", { name: "Delete conversation" }).click();
+  await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
+  await expect(page.locator(".chat-storage-notice")).toContainText("previously saved");
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].messages)).toHaveLength(1);
+  await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.locator(".chat-storage-notice")).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === "synthetic-storage"))).toBeFalsy();
 });
 
 test("galaxy keyboard return restores its originating page and constellation", async ({ page }) => {
