@@ -79,6 +79,41 @@ def prose_links(markdown: str) -> str:
     return re.sub(r"(`+).*?\1", "", text, flags=re.DOTALL)
 
 
+def plain_text_excerpt(markdown: str) -> str:
+    """Collapse article prose into a short, presentation-safe summary.
+
+    Excerpts are part of the page API and appear outside the Markdown renderer,
+    so formatting tokens must not leak into cards, search results, or chat tool
+    context. This intentionally keeps human-readable labels while dropping
+    structural Markdown and non-prose blocks.
+    """
+    lines = []
+    for raw_line in prose_links(markdown).splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ">")):
+            continue
+        if "|" in line and re.fullmatch(r"[|:\-\s]+", line):
+            continue
+        line = re.sub(r"^\s*(?:[-+*]|\d+[.)])\s+", "", line)
+        line = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"\[\[([^|\]]+)\|([^\]]+)\]\]", r"\2", line)
+        line = re.sub(r"\[\[([^\]]+)\]\]", r"\1", line)
+        line = re.sub(r"<(https?://[^>]+)>", r"\1", line)
+        line = re.sub(r"<[^>]+>", " ", line)
+        line = line.strip("|").replace("|", " · ")
+        line = line.replace("*", "").replace("~~", "")
+        line = re.sub(r"(?<!\w)_{1,2}|_{1,2}(?!\w)", "", line)
+        line = line.replace("`", "")
+        if line:
+            lines.append(line)
+    excerpt = " ".join(" ".join(lines).split())
+    if len(excerpt) <= 220:
+        return excerpt
+    boundary = excerpt[:219].rsplit(" ", 1)[0].rstrip(" ,.;:-")
+    return f"{boundary or excerpt[:219]}…"
+
+
 class WikiError(Exception):
     def __init__(self, code: str, message: str, **details: Any) -> None:
         self.code = code
@@ -173,15 +208,12 @@ class WikiStore:
         content, galaxy = split_frontmatter(markdown)
         heading = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
         title = heading.group(1).strip() if heading else page_id
-        prose = "\n".join(line for line in content.splitlines() if not line.startswith(("#", ">")))
-        prose = re.sub(r"\[\[([^|\]]+)\|([^\]]+)\]\]", r"\2", prose)
-        prose = re.sub(r"\[\[([^\]]+)\]\]", r"\1", prose)
         page = {
             "id": page_id,
             "title": title,
             "markdown": markdown,
             "revision": revision,
-            "excerpt": " ".join(prose.split())[:220],
+            "excerpt": plain_text_excerpt(content),
         }
         if galaxy:
             page["galaxy"] = galaxy

@@ -85,6 +85,34 @@ def test_galaxy_frontmatter_is_structured_without_changing_markdown(tmp_path: Pa
     assert (store.get_page("night-sky") or {})["markdown"] == markdown
 
 
+def test_excerpt_is_plain_text_for_cards_search_and_chat(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    markdown = (
+        "# Field notes\n\n"
+        "> A callout is context, not the summary.\n\n"
+        "1. **Question:** Does [[night-sky|the survey]] need a marker?\n\n"
+        "| Record | Meaning |\n"
+        "| --- | --- |\n"
+        "| [[tide-clock|Tide clock]] | *Modeled* phase |\n\n"
+        "```md\n**not article prose**\n```\n"
+        "Read [the guide](https://example.test/guide)."
+    )
+
+    saved = store.save_page("field-notes", markdown, None, "field-notes")
+
+    assert saved["excerpt"] == (
+        "Question: Does the survey need a marker? Record · Meaning "
+        "Tide clock · Modeled phase Read the guide."
+    )
+    assert not any(token in saved["excerpt"] for token in ("**", "[[", "|", "```"))
+
+    long_page = store.save_page(
+        "long-notes", "# Long notes\n" + "complete " * 40, None, "long-notes"
+    )
+    assert len(long_page["excerpt"]) <= 220
+    assert long_page["excerpt"].endswith("complete…")
+
+
 def test_invalid_galaxy_frontmatter_is_ignored_not_rejected(tmp_path: Path) -> None:
     store = WikiStore(tmp_path)
     markdown = "---\ngalaxy_group: ../escape\ngalaxy_anchor: true\n---\n# Safe page"

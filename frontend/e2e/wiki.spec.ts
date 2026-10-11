@@ -97,6 +97,23 @@ test("home opens a wiki page, resolves an alias, and survives back and reload", 
   ).toBeVisible();
 });
 
+test("home card previews are readable plain-text summaries", async ({ page }) => {
+  await page.goto("/?overview=1");
+  await expect(
+    page.getByRole("heading", { name: "A growing collection" }),
+  ).toBeVisible();
+
+  const notebook = page.locator(".card", { hasText: "Field notebook" }).locator("p");
+  await expect(notebook).toContainText("Question:");
+  await expect(notebook).not.toContainText("**");
+
+  const calendar = page
+    .locator(".card", { hasText: "Harvest calendar" })
+    .locator("p");
+  await expect(calendar).toContainText("Record · What it can tell us");
+  await expect(calendar).not.toContainText("|");
+});
+
 test("keyboard users can skip navigation and identify the active view", async ({
   page,
 }) => {
