@@ -60,7 +60,7 @@ export function renderChat(main: Element, api: Api): () => void {
     conversations.sort((a, b) => b.updated - a.updated);
     save(conversations);
   };
-  const render = () => {
+  const render = (focusComposer = false) => {
     const conversation = current();
     main.innerHTML = `<section class="chat-page" aria-labelledby="chat-title">
       <aside class="chat-history" aria-label="Saved conversations">
@@ -82,7 +82,7 @@ export function renderChat(main: Element, api: Api): () => void {
       button.onclick = () => {
         activeId = button.dataset.conversation!;
         error = "";
-        render();
+        render(false);
       };
     });
     main.querySelector<HTMLButtonElement>('[data-action="new"]')!.onclick = () => {
@@ -91,7 +91,7 @@ export function renderChat(main: Element, api: Api): () => void {
       activeId = next.id;
       error = "";
       persist();
-      render();
+      render(true);
     };
     main.querySelector<HTMLButtonElement>('[data-action="delete"]')!.onclick = () => {
       conversations = conversations.filter(item => item.id !== activeId);
@@ -99,7 +99,7 @@ export function renderChat(main: Element, api: Api): () => void {
       activeId = conversations[0].id;
       error = "";
       persist();
-      render();
+      render(false);
     };
     const form = main.querySelector<HTMLFormElement>(".chat-composer")!;
     form.onsubmit = event => {
@@ -118,7 +118,8 @@ export function renderChat(main: Element, api: Api): () => void {
     };
     const retry = main.querySelector<HTMLButtonElement>('[data-action="retry"]');
     if (retry) retry.onclick = () => void requestAnswer();
-    if (!busy) main.querySelector<HTMLTextAreaElement>("#chat-input")?.focus();
+    if (!busy && focusComposer)
+      main.querySelector<HTMLTextAreaElement>("#chat-input")?.focus({ preventScroll: true });
     main.querySelector(".chat-messages")?.scrollTo({ top: 1_000_000 });
   };
 
@@ -128,7 +129,7 @@ export function renderChat(main: Element, api: Api): () => void {
     const requestId = conversation.id;
     busy = true;
     error = "";
-    render();
+    render(false);
     try {
       const messages = conversation.messages
         .filter(message => message.role === "user" || message.role === "assistant")
@@ -154,12 +155,12 @@ export function renderChat(main: Element, api: Api): () => void {
     } finally {
       if (alive && activeId === requestId) {
         busy = false;
-        render();
+        render(true);
       }
     }
   };
 
-  render();
+  render(false);
   return () => {
     alive = false;
   };

@@ -25,6 +25,27 @@ async function update(
   return response.json();
 }
 
+function contrastRatio(foreground: string, background: string) {
+  const rgb = (value: string) => {
+    if (value.startsWith("#")) {
+      const hex = value.slice(1);
+      return [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
+    }
+    return (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  };
+  const luminance = (value: string) => {
+    const channels = rgb(value).map((channel) => {
+      const normalized = channel / 255;
+      return normalized <= 0.04045
+        ? normalized / 12.92
+        : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+
 async function pwaUpdateProxy() {
   let release = 1;
   const server = createServer(async (request, response) => {
@@ -112,6 +133,48 @@ test("home card previews are readable plain-text summaries", async ({ page }) =>
     .locator("p");
   await expect(calendar).toContainText("Record · What it can tell us");
   await expect(calendar).not.toContainText("|");
+});
+
+test("small muted text keeps AA contrast on light wiki surfaces", async ({ page }) => {
+  const checks = [
+    ["header nav a:not(.active)", "#f6f7f2"],
+    [".workspace", "#f6f7f2"],
+    [".intro p", "#f6f7f2"],
+    [".section-heading > span", "#f6f7f2"],
+    [".card-meta", "#ffffff"],
+    [".card p", "#ffffff"],
+    [".card-foot", "#ffffff"],
+    ["footer", "#f6f7f2"],
+  ] as const;
+
+  await page.goto("/?overview=1");
+  for (const [selector, background] of checks) {
+    const foreground = await page.locator(selector).first().evaluate(
+      (element) => getComputedStyle(element).color,
+    );
+    expect(contrastRatio(foreground, background), selector).toBeGreaterThanOrEqual(4.5);
+  }
+
+  await page.goto("/chat");
+  for (const selector of [".chat-history-heading", ".chat-heading p", ".chat-empty"]) {
+    const foreground = await page.locator(selector).evaluate(
+      (element) => getComputedStyle(element).color,
+    );
+    expect(contrastRatio(foreground, "#ffffff"), selector).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
+test("mobile chat opens at its heading without forcing composer focus", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/chat");
+
+  await expect(page.getByRole("heading", { name: "Ask, then follow the evidence." })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Message" })).not.toBeFocused();
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused();
+  expect(await page.evaluate(() => scrollY)).toBe(0);
 });
 
 test("keyboard users can skip navigation and identify the active view", async ({
