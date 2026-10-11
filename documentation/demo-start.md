@@ -26,6 +26,12 @@ npm run dev
 
 Open the local Vite URL printed in that terminal. Keep the API terminal running. The frontend development profile connects to the local standalone wiki API.
 
+The combined launcher treats both services as long-running peers. If either API
+or frontend exits unexpectedly, it stops the other service and returns a nonzero
+status instead of reporting a successful demo. Ctrl+C/SIGTERM remains a clean
+operator stop. This makes the command suitable for a supervised rehearsal while
+still keeping it separate from a production deployment.
+
 The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importing the module does not create a vault. The managed vault's authoritative Markdown lives in local Git commit snapshots in `.wiki.git`, a bare repository inside the selected directory. It is not a folder of loose Markdown files to edit manually. Use the wiki editor or the normal save API so revisions, links, and search reflect the same saved content.
 
 ## Take a short tour

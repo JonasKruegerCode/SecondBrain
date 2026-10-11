@@ -7,13 +7,44 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 from second_brain.wiki.demo import seed_vault
 from second_brain.wiki.scale_demo import create_scale_vault
 
 
-def main() -> None:
+def _wait_for_children(
+    children: Sequence[subprocess.Popen[bytes]], *, poll_interval: float = 0.25
+) -> int:
+    """Return nonzero when either long-running service exits unexpectedly."""
+    while True:
+        statuses = [child.poll() for child in children]
+        if any(status is not None for status in statuses):
+            failed = next((status for status in statuses if status not in (None, 0)), None)
+            return failed if failed is not None else 1
+        time.sleep(poll_interval)
+
+
+def _stop_children(children: Sequence[subprocess.Popen[bytes]]) -> None:
+    for index, child in enumerate(children):
+        if child.poll() is not None:
+            continue
+        try:
+            if index == 1:
+                os.killpg(child.pid, signal.SIGTERM)
+            else:
+                child.terminate()
+        except ProcessLookupError:
+            pass
+    for child in children:
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", type=Path)
@@ -30,7 +61,7 @@ def main() -> None:
         action="store_true",
         help="Allow the chat to use the explicitly configured OPENROUTER_API_KEY",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.with_openrouter and not os.environ.get("OPENROUTER_API_KEY"):
         parser.error("--with-openrouter requires OPENROUTER_API_KEY")
     if args.scale_pages is not None and not 251 <= args.scale_pages <= 2_000:
@@ -73,6 +104,7 @@ def main() -> None:
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, stop)
+    exit_code = 0
     try:
         children.append(
             subprocess.Popen(
@@ -112,22 +144,14 @@ def main() -> None:
             "Ctrl+C stops both processes.",
             flush=True,
         )
-        while all(child.poll() is None for child in children):
-            time.sleep(0.25)
+        exit_code = _wait_for_children(children)
+        print("Managed wiki demo stopped because a service exited unexpectedly.", file=sys.stderr)
     except KeyboardInterrupt:
         pass
     finally:
-        for index, child in enumerate(children):
-            if index == 1:
-                os.killpg(child.pid, signal.SIGTERM)
-            else:
-                child.terminate()
-        for child in children:
-            try:
-                child.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                child.kill()
+        _stop_children(children)
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
