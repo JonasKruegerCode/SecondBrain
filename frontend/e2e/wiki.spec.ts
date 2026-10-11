@@ -97,6 +97,55 @@ test("home opens a wiki page, resolves an alias, and survives back and reload", 
   ).toBeVisible();
 });
 
+test("keyboard users can skip navigation and identify the active view", async ({
+  page,
+}) => {
+  await page.goto("/?overview=1");
+  await expect(
+    page.getByRole("heading", { name: "A growing collection" }),
+  ).toBeVisible();
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  await expect(primary.getByRole("link", { name: "Home" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await primary.getByRole("link", { name: "Search" }).click();
+  await expect(primary.getByRole("link", { name: "Search" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page).toHaveTitle("Search · Secondbrain");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Search view loaded." }),
+  ).toHaveCount(1);
+});
+
+test(
+  "editor rerenders restore useful keyboard focus",
+  async ({ page, request }) => {
+    const fixture = await create(request, "# Keyboard editor\nOriginal.");
+    await page.goto(`/wiki/${fixture.id}`);
+    const edit = page.getByRole("button", { name: "Edit page" });
+    await edit.focus();
+    await page.keyboard.press("Enter");
+    const editor = page.getByRole("textbox", { name: /Markdown/ });
+    await expect(editor).toBeFocused();
+    await editor.fill("# Keyboard editor\nUnsaved keyboard draft.");
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(
+      page.getByRole("button", { name: "Edit page" }),
+    ).toBeFocused();
+  },
+);
+
 test("search finds a unique real page and opens its direct route", async ({
   page,
   request,
@@ -122,7 +171,8 @@ test("editor saves Markdown and reads current delivery status", async ({
     .getByRole("textbox", { name: /Markdown/ })
     .fill("# Editable fixture\nAfter the edit.");
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("status")).toContainText("Saved");
+  await expect(page.locator(".notice")).toContainText("Saved");
+  await expect(page.locator("article h1")).toBeFocused();
   const deliveryStatus = await request.get("/api/wiki/delivery-status");
   const configured = (await deliveryStatus.json()).remote.state !== "not_configured";
   await expect(page.locator(".delivery-notice")).toContainText(
@@ -155,8 +205,9 @@ test("concurrent revision conflict preserves the editor draft", async ({
     fixture.revision,
   );
   await page.getByRole("button", { name: "Save changes" }).click();
-  await expect(page.getByRole("status")).toContainText("Conflict");
+  await expect(page.locator(".notice")).toContainText("Conflict");
   await expect(editor).toHaveValue("# Conflict fixture\nMy unsaved draft.");
+  await expect(editor).toBeFocused();
   const saved = await (
     await request.get(`/api/wiki/pages/${fixture.id}`)
   ).json();

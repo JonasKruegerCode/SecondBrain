@@ -149,6 +149,15 @@ function navigate(path: string) {
   activeUrl = location.pathname + location.search + location.hash;
   void route();
 }
+
+function viewReady(title: string) {
+  document.title = `${title} · Secondbrain`;
+  const status = app.querySelector<HTMLElement>(".route-status");
+  requestAnimationFrame(() => {
+    if (status?.isConnected) status.textContent = `${title} view loaded.`;
+  });
+}
+
 app.addEventListener("click", (e) => {
   const a = (e.target as HTMLElement).closest("a");
   const href = a?.getAttribute("href");
@@ -158,7 +167,11 @@ app.addEventListener("click", (e) => {
   }
 });
 function shell() {
-  app.innerHTML = `<div class="ambient"></div><header><a class="brand" href="/?overview=1"><span>✳</span> secondbrain<small>YOUR KNOWLEDGE, CONNECTED</small></a><nav><a href="/?overview=1" class="${["/search", "/galaxy", "/chat"].includes(location.pathname) ? "" : "active"}">Home</a><a href="/search" class="${location.pathname === "/search" ? "active" : ""}">Search</a><a href="/galaxy" class="${location.pathname === "/galaxy" ? "active" : ""}">Galaxy</a><a href="/chat" class="${location.pathname === "/chat" ? "active" : ""}">Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><div class="pwa-notice" role="status" hidden><span></span><button type="button"></button></div><main></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+  const active = (path: string) => location.pathname === path ? ' class="active" aria-current="page"' : "";
+  const homeActive = !["/search", "/galaxy", "/chat"].includes(location.pathname)
+    ? ` class="active"${location.pathname === "/" ? ' aria-current="page"' : ""}`
+    : "";
+  app.innerHTML = `<a class="skip-link" href="#main-content">Skip to content</a><div class="ambient"></div><header><a class="brand" href="/?overview=1" aria-label="Secondbrain home"><span aria-hidden="true">✳</span> secondbrain<small aria-hidden="true">YOUR KNOWLEDGE, CONNECTED</small></a><nav aria-label="Primary"><a href="/?overview=1"${homeActive}>Home</a><a href="/search"${active("/search")}>Search</a><a href="/galaxy"${active("/galaxy")}>Galaxy</a><a href="/chat"${active("/chat")}>Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><div class="pwa-notice" role="status" hidden><span></span><button type="button"></button></div><p class="route-status sr-only" role="status" aria-live="polite"></p><main id="main-content" tabindex="-1"></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
   renderPwaState();
 }
 
@@ -255,12 +268,14 @@ async function route() {
   try {
     if (location.pathname === "/chat") {
       cleanupView = renderChat(main, api);
+      viewReady("Chat");
       return;
     }
     if (location.pathname === "/galaxy") {
       const graph: Graph = await api("/graph");
       if (run !== generation) return;
       cleanupView = renderGalaxy(main, graph);
+      viewReady("Galaxy");
       return;
     }
     if (location.pathname === "/resolve") {
@@ -276,6 +291,7 @@ async function route() {
         void route();
       } else {
         main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
+        viewReady(result.status === "ambiguous" ? "Choose a page" : "Missing page");
       }
       return;
     }
@@ -304,6 +320,7 @@ async function route() {
         void search();
       };
       if (input.value) void search();
+      viewReady("Search");
       return;
     }
     if (location.pathname.startsWith("/wiki/")) {
@@ -315,6 +332,7 @@ async function route() {
       page = loaded;
       renderPage();
       focusFragment();
+      viewReady(loaded.title);
       return;
     }
     const { pages } = await api("/pages");
@@ -337,15 +355,17 @@ async function route() {
       return;
     }
     main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
+    viewReady("Home");
   } catch (e) {
     if (run !== generation) return;
     main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${(e as any).status === 404 ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc((e as Error).message)}</p><a href="/?overview=1" class="primary">Back to home →</a></section>`;
+    viewReady((e as any).status === 404 ? "Missing page" : "Workspace unavailable");
   }
 }
-function renderPage() {
+function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   if (!page) return;
   const main = app.querySelector("main")!;
-  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1>${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
   if (!editing) {
     const prose = main.querySelector(".prose")!;
     prose.append(markdown(articleMarkdown(page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
@@ -397,7 +417,7 @@ function renderPage() {
     } catch {
       notice = "Your browser could not remember this preference.";
     }
-    renderPage();
+    renderPage("start");
   });
   main.querySelector("#edit")!.addEventListener("click", () => {
     if (saving) return;
@@ -413,7 +433,7 @@ function renderPage() {
       requestId = crypto.randomUUID();
     }
     notice = "";
-    renderPage();
+    renderPage(editing ? "editor" : "edit");
   });
   if (editing) {
     main.querySelector("textarea")!.addEventListener("input", (e) => {
@@ -421,6 +441,15 @@ function renderPage() {
       requestId = crypto.randomUUID();
     });
     main.querySelector("#save")!.addEventListener("click", () => void save());
+  }
+  const targets = {
+    editor: "#editor",
+    edit: "#edit",
+    start: "#start",
+    heading: "article h1",
+  } as const;
+  if (focusTarget && !(focusTarget === "editor" && saving)) {
+    main.querySelector<HTMLElement>(targets[focusTarget])?.focus();
   }
 }
 async function refreshDelivery(run: number, token: number, attempt = 0) {
@@ -478,7 +507,7 @@ async function save() {
         : (e as Error).message + " Your draft is preserved. Try saving again.";
   } finally {
     saving = false;
-    renderPage();
+    renderPage(editing ? "editor" : "heading");
   }
 }
 window.addEventListener("popstate", () => {
