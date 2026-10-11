@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import base64
+import contextlib
+import ipaddress
+import itertools
 import json
 import os
 import secrets
 import signal
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import UTC, datetime
@@ -31,6 +35,46 @@ TOOLS = {
     "get_index_status",
     "get_delivery_status",
 }
+DOCKER = ["docker", "--context", "default"]
+CONTAINER_SNAPSHOT = (
+    '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},'
+    '"service":{{json (index .Config.Labels "com.docker.compose.service")}},'
+    '"status":{{json .State.Status}},"running":{{json .State.Running}},'
+    '"exit_code":{{json .State.ExitCode}},"restart_count":{{json .RestartCount}},'
+    '"started_at":{{json .State.StartedAt}},'
+    '"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},'
+    '"networks":{{json .NetworkSettings.Networks}}}'
+)
+NETWORK_SNAPSHOT = (
+    '{"id":{{json .Id}},"project":{{json (index .Labels "com.docker.compose.project")}},'
+    '"driver":{{json .Driver}},"ipam":{{json .IPAM.Config}},"containers":{{json .Containers}}}'
+)
+
+
+def replacement_ip(network: dict[str, Any], old_ip: str) -> str:
+    """Choose a free address from Docker's actual allocation pool, never a fixed subnet."""
+    occupied = {
+        ipaddress.ip_interface(c["IPv4Address"]).ip
+        for c in network["containers"].values()
+        if c.get("IPv4Address")
+    }
+    occupied.add(ipaddress.ip_address(old_ip))
+    for pool in network["ipam"]:
+        subnet = ipaddress.ip_network(pool.get("IPRange") or pool["Subnet"])
+        if subnet.version != 4 or ipaddress.ip_address(
+            old_ip
+        ) not in ipaddress.ip_network(pool["Subnet"]):
+            continue
+        for key in ("Gateway",):
+            if pool.get(key):
+                occupied.add(ipaddress.ip_address(pool[key]))
+        occupied.update(
+            ipaddress.ip_address(v) for v in pool.get("AuxiliaryAddresses", {}).values()
+        )
+        for address in itertools.islice(subnet.hosts(), 65536):
+            if address not in occupied:
+                return str(address)
+    raise RuntimeError("no safe free IPv4 address in owned network")
 
 
 def isolated_config(
@@ -61,7 +105,9 @@ def isolated_config(
                 **(
                     {
                         "SECOND_BRAIN_WIKI_API_KEY": key,
-                        "SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS": "localhost,localhost:*,127.0.0.1,127.0.0.1:*",
+                        "SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS": (
+                            "localhost,localhost:*,127.0.0.1,127.0.0.1:*"
+                        ),
                         "SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS": "http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*,https://127.0.0.1:*",
                     }
                     if name == "mcp"
@@ -168,13 +214,21 @@ class Run:
 
     def wait(self, url: str, timeout: int = 90) -> None:
         deadline = time.monotonic() + timeout
+        last_failure = "no attempt"
         while time.monotonic() < deadline:
             try:
                 self.http(url)
                 return
-            except (OSError, URLError, RuntimeError):
+            except (OSError, URLError, RuntimeError) as exc:
+                last_failure = type(exc).__name__
+                if isinstance(exc, RuntimeError) and str(exc).startswith(
+                    "HTTP status "
+                ):
+                    last_failure = str(exc)
                 time.sleep(0.5)
-        raise RuntimeError("container endpoint readiness timed out")
+        raise RuntimeError(
+            f"container endpoint readiness timed out; last failure: {last_failure}"
+        )
 
     def rpc(self, url: str, method: str, params: dict[str, Any] | None = None) -> Any:
         data = self.data(
@@ -211,6 +265,175 @@ class Run:
         if not address.startswith("127.0.0.1:") or not address[10:].isdigit():
             raise RuntimeError("expected a dynamic loopback port")
         return ("https://" if target == 443 else "http://") + address
+
+    def container(self, compose: list[str], service: str) -> dict[str, Any]:
+        container_id = self.command(
+            [*compose, "ps", "-a", "-q", service], record_output=False, timeout=10
+        ).strip()
+        if not container_id or len(container_id.splitlines()) != 1:
+            raise RuntimeError("expected one acceptance container")
+        snapshot: dict[str, Any] = json.loads(
+            self.command(
+                [*DOCKER, "inspect", "--format", CONTAINER_SNAPSHOT, container_id],
+                record_output=False,
+                timeout=10,
+            )
+        )
+        return snapshot
+
+    def diagnostics(self, compose: list[str], phase: str = "failure") -> None:
+        """Best effort allowlisted state only; never inspect environment or health output."""
+        snapshot: dict[str, Any] = {
+            "phase": phase,
+            "gates_completed": list(self.steps),
+            "containers": {},
+        }
+        for service in ("backend", "mcp", "frontend", "edge"):
+            try:
+                snapshot["containers"][service] = self.container(compose, service)
+            except Exception as exc:
+                snapshot["containers"][service] = {
+                    "diagnostic_error": type(exc).__name__
+                }
+        try:
+            with (self.artifact / "restart-diagnostics.jsonl").open(
+                "a", encoding="utf-8"
+            ) as output:
+                output.write(
+                    json.dumps(snapshot).replace(self.key, "[synthetic-key-redacted]")
+                    + "\n"
+                )
+        except OSError:
+            pass
+
+    def backend_health(self, compose: list[str]) -> None:
+        self.command(
+            [
+                *compose,
+                "exec",
+                "-T",
+                "backend",
+                "python",
+                "-c",
+                "import urllib.request; "
+                "urllib.request.urlopen('http://127.0.0.1:8000/api/wiki/health', "
+                "timeout=10).read()",
+            ],
+            timeout=20,
+        )
+
+    def exercise_dns_churn(
+        self,
+        compose: list[str],
+        base: str,
+        page: dict[str, Any],
+        edit: dict[str, Any],
+        history: dict[str, Any],
+    ) -> None:
+        backend, frontend = (
+            self.container(compose, "backend"),
+            self.container(compose, "frontend"),
+        )
+        project = compose[compose.index("-p") + 1]
+        if not project.startswith("sb-acceptance-") or any(
+            c["project"] != project or c["service"] != service
+            for c, service in ((backend, "backend"), (frontend, "frontend"))
+        ):
+            raise RuntimeError("DNS churn requires owned acceptance containers")
+        shared = set(backend["networks"]) & set(frontend["networks"])
+        if len(shared) != 1 or len(backend["networks"]) != 1:
+            raise RuntimeError("DNS churn requires one shared isolated network")
+        name = shared.pop()
+        network = json.loads(
+            self.command(
+                [*DOCKER, "network", "inspect", "--format", NETWORK_SNAPSHOT, name],
+                record_output=False,
+            )
+        )
+        if network["project"] != project or network["driver"] != "bridge":
+            raise RuntimeError("DNS churn requires owned bridge network")
+        # Every endpoint must belong to this disposable project before modifying it.
+        for container_id in network["containers"]:
+            member = json.loads(
+                self.command(
+                    [*DOCKER, "inspect", "--format", CONTAINER_SNAPSHOT, container_id],
+                    record_output=False,
+                )
+            )
+            if member["project"] != project:
+                raise RuntimeError("foreign endpoint in acceptance network")
+        old_ip = backend["networks"][name]["IPAddress"]
+        address = replacement_ip(network, old_ip)
+        self.backend_health(compose)
+        self.steps.append("dns-churn-backend-healthy-before")
+        self.diagnostics(compose, "dns-churn-before")
+        self.command([*DOCKER, "network", "disconnect", name, backend["id"]])
+        self.command(
+            [
+                *DOCKER,
+                "network",
+                "connect",
+                "--ip",
+                address,
+                "--alias",
+                "backend",
+                name,
+                backend["id"],
+            ]
+        )
+        current = self.container(compose, "backend")
+        self.check(
+            "dns-churn-backend-ip-changed",
+            current["id"] == backend["id"]
+            and current["networks"][name]["IPAddress"] == address
+            and address != old_ip,
+        )
+        self.backend_health(compose)
+        self.steps.append("dns-churn-backend-healthy-after")
+        self.diagnostics(compose, "dns-churn-after")
+        self.wait(base + "/api/wiki/health")
+        self.check(
+            "dns-churn-api-health",
+            self.data(base + "/api/wiki/health")["profile"] == "managed-wiki",
+        )
+        page_url = base + "/api/wiki/pages/stack-fixture"
+        receipt = self.data(
+            page_url, body={key: value for key, value in edit.items() if key != "id"}
+        )
+        self.check("dns-churn-save-retry", receipt["revision"] == page["revision"])
+        self.data(
+            page_url,
+            body={
+                key: value
+                for key, value in {**edit, "request_id": "dns-churn-stale"}.items()
+                if key != "id"
+            },
+            expected=409,
+        )
+        self.steps.append("dns-churn-stale-write-conflict")
+        self.check("dns-churn-read", self.data(page_url) == page)
+        self.check(
+            "dns-churn-encoded-path",
+            self.data(base + "/api/wiki/pages/%73tack-fixture") == page,
+        )
+        self.check("dns-churn-history", self.data(page_url + "/history") == history)
+        search = self.data(base + "/api/wiki/search?q=Stack%20fixture&mode=lexical")
+        self.check(
+            "dns-churn-query",
+            any(item["id"] == "stack-fixture" for item in search["results"]),
+        )
+        self.data(
+            base + "/api/wiki/search?q=Stack%20fixture&mode=invalid", expected=400
+        )
+        self.steps.append("dns-churn-invalid-query-mode")
+        after = self.container(compose, "frontend")
+        self.check(
+            "dns-churn-frontend-not-restarted",
+            all(
+                after[key] == frontend[key]
+                for key in ("id", "started_at", "restart_count")
+            ),
+        )
 
     def exercise_proxy(self, compose: list[str], temp: Path) -> None:
         base = self.port(compose, "edge", 443)
@@ -482,6 +705,7 @@ class Run:
             "restart-retry-receipt",
             retry["structuredContent"]["revision"] == page["revision"],
         )
+        self.exercise_dns_churn(compose, base, page, edit, history)
         return base, edit, history
 
 
@@ -694,13 +918,17 @@ def main() -> int:
                     retry["structuredContent"]["revision"] == page["revision"],
                 )
                 result["status"] = "passed"
+            except BaseException:
+                for ctx in run.projects:
+                    run.diagnostics(ctx)
+                raise
             finally:
+                failed = sys.exc_info()[0] is not None
                 clean = True
                 for ctx in reversed(run.projects):
-                    try:
+                    # Log collection must never prevent resource cleanup.
+                    with contextlib.suppress(OSError, RuntimeError, subprocess.TimeoutExpired):
                         run.command([*ctx, "logs", "--no-color"], timeout=30)
-                    except (OSError, RuntimeError, subprocess.TimeoutExpired):
-                        pass  # Log collection must never prevent resource cleanup.
                     try:
                         run.command(
                             [*ctx, "down", "--volumes", "--remove-orphans"], timeout=90
@@ -708,7 +936,7 @@ def main() -> int:
                     except (OSError, RuntimeError, subprocess.TimeoutExpired):
                         clean = False
                 result["cleanup_ok"] = clean
-                if not clean:
+                if not clean and not failed:
                     raise RuntimeError("isolated project cleanup failed")
     except (
         OSError,

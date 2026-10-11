@@ -43,6 +43,7 @@ jobs:
           path: |
             .demo/stack-acceptance/*/result.json
             .demo/stack-acceptance/*/browser-proxy.json
+            .demo/stack-acceptance/*/restart-diagnostics.jsonl
             .demo/stack-acceptance/*/https-home-*.png
             .demo/stack-acceptance/*/*.log
           if-no-files-found: warn

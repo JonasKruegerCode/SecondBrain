@@ -70,6 +70,7 @@ Docker images or nginx profile work.
 | Managed REST | Explicit template seed/retry, private-response cache headers, revisioned save/retry and stale-write conflict |
 | HTTP MCP | Bearer denial, initialize, exact tool inventory, guidance resource and a write visible through REST |
 | Shared vault | Graph links, history, backend/MCP restart persistence and the original write receipt |
+| Proxy recovery | Force a different backend address on the owned disposable network; require recovery without restarting nginx, preserved escaped paths/query parameters, revision conflicts and write retries |
 | Recovery | Backup through the image CLI, restore into an independent new volume, matching page/history/receipt and refusal to reseed changed content |
 
 The default local runner uses HTTP/TLS assertions against the built frontend.
@@ -77,6 +78,15 @@ Keep the separate Playwright acceptance rehearsal for the full editor/navigation
 suite. TLS resource/header delivery
 does not prove browser service-worker registration or installation behind auth.
 The result distinguishes `synthetic_https_auth` from `production_https: false`.
+
+Compose service names remain stable while their IP addresses can change across
+restarts. The built frontend and disposable TLS fixture use Docker's embedded
+DNS resolver with a five-second cache, rather than keeping an address resolved
+at nginx startup. The proxy target has no URI suffix, preserving the original
+API path and query. See [Docker networking](https://docs.docker.com/compose/how-tos/networking/)
+and [nginx proxy_pass](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass).
+The address-change gate validates this recovery boundary; it cannot by itself
+establish the cause of an earlier intermittent restart failure.
 
 CI additionally launches Chromium against the built, authenticated HTTPS
 frontend. It checks Home at desktop/narrow widths, a real editor save/reload,

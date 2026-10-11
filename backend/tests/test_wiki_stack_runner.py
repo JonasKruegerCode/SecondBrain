@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import runpy
 from copy import deepcopy
 from pathlib import Path
@@ -101,3 +102,105 @@ def test_proxy_is_added_only_after_validation_and_has_no_data_or_credentials() -
     # Arbitrary extra proxy services in an inherited configuration remain refused.
     with pytest.raises(RuntimeError):
         runner["isolated_config"](isolated, "synthetic", "synthetic-secret")
+
+
+def test_churn_address_uses_actual_pool_and_excludes_reserved_endpoints() -> None:
+    network: dict[str, Any] = {
+        "ipam": [
+            {
+                "Subnet": "10.91.0.0/29",
+                "Gateway": "10.91.0.1",
+                "AuxiliaryAddresses": {"reserved": "10.91.0.3"},
+            }
+        ],
+        "containers": {"frontend": {"IPv4Address": "10.91.0.4/29"}},
+    }
+    assert runner["replacement_ip"](network, "10.91.0.2") == "10.91.0.5"
+    network["ipam"][0]["IPRange"] = "10.91.0.4/30"
+    assert runner["replacement_ip"](network, "10.91.0.5") == "10.91.0.6"
+    network["containers"]["backend"] = {"IPv4Address": "10.91.0.6/29"}
+    with pytest.raises(RuntimeError, match="no safe free"):
+        runner["replacement_ip"](network, "10.91.0.5")
+
+
+def test_failure_diagnostics_are_allowlisted_and_best_effort(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic-secret")
+    commands: list[tuple[list[str], dict[str, Any]]] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        commands.append((args, kwargs))
+        if "ps" in args:
+            return "container-id"
+        assert args[-2] == runner["CONTAINER_SNAPSHOT"]
+        return json.dumps({"status": "running", "health": "unhealthy", "networks": {}})
+
+    monkeypatch.setattr(run, "command", command)
+    run.diagnostics(["docker", "compose"])
+    output = json.loads((tmp_path / "restart-diagnostics.jsonl").read_text())
+    assert output["containers"]["backend"]["health"] == "unhealthy"
+    assert all(kwargs["record_output"] is False for _, kwargs in commands)
+    assert all(kwargs["timeout"] == 10 for _, kwargs in commands)
+    assert ".Config.Env" not in runner["CONTAINER_SNAPSHOT"]
+    assert ".State.Health.Log" not in runner["CONTAINER_SNAPSHOT"]
+
+    def failed(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("private diagnostic failure")
+
+    monkeypatch.setattr(run, "container", failed)
+    run.diagnostics([])
+    assert "private diagnostic failure" not in (tmp_path / "restart-diagnostics.jsonl").read_text()
+
+
+@pytest.mark.parametrize("foreign", ["container", "network", "endpoint"])
+def test_churn_refuses_foreign_ownership_before_mutating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreign: str
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    project = "sb-acceptance-test"
+
+    def container(compose: list[str], service: str) -> dict[str, Any]:
+        return {
+            "id": service,
+            "project": "production" if foreign == "container" else project,
+            "service": service,
+            "networks": {"owned": {"IPAddress": "10.91.0.2"}},
+        }
+
+    monkeypatch.setattr(run, "container", container)
+    commands: list[list[str]] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        commands.append(args)
+        if "network" in args:
+            return json.dumps(
+                {
+                    "project": "production" if foreign == "network" else project,
+                    "driver": "bridge",
+                    "containers": {"member": {}},
+                    "ipam": [],
+                }
+            )
+        return json.dumps({"project": "production"})
+
+    monkeypatch.setattr(run, "command", command)
+    with pytest.raises(RuntimeError):
+        run.exercise_dns_churn(["docker", "compose", "-p", project], "http://localhost", {}, {}, {})
+    assert not any("disconnect" in args or "connect" in args for args in commands)
+
+
+def test_wait_preserves_safe_last_http_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    clock = iter([0, 0, 2])
+    monkeypatch.setattr(runner["time"], "monotonic", lambda: next(clock))
+    monkeypatch.setattr(runner["time"], "sleep", lambda _: None)
+
+    def http(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("HTTP status 502, expected 200")
+
+    monkeypatch.setattr(run, "http", http)
+    with pytest.raises(RuntimeError, match="last failure: HTTP status 502, expected 200"):
+        run.wait("http://private.invalid/secret", timeout=1)
