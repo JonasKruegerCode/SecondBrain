@@ -19,13 +19,16 @@ SECOND_BRAIN_RUN_INDEX_INTEGRATION=1 poetry run pytest tests/integration/test_ma
 ```
 
 The explicit opt-in flag is required for this integration module. Without it,
-the module is skipped; a skipped run is not acceptance evidence. Testcontainers
-uses the existing `neo4j_container` (`neo4j:5`) and `qdrant_container`
-(`qdrant/qdrant:latest`) fixtures and cleans up their disposable containers.
-These image tags can change independently of the locked Python dependencies;
-the JUnit suite records their actual image IDs and repository digests. Inspect
-those identities when comparing runs. Do not point this gate
-at a private vault or production services.
+the module is skipped; a skipped run is not acceptance evidence. This module
+owns disposable Testcontainers fixtures pinned to the exact server images
+exercised on 2026-10-11, independent of the legacy integration fixtures:
+
+- Neo4j: `neo4j@sha256:c7d25c0eeebfe125718d58b72ed5d663c85d0479047733845eb2237c67ce8069`
+- Qdrant: `qdrant/qdrant@sha256:b7b0444c4c351c970b98e90a6f89c2ee4287c65b44e52b4cb503fa5b2aa927ad`
+
+Testcontainers cleans up the disposable containers. The JUnit suite records
+actual image IDs and repository digests; compare these when changing the pins.
+Do not point this gate at a private vault or production services.
 
 ## Evidence and CI
 

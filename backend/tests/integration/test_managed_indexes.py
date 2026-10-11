@@ -14,6 +14,9 @@ from neo4j.exceptions import ConstraintError
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from starlette.testclient import TestClient
+from testcontainers.community.neo4j import Neo4jContainer
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from second_brain.wiki.api import create_app
 from second_brain.wiki.index_adapters import Neo4jSnapshotAdapter, QdrantSnapshotAdapter
@@ -29,6 +32,23 @@ pytestmark = [
         reason="Explicit disposable database acceptance is required",
     ),
 ]
+
+# Exact server images exercised by the managed-index CI rehearsal on 2026-10-11.
+NEO4J_IMAGE = "neo4j@sha256:c7d25c0eeebfe125718d58b72ed5d663c85d0479047733845eb2237c67ce8069"
+QDRANT_IMAGE = "qdrant/qdrant@sha256:b7b0444c4c351c970b98e90a6f89c2ee4287c65b44e52b4cb503fa5b2aa927ad"
+
+
+@pytest.fixture(scope="session")
+def neo4j_container() -> Iterator[Any]:
+    with Neo4jContainer(NEO4J_IMAGE, username="neo4j", password="password") as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def qdrant_container() -> Iterator[Any]:
+    with DockerContainer(QDRANT_IMAGE).with_exposed_ports(6333) as container:
+        container.waiting_for(LogMessageWaitStrategy("Qdrant HTTP listening on"))
+        yield container
 
 
 class FixtureEmbedder:
