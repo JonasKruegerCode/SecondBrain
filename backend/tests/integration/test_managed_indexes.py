@@ -14,9 +14,9 @@ from neo4j.exceptions import ConstraintError
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from starlette.testclient import TestClient
-from testcontainers.community.neo4j import Neo4jContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
+from testcontainers.neo4j import Neo4jContainer
 
 from second_brain.wiki.api import create_app
 from second_brain.wiki.index_adapters import Neo4jSnapshotAdapter, QdrantSnapshotAdapter
