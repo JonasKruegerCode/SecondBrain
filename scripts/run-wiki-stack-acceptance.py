@@ -578,6 +578,23 @@ def main() -> int:
                 base, edit, history = run.exercise(compose)
                 run.exercise_proxy(compose, temp)
                 result["synthetic_https_auth"] = True
+                if os.environ.get("SECOND_BRAIN_STACK_BROWSER") == "1":
+                    browser = json.loads(
+                        run.command(
+                            [
+                                "node",
+                                str(ROOT / "frontend/e2e/stack-proxy.mjs"),
+                                run.port(compose, "edge", 443),
+                                str(temp / "fixture-cert.pem"),
+                                str(artifact),
+                            ],
+                            timeout=90,
+                        )
+                    )
+                    run.check(
+                        "authenticated-built-browser", browser["status"] == "passed"
+                    )
+                    result["browser_proxy_gates"] = browser["gates"]
                 page = run.data(base + "/api/wiki/pages/stack-fixture")
                 run.command([*compose, *seed], expected=1)
                 run.check(

@@ -18,7 +18,7 @@ and does not publish container images.
 An additional disposable nginx fixture terminates TLS and applies Basic
 authentication to the wiki, assets and API. Its certificate is generated on
 each start, trusted explicitly by the test client, and checked for its loopback
-hostname. Certificate verification is never disabled. The fixture's public
+hostname. The Python client's certificate verification is never disabled. The fixture's public
 `fixture` / `fixture-password` credentials are synthetic and must never be used
 for a real instance. The proxy preserves the public Host including the dynamic
 port so same-origin writes traverse both proxy layers correctly.
@@ -72,11 +72,22 @@ Docker images or nginx profile work.
 | Shared vault | Graph links, history, backend/MCP restart persistence and the original write receipt |
 | Recovery | Backup through the image CLI, restore into an independent new volume, matching page/history/receipt and refusal to reseed changed content |
 
-The nginx checks are HTTP/TLS assertions against the built frontend. This runner
-does not launch a browser; keep the separate Playwright acceptance rehearsal
-for interactive editor and navigation behavior. TLS resource/header delivery
+The default local runner uses HTTP/TLS assertions against the built frontend.
+Keep the separate Playwright acceptance rehearsal for the full editor/navigation
+suite. TLS resource/header delivery
 does not prove browser service-worker registration or installation behind auth.
 The result distinguishes `synthetic_https_auth` from `production_https: false`.
+
+CI additionally launches Chromium against the built, authenticated HTTPS
+frontend. It checks Home at desktop/narrow widths, a real editor save/reload,
+browser manifest parsing, secure-context worker registration and empty private
+caches. It records six structural browser gates and two fictional screenshots.
+The browser trusts only the disposable certificate's SPKI; the Python HTTP client
+separately verifies the certificate and hostname. This is browser emulation,
+not a production CA configuration or physical installation. To include it locally,
+prepare frontend dependencies and Chromium (`npm ci` and `npx playwright install
+--with-deps chromium` in `frontend`), then run
+`SECOND_BRAIN_STACK_BROWSER=1 make acceptance-stack`.
 
 A passing synthetic stack run still does not establish hosted model or index
 provider behavior, production Git authentication and delivery, production HTTPS

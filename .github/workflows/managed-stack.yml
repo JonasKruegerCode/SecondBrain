@@ -18,7 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare browser for the built HTTPS/auth fixture
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       - name: Run disposable Docker stack acceptance
+        env:
+          SECOND_BRAIN_STACK_BROWSER: '1'
         run: python3 scripts/run-wiki-stack-acceptance.py
 
       # The runner uses only synthetic data and writes credential-free evidence.
@@ -30,6 +42,8 @@ jobs:
           name: managed-stack-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .demo/stack-acceptance/*/result.json
+            .demo/stack-acceptance/*/browser-proxy.json
+            .demo/stack-acceptance/*/https-home-*.png
             .demo/stack-acceptance/*/*.log
           if-no-files-found: warn
           retention-days: 7
