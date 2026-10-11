@@ -115,7 +115,9 @@ neighbors. There is no save, delete, memory, or arbitrary MCP tool. Tool argumen
 message count/size, rounds, calls, output, runtime, and response body size are
 bounded. Page results are model content rather than instructions. Provider errors,
 empty answers, timeouts, unavailable indexes, and exhausted limits become clean
-API failures without exposing credentials or raw provider errors.
+API failures without exposing credentials or raw provider errors. Oversized page
+reads keep a valid JSON envelope and trim only the Markdown field instead of
+cutting through serialized tool output.
 
 The response separates the answer, short observable activity labels, and exact
 sources for pages that were actually read. Search hits and graph neighbors remain
@@ -307,8 +309,9 @@ delayed; the remaining content and mutations use real services.
 The iterative OpenRouter function-calling loop now uses the same managed store
 and optional index coordinator as REST/MCP. Backend regressions drive search and
 page reads through the real Git-backed services, verify multi-round tool messages
-and source upgrades, reject an attempted write tool, preserve page content, and
-cover origin/payload/unconfigured-provider failures. A browser regression checks
+and source upgrades, keep long-page tool JSON valid within the context cap,
+reject an attempted write tool, preserve page content, and cover
+origin/payload/provider/step-limit failures. A browser regression checks
 multi-turn payloads, local persistence/deletion, source links, and 390px overflow.
 Its model response is explicitly intercepted synthetic data; no demo fixture or
 runtime path contains a fake answer. Desktop 1440px and mobile 390px screenshots

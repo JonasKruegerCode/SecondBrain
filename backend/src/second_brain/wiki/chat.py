@@ -17,6 +17,38 @@ MAX_ROUNDS = 5
 MAX_TOOL_RESULT_CHARS = 8_000
 
 
+def _bounded_tool_json(result: dict[str, Any]) -> str:
+    """Serialize a tool result without ever cutting through its JSON syntax."""
+    encoded = json.dumps(result, ensure_ascii=False)
+    if len(encoded) <= MAX_TOOL_RESULT_CHARS:
+        return encoded
+
+    markdown = result.get("markdown")
+    if isinstance(markdown, str):
+        bounded = {**result, "markdown": "", "truncated": True}
+        low, high = 0, len(markdown)
+        while low <= high:
+            middle = (low + high) // 2
+            candidate = json.dumps(
+                {**bounded, "markdown": markdown[:middle]}, ensure_ascii=False
+            )
+            if len(candidate) <= MAX_TOOL_RESULT_CHARS:
+                encoded = candidate
+                low = middle + 1
+            else:
+                high = middle - 1
+        return encoded
+
+    return json.dumps(
+        {
+            "error": "tool_result_too_large",
+            "message": "The wiki result exceeded the bounded chat context.",
+            "truncated": True,
+        },
+        ensure_ascii=False,
+    )
+
+
 class ChatProvider(Protocol):
     async def tool_chat(
         self,
@@ -179,7 +211,7 @@ class WikiChat:
                     {
                         "role": "tool",
                         "tool_call_id": call_id if isinstance(call_id, str) else f"call-{calls}",
-                        "content": json.dumps(result, ensure_ascii=False)[:MAX_TOOL_RESULT_CHARS],
+                        "content": _bounded_tool_json(result),
                     }
                 )
         raise WikiError("chat_limit", "The chat reached its reasoning-step limit.")

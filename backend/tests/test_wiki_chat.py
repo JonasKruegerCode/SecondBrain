@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,7 @@ from starlette.testclient import TestClient
 from second_brain.core.config import settings
 from second_brain.llm.providers.openrouter.client import OpenRouterClient
 from second_brain.wiki.api import create_app
-from second_brain.wiki.chat import WikiChat
+from second_brain.wiki.chat import MAX_ROUNDS, MAX_TOOL_RESULT_CHARS, WikiChat
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiStore
 
@@ -111,6 +112,85 @@ def test_chat_does_not_cite_unread_search_hits(tmp_path: Path) -> None:
     assert result["sources"] == []
     assert result["activity"] == ["Searched the wiki for “harbor”."]
     assert "harbor-log" in provider.requests[-1][-1]["content"]
+
+
+def test_chat_keeps_truncated_page_tool_result_valid_json(tmp_path: Path) -> None:
+    provider = ScriptedProvider(
+        [
+            {"content": None, "tool_calls": [call("read_page", '{"page_id":"archive"}', "r1")]},
+            {"content": "The archive is too long to quote in full.", "tool_calls": []},
+        ]
+    )
+    markdown = "# Archive\n" + ('A quoted \\\"line\\\".\n' * 1_000)
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        assert (
+            client.post(
+                "/api/wiki/pages/archive",
+                json={
+                    "markdown": markdown,
+                    "base_revision": None,
+                    "request_id": "seed-archive",
+                },
+            ).status_code
+            == 200
+        )
+        response = client.post(
+            "/api/wiki/chat", json={"messages": [{"role": "user", "content": "Read it"}]}
+        )
+
+    assert response.status_code == 200
+    tool_message = provider.requests[-1][-1]
+    assert tool_message["role"] == "tool"
+    assert len(tool_message["content"]) <= MAX_TOOL_RESULT_CHARS
+    result = json.loads(tool_message["content"])
+    assert result["id"] == "archive"
+    assert result["truncated"] is True
+    assert result["markdown"].startswith("# Archive")
+    assert len(result["markdown"]) < len(markdown)
+
+
+def test_chat_returns_clean_reasoning_limit_error(tmp_path: Path) -> None:
+    provider = ScriptedProvider(
+        [
+            {
+                "content": None,
+                "tool_calls": [call("search_wiki", '{"query":"missing"}', f"s{step}")],
+            }
+            for step in range(MAX_ROUNDS)
+        ]
+    )
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        response = client.post(
+            "/api/wiki/chat",
+            json={"messages": [{"role": "user", "content": "Keep looking forever"}]},
+        )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": "chat_limit",
+        "message": "The chat reached its reasoning-step limit.",
+    }
+    assert len(provider.requests) == MAX_ROUNDS
+
+
+def test_chat_maps_provider_failure_to_clean_unavailable_error(tmp_path: Path) -> None:
+    provider = ScriptedProvider([])
+
+    async def unavailable(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("synthetic provider secret must not escape")
+
+    provider.tool_chat = unavailable  # type: ignore[method-assign]
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        response = client.post(
+            "/api/wiki/chat",
+            json={"messages": [{"role": "user", "content": "What is here?"}]},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": "chat_unavailable",
+        "message": "The model provider is temporarily unavailable.",
+    }
 
 
 def test_chat_rejects_write_tools_and_keeps_page_unchanged(tmp_path: Path) -> None:
