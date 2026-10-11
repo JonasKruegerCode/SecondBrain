@@ -76,7 +76,9 @@ def ssh_git(monkeypatch: pytest.MonkeyPatch) -> Iterator[SSHGit]:
         pytest.fail("Install acceptance dependencies: " + ", ".join(missing))
     processes: list[subprocess.Popen[bytes]] = []
     # A short owned pathname also stays below Unix-domain socket length limits.
-    with tempfile.TemporaryDirectory(prefix="wiki-ssh-") as temporary:
+    # StrictModes checks authorized_keys ancestors. Keep the owned directory
+    # beneath the user's home rather than world-writable /tmp.
+    with tempfile.TemporaryDirectory(prefix="wiki-ssh-", dir=Path.home()) as temporary:
         root = Path(temporary)
         try:
             host = root / "host"
@@ -102,7 +104,7 @@ def ssh_git(monkeypatch: pytest.MonkeyPatch) -> Iterator[SSHGit]:
                 "StrictModes yes\nUsePAM no\nPasswordAuthentication no\n"
                 "KbdInteractiveAuthentication no\nPubkeyAuthentication yes\n"
                 "PermitRootLogin prohibit-password\nAllowAgentForwarding no\n"
-                "AllowTcpForwarding no\nX11Forwarding no\nLogLevel ERROR\n",
+                "AllowTcpForwarding no\nX11Forwarding no\nPermitUserRC no\nLogLevel VERBOSE\n",
                 encoding="utf-8",
             )
             agent_socket = root / "agent.sock"
@@ -179,6 +181,7 @@ def ssh_git(monkeypatch: pytest.MonkeyPatch) -> Iterator[SSHGit]:
                         pytest.fail(
                             "Authenticated disposable Git readiness failed: "
                             + probe.stderr.decode()
+                            + (root / "sshd.log").read_text()
                         )
                     time.sleep(0.1)
                 monkeypatch.setenv("SSH_AUTH_SOCK", str(agent_socket))

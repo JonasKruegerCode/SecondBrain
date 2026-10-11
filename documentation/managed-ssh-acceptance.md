@@ -14,7 +14,8 @@ separation environment. Restricted development runtimes may reject agent socket
 creation; that is a failed acceptance attempt, not a skipped successful proof.
 The tests are opt-in and skipped during the ordinary unit suite.
 
-Each case creates a private temporary directory, fresh Ed25519 host/client keys,
+Each case creates an owned private temporary directory beneath the current
+user's home (so OpenSSH StrictModes accepts the authorized-key ancestors), fresh Ed25519 host/client keys,
 an owned SSH agent, an SSH server bound only to loopback, and a bare Git target.
 The expected host public key is obtained from the generated fixture directly;
 no network scan or trust-on-first-use is involved. Only the temporary authorized
@@ -32,8 +33,9 @@ The [CI workflow](../.github/workflows/managed-ssh.yml) exercises five cases:
   After deliberate trust/key repair, the same request IDs resume against their
   original reviewed revisions; acknowledged retries preserve their receipts.
 
-CI retains only the synthetic JUnit report for seven days. Keys, agent sockets,
-server logs, environment dumps and vault directories are never uploaded.
+CI retains only the synthetic JUnit report for seven days; readiness failures
+include synthetic transport diagnostics. Key files, agent sockets, complete
+server-log files, environment dumps and vault directories are never uploaded.
 
 This proves the agent and explicit host-trust path against a disposable OpenSSH
 server. It does not prove a private hosted Git provider's deploy-key permissions,
