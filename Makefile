@@ -52,7 +52,7 @@ check:
 	cd backend && poetry run ruff check src/ tests/ benchmark/
 	cd backend && poetry run mypy src/ tests/
 	cd backend && poetry run pytest tests/ --ignore=tests/integration --ignore=tests/test_git_sync.py -q
-	cd frontend && npx tsc --noEmit
+	cd frontend && npm run typecheck
 	cd frontend && npm run build
 
 # Individual targets
