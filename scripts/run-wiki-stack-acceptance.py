@@ -47,6 +47,7 @@ CONTAINER_SNAPSHOT = (
 )
 NETWORK_SNAPSHOT = (
     '{"id":{{json .Id}},"project":{{json (index .Labels "com.docker.compose.project")}},'
+    '"probe_owner":{{json (index .Labels "secondbrain.acceptance.probe-owner")}},'
     '"driver":{{json .Driver}},"ipam":{{json .IPAM.Config}},"containers":{{json .Containers}}}'
 )
 
@@ -157,25 +158,72 @@ class Run:
         self.steps: list[str] = []
         self.projects: list[list[str]] = []
         self.probe_networks: list[str] = []
+        self.probe_owners: dict[str, tuple[str, str]] = {}
+
+    def cleanup_probe_network(self, name: str) -> None:
+        """Remove only an empty network carrying this run's ownership token."""
+        identifier = self.command(
+            [
+                *DOCKER,
+                "network",
+                "ls",
+                "--filter",
+                f"name=^{name}$",
+                "--format",
+                "{{.ID}}",
+            ],
+            record_output=False,
+            timeout=10,
+        ).strip()
+        if identifier:
+            network = json.loads(
+                self.command(
+                    [
+                        *DOCKER,
+                        "network",
+                        "inspect",
+                        "--format",
+                        NETWORK_SNAPSHOT,
+                        identifier,
+                    ],
+                    record_output=False,
+                    timeout=10,
+                )
+            )
+            project, owner = self.probe_owners[name]
+            if (
+                network["project"] != project
+                or network.get("probe_owner") != owner
+                or network["containers"]
+            ):
+                raise RuntimeError("unexpected subnet probe ownership or endpoints")
+            self.command([*DOCKER, "network", "rm", identifier], timeout=10)
+        self.probe_networks.remove(name)
+        del self.probe_owners[name]
 
     def configure_churn_network(self, config: dict[str, Any], project: str) -> None:
         """Let Docker select a free pool, then declare it for explicit IP assignment."""
         if not project.startswith("sb-acceptance-"):
             raise RuntimeError("subnet probe requires an owned acceptance project")
         name = project + "-subnet-probe"
-        self.command(
-            [
-                *DOCKER,
-                "network",
-                "create",
-                "--label",
-                f"com.docker.compose.project={project}",
-                name,
-            ],
-            timeout=10,
-        )
+        owner = uuid4().hex
+        # Register before invoking Docker: a timeout can follow daemon-side creation.
         self.probe_networks.append(name)
+        self.probe_owners[name] = (project, owner)
         try:
+            self.command(
+                [
+                    *DOCKER,
+                    "network",
+                    "create",
+                    "--label",
+                    f"com.docker.compose.project={project}",
+                    "--label",
+                    f"secondbrain.acceptance.probe-owner={owner}",
+                    name,
+                ],
+                timeout=10,
+            )
             network = json.loads(
                 self.command(
                     [
@@ -190,7 +238,11 @@ class Run:
                     timeout=10,
                 )
             )
-            if network["project"] != project or network["containers"]:
+            if (
+                network["project"] != project
+                or network.get("probe_owner") != owner
+                or network["containers"]
+            ):
                 raise RuntimeError("unexpected subnet probe ownership or endpoints")
             pools = [p for p in network["ipam"] if ipaddress.ip_network(p["Subnet"]).version == 4]
             if len(pools) != 1:
@@ -208,9 +260,8 @@ class Run:
             # an existing validation failure instead of replacing it.
             failed = sys.exc_info()[0] is not None
             try:
-                self.command([*DOCKER, "network", "rm", name], timeout=10)
-                self.probe_networks.remove(name)
-            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                self.cleanup_probe_network(name)
+            except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
                 if not failed:
                     raise
 
@@ -527,7 +578,7 @@ class Run:
         self.check("proxy-worker-no-store", "no-store" in headers.get("Cache-Control", ""))
         _, headers = self.http(base + "/api/wiki/pages/home", headers=auth)
         self.check("proxy-private-no-store", headers.get("Cache-Control") == "no-store")
-        payload = {
+        payload: dict[str, Any] = {
             "markdown": "# HTTPS fixture\n\nFictional proxy rehearsal.",
             "base_revision": None,
             "request_id": "https-create",
@@ -667,7 +718,7 @@ class Run:
         _, headers = self.http(base + "/api/wiki/pages")
         self.check("private-no-store", headers.get("Cache-Control") == "no-store")
         self.check("template-pages", len(self.data(base + "/api/wiki/pages")["pages"]) == 12)
-        payload = {
+        payload: dict[str, Any] = {
             "markdown": "# Stack fixture\n\nOnly fictional data. [[home|Home]]",
             "base_revision": None,
             "request_id": "stack-create",
@@ -797,10 +848,10 @@ def main() -> int:
             compose = [*docker, "compose", "-p", project, "-f", str(original_path)]
             run.projects.append(compose)
             try:
-                run.configure_churn_network(isolated, project)
-                original_path.write_text(json.dumps(isolated))
                 run.command([*compose, "build"], timeout=600)
                 run.steps.append("compose-build")
+                run.configure_churn_network(isolated, project)
+                original_path.write_text(json.dumps(isolated))
                 seed = [
                     "run",
                     "--rm",
@@ -942,10 +993,10 @@ def main() -> int:
             finally:
                 failed = sys.exc_info()[0] is not None
                 clean = True
-                for name in run.probe_networks:
+                for name in list(run.probe_networks):
                     try:
-                        run.command([*DOCKER, "network", "rm", name], timeout=10)
-                    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                        run.cleanup_probe_network(name)
+                    except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
                         clean = False
                 for ctx in reversed(run.projects):
                     # Log collection must never prevent resource cleanup.

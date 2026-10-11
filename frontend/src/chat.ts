@@ -123,6 +123,8 @@ export function renderChat(main: Element, api: Api): () => void {
   };
   const render = (focusComposer = false) => {
     const conversation = current();
+    const retryNotice = error || (!busy && conversation.messages[conversation.messages.length - 1]?.role === "user"
+      ? "This question has no saved answer. You can retry it when ready." : "");
     main.innerHTML = `<section class="chat-page" aria-labelledby="chat-title">
       <aside class="chat-history" aria-label="Saved conversations">
         <div class="chat-history-heading"><span>CONVERSATIONS</span><button type="button" data-action="new" ${busy ? "disabled" : ""}>New</button></div>
@@ -135,7 +137,7 @@ export function renderChat(main: Element, api: Api): () => void {
           ${conversation.messages.length ? conversation.messages.map(message => `<article class="chat-message ${message.role}"><div class="chat-role">${message.role === "user" ? "You" : "Wiki assistant"}</div><p>${esc(message.content)}</p>${message.activity?.length ? `<details><summary>${message.activity.length} wiki action${message.activity.length === 1 ? "" : "s"}</summary><ul>${message.activity.map(item => `<li>${esc(item)}</li>`).join("")}</ul></details>` : ""}${message.sources?.length ? `<div class="chat-sources"><span>Sources</span>${message.sources.map(source => `<a href="${pageUrl(source.id)}">${esc(source.title)} <small>${esc(source.evidence)}</small></a>`).join("")}</div>` : ""}</article>`).join("") : `<div class="chat-empty"><span>✳</span><h2>Start with a real question.</h2><p>Try asking where a project stands, then ask a follow-up about one source.</p></div>`}
           ${busy ? `<div class="chat-thinking"><i></i>Searching and reading…</div>` : ""}
         </div>
-        ${error ? `<div class="chat-error" role="alert"><span>${esc(error)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
+        ${retryNotice ? `<div class="chat-error" role="alert"><span>${esc(retryNotice)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
         ${storageUnavailable ? `<div class="chat-storage-notice" role="status">Browser storage is unavailable. New messages stay only in this tab until it is reloaded; previously saved conversations may remain after deletion.</div>` : ""}
         <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy ? "disabled" : ""}></textarea><button class="primary" ${busy ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
       </div>
@@ -144,6 +146,7 @@ export function renderChat(main: Element, api: Api): () => void {
       button.onclick = () => {
         activeId = button.dataset.conversation!;
         error = "";
+        persist(); // Keep the selected conversation when leaving or reloading Chat.
         render(false);
       };
     });

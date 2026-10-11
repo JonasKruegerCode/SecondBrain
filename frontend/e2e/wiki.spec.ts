@@ -674,6 +674,64 @@ test("large synthetic graph opens a usable list without constructing SVG", async
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Scale page 250");
 });
 
+test("demo tour preserves an unanswered real chat question across reload and navigation", async ({ page, request }, testInfo) => {
+  // Use the actual unconfigured API in the isolated demo, without a scripted answer.
+  const before = await (await request.get("/api/wiki/graph")).json();
+  const calls: unknown[] = [];
+  page.on("request", call => {
+    if (new URL(call.url()).pathname === "/api/wiki/chat" && call.method() === "POST")
+      calls.push(call.postDataJSON());
+  });
+  await page.goto("/wiki/home");
+  await page.getByRole("button", { name: "Set as start page" }).click();
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Lantern Bay field atlas", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Mira Quill", exact: true }).click();
+  await expect(page).toHaveURL(/\/wiki\/mira-quill$/);
+  await expect(page.locator("article h1")).toContainText("fictional archivist");
+  await page.getByRole("link", { name: "Galaxy", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Find a page in this snapshot" }).fill("Mira Quill");
+  await page.locator(".galaxy-page").click();
+  await expect(page.locator(".galaxy-selected-heading h2")).toContainText("Mira Quill");
+  await page.getByRole("link", { name: /Open article/ }).click();
+  await expect(page).toHaveURL(/\/wiki\/mira-quill$/);
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  const question = "What does Mira record when a recollection cannot establish a date?";
+  await page.getByLabel("Message").fill(question);
+  const first = page.waitForResponse(response => response.url().endsWith("/api/wiki/chat"));
+  await page.getByRole("button", { name: "Send" }).click();
+  expect((await first).status()).toBe(503);
+  await expect(page.getByRole("alert")).toContainText("not configured");
+  await expect(page.locator(".chat-message.user")).toHaveCount(1);
+  await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(page.locator(".chat-message.user")).toHaveText(/cannot establish a date/);
+  expect(calls).toHaveLength(1); // Restoring a question never starts a paid call.
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await page.locator(".chat-history-list button").filter({ hasText: question.slice(0, 54) }).click();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect(calls).toHaveLength(1);
+  const retry = page.waitForResponse(response => response.url().endsWith("/api/wiki/chat"));
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  expect((await retry).status()).toBe(503);
+  expect(calls).toEqual([calls[0], calls[0]]);
+  await expect(page.locator(".chat-message.user")).toHaveCount(1);
+  await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toContainText("not configured");
+  await page.screenshot({ path: testInfo.outputPath("unanswered-chat-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: testInfo.outputPath("unanswered-chat-mobile.png"), fullPage: true });
+  const after = await (await request.get("/api/wiki/graph")).json();
+  expect(after.revision).toBe(before.revision);
+});
+
 test("read-only chat keeps multi-turn context and conversations in this browser", async ({ page }) => {
   const requests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
   await page.route("**/api/wiki/chat", async route => {

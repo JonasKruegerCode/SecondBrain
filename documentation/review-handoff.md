@@ -105,31 +105,41 @@ does not establish hosted index, deployment or device behavior.
 
 ## Evidence snapshot
 
-On published commit `443819164cd56b9eba11af618be33f8654c943f3`
-(tree `17a701e06d5a64db5200aac3919967bc34779887`, 2026-10-11):
+Verified published implementation baseline `f426c41fdee800cbd580f360eeaf8ba7b551fd14`
+(tree `739f1706be853fd3765061b4741fb0cd51a94416`, 2026-10-11).
+These results identify that exact baseline; for later commits inspect the
+current [draft PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18)
+and its matching CI runs rather than treating older counts as current.
 
-- GitHub Backend run #57 and Frontend run #36 completed successfully.
-- Ruff passed and strict MyPy passed across 84 backend source/test files; 273
-  nonintegrative backend tests passed.
-- TypeScript without emit and the Vite production build passed.
-- the supervised disposable run against the real local API and Vite frontend
-  passed 26/26 Playwright cases in 17.7 seconds against a fresh fictional
-  12-page vault; the complete run took 20.237 seconds and removed its success
-  vault.
-- the added graph regression confirms that a Wikilink rendered inside a nested
-  Markdown list is also present in the same managed graph snapshot, while
-  genuine indented and fenced code examples stay excluded.
-- desktop 1440x1000 Home/Chat, narrow 390x844 Home/Chat and the actual initial
-  mobile Chat viewport were inspected. The latter opened at `scrollY=0` without
-  forcing composer focus. This is emulation, not physical-device evidence.
-- representative small muted text on the light wiki surfaces is guarded at a
-  minimum 4.5:1 contrast ratio by the browser suite.
-- a scripted-provider acceptance exercised two turns, real managed-store reads,
-  source/tool limits and the read-only boundary. It is not a real model-quality
-  result.
-- a fresh merge-tree check against the then-current `origin/main` completed
-  without conflicts. Draft PR #18 remained open, mergeable and deliberately
-  not marked ready for review.
+- All six workflows passed: Backend #82, Frontend #61, Managed stack #24,
+  Managed index #22, Managed SSH #11 and Managed browser #7. Backend Ruff and
+  strict MyPy over 88 source files passed, with 307 tests and 12 opt-in skips
+  (52.21 seconds); the backend image build also passed.
+- [Managed browser #7](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38175845458)
+  passed 35/35 real API/Vite cases (22.5 seconds; 24.501 with services).
+  Downloaded artifact `11715972062` confirms no external model calls and no
+  retained success vault. ZIP SHA256:
+  `3d1f9795f7b799b2d3b3eb90603409ad05bdb23cdb5d0581ae07b6870683e6e7`.
+- [Managed stack #24](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38175845454)
+  passed 72 structural gates plus six Chromium checks in 59.598 seconds.
+  Downloaded artifact `11714744972` confirms a forced backend address change
+  without frontend restart, preserved API read/write/query/history contracts,
+  synthetic HTTPS/password protection and independent-volume restore. Cleanup
+  is confirmed. ZIP SHA256:
+  `5ca2a9e0efd5be3319e455577cf30c24ad904909fdc98eb7755f6aa4e1cd7eae`.
+- Both artifacts expire on 2026-10-18 and identify CI test-merge `b19fb1a`,
+  not a merge to main. Built Home desktop/narrow screenshots were opened and
+  inspected. This is browser emulation and synthetic infrastructure.
+- Browser coverage includes revision conflicts/retries, real link/graph refresh,
+  article reload, nested-list/code rendering boundaries, bounded local chat
+  storage and recovery, and PWA save/update coordination across tabs. Scripted
+  chat transport checks do not establish real-model quality.
+- Real isolated Neo4j/Qdrant with synthetic embeddings and owned loopback
+  OpenSSH/agent delivery remain separately evidenced by their dedicated guides.
+  Hosted configuration, production load and private Git permissions remain open.
+- A read-only merge-tree comparison against `main 1f0cd1e` had no conflicts.
+  The earlier intermittent ordinary restart failure remains unexplained;
+  controlled address-change recovery is independently verified.
 
 ## Known release gates
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import runpy
+import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -216,10 +217,13 @@ def test_churn_subnet_uses_docker_selection_and_removes_probe(
 
     def command(args: list[str], **kwargs: Any) -> str:
         commands.append(args)
+        if "ls" in args:
+            return "probe-id"
         if "inspect" in args:
             return json.dumps(
                 {
                     "project": "production" if foreign else project,
+                    "probe_owner": run.probe_owners[project + "-subnet-probe"][1],
                     "containers": {},
                     "ipam": [{"Subnet": "10.92.0.0/24", "Gateway": "10.92.0.1"}],
                 }
@@ -239,5 +243,80 @@ def test_churn_subnet_uses_docker_selection_and_removes_probe(
         ]
         restored = runner["isolated_config"](data, project + "-restore", "synthetic", restored=True)
         assert "ipam" not in restored["networks"]["default"]
-    assert "rm" in commands[-1]
+    assert any("rm" in command for command in commands) is not foreign
+    assert run.probe_networks == ([project + "-subnet-probe"] if foreign else [])
+
+
+@pytest.mark.parametrize("created", [False, True])
+def test_probe_creation_timeout_is_tracked_and_cleaned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, created: bool
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    project = "sb-acceptance-timeout"
+    removed: list[str] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        if "create" in args:
+            assert run.probe_networks == [project + "-subnet-probe"]
+            raise subprocess.TimeoutExpired(args, 10)
+        if "ls" in args:
+            return "created-id" if created else ""
+        if "inspect" in args:
+            return json.dumps(
+                {
+                    "project": project,
+                    "containers": {},
+                    "probe_owner": run.probe_owners[project + "-subnet-probe"][1],
+                }
+            )
+        removed.append(args[-1])
+        return ""
+
+    monkeypatch.setattr(run, "command", command)
+    with pytest.raises(subprocess.TimeoutExpired):
+        run.configure_churn_network(config(), project)
+    assert removed == (["created-id"] if created else [])
     assert run.probe_networks == []
+
+
+@pytest.mark.parametrize("refusal", ["project", "token", "attached", "removal"])
+def test_probe_cleanup_refuses_foreign_resources_and_retries_owned_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refusal: str
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    project = "sb-acceptance-retry"
+    name = project + "-subnet-probe"
+    attempts: list[str] = []
+    retry = False
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        if "create" in args:
+            raise RuntimeError("primary creation failure")
+        if "ls" in args:
+            return "owned-id"
+        if "inspect" in args:
+            return json.dumps(
+                {
+                    "project": "foreign" if refusal == "project" else project,
+                    "probe_owner": "foreign" if refusal == "token" else run.probe_owners[name][1],
+                    "containers": {"attached": {}} if refusal == "attached" else {},
+                }
+            )
+        attempts.append(args[-1])
+        if not retry:
+            raise RuntimeError("removal failed")
+        return ""
+
+    monkeypatch.setattr(run, "command", command)
+    with pytest.raises(RuntimeError, match="primary creation failure"):
+        run.configure_churn_network(config(), project)
+    assert run.probe_networks == [name]
+    if refusal == "removal":
+        retry = True
+        run.cleanup_probe_network(name)
+        assert attempts == ["owned-id", "owned-id"]
+        assert run.probe_networks == []
+    else:
+        assert attempts == []
+        with pytest.raises(RuntimeError, match="ownership"):
+            run.cleanup_probe_network(name)

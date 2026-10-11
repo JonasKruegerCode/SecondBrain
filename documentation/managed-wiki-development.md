@@ -336,6 +336,15 @@ of that UI contract were inspected. `OPENROUTER_API_KEY` was unavailable in this
 environment, so real provider/model quality, billing behavior, and tool-call
 compatibility are not claimed.
 
+A restored conversation ending in a user question exposes an explicit Retry
+action because no answer is saved. Reloading, selecting a conversation or
+returning from an article does not start a model request automatically. The
+selection is preserved locally, and Retry resends the existing context without
+adding a duplicate question. The demo-tour regression follows Home, an article
+and its galaxy star before checking the actual unconfigured server's 503 response,
+reload, selection and navigation. It checks that wiki content remains unchanged;
+it does not supply or claim a real model answer.
+
 ## Installable PWA evidence
 
 The managed frontend now ships a web-app manifest, safe-zone icons at 192/512 px,

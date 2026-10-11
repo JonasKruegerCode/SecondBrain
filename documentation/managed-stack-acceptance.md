@@ -44,6 +44,13 @@ writes a structural `result.json` and diagnostic logs beneath
 outcomes without page content or credentials. Containers and the disposable
 volume are cleaned up at the end of the run; evidence remains for inspection.
 
+After the image build, a short-lived owned network lets Docker choose a free
+subnet immediately before the disposable Compose network is created. Probe
+creation is tracked before invoking Docker, including ambiguous timeout
+outcomes. Cleanup checks both the project and a per-run ownership label, refuses
+foreign or attached networks, and removes an owned probe by ID. Failed cleanup
+remains tracked for retry and cannot replace the original acceptance failure.
+
 The [managed stack workflow](../.github/workflows/managed-stack.yml) runs for
 pull requests targeting `main` and can also be started with `workflow_dispatch`.
 It runs on Ubuntu with Docker, has read-only repository permission and a
