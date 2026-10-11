@@ -34,8 +34,13 @@ def _shim(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> Managed
 def _running(pid: int) -> bool:
     # A killed child may briefly remain a zombie until its reaper collects it.
     status = Path(f"/proc/{pid}/stat")
-    if status.exists() and status.read_text().split(")", 1)[1].split()[0] == "Z":
-        return False
+    if Path("/proc").is_dir():
+        try:
+            state = status.read_text().split(")", 1)[1].split()[0]
+        except FileNotFoundError:
+            return False  # The reaper may remove the process between observations.
+        if state == "Z":
+            return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
