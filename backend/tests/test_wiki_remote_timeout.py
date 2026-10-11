@@ -37,8 +37,9 @@ def _running(pid: int) -> bool:
     if Path("/proc").is_dir():
         try:
             state = status.read_text().split(")", 1)[1].split()[0]
-        except FileNotFoundError:
-            return False  # The reaper may remove the process between observations.
+        except (FileNotFoundError, ProcessLookupError):
+            # Removal can occur before opening (ENOENT) or during reading (ESRCH).
+            return False
         if state == "Z":
             return False
     try:
