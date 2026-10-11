@@ -35,7 +35,9 @@ pytestmark = [
 
 # Exact server images exercised by the managed-index CI rehearsal on 2026-10-11.
 NEO4J_IMAGE = "neo4j@sha256:c7d25c0eeebfe125718d58b72ed5d663c85d0479047733845eb2237c67ce8069"
-QDRANT_IMAGE = "qdrant/qdrant@sha256:b7b0444c4c351c970b98e90a6f89c2ee4287c65b44e52b4cb503fa5b2aa927ad"
+QDRANT_IMAGE = (
+    "qdrant/qdrant@sha256:b7b0444c4c351c970b98e90a6f89c2ee4287c65b44e52b4cb503fa5b2aa927ad"
+)
 
 
 @pytest.fixture(scope="session")
