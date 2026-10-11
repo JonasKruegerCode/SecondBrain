@@ -61,6 +61,19 @@ Use `python scripts/run-wiki-demo.py --help` for custom vault options. See the
 [development guide](documentation/managed-wiki-development.md) for the complete
 commands and verification boundary.
 
+To rehearse the normal acceptance path in one command, use a fresh disposable
+vault and the real local API/frontend:
+
+```sh
+make acceptance PYTHON=backend/.venv/bin/python
+```
+
+This waits for both services, runs `frontend/e2e/wiki.spec.ts`, stops them even
+on failure, and writes ignored logs plus a small JSON evidence record under
+`.demo/acceptance/`. It disables external model calls and never targets an
+existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
+checks remain separate release gates.
+
 ## Choose a persistent first start
 
 The managed wiki requires an explicit destination and supports empty, fictional

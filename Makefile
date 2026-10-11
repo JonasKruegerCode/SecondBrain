@@ -2,13 +2,17 @@
 PYTHON ?= python3
 
 # Opt-in managed wiki; does not stop or touch production containers/volumes.
-.PHONY: demo demo-scale
+.PHONY: demo demo-scale acceptance
 demo:
 	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-demo.py
 
 # Fresh synthetic 320-page vault for the opt-in real-service scale browser check.
 demo-scale:
 	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-demo.py --scale-pages 320
+
+# Fresh real API + Vite + normal Playwright suite. Never uses a personal vault.
+acceptance:
+	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-acceptance.py
 
 # Prerequisites: poetry install (backend), npm install (frontend), .env in repo root
 

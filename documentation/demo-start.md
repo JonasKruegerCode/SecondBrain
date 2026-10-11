@@ -32,6 +32,28 @@ status instead of reporting a successful demo. Ctrl+C/SIGTERM remains a clean
 operator stop. This makes the command suitable for a supervised rehearsal while
 still keeping it separate from a production deployment.
 
+## Run the disposable acceptance rehearsal
+
+The normal automated demo path can be exercised without coordinating two
+terminals:
+
+```sh
+make acceptance PYTHON=backend/.venv/bin/python
+```
+
+The acceptance runner creates a new vault below `.demo/acceptance/`, starts the
+real API and Vite frontend, waits for both over loopback without inheriting HTTP
+proxy settings, and runs the normal Playwright suite. It always stops the two
+services. A successful run removes the mutated disposable vault and keeps
+`services.log`, `browser.log`, and `result.json`; `--keep-vault` retains the
+vault for inspection. A failed run keeps it automatically for diagnosis.
+
+The JSON record identifies the Git revision, timestamps, browser exit status and
+whether the vault was retained. It contains no page content or credentials. This
+is deterministic regression evidence only: the runner clears inherited
+OpenRouter access and does not replace real model/provider, Compose/HTTPS,
+reverse-proxy/authentication or physical-device acceptance.
+
 The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importing the module does not create a vault. The managed vault's authoritative Markdown lives in local Git commit snapshots in `.wiki.git`, a bare repository inside the selected directory. It is not a folder of loose Markdown files to edit manually. Use the wiki editor or the normal save API so revisions, links, and search reflect the same saved content.
 
 ## Take a short tour
