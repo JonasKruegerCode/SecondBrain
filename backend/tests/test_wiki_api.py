@@ -5,6 +5,48 @@ from starlette.testclient import TestClient
 from second_brain.wiki.api import create_app
 
 
+def test_backlinks_authority_bounds_auth_and_private_cache(tmp_path: Path) -> None:
+    headers = {"Authorization": "Bearer synthetic-test-key"}
+    with TestClient(create_app(tmp_path, "synthetic-test-key")) as client:
+        assert client.get("/api/wiki/pages/target/backlinks").status_code == 401
+        for key, body in {
+            "target": "# Target\n[[outgoing]]",
+            "source": "# Source\n[[Target#Detail|Label]] [[target]]",
+            "outgoing": "# Outgoing\nNo links.",
+        }.items():
+            assert client.post(
+                f"/api/wiki/pages/{key}",
+                json={"markdown": body, "base_revision": None, "request_id": key},
+                headers=headers,
+            ).status_code == 200
+        response = client.get("/api/wiki/pages/target/backlinks", headers=headers)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        result = response.json()
+        assert result["total"] == 1
+        assert result["truncated"] is False
+        assert result["backlinks"][0]["id"] == "source"
+        assert "markdown" not in result["backlinks"][0]
+        target = client.get("/api/wiki/pages/target", headers=headers).json()
+        assert result["target_revision"] == target["revision"]
+        graph = client.get("/api/wiki/graph", headers=headers).json()
+        assert result["revision"] == graph["revision"]
+        for limit in ("bad", "0", "101", "1.5"):
+            failure = client.get(
+                "/api/wiki/pages/target/backlinks", params={"limit": limit}, headers=headers
+            )
+            assert failure.status_code == 400
+            assert failure.json()["error"] == "invalid_payload"
+            assert failure.headers["cache-control"] == "no-store"
+        missing = client.get("/api/wiki/pages/missing/backlinks", headers=headers)
+        assert missing.status_code == 404
+        assert missing.headers["cache-control"] == "no-store"
+        for valid_limit in (1, 100):
+            assert client.get(
+                "/api/wiki/pages/target/backlinks", params={"limit": valid_limit}, headers=headers
+            ).status_code == 200
+
+
 def test_read_write_conflict_and_private_cache_headers(tmp_path: Path) -> None:
     with TestClient(create_app(tmp_path)) as client:
         assert client.get("/api/wiki/pages").json() == {"pages": []}

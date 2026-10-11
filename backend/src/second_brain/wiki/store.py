@@ -331,6 +331,38 @@ class WikiStore:
         result: dict[str, Any] = self.snapshot()["graph"]
         return result
 
+    def backlinks(self, page_id: str, limit: int = 20) -> dict[str, Any]:
+        """Read bounded incoming explicit links from one immutable content snapshot."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise WikiError("invalid_payload", "limit must be an integer between 1 and 100.")
+        snapshot = self.snapshot()
+        pages = {page["id"]: page for page in snapshot["pages"]}
+        if page_id not in pages:
+            raise WikiError("not_found", "The page does not exist.")
+        sources: dict[str, set[str]] = {}
+        for edge in snapshot["graph"]["edges"]:
+            if edge["target"] != page_id or edge["source"] == page_id:
+                continue
+            relations = sources.setdefault(edge["source"], set())
+            if edge.get("rel"):
+                relations.add(edge["rel"])
+        ordered = sorted(sources, key=lambda key: (pages[key]["title"].casefold(), key))
+        return {
+            "revision": snapshot["revision"],
+            "target_revision": pages[page_id]["revision"],
+            "backlinks": [
+                {
+                    key: value
+                    for key, value in pages[source].items()
+                    if key in {"id", "title", "revision", "excerpt"}
+                }
+                | {"relations": sorted(sources[source])}
+                for source in ordered[:limit]
+            ],
+            "total": len(ordered),
+            "truncated": len(ordered) > limit,
+        }
+
     @staticmethod
     def _resolve_target(
         raw_target: str, source: str, ids: set[str], titles: dict[str, set[str]]

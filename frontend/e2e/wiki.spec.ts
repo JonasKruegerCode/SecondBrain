@@ -825,6 +825,81 @@ async function offerPwaUpdate(page: Page, proxy: Awaited<ReturnType<typeof pwaUp
   await expect(page.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
 }
 
+test("article backlinks show only actual incoming sources and refresh after edits", async ({ page, request }, testInfo) => {
+  const target = await create(request, "# Incoming link destination\nA synthetic article.");
+  const source = await create(request, `# An incoming source\n[[${target.id}|Destination]] and [[${target.id}#Details]].`);
+  const distant = await create(request, `# An indirect source\n[[${source.id}]].`);
+  await create(request, `# Code is not a backlink\n\n\`[[${target.id}]]\``);
+  await page.goto(`/wiki/${target.id}`);
+  const panel = page.locator(".page-backlinks");
+  await panel.locator("summary").click();
+  await expect(panel.getByRole("link", { name: source.title, exact: true })).toHaveCount(1);
+  await expect(panel.getByRole("link", { name: distant.title, exact: true })).toHaveCount(0);
+  await expect(panel).toContainText("Explicit links");
+  await page.screenshot({ path: testInfo.outputPath("article-backlinks-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect((await panel.getByRole("link", { name: source.title, exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({ path: testInfo.outputPath("article-backlinks-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await panel.getByRole("link", { name: source.title, exact: true }).click();
+  await expect(page.locator("article h1")).toHaveText(source.title);
+  await page.goBack();
+  await page.locator(".page-backlinks summary").click();
+  await expect(page.locator(".page-backlinks a")).toHaveCount(1);
+  await update(request, source.id, "# An incoming source\nThe link has been removed.", source.revision);
+  await page.getByRole("button", { name: "Refresh links" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".page-backlinks")).toContainText("No other pages link here yet.");
+  await expect(page.getByRole("button", { name: "Refresh links" })).toBeFocused();
+});
+
+test("late backlink response cannot replace a newer article and read failures can retry", async ({ page, request }) => {
+  const old = await create(request, "# Previous backlink article\nSynthetic old route.");
+  const current = await create(request, "# Current backlink article\nSynthetic current route.");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`**/api/wiki/pages/${old.id}/backlinks`, async route => { await gate; await route.continue(); });
+  await page.goto(`/wiki/${old.id}`);
+  await page.locator(".page-backlinks summary").click();
+  await expect(page.locator(".page-backlinks")).toContainText("Loading incoming links");
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.locator(".card").filter({ hasText: current.title }).click();
+  const delayed = page.waitForResponse(response => response.url().endsWith(`/pages/${old.id}/backlinks`));
+  release();
+  await delayed;
+  await expect(page.locator("article h1")).toHaveText(current.title);
+  await expect(page.locator(".page-backlinks")).toContainText("Open to see pages");
+  let failOnce = true;
+  await page.route(`**/api/wiki/pages/${current.id}/backlinks`, async route => {
+    if (failOnce) { failOnce = false; await route.abort(); } else await route.continue();
+  });
+  await page.locator(".page-backlinks summary").click();
+  await expect(page.locator(".page-backlinks")).toContainText("Couldn’t load incoming links");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.locator(".page-backlinks")).toContainText("No other pages link here yet.");
+  await update(request, current.id, "# Current backlink article\nChanged after this read.", current.revision);
+  await page.getByRole("button", { name: "Refresh links" }).click();
+  await expect(page.locator(".page-backlinks")).toContainText("This article has changed");
+});
+
+test("galaxy keyboard return restores its originating page and constellation", async ({ page }) => {
+  await page.goto("/galaxy");
+  const sky = page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" });
+  await sky.focus();
+  await page.keyboard.press("Enter");
+  const selected = page.locator(".galaxy-sidebar-content .galaxy-page").first();
+  await expect(selected).toBeFocused();
+  const id = await selected.getAttribute("data-node");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeFocused();
+  await page.getByRole("button", { name: "Neighborhood pages" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(`.galaxy-sidebar-content .galaxy-page[data-node="${id}"]`)).toBeFocused();
+  await page.getByRole("button", { name: "All constellations" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(sky).toBeFocused();
+});
+
 for (const finish of ["save", "discard"] as const) {
   test(`PWA preserves a dirty tab when another tab updates, then permits ${finish} and reload`, async ({ page, context, request }, testInfo) => {
     const fixture = await create(request, "# PWA draft fixture\nOriginal synthetic content.");

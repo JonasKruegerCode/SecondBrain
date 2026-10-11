@@ -7,6 +7,66 @@ import pytest
 from second_brain.wiki.store import WikiError, WikiStore
 
 
+def test_backlinks_resolve_explicit_incoming_sources_at_one_snapshot(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    target = store.save_page("target", "# Harbor\n[[target]] [[outgoing]]", None, "target")
+    for key, body in {
+        "outgoing": "# Outgoing\nNo incoming link.",
+        "z": "# Alpha\n[[target|Alias]] [[Harbor#Detail]]\nDepends on:: [[target]]",
+        "a": "# alpha\n[[hArBoR]]\nRelated:: [[target]]\nSupports:: [[target]]",
+        "code": "# Code\n`[[target]]`\n```md\n[[target]]\n```\n\n    [[target]]\n",
+        "missing": "# Missing\n[[gone]] [[Shared]]",
+        "shared-a": "# Shared\nNo links.",
+        "shared-b": "# Shared\nNo links.",
+    }.items():
+        store.save_page(key, body, None, key)
+    result = store.backlinks("target", 1)
+    assert result["revision"] == store.graph()["revision"]
+    assert result["target_revision"] == target["revision"]
+    assert result["total"] == 2
+    assert result["truncated"] is True
+    assert result["backlinks"][0]["id"] == "a"
+    assert result["backlinks"][0]["relations"] == ["related", "supports"]
+    assert set(result["backlinks"][0]) == {"id", "title", "revision", "excerpt", "relations"}
+    full = store.backlinks("target")
+    assert [row["id"] for row in full["backlinks"]] == ["a", "z"]
+    assert full["backlinks"][1]["relations"] == ["depends_on"]
+    assert full["truncated"] is False
+    assert store.backlinks("shared-a")["total"] == 0
+
+    source = store.get_page("a")
+    assert source is not None
+    store.save_page("a", "# alpha\nLink removed.", source["revision"], "edit-a")
+    edited = WikiStore(tmp_path).backlinks("target")
+    assert edited["revision"] != full["revision"]
+    assert edited["target_revision"] == target["revision"]
+    assert [row["id"] for row in edited["backlinks"]] == ["z"]
+    other = store.get_page("z")
+    assert other is not None
+    store.delete_page("z", other["revision"], "delete-z")
+    assert WikiStore(tmp_path).backlinks("target")["total"] == 0
+
+
+@pytest.mark.parametrize("limit", [0, 101, -1, True, "20", 1.5])
+def test_backlinks_reject_invalid_bounds(tmp_path: Path, limit: Any) -> None:
+    with pytest.raises(WikiError) as failure:
+        WikiStore(tmp_path).backlinks("unknown", limit)
+    assert failure.value.code == "invalid_payload"
+
+
+def test_backlinks_missing_target_and_valid_bounds(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    with pytest.raises(WikiError) as failure:
+        store.backlinks("unknown")
+    assert failure.value.code == "not_found"
+    store.save_page("target", "# Target", None, "target")
+    for limit in (1, 100):
+        result = store.backlinks("target", limit)
+        assert result["backlinks"] == []
+        assert result["total"] == 0
+        assert result["truncated"] is False
+
+
 def _race(path: str, base: str, name: str, barrier: Any, queue: Any) -> None:
     store = WikiStore(path)
     barrier.wait()

@@ -241,6 +241,20 @@ the graph resolver and returns its content revision. Article links are hydrated
 in small batches; their resolution route remains available on request failure.
 A late response for an abandoned article cannot replace the current edit target.
 
+Articles offer a compact, expandable **Linked from** panel. Its read endpoint
+`GET /api/wiki/pages/{id}/backlinks?limit=20` uses the same immutable Markdown
+snapshot and resolver as the graph, without requiring a graph provider. The limit
+is an integer from 1 to 100. Each unique incoming source includes its ID, title,
+content revision, excerpt and any explicitly declared relation labels. Sources
+are sorted by title then ID; repeated links are collapsed, and self-links,
+unresolved/ambiguous targets and code examples are excluded. The response includes
+the snapshot `revision`, article `target_revision`, `total` and `truncated`.
+Unknown pages return 404 and invalid limits return 400. Existing authentication
+and no-store policy apply. The panel loads on demand, supports retry/refresh, and
+requires an article reload if its content revision changed. Delayed responses
+cannot update an abandoned article. Incoming links express actual authorship,
+not an inferred dependency or a generic related-pages list.
+
 The galaxy reads `/api/wiki/graph`, which derives resolved edges from one
 immutable Markdown snapshot. Optional YAML frontmatter makes editorial grouping
 explicit without changing the Markdown/Git source:
@@ -269,8 +283,10 @@ Unresolved targets do not become invented stars. Use the explicit refresh link
 to read a newer revision after saves/deletions.
 
 Overview, focused neighborhood, star selection, local title/ID search and article
-navigation share a keyboard-accessible sidebar. Zoom/pan are bounded. On narrow
-screens, controls remain reachable and a list view offers a reduced alternative.
+navigation share a keyboard-accessible sidebar. Zoom/pan are bounded. Returning
+from a star or neighborhood with the keyboard restores focus
+to the originating page or constellation.
+On narrow screens, controls remain reachable and a list view offers a reduced alternative.
 Above 250 pages or 800 links, list view is the default and skips SVG construction.
 The fast 251-page injected contract still isolates the no-SVG frontend behavior.
 An additional opt-in scale fixture now imports 320 generated pages and 648 links

@@ -4,6 +4,13 @@ import { renderGalaxy, Graph } from "./galaxy";
 import { renderChat } from "./chat";
 import { applyUpdate, installApp, observePwa, PwaState, startPwa } from "./pwa";
 type HistoryEntry = { commit: string; date: string; message: string };
+type Backlinks = {
+  revision: string;
+  target_revision: string;
+  backlinks: { id: string; title: string; relations: string[] }[];
+  total: number;
+  truncated: boolean;
+};
 type Page = {
   id: string;
   title: string;
@@ -397,6 +404,40 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
         target?.scrollIntoView({ block: "start" });
       });
     }
+    const panel = document.createElement("details");
+    panel.className = "page-backlinks";
+    panel.innerHTML = '<summary>Linked from</summary><div class="backlinks-content" role="status">Open to see pages that link here.</div>';
+    main.querySelector(".page-history")!.before(panel);
+    const targetId = page.id, targetRevision = page.revision;
+    let loaded = false;
+    const content = panel.querySelector<HTMLElement>(".backlinks-content")!;
+    const load = async () => {
+      const restoreFocus = content.contains(document.activeElement);
+      loaded = true;
+      content.textContent = "Loading incoming links…";
+      try {
+        const result: Backlinks = await api(`/pages/${encodeURIComponent(targetId)}/backlinks`);
+        if (!panel.isConnected || page?.id !== targetId || page.revision !== targetRevision) return;
+        if (result.target_revision !== targetRevision) {
+          content.innerHTML = '<p>This article has changed. Reload it to review its current links.</p>';
+          return;
+        }
+        content.innerHTML = result.backlinks.length
+          ? `<nav aria-label="Pages linking here"><ul>${result.backlinks.map(source => `<li><a href="${url(source.id)}">${esc(source.title)}</a>${source.relations.length ? `<small>Declared relation: ${esc(source.relations.join(", "))}</small>` : ""}</li>`).join("")}</ul></nav>${result.truncated ? `<p>Showing ${result.backlinks.length} of ${result.total} linking pages.</p>` : ""}<p class="backlinks-context">Explicit links · snapshot ${esc(result.revision.slice(0, 8))}</p><button type="button" class="subtle">Refresh links</button>`
+          : '<p>No other pages link here yet.</p><button type="button" class="subtle">Refresh links</button>';
+        content.querySelector("button")?.addEventListener("click", () => void load());
+        if (restoreFocus) content.querySelector<HTMLButtonElement>("button")?.focus();
+      } catch {
+        if (!panel.isConnected) return;
+        loaded = false;
+        content.innerHTML = '<p>Couldn’t load incoming links.</p><button type="button" class="subtle">Try again</button>';
+        content.querySelector("button")!.addEventListener("click", () => void load());
+        if (restoreFocus) content.querySelector<HTMLButtonElement>("button")?.focus();
+      }
+    };
+    panel.addEventListener("toggle", () => {
+      if (panel.open && !loaded) void load();
+    });
   }
   const historyPanel = main.querySelector<HTMLDetailsElement>(".page-history")!;
   const historyPageId = page.id;

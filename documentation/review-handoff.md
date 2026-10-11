@@ -50,7 +50,8 @@ read; browser-local conversations can be deleted.
 ## Public interfaces
 
 The managed REST surface under `/api/wiki` covers health, page
-list/read/save/delete, link resolution, lexical/semantic/GraphRAG search, graph,
+list/read/save/delete, link resolution and explicit incoming links,
+lexical/semantic/GraphRAG search, graph,
 history, index/delivery status and bounded chat. Mutation requests carry
 `base_revision` and `request_id`.
 

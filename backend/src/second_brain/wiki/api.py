@@ -121,6 +121,17 @@ def create_app(
     async def graph(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(store.graph))
 
+    async def backlinks(request: Request) -> Response:
+        try:
+            limit = int(request.query_params.get("limit", "20"))
+        except ValueError as exc:
+            raise WikiError(
+                "invalid_payload", "limit must be an integer between 1 and 100."
+            ) from exc
+        return JSONResponse(
+            await run_in_threadpool(store.backlinks, request.path_params["page_id"], limit)
+        )
+
     async def resolve_links(request: Request) -> Response:
         targets = request.query_params.getlist("target")
         source = request.query_params.get("source", "")
@@ -226,6 +237,7 @@ def create_app(
             Route("/api/wiki/index-status", index_status),
             Route("/api/wiki/delivery-status", delivery_status),
             Route("/api/wiki/pages/{page_id}/neighbors", neighbors),
+            Route("/api/wiki/pages/{page_id}/backlinks", backlinks),
             Route("/api/wiki/pages/{page_id}/history", history),
             Route("/api/wiki/chat", chat_answer, methods=["POST"]),
             Route("/api/wiki/pages/{page_id}", page, methods=["GET", "POST", "DELETE"]),

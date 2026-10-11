@@ -694,3 +694,12 @@ textarea {
   header nav { flex-wrap: wrap; }
   header nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 9px 11px; }
 }
+/* Incoming links are article context, separate from Git history. */
+.page-backlinks { margin-top: 30px; border-top: 1px solid #d9e4dd; padding-top: 22px; }
+.page-backlinks summary { cursor: pointer; color: #285f55; font-size: 13px; font-weight: 650; min-height: 44px; display: list-item; }
+.backlinks-content { padding-top: 10px; font-size: 13px; line-height: 1.6; }
+.backlinks-content ul { margin: 0 0 16px; padding: 0; list-style: none; }
+.backlinks-content li { margin-bottom: 8px; }
+.backlinks-content a { display: inline-block; min-height: 44px; padding: 12px 0; color: #285f55; overflow-wrap: anywhere; }
+.backlinks-content small { display: block; color: #536d68; }
+.backlinks-context { color: #536d68; font-size: 11px; }

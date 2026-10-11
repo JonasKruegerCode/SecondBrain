@@ -237,8 +237,25 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       selectedCluster = Number(target.dataset.cluster); selectedNode = null; scale = 1; panX = panY = 0; render();
       if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus();
     } else switch (target.dataset.action) {
-      case "overview": selectedCluster = selectedNode = null; scale = 1; panX = panY = 0; render(); break;
-      case "cluster": selectedNode = null; render(); break;
+      case "overview": {
+        const previous = selectedCluster;
+        selectedCluster = selectedNode = null; scale = 1; panX = panY = 0; render();
+        if (event.detail === 0 && previous !== null) {
+          const cluster = sidebar.querySelector<HTMLElement>(`[data-cluster="${previous}"]`);
+          const unlinked = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === clusters[previous].core);
+          (cluster || unlinked || root.querySelector<HTMLInputElement>("input"))?.focus();
+        }
+        break;
+      }
+      case "cluster": {
+        const previous = selectedNode;
+        selectedNode = null; render();
+        if (event.detail === 0) {
+          const page = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === previous);
+          (page || root.querySelector<HTMLInputElement>("input"))?.focus();
+        }
+        break;
+      }
       case "zoom-in": scale = Math.min(2.5, scale + .25); setView(); break;
       case "zoom-out": scale = Math.max(.75, scale - .25); setView(); break;
       case "reset": scale = 1; panX = panY = 0; setView(); break;
