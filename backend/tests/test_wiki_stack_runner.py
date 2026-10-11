@@ -204,3 +204,40 @@ def test_wait_preserves_safe_last_http_status(
     monkeypatch.setattr(run, "http", http)
     with pytest.raises(RuntimeError, match="last failure: HTTP status 502, expected 200"):
         run.wait("http://private.invalid/secret", timeout=1)
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_churn_subnet_uses_docker_selection_and_removes_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreign: bool
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    project = "sb-acceptance-subnet-test"
+    commands: list[list[str]] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        commands.append(args)
+        if "inspect" in args:
+            return json.dumps(
+                {
+                    "project": "production" if foreign else project,
+                    "containers": {},
+                    "ipam": [{"Subnet": "10.92.0.0/24", "Gateway": "10.92.0.1"}],
+                }
+            )
+        return ""
+
+    monkeypatch.setattr(run, "command", command)
+    data = runner["isolated_config"](config(), project, "synthetic")
+    if foreign:
+        with pytest.raises(RuntimeError, match="ownership"):
+            run.configure_churn_network(data, project)
+        assert "ipam" not in data["networks"]["default"]
+    else:
+        run.configure_churn_network(data, project)
+        assert data["networks"]["default"]["ipam"]["config"] == [
+            {"subnet": "10.92.0.0/24", "gateway": "10.92.0.1"}
+        ]
+        restored = runner["isolated_config"](data, project + "-restore", "synthetic", restored=True)
+        assert "ipam" not in restored["networks"]["default"]
+    assert "rm" in commands[-1]
+    assert run.probe_networks == []

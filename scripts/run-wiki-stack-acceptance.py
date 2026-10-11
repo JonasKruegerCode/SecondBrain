@@ -61,9 +61,9 @@ def replacement_ip(network: dict[str, Any], old_ip: str) -> str:
     occupied.add(ipaddress.ip_address(old_ip))
     for pool in network["ipam"]:
         subnet = ipaddress.ip_network(pool.get("IPRange") or pool["Subnet"])
-        if subnet.version != 4 or ipaddress.ip_address(
-            old_ip
-        ) not in ipaddress.ip_network(pool["Subnet"]):
+        if subnet.version != 4 or ipaddress.ip_address(old_ip) not in ipaddress.ip_network(
+            pool["Subnet"]
+        ):
             continue
         for key in ("Gateway",):
             if pool.get(key):
@@ -88,6 +88,8 @@ def isolated_config(
             if value.get("external"):
                 raise RuntimeError("external Compose resource refused")
             value["name"] = f"{project}_{name}"
+            if resource == "networks":
+                value.pop("ipam", None)  # Never reuse an inherited allocation pool.
     config["name"] = project
     for name, service in config["services"].items():
         if service.get("container_name"):
@@ -134,9 +136,7 @@ def add_acceptance_proxy(config: dict[str, Any]) -> None:
     """Add our fixed synthetic fixture only after inherited services are validated."""
     config["services"]["edge"] = {
         "build": {"context": str(ROOT / "examples/acceptance-proxy")},
-        "ports": [
-            {"target": 443, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp"}
-        ],
+        "ports": [{"target": 443, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp"}],
         "restart": "no",
         "depends_on": {
             "frontend": {"condition": "service_started"},
@@ -156,6 +156,63 @@ class Run:
         self.client = build_opener(ProxyHandler({}))
         self.steps: list[str] = []
         self.projects: list[list[str]] = []
+        self.probe_networks: list[str] = []
+
+    def configure_churn_network(self, config: dict[str, Any], project: str) -> None:
+        """Let Docker select a free pool, then declare it for explicit IP assignment."""
+        if not project.startswith("sb-acceptance-"):
+            raise RuntimeError("subnet probe requires an owned acceptance project")
+        name = project + "-subnet-probe"
+        self.command(
+            [
+                *DOCKER,
+                "network",
+                "create",
+                "--label",
+                f"com.docker.compose.project={project}",
+                name,
+            ],
+            timeout=10,
+        )
+        self.probe_networks.append(name)
+        try:
+            network = json.loads(
+                self.command(
+                    [
+                        *DOCKER,
+                        "network",
+                        "inspect",
+                        "--format",
+                        NETWORK_SNAPSHOT,
+                        name,
+                    ],
+                    record_output=False,
+                    timeout=10,
+                )
+            )
+            if network["project"] != project or network["containers"]:
+                raise RuntimeError("unexpected subnet probe ownership or endpoints")
+            pools = [p for p in network["ipam"] if ipaddress.ip_network(p["Subnet"]).version == 4]
+            if len(pools) != 1:
+                raise RuntimeError("expected one Docker-selected IPv4 pool")
+            config["networks"]["default"]["ipam"] = {
+                "config": [
+                    {
+                        "subnet": pools[0]["Subnet"],
+                        "gateway": pools[0]["Gateway"],
+                    }
+                ]
+            }
+        finally:
+            # Keep a failed removal registered for the outer cleanup, and preserve
+            # an existing validation failure instead of replacing it.
+            failed = sys.exc_info()[0] is not None
+            try:
+                self.command([*DOCKER, "network", "rm", name], timeout=10)
+                self.probe_networks.remove(name)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                if not failed:
+                    raise
 
     def command(
         self,
@@ -204,9 +261,7 @@ class Run:
         with response:
             content, meta = response.read(), response.headers
             if response.status != expected:
-                raise RuntimeError(
-                    f"HTTP status {response.status}, expected {expected}"
-                )
+                raise RuntimeError(f"HTTP status {response.status}, expected {expected}")
         return content, meta
 
     def data(self, url: str, **kwargs: Any) -> Any:
@@ -221,14 +276,10 @@ class Run:
                 return
             except (OSError, URLError, RuntimeError) as exc:
                 last_failure = type(exc).__name__
-                if isinstance(exc, RuntimeError) and str(exc).startswith(
-                    "HTTP status "
-                ):
+                if isinstance(exc, RuntimeError) and str(exc).startswith("HTTP status "):
                     last_failure = str(exc)
                 time.sleep(0.5)
-        raise RuntimeError(
-            f"container endpoint readiness timed out; last failure: {last_failure}"
-        )
+        raise RuntimeError(f"container endpoint readiness timed out; last failure: {last_failure}")
 
     def rpc(self, url: str, method: str, params: dict[str, Any] | None = None) -> Any:
         data = self.data(
@@ -292,16 +343,13 @@ class Run:
             try:
                 snapshot["containers"][service] = self.container(compose, service)
             except Exception as exc:
-                snapshot["containers"][service] = {
-                    "diagnostic_error": type(exc).__name__
-                }
+                snapshot["containers"][service] = {"diagnostic_error": type(exc).__name__}
         try:
             with (self.artifact / "restart-diagnostics.jsonl").open(
                 "a", encoding="utf-8"
             ) as output:
                 output.write(
-                    json.dumps(snapshot).replace(self.key, "[synthetic-key-redacted]")
-                    + "\n"
+                    json.dumps(snapshot).replace(self.key, "[synthetic-key-redacted]") + "\n"
                 )
         except OSError:
             pass
@@ -422,25 +470,18 @@ class Run:
             "dns-churn-query",
             any(item["id"] == "stack-fixture" for item in search["results"]),
         )
-        self.data(
-            base + "/api/wiki/search?q=Stack%20fixture&mode=invalid", expected=400
-        )
+        self.data(base + "/api/wiki/search?q=Stack%20fixture&mode=invalid", expected=400)
         self.steps.append("dns-churn-invalid-query-mode")
         after = self.container(compose, "frontend")
         self.check(
             "dns-churn-frontend-not-restarted",
-            all(
-                after[key] == frontend[key]
-                for key in ("id", "started_at", "restart_count")
-            ),
+            all(after[key] == frontend[key] for key in ("id", "started_at", "restart_count")),
         )
 
     def exercise_proxy(self, compose: list[str], temp: Path) -> None:
         base = self.port(compose, "edge", 443)
         certificate = temp / "fixture-cert.pem"
-        self.command(
-            [*compose, "cp", "edge:/etc/nginx/fixture/cert.pem", str(certificate)]
-        )
+        self.command([*compose, "cp", "edge:/etc/nginx/fixture/cert.pem", str(certificate)])
         # Trust only this disposable certificate, with hostname verification enabled.
         self.client = build_opener(
             ProxyHandler({}),
@@ -483,9 +524,7 @@ class Run:
                 bool(self.http(base + "/" + icon["src"].lstrip("/"), headers=auth)[0]),
             )
         _, headers = self.http(base + "/service-worker.js", headers=auth)
-        self.check(
-            "proxy-worker-no-store", "no-store" in headers.get("Cache-Control", "")
-        )
+        self.check("proxy-worker-no-store", "no-store" in headers.get("Cache-Control", ""))
         _, headers = self.http(base + "/api/wiki/pages/home", headers=auth)
         self.check("proxy-private-no-store", headers.get("Cache-Control") == "no-store")
         payload = {
@@ -521,8 +560,7 @@ class Run:
         )
         self.check(
             "proxy-foreign-origin-no-write",
-            denied["error"] == "origin_rejected"
-            and self.data(page_url, headers=auth) == page,
+            denied["error"] == "origin_rejected" and self.data(page_url, headers=auth) == page,
         )
         bearer = {
             "Authorization": f"Bearer {self.key}",
@@ -533,8 +571,7 @@ class Run:
         for bad in ({}, auth, {"Authorization": "Bearer wrong"}):
             self.check(
                 "proxy-mcp-denies-bad-auth",
-                self.data(mcp, body={}, headers=bad, expected=401)["error"]
-                == "unauthorized",
+                self.data(mcp, body={}, headers=bad, expected=401)["error"] == "unauthorized",
             )
         initialized = self.data(
             mcp,
@@ -609,9 +646,7 @@ class Run:
             raise RuntimeError(f"gate failed: {name}")
         self.steps.append(name)
 
-    def exercise(
-        self, compose: list[str]
-    ) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    def exercise(self, compose: list[str]) -> tuple[str, dict[str, Any], dict[str, Any]]:
         base = self.port(compose, "frontend", 80)
         mcp = self.port(compose, "mcp", 3001) + "/mcp"
         self.wait(base + "/api/wiki/health")
@@ -623,9 +658,7 @@ class Run:
         for route in ("/", "/wiki/home"):
             self.check("spa-" + route, b"<html" in self.http(base + route)[0])
         manifest = self.data(base + "/manifest.webmanifest")
-        self.check(
-            "manifest", manifest["display"] == "standalone" and bool(manifest["icons"])
-        )
+        self.check("manifest", manifest["display"] == "standalone" and bool(manifest["icons"]))
         worker, headers = self.http(base + "/service-worker.js")
         self.check(
             "worker-update",
@@ -633,9 +666,7 @@ class Run:
         )
         _, headers = self.http(base + "/api/wiki/pages")
         self.check("private-no-store", headers.get("Cache-Control") == "no-store")
-        self.check(
-            "template-pages", len(self.data(base + "/api/wiki/pages")["pages"]) == 12
-        )
+        self.check("template-pages", len(self.data(base + "/api/wiki/pages")["pages"]) == 12)
         payload = {
             "markdown": "# Stack fixture\n\nOnly fictional data. [[home|Home]]",
             "base_revision": None,
@@ -662,9 +693,7 @@ class Run:
         self.check(
             "mcp-guidance",
             bool(
-                self.rpc(mcp, "resources/read", {"uri": "wiki://guidance"})["contents"][
-                    0
-                ]["text"]
+                self.rpc(mcp, "resources/read", {"uri": "wiki://guidance"})["contents"][0]["text"]
             ),
         )
         edit = {
@@ -687,19 +716,14 @@ class Run:
         graph = self.data(base + "/api/wiki/graph")
         self.check(
             "graph-link",
-            any(
-                e["source"] == "stack-fixture" and e["target"] == "home"
-                for e in graph["edges"]
-            ),
+            any(e["source"] == "stack-fixture" and e["target"] == "home" for e in graph["edges"]),
         )
         self.command([*compose, "restart", "backend", "mcp"])
         self.wait(base + "/api/wiki/health")
         # Docker may allocate a new ephemeral host port when a container restarts.
         mcp = self.port(compose, "mcp", 3001) + "/mcp"
         self.initialize(mcp)
-        self.check(
-            "restart-page", self.data(base + "/api/wiki/pages/stack-fixture") == page
-        )
+        self.check("restart-page", self.data(base + "/api/wiki/pages/stack-fixture") == page)
         retry = self.rpc(mcp, "tools/call", {"name": "save_page", "arguments": edit})
         self.check(
             "restart-retry-receipt",
@@ -764,9 +788,7 @@ def main() -> int:
                 str(ROOT / "docker-compose.wiki.yml"),
             ]
             raw = json.loads(
-                run.command(
-                    [*original, "config", "--format", "json"], record_output=False
-                )
+                run.command([*original, "config", "--format", "json"], record_output=False)
             )
             original_path = temp / "original.json"
             isolated = isolated_config(raw, project, run.key)
@@ -775,6 +797,8 @@ def main() -> int:
             compose = [*docker, "compose", "-p", project, "-f", str(original_path)]
             run.projects.append(compose)
             try:
+                run.configure_churn_network(isolated, project)
+                original_path.write_text(json.dumps(isolated))
                 run.command([*compose, "build"], timeout=600)
                 run.steps.append("compose-build")
                 seed = [
@@ -815,9 +839,7 @@ def main() -> int:
                             timeout=90,
                         )
                     )
-                    run.check(
-                        "authenticated-built-browser", browser["status"] == "passed"
-                    )
+                    run.check("authenticated-built-browser", browser["status"] == "passed")
                     result["browser_proxy_gates"] = browser["gates"]
                 page = run.data(base + "/api/wiki/pages/stack-fixture")
                 run.command([*compose, *seed], expected=1)
@@ -855,9 +877,7 @@ def main() -> int:
                 restore_path = temp / "restore.json"
                 restore_path.write_text(
                     json.dumps(
-                        isolated_config(
-                            restore_raw, restore_project, run.key, restored=True
-                        )
+                        isolated_config(restore_raw, restore_project, run.key, restored=True)
                     )
                 )
                 restored = [
@@ -905,14 +925,11 @@ def main() -> int:
                 )
                 run.check(
                     "restored-history",
-                    run.data(restored_base + "/api/wiki/pages/stack-fixture/history")
-                    == history,
+                    run.data(restored_base + "/api/wiki/pages/stack-fixture/history") == history,
                 )
                 mcp = run.port(restored, "mcp", 3001) + "/mcp"
                 run.initialize(mcp)
-                retry = run.rpc(
-                    mcp, "tools/call", {"name": "save_page", "arguments": edit}
-                )
+                retry = run.rpc(mcp, "tools/call", {"name": "save_page", "arguments": edit})
                 run.check(
                     "restored-retry-receipt",
                     retry["structuredContent"]["revision"] == page["revision"],
@@ -925,14 +942,17 @@ def main() -> int:
             finally:
                 failed = sys.exc_info()[0] is not None
                 clean = True
+                for name in run.probe_networks:
+                    try:
+                        run.command([*DOCKER, "network", "rm", name], timeout=10)
+                    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                        clean = False
                 for ctx in reversed(run.projects):
                     # Log collection must never prevent resource cleanup.
                     with contextlib.suppress(OSError, RuntimeError, subprocess.TimeoutExpired):
                         run.command([*ctx, "logs", "--no-color"], timeout=30)
                     try:
-                        run.command(
-                            [*ctx, "down", "--volumes", "--remove-orphans"], timeout=90
-                        )
+                        run.command([*ctx, "down", "--volumes", "--remove-orphans"], timeout=90)
                     except (OSError, RuntimeError, subprocess.TimeoutExpired):
                         clean = False
                 result["cleanup_ok"] = clean
