@@ -219,7 +219,7 @@ def test_refusal_preserves_remote_and_content(
     ssh_git: SSHGit, tmp_path: Path, failure: str
 ) -> None:
     store, _, receipt = publish(ssh_git, tmp_path / "writer")
-    store.save_page("Beta", "# Beta\nUnpublished", store._head(), "edit")
+    store.save_page("Beta", "# Beta\nUnpublished", None, "edit")
     base = store._head()
     before = ssh_git.refs()
     trust = ssh_git.trust
