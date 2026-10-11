@@ -54,8 +54,9 @@ docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
 
 This starts with an empty persistent named volume unless a prepared managed
 vault is restored into that volume by an explicit operator procedure. It never
-auto-seeds template content. Container execution and named-volume restore remain
-unverified until run with a Docker-compatible runtime.
+auto-seeds template content. Verify the actual revision and runtime with the
+disposable rehearsal below; success there does not accept a private-vault restore
+or production proxy configuration.
 
 For a disposable synthetic container rehearsal, use `make acceptance-stack`;
 the [stack guide](managed-stack-acceptance.md) covers its separate project,

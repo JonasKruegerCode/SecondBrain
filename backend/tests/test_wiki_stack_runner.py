@@ -88,3 +88,16 @@ def test_rehearsal_refuses_nonisolated_resources(danger: str) -> None:
         data["services"]["worker"] = {}
     with pytest.raises(RuntimeError):
         runner["isolated_config"](data, "synthetic", "synthetic")
+
+
+def test_proxy_is_added_only_after_validation_and_has_no_data_or_credentials() -> None:
+    isolated = runner["isolated_config"](config(), "synthetic", "synthetic-secret")
+    runner["add_acceptance_proxy"](isolated)
+    proxy = isolated["services"]["edge"]
+    assert "volumes" not in proxy
+    assert "environment" not in proxy
+    assert proxy["ports"][0]["host_ip"] == "127.0.0.1"
+    assert proxy["ports"][0]["published"] == "0"
+    # Arbitrary extra proxy services in an inherited configuration remain refused.
+    with pytest.raises(RuntimeError):
+        runner["isolated_config"](isolated, "synthetic", "synthetic-secret")

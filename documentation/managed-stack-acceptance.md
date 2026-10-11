@@ -15,6 +15,22 @@ Lantern Bay fixture; startup does not seed an existing wiki. The runner does
 not use the legacy stack, production environment files or production volumes,
 and does not publish container images.
 
+An additional disposable nginx fixture terminates TLS and applies Basic
+authentication to the wiki, assets and API. Its certificate is generated on
+each start, trusted explicitly by the test client, and checked for its loopback
+hostname. Certificate verification is never disabled. The fixture's public
+`fixture` / `fixture-password` credentials are synthetic and must never be used
+for a real instance. The proxy preserves the public Host including the dynamic
+port so same-origin writes traverse both proxy layers correctly.
+
+The `/mcp` fixture route uses its existing Bearer gate, with Basic authentication
+disabled for that route: both mechanisms use the same Authorization header.
+The generated MCP configuration explicitly allows the synthetic HTTPS Origin.
+This is a sample acceptance topology, not a change to the managed Compose
+deployment or existing production authentication. Direct frontend/MCP ports
+remain loopback-only for the separate HTTP checks; this fixture does not prove
+that a production host has no authentication bypass.
+
 Inherited OpenRouter credentials, optional index providers and outbound Git
 delivery settings are disabled for this rehearsal. It makes no OpenRouter
 calls and needs no external service credentials. Run it only with the included
@@ -50,14 +66,17 @@ Docker images or nginx profile work.
 | Boundary | Required checks |
 | --- | --- |
 | Images and nginx | Build/start the real images; API health through nginx, SPA routes, manifest and service-worker update headers |
+| Synthetic HTTPS/auth | Verified disposable certificate; anonymous/wrong-password denial for wiki, API and PWA resources; authenticated reads, writes/retry/conflict and foreign-Origin refusal; TLS MCP Bearer/Host/Origin gates and shared writes |
 | Managed REST | Explicit template seed/retry, private-response cache headers, revisioned save/retry and stale-write conflict |
 | HTTP MCP | Bearer denial, initialize, exact tool inventory, guidance resource and a write visible through REST |
 | Shared vault | Graph links, history, backend/MCP restart persistence and the original write receipt |
 | Recovery | Backup through the image CLI, restore into an independent new volume, matching page/history/receipt and refusal to reseed changed content |
 
-The nginx checks are HTTP assertions against the built frontend. This runner
+The nginx checks are HTTP/TLS assertions against the built frontend. This runner
 does not launch a browser; keep the separate Playwright acceptance rehearsal
-for interactive editor and navigation behavior.
+for interactive editor and navigation behavior. TLS resource/header delivery
+does not prove browser service-worker registration or installation behind auth.
+The result distinguishes `synthetic_https_auth` from `production_https: false`.
 
 A passing synthetic stack run still does not establish hosted model or index
 provider behavior, production Git authentication and delivery, production HTTPS

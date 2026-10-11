@@ -73,3 +73,9 @@ cache.
 These checks are browser emulation, not a physical Android/iOS installation.
 Homescreen creation, standalone launch, OS icon rendering and a production HTTPS
 upgrade still require real-device/deployed verification before release signoff.
+
+`make acceptance-stack` separately checks delivery of protected wiki, API,
+manifest, icons and worker resources through a disposable HTTPS/password proxy,
+with certificate verification enabled. This is an HTTP/TLS gate, not a browser
+installation or an inspection of your production authentication configuration.
+See the [stack scope and limits](managed-stack-acceptance.md).

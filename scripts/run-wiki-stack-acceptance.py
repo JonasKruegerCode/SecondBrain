@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import secrets
 import signal
+import ssl
 import subprocess
 import tempfile
 import time
@@ -13,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +62,7 @@ def isolated_config(
                     {
                         "SECOND_BRAIN_WIKI_API_KEY": key,
                         "SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS": "localhost,localhost:*,127.0.0.1,127.0.0.1:*",
-                        "SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS": "http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*",
+                        "SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS": "http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*,https://127.0.0.1:*",
                     }
                     if name == "mcp"
                     else {}
@@ -80,6 +82,21 @@ def isolated_config(
             ]
         )
     return config
+
+
+def add_acceptance_proxy(config: dict[str, Any]) -> None:
+    """Add our fixed synthetic fixture only after inherited services are validated."""
+    config["services"]["edge"] = {
+        "build": {"context": str(ROOT / "examples/acceptance-proxy")},
+        "ports": [
+            {"target": 443, "published": "0", "host_ip": "127.0.0.1", "protocol": "tcp"}
+        ],
+        "restart": "no",
+        "depends_on": {
+            "frontend": {"condition": "service_started"},
+            "mcp": {"condition": "service_started"},
+        },
+    }
 
 
 class Run:
@@ -193,7 +210,176 @@ class Run:
         address = self.command([*compose, "port", service, str(target)]).strip()
         if not address.startswith("127.0.0.1:") or not address[10:].isdigit():
             raise RuntimeError("expected a dynamic loopback port")
-        return "http://" + address
+        return ("https://" if target == 443 else "http://") + address
+
+    def exercise_proxy(self, compose: list[str], temp: Path) -> None:
+        base = self.port(compose, "edge", 443)
+        certificate = temp / "fixture-cert.pem"
+        self.command(
+            [*compose, "cp", "edge:/etc/nginx/fixture/cert.pem", str(certificate)]
+        )
+        # Trust only this disposable certificate, with hostname verification enabled.
+        self.client = build_opener(
+            ProxyHandler({}),
+            HTTPSHandler(context=ssl.create_default_context(cafile=certificate)),
+        )
+        basic = "Basic " + base64.b64encode(b"fixture:fixture-password").decode()
+        auth = {"Authorization": basic}
+        self.check(
+            "https-verified-certificate",
+            b"Basic" in self.http(base, expected=401)[1]["WWW-Authenticate"].encode(),
+        )
+        routes = (
+            "/",
+            "/wiki/home",
+            "/manifest.webmanifest",
+            "/service-worker.js",
+            "/api/wiki/health",
+            "/api/wiki/pages/home",
+        )
+        for path in routes:
+            _, denied = self.http(base + path, expected=401)
+            self.check(
+                "proxy-denies-anonymous-" + path,
+                denied.get("WWW-Authenticate", "").startswith("Basic"),
+            )
+            self.http(
+                base + path,
+                headers={"Authorization": "Basic Zml4dHVyZTp3cm9uZw=="},
+                expected=401,
+            )
+            self.check(
+                "proxy-authenticated-" + path,
+                bool(self.http(base + path, headers=auth)[0]),
+            )
+        manifest = self.data(base + "/manifest.webmanifest", headers=auth)
+        for icon in manifest["icons"]:
+            self.http(base + "/" + icon["src"].lstrip("/"), expected=401)
+            self.check(
+                "proxy-icon-" + icon["src"],
+                bool(self.http(base + "/" + icon["src"].lstrip("/"), headers=auth)[0]),
+            )
+        _, headers = self.http(base + "/service-worker.js", headers=auth)
+        self.check(
+            "proxy-worker-no-store", "no-store" in headers.get("Cache-Control", "")
+        )
+        _, headers = self.http(base + "/api/wiki/pages/home", headers=auth)
+        self.check("proxy-private-no-store", headers.get("Cache-Control") == "no-store")
+        payload = {
+            "markdown": "# HTTPS fixture\n\nFictional proxy rehearsal.",
+            "base_revision": None,
+            "request_id": "https-create",
+        }
+        browser = {**auth, "Origin": base}
+        page_url = base + "/api/wiki/pages/https-fixture"
+        receipt = self.data(page_url, body=payload, headers=browser)
+        self.check(
+            "proxy-same-origin-save-retry",
+            self.data(page_url, body=payload, headers=browser) == receipt,
+        )
+        page = self.data(page_url, headers=auth)
+        self.check("proxy-rest-readback", page["revision"] == receipt["revision"])
+        self.data(
+            page_url,
+            body={**payload, "request_id": "https-stale"},
+            headers=browser,
+            expected=409,
+        )
+        self.steps.append("proxy-stale-write-conflict")
+        denied = self.data(
+            page_url,
+            body={
+                **payload,
+                "base_revision": page["revision"],
+                "request_id": "https-foreign",
+            },
+            headers={**auth, "Origin": "https://foreign.invalid"},
+            expected=403,
+        )
+        self.check(
+            "proxy-foreign-origin-no-write",
+            denied["error"] == "origin_rejected"
+            and self.data(page_url, headers=auth) == page,
+        )
+        bearer = {
+            "Authorization": f"Bearer {self.key}",
+            "Accept": "application/json, text/event-stream",
+            "Origin": base,
+        }
+        mcp = base + "/mcp"
+        for bad in ({}, auth, {"Authorization": "Bearer wrong"}):
+            self.check(
+                "proxy-mcp-denies-bad-auth",
+                self.data(mcp, body={}, headers=bad, expected=401)["error"]
+                == "unauthorized",
+            )
+        initialized = self.data(
+            mcp,
+            headers=bearer,
+            body={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "https-acceptance", "version": "1"},
+                },
+            },
+        )
+        self.check(
+            "proxy-mcp-https-origin",
+            "wiki://guidance" in initialized["result"]["instructions"],
+        )
+        self.check(
+            "proxy-mcp-origin-denied",
+            self.data(
+                mcp,
+                body={},
+                headers={**bearer, "Origin": "https://foreign.invalid"},
+                expected=403,
+            )["error"]
+            == "origin_rejected",
+        )
+        self.check(
+            "proxy-mcp-host-denied",
+            self.data(
+                mcp,
+                body={},
+                headers={**bearer, "Host": "foreign.invalid"},
+                expected=421,
+            )["error"]
+            == "host_rejected",
+        )
+        shared = self.rpc(
+            mcp,
+            "tools/call",
+            {"name": "get_page", "arguments": {"id": "https-fixture"}},
+        )
+        self.check(
+            "proxy-mcp-rest-shared",
+            shared["structuredContent"]["revision"] == page["revision"],
+        )
+        edit = {
+            **payload,
+            "id": "https-fixture",
+            "base_revision": page["revision"],
+            "request_id": "https-mcp-edit",
+            "markdown": payload["markdown"] + "\nUpdated through TLS MCP.",
+        }
+        updated = self.rpc(mcp, "tools/call", {"name": "save_page", "arguments": edit})
+        self.check("proxy-mcp-save", not updated.get("isError", False))
+        current = self.data(page_url, headers=auth)
+        self.check(
+            "proxy-mcp-write-visible",
+            current["revision"] == updated["structuredContent"]["revision"]
+            and current["markdown"] == edit["markdown"],
+        )
+        retry = self.rpc(mcp, "tools/call", {"name": "save_page", "arguments": edit})
+        self.check(
+            "proxy-mcp-retry",
+            retry["structuredContent"]["revision"] == current["revision"],
+        )
 
     def check(self, name: str, condition: bool) -> None:
         if not condition:
@@ -359,7 +545,9 @@ def main() -> int:
                 )
             )
             original_path = temp / "original.json"
-            original_path.write_text(json.dumps(isolated_config(raw, project, run.key)))
+            isolated = isolated_config(raw, project, run.key)
+            add_acceptance_proxy(isolated)
+            original_path.write_text(json.dumps(isolated))
             compose = [*docker, "compose", "-p", project, "-f", str(original_path)]
             run.projects.append(compose)
             try:
@@ -388,6 +576,8 @@ def main() -> int:
                 run.check("template-repeat", repeated["status"] == "unchanged")
                 run.command([*compose, "up", "-d", "--wait"], timeout=150)
                 base, edit, history = run.exercise(compose)
+                run.exercise_proxy(compose, temp)
+                result["synthetic_https_auth"] = True
                 page = run.data(base + "/api/wiki/pages/stack-fixture")
                 run.command([*compose, *seed], expected=1)
                 run.check(
@@ -420,6 +610,7 @@ def main() -> int:
                 )
                 restore_project = project + "-restore"
                 restore_raw = json.loads(original_path.read_text())
+                restore_raw["services"].pop("edge")
                 restore_path = temp / "restore.json"
                 restore_path.write_text(
                     json.dumps(
@@ -463,7 +654,7 @@ def main() -> int:
                         ]
                     )
                 )
-                run.check("independent-volume-restore", backup["page_count"] == 13)
+                run.check("independent-volume-restore", backup["page_count"] == 14)
                 run.command([*restored, "up", "-d", "--wait"], timeout=150)
                 restored_base = run.port(restored, "frontend", 80)
                 run.wait(restored_base + "/api/wiki/health")
