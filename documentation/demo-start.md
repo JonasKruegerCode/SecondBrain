@@ -82,6 +82,20 @@ delete conversation history locally; the backend stores no chat transcript.
 This is a paid external call, distinct from the deterministic demo and browser
 regression suite.
 
+For a repeatable real-provider release gate instead of a manual chat, run:
+
+```bash
+OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON=backend/.venv/bin/python
+```
+
+The gate seeds a fresh fictional vault, asks two related questions, requires
+the model to read the named evidence pages, checks bounded tool use and the
+unchanged read-only vault, and then removes the vault on success. Its JSON
+record under `.demo/openrouter-acceptance/` contains only timings, model name,
+source IDs, counts and pass/fail metadata—never answers, prompts, credentials
+or page content. This incurs real provider usage and cannot run without the
+explicit opt-in encoded by the Make target.
+
 The service worker does not cache the demo or its API responses. Turning the
 browser offline while the app is open shows the connection notice; a cold offline
 launch is intentionally unavailable. See the [PWA guide](pwa.md) for Android/iOS

@@ -74,6 +74,19 @@ on failure, and writes ignored logs plus a small JSON evidence record under
 existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
 checks remain separate release gates.
 
+When a real key is available, the separate paid-provider gate checks two
+bounded turns, required page reads, visible sources, proportional answers and
+the read-only vault boundary against the fictional fixture. It records only
+structural evidence (never answers, prompts, credentials or page content):
+
+```sh
+OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON=backend/.venv/bin/python
+```
+
+This command deliberately requires both the key and an explicit paid-provider
+flag supplied by the Make target. It does not replace browser, device or hosted
+infrastructure acceptance.
+
 ## Choose a persistent first start
 
 The managed wiki requires an explicit destination and supports empty, fictional

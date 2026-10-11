@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import runpy
 import subprocess
 from collections.abc import Callable
@@ -20,6 +22,11 @@ def runner() -> dict[str, Any]:
 def acceptance_runner() -> dict[str, Any]:
     path = Path(__file__).resolve().parents[2] / "scripts" / "run-wiki-acceptance.py"
     return runpy.run_path(str(path), run_name="wiki_acceptance_runner")
+
+
+def openrouter_acceptance_runner() -> dict[str, Any]:
+    path = Path(__file__).resolve().parents[2] / "scripts" / "run-wiki-openrouter-acceptance.py"
+    return runpy.run_path(str(path), run_name="wiki_openrouter_acceptance_runner")
 
 
 def test_unexpected_service_exit_is_nonzero() -> None:
@@ -83,3 +90,98 @@ def test_acceptance_stops_if_supervised_services_exit() -> None:
 
     with pytest.raises(RuntimeError, match="services exited with status 17"):
         wait("http://127.0.0.1:8000/health", process, timeout=1)
+
+
+def test_openrouter_acceptance_keeps_only_structural_evidence() -> None:
+    values = openrouter_acceptance_runner()
+    validate = cast(Callable[..., dict[str, Any]], values["_validate_turn"])
+    answer = "This is not a real forecast; several conditions changed, so tide alone is uncertain."
+    result = {
+        "answer": answer,
+        "sources": [
+            {"id": "tide-clock", "title": "Tide clock", "evidence": "read"},
+            {"id": "home", "title": "Home", "evidence": "search"},
+        ],
+        "activity": ["Searched.", "Read."],
+        "limits": {"tool_calls": 2, "max_tool_calls": 8},
+    }
+
+    summary = validate(
+        result,
+        required_page="tide-clock",
+        required_terms=("not", "forecast"),
+    )
+
+    assert summary == {
+        "answer_characters": len(answer),
+        "tool_calls": 2,
+        "source_ids": ["home", "tide-clock"],
+        "read_source_ids": ["tide-clock"],
+        "activity_entries": 2,
+    }
+    assert answer not in json.dumps(summary)
+
+
+def test_openrouter_acceptance_requires_the_expected_read_and_fact() -> None:
+    values = openrouter_acceptance_runner()
+    validate = cast(Callable[..., dict[str, Any]], values["_validate_turn"])
+    result = {
+        "answer": "Everything is certain.",
+        "sources": [{"id": "home", "title": "Home", "evidence": "read"}],
+        "activity": ["Read."],
+        "limits": {"tool_calls": 1, "max_tool_calls": 8},
+    }
+
+    with pytest.raises(values["AcceptanceError"], match="required page tide-clock"):
+        validate(result, required_page="tide-clock", required_terms=("not",))
+
+
+def test_openrouter_acceptance_runs_two_turns_without_mutating_fixture(tmp_path: Path) -> None:
+    values = openrouter_acceptance_runner()
+    seed = cast(Callable[..., dict[str, Any]], values["seed_vault"])
+    run_chat = cast(Callable[..., Any], values["_run_chat"])
+    seed(tmp_path)
+
+    def tool_call(page_id: str, call_id: str) -> dict[str, Any]:
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {"name": "read_page", "arguments": json.dumps({"page_id": page_id})},
+        }
+
+    class Provider:
+        def __init__(self) -> None:
+            self.replies: list[dict[str, Any]] = [
+                {"content": None, "tool_calls": [tool_call("tide-clock", "first-read")]},
+                {
+                    "content": "It is not a real forecast and must not guide real shore access.",
+                    "tool_calls": [],
+                },
+                {"content": None, "tool_calls": [tool_call("salt-marsh", "follow-read")]},
+                {
+                    "content": "Several conditions changed, so the tide effect remains uncertain.",
+                    "tool_calls": [],
+                },
+            ]
+            self.requests: list[list[dict[str, Any]]] = []
+
+        async def tool_chat(
+            self,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]],
+            *,
+            model: str | None = None,
+            max_tokens: int = 1200,
+        ) -> dict[str, Any]:
+            self.requests.append(messages.copy())
+            return self.replies.pop(0)
+
+    provider = Provider()
+    result = asyncio.run(run_chat(tmp_path, lambda: provider))
+
+    assert result["first_turn"]["read_source_ids"] == ["tide-clock"]
+    assert result["follow_up"]["read_source_ids"] == ["salt-marsh"]
+    assert any(
+        message.get("role") == "assistant" and "not a real forecast" in message.get("content", "")
+        for message in provider.requests[2]
+    )

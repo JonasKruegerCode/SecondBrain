@@ -2,7 +2,7 @@
 PYTHON ?= python3
 
 # Opt-in managed wiki; does not stop or touch production containers/volumes.
-.PHONY: demo demo-scale acceptance
+.PHONY: demo demo-scale acceptance acceptance-openrouter
 demo:
 	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-demo.py
 
@@ -13,6 +13,10 @@ demo-scale:
 # Fresh real API + Vite + normal Playwright suite. Never uses a personal vault.
 acceptance:
 	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-acceptance.py
+
+# Explicit paid-provider gate. Sends only the public fictional demo fixture.
+acceptance-openrouter:
+	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-openrouter-acceptance.py --confirm-paid-provider
 
 # Prerequisites: poetry install (backend), npm install (frontend), .env in repo root
 
