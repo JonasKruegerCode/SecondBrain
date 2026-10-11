@@ -199,6 +199,79 @@ test("mobile chat opens at its heading without forcing composer focus", async ({
   expect(await page.evaluate(() => scrollY)).toBe(0);
 });
 
+test("saved chat labels and evidence controls remain readable and touchable", async ({ page }, testInfo) => {
+  // A synthetic local history tests rendering only; it is not a generated model answer.
+  await page.addInitScript(() => {
+    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+      id: "synthetic-accessibility-history",
+      title: "Reading the demo wiki",
+      updated: 1,
+      messages: [
+        { role: "user", content: "Where can I start exploring the demo wiki?" },
+        {
+          role: "assistant",
+          content: "This saved rendering fixture links to the demo Home article.",
+          sources: [{ id: "home", title: "Home", evidence: "read" }],
+          activity: ["Read the synthetic Home article."],
+        },
+      ],
+    }]));
+  });
+  let chatRequests = 0;
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/wiki/chat") chatRequests++;
+  });
+
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/chat");
+    await expect(page.locator(".chat-message")).toHaveCount(2);
+    for (const selector of [".user .chat-role", ".assistant .chat-role", ".chat-message summary", ".chat-sources > span", ".chat-sources a", ".chat-sources small"]) {
+      const colors = await page.locator(selector).evaluate(element => {
+        const style = getComputedStyle(element);
+        const surface = element.closest("a") || element.closest(".chat-message")!;
+        const background = getComputedStyle(surface).backgroundColor;
+        const channels = (value: string) => (value.match(/[\d.]+/g) || []).map(Number);
+        const foregroundRgb = channels(style.color);
+        const backgroundRgb = channels(background);
+        const opacity = Number(style.opacity);
+        let opaqueAncestors = true;
+        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+          if (Number(getComputedStyle(parent).opacity) !== 1) opaqueAncestors = false;
+        }
+        return {
+          foreground: `rgb(${foregroundRgb.slice(0, 3).map((channel, i) => channel * opacity + backgroundRgb[i] * (1 - opacity)).join(",")})`,
+          background,
+          opaque: (foregroundRgb.length === 3 || foregroundRgb[3] === 1) &&
+            (backgroundRgb.length === 3 || backgroundRgb[3] === 1) && opaqueAncestors,
+          fontSize: parseFloat(style.fontSize),
+        };
+      });
+      // Fail rather than mismeasure if a later theme introduces extra alpha layers.
+      expect(colors.opaque, `${width}px ${selector} opaque color surfaces`).toBe(true);
+      expect.soft(contrastRatio(colors.foreground, colors.background), `${width}px ${selector} contrast`).toBeGreaterThanOrEqual(4.5);
+      if (selector.endsWith(".chat-role")) expect.soft(colors.fontSize).toBeGreaterThanOrEqual(10);
+    }
+    for (const selector of ['[data-action="new"]', '[data-action="delete"]', ".chat-message summary", ".chat-sources a"]) {
+      const bounds = await page.locator(selector).boundingBox();
+      expect(bounds, selector).not.toBeNull();
+      expect.soft(bounds!.width, `${width}px ${selector} width`).toBeGreaterThanOrEqual(44);
+      expect.soft(bounds!.height, `${width}px ${selector} height`).toBeGreaterThanOrEqual(44);
+      await page.locator(selector).click({ trial: true });
+    }
+    const actions = page.locator(".chat-message summary");
+    await actions.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".chat-message details")).toHaveAttribute("open", "");
+    await expect(page.getByText("Read the synthetic Home article.", { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`saved-chat-${width}.png`), fullPage: true });
+    await page.getByRole("link", { name: "Home read", exact: true }).click();
+    await expect(page).toHaveURL(/\/wiki\/home$/);
+    await expect(page.locator(".prose")).toBeVisible();
+  }
+  expect(chatRequests).toBe(0);
+});
+
 test("keyboard users can skip navigation and identify the active view", async ({
   page,
 }) => {
