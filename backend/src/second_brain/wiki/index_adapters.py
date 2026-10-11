@@ -100,6 +100,33 @@ class Neo4jSnapshotAdapter:
             )
             return [str(record["id"]) for record in result]
 
+    def list_generations(self, namespace: str) -> list[str]:
+        prefix = _generation(namespace) + "_"
+        with self.driver.session(database=self.database) as session:
+            result = session.run(
+                "MATCH (g:ManagedWikiGeneration) "
+                "WHERE g.generation STARTS WITH $prefix "
+                "RETURN g.generation AS generation ORDER BY generation",
+                prefix=prefix,
+            )
+            return [str(record["generation"]) for record in result]
+
+    def delete_generation(self, generation: str) -> None:
+        generation = _generation(generation)
+        with self.driver.session(database=self.database) as session:
+            session.execute_write(self._delete, generation)
+
+    @staticmethod
+    def _delete(tx: Any, generation: str) -> None:
+        tx.run(
+            "MATCH (p:ManagedWikiPage {generation: $generation}) DETACH DELETE p",
+            generation=generation,
+        ).consume()
+        tx.run(
+            "MATCH (g:ManagedWikiGeneration {generation: $generation}) DELETE g",
+            generation=generation,
+        ).consume()
+
 
 class QdrantSnapshotAdapter:
     """A separate collection for each immutable managed generation."""
@@ -162,3 +189,15 @@ class QdrantSnapshotAdapter:
             }
             for point in result.points
         ]
+
+    def list_generations(self, namespace: str) -> list[str]:
+        prefix = self._collection(_generation(namespace) + "_")
+        generations = []
+        for collection in self.client.get_collections().collections:
+            if collection.name.startswith(prefix):
+                generation = collection.name.removeprefix("managed_wiki_")
+                generations.append(_generation(generation))
+        return sorted(generations)
+
+    def delete_generation(self, generation: str) -> None:
+        self.client.delete_collection(collection_name=self._collection(generation))

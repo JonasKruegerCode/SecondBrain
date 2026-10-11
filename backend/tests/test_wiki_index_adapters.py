@@ -55,6 +55,16 @@ def test_real_embedded_qdrant_generations() -> None:
         "managed_wiki_namespace_attempt2",
         "managed_wiki_namespace_empty",
     }
+    assert adapter.list_generations("namespace") == [
+        "namespace_attempt1",
+        "namespace_attempt2",
+        "namespace_empty",
+    ]
+    adapter.delete_generation("namespace_attempt1")
+    assert {c.name for c in client.get_collections().collections} == {
+        "managed_wiki_namespace_attempt2",
+        "managed_wiki_namespace_empty",
+    }
     client.close()
 
 
@@ -90,6 +100,18 @@ def test_neo4j_single_transaction_and_scoped_neighbors() -> None:
     assert "*1..3" in call.args[0]
     assert "all(n IN nodes(path) WHERE n.generation = $generation)" in call.args[0]
     assert call.kwargs["generation"] == "namespace_attempt"
+    session.run.return_value = [{"generation": "namespace_attempt"}]
+    assert adapter.list_generations("namespace") == ["namespace_attempt"]
+    assert session.run.call_args.kwargs["prefix"] == "namespace_"
+    adapter.delete_generation("namespace_attempt")
+    assert session.execute_write.call_count == 2
+    delete_tx = MagicMock()
+    Neo4jSnapshotAdapter._delete(delete_tx, "namespace_attempt")
+    assert delete_tx.run.call_count == 2
+    assert all(
+        call.kwargs["generation"] == "namespace_attempt"
+        for call in delete_tx.run.call_args_list
+    )
     with pytest.raises(ValueError):
         adapter.neighbors("namespace_attempt", ["a"], hops=4)
 

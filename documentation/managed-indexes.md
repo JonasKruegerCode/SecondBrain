@@ -71,10 +71,15 @@ receipt. Independent graph and search receipts let one backend recover without
 claiming the other is ready. The configuration fingerprint is shared across enabled backends:
 changing graph or vector configuration invalidates both receipts until rebuilt.
 
-Old and failed generations are retained. These adapters perform no garbage
-collection and do not delete legacy indexes. Operators should account for storage
-growth; a future cleanup process must protect every published generation and
-coordinate with readers before removing anything.
+The coordinator now records each new build attempt in a local retention ledger.
+Cleanup is deliberately operator initiated and dry-run by default. It protects the
+current ready receipt plus the configured number of recent ready generations,
+observes a minimum age, takes the same worker lock as builders, and takes an
+exclusive lock against semantic/graph readers before deletion. Provider targets
+not present in this coordinator's ledger are reported as untracked and never
+deleted. This includes legacy generations discovered after an upgrade; cleanup
+does not guess their ownership. Provider errors are returned only as sanitized
+per-index states.
 
 ## Enable and operate
 
@@ -103,6 +108,23 @@ Force fresh builds even for an already current snapshot:
 python -m second_brain.wiki.indexes --rebuild
 ```
 
+Preview cleanup candidates while retaining the current and previous ready
+generation and requiring a 24-hour grace period:
+
+```sh
+python -m second_brain.wiki.indexes --prune
+```
+
+After reviewing that output, apply the same plan explicitly:
+
+```sh
+python -m second_brain.wiki.indexes --prune --apply
+```
+
+`--keep-ready` and `--min-age-hours` adjust the conservative defaults. Cleanup
+never runs as part of startup or ordinary delivery. A busy builder or reader
+returns `cleanup: busy`; retry rather than bypassing the lock.
+
 The index module remains an explicit one-shot worker. Managed REST/MCP/stdio
 factories now own [recoverable delivery](managed-delivery.md) by default, which
 runs configured indexes after saves and startup. Disable it with
@@ -123,9 +145,9 @@ Semantic and graph reads require a ready receipt for the current Git revision an
 configuration. Disabled, pending, error, or stale indexes do not provide current
 results; provider outages return explicit unavailable errors.
 
-Builds materialize the full snapshot and all embeddings in process memory.
-Together with retaining old generations without garbage collection, this limits
-practical scale until a separate streaming and retention design is implemented.
+Builds materialize the full snapshot and all embeddings in process memory. The
+operator-controlled retention path bounds future generation growth, but streaming
+builds and provider-scale measurements are still required for production scale.
 
 Validation on 2026-10-10 also started real Uvicorn REST and HTTP MCP listeners:
 the MCP SDK and REST returned identical semantic results; a content mutation

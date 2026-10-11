@@ -170,8 +170,8 @@ frontend is retained as a separate build entry for legacy deployment. Screenshot
 inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
-Not complete: production Git credential provisioning, live provider/deployment integration, index
-retention/production scale, large-vault galaxy acceptance beyond the 320-page fixture,
+Not complete: production Git credential provisioning, live provider/deployment integration,
+provider-scale index retention validation, large-vault galaxy acceptance beyond the 320-page fixture,
 physical-device PWA installation, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.

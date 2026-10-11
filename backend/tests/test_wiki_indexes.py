@@ -1,4 +1,6 @@
+import fcntl
 import gc
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +29,15 @@ class Graph:
     def build(self, generation: str, snapshot: dict[str, Any]) -> None:
         if self.callback:
             self.callback()
+        self.generations[generation] = snapshot
         if self.fail:
             raise RuntimeError("private provider detail must never be returned")
-        self.generations[generation] = snapshot
+
+    def list_generations(self, namespace: str) -> list[str]:
+        return sorted(g for g in self.generations if g.startswith(namespace + "_"))
+
+    def delete_generation(self, generation: str) -> None:
+        del self.generations[generation]
 
     def neighbors(self, generation: str, seeds: list[str], hops: int, limit: int) -> list[str]:
         return [
@@ -104,26 +112,72 @@ def test_failed_receipt_replays_into_fresh_generation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store, graph, indexes = setup(tmp_path)
-    original = indexes._db
-    calls = 0
+    original = indexes._record_result
 
-    def crash() -> Any:
-        nonlocal calls
-        calls += 1
-        if calls == 2:  # receipt write after provider completed
-            raise RuntimeError("simulated process loss")
-        return original()
+    def crash(*args: Any) -> None:
+        raise RuntimeError("simulated process loss")
 
-    monkeypatch.setattr(indexes, "_db", crash)
+    monkeypatch.setattr(indexes, "_record_result", crash)
     with pytest.raises(RuntimeError, match="process loss"):
         indexes.run_once()
-    monkeypatch.setattr(indexes, "_db", original)
+    monkeypatch.setattr(indexes, "_record_result", original)
     assert indexes._receipt("graph") is None
     first_generation = next(iter(graph.generations))
     restarted = IndexCoordinator(store, indexes.adapters)
     restarted.run_once()
     assert restarted._receipt("graph")["generation"] != first_generation  # type: ignore[index]
     assert len(graph.generations) == 2
+
+
+def test_retention_is_dry_run_reader_safe_and_never_deletes_untracked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, graph, indexes = setup(tmp_path)
+    indexes.run_once()
+    indexes.run_once(rebuild=True)
+    current = indexes._receipt("graph")
+    assert current
+    untracked = indexes.namespace + "_untracked"
+    graph.generations[untracked] = store.snapshot()
+    with sqlite3.connect(indexes.db_path) as db:
+        db.execute("UPDATE generations SET created_at=0")
+
+    with (store.path / ".wiki-index-readers.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        assert indexes.prune(keep_ready=1, min_age_seconds=0)["cleanup"] == "busy"
+
+    listing = graph.list_generations
+
+    def unavailable(_namespace: str) -> list[str]:
+        raise RuntimeError("private provider token")
+
+    monkeypatch.setattr(graph, "list_generations", unavailable)
+    error = indexes.prune(keep_ready=1, min_age_seconds=0)
+    assert error["indexes"]["graph"]["state"] == "error"
+    assert "token" not in str(error)
+    monkeypatch.setattr(graph, "list_generations", listing)
+
+    planned = indexes.prune(keep_ready=1, min_age_seconds=0)
+    graph_plan = planned["indexes"]["graph"]
+    assert graph_plan["state"] == "planned"
+    assert graph_plan["deleted"] == []
+    assert graph_plan["untracked"] == 1
+    assert current["generation"] not in graph_plan["candidates"]
+    assert set(graph.generations) == {
+        current["generation"],
+        untracked,
+        *graph_plan["candidates"],
+    }
+
+    applied = indexes.prune(keep_ready=1, min_age_seconds=0, dry_run=False)
+    assert applied["indexes"]["graph"]["deleted"] == graph_plan["candidates"]
+    assert set(graph.generations) == {current["generation"], untracked}
+    assert indexes.neighbors(["home"])["pages"][0]["id"] == "harbor"
+    assert {page["id"] for page in indexes.semantic_search("harbor")["results"]} == {
+        "home",
+        "harbor",
+    }
 
 
 def test_worker_lock_and_configuration_change(tmp_path: Path) -> None:
