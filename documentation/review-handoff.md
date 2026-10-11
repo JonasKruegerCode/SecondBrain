@@ -84,20 +84,31 @@ does not establish hosted index, deployment or device behavior.
 
 ## Evidence snapshot
 
-On published commit `e7e75e527a5cf88d4916aa97b86303b93dbb0574`
-(2026-10-11):
+On published commit `443819164cd56b9eba11af618be33f8654c943f3`
+(tree `17a701e06d5a64db5200aac3919967bc34779887`, 2026-10-11):
 
-- Ruff passed and strict MyPy passed across 84 backend source/test files.
-- 271 nonintegrative backend tests passed.
+- GitHub Backend run #57 and Frontend run #36 completed successfully.
+- Ruff passed and strict MyPy passed across 84 backend source/test files; 273
+  nonintegrative backend tests passed.
+- TypeScript without emit and the Vite production build passed.
 - the supervised disposable run against the real local API and Vite frontend
-  passed 22/22 Playwright cases in 16.968 seconds; its success vault was removed.
-- TypeScript without emit and the Vite production build last passed on parent
-  commit `6379543`; the child changed only backend chat serialization/tests.
-- desktop 1440x1000 and narrow 390x844 Chromium screenshots from the preceding
-  UI milestone were inspected. This is emulation, not physical-device evidence.
+  passed 26/26 Playwright cases in 17.7 seconds against a fresh fictional
+  12-page vault; the complete run took 20.237 seconds and removed its success
+  vault.
+- the added graph regression confirms that a Wikilink rendered inside a nested
+  Markdown list is also present in the same managed graph snapshot, while
+  genuine indented and fenced code examples stay excluded.
+- desktop 1440x1000 Home/Chat, narrow 390x844 Home/Chat and the actual initial
+  mobile Chat viewport were inspected. The latter opened at `scrollY=0` without
+  forcing composer focus. This is emulation, not physical-device evidence.
+- representative small muted text on the light wiki surfaces is guarded at a
+  minimum 4.5:1 contrast ratio by the browser suite.
 - a scripted-provider acceptance exercised two turns, real managed-store reads,
   source/tool limits and the read-only boundary. It is not a real model-quality
   result.
+- a fresh merge-tree check against the then-current `origin/main` completed
+  without conflicts. Draft PR #18 remained open, mergeable and deliberately
+  not marked ready for review.
 
 ## Known release gates
 
