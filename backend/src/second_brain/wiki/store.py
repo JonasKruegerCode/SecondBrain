@@ -62,10 +62,22 @@ def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
 
 def prose_links(markdown: str) -> str:
     """Ignore code examples and comments when deriving explicit prose links."""
-    lines = []
+    lines: list[str] = []
     fence = ""
+    # Each tuple is (marker indentation, content indentation). Markdown list
+    # continuations may legitimately start with four or more spaces, so a
+    # blanket indented-code check would hide visible nested-list links from the
+    # graph and excerpts.
+    list_stack: list[tuple[int, int]] = []
     for line in markdown.splitlines():
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        expanded = line.expandtabs(4)
+        indent = len(expanded) - len(expanded.lstrip(" "))
+        container_indent = max(
+            (content for _, content in list_stack if content <= indent),
+            default=0,
+        )
+        relative = expanded[container_indent:]
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative)
         if match:
             marker = match.group(1)
             if not fence:
@@ -73,7 +85,40 @@ def prose_links(markdown: str) -> str:
             elif marker[0] == fence[0] and len(marker) >= len(fence):
                 fence = ""
             continue
-        if not fence and not line.startswith(("    ", "\t")):
+        if fence:
+            continue
+
+        list_item = re.match(r"^( *)([-+*]|\d+[.)])( +)", expanded)
+        if list_item:
+            marker_indent = len(list_item.group(1))
+            parent = any(content <= marker_indent for _, content in list_stack)
+            # Four-space list-looking text without a list container is still an
+            # indented code block under CommonMark-style rules.
+            if marker_indent < 4 or parent:
+                while list_stack and marker_indent <= list_stack[-1][0]:
+                    list_stack.pop()
+                content_indent = marker_indent + len(list_item.group(2)) + len(
+                    list_item.group(3)
+                )
+                list_stack.append((marker_indent, content_indent))
+                lines.append(line)
+            continue
+
+        if not expanded.strip():
+            lines.append(line)
+            continue
+        if indent == 0:
+            list_stack.clear()
+            lines.append(line)
+            continue
+        if indent < 4:
+            lines.append(line)
+            continue
+        container_indent = max(
+            (content for _, content in list_stack if content <= indent),
+            default=0,
+        )
+        if container_indent and indent < container_indent + 4:
             lines.append(line)
     text = re.sub(r"<!--.*?-->", "", "\n".join(lines), flags=re.DOTALL)
     return re.sub(r"(`+).*?\1", "", text, flags=re.DOTALL)

@@ -511,6 +511,29 @@ test("title links resolve IDs, preserve sections and show missing targets", asyn
   await expect(page.getByRole("link", { name: "Stable reference", exact: true })).toBeVisible();
 });
 
+test("nested-list wikilinks stay aligned between the article and graph", async ({
+  page,
+  request,
+}) => {
+  const target = await create(request, "# Nested target\n\nA synthetic destination.");
+  const source = await create(
+    request,
+    `# Nested source\n\n- References\n    - [[${target.id}|Nested target]]`,
+  );
+
+  await page.goto(`/wiki/${source.id}`);
+  await expect(
+    page.getByRole("link", { name: "Nested target", exact: true }),
+  ).toHaveAttribute("href", `/wiki/${target.id}`);
+
+  const graph = await (await request.get("/api/wiki/graph")).json();
+  expect(graph.edges).toContainEqual({
+    source: source.id,
+    target: target.id,
+    type: "wikilink",
+  });
+});
+
 test("ambiguous titles offer explicit choices and refresh after deletion", async ({ page, request }) => {
   const title = `Duplicate ${randomUUID()}`;
   const a = await create(request, `# ${title}\n\n## Details\n\nFirst synthetic candidate.`);

@@ -113,6 +113,40 @@ def test_excerpt_is_plain_text_for_cards_search_and_chat(tmp_path: Path) -> None
     assert long_page["excerpt"].endswith("complete…")
 
 
+def test_nested_list_links_remain_graph_prose_but_indented_code_does_not(
+    tmp_path: Path,
+) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("target", "# Target page", None, "target")
+    saved = store.save_page(
+        "home",
+        "# Home\n\n"
+        "   Three-space prose.\n\n"
+        "- References\n"
+        "    - [[target|Target page]]\n"
+        "      Supporting nested prose.\n\n"
+        "- Code example\n\n"
+        "      [[not-a-link]]\n\n"
+        "- Nested fence\n"
+        "    ```md\n"
+        "    [[also-not-a-link]]\n"
+        "    ```\n\n"
+        "After list.\n\n"
+        "    top-level code [[also-not-a-link]]",
+        None,
+        "home",
+    )
+
+    assert saved["excerpt"] == (
+        "Three-space prose. References Target page Supporting nested prose. "
+        "Code example Nested fence After list."
+    )
+    assert store.graph()["edges"] == [
+        {"source": "home", "target": "target", "type": "wikilink"}
+    ]
+    assert store.graph()["missing_targets"] == []
+
+
 def test_invalid_galaxy_frontmatter_is_ignored_not_rejected(tmp_path: Path) -> None:
     store = WikiStore(tmp_path)
     markdown = "---\ngalaxy_group: ../escape\ngalaxy_anchor: true\n---\n# Safe page"
