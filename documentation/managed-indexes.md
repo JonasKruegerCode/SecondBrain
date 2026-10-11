@@ -145,6 +145,16 @@ Semantic and graph reads require a ready receipt for the current Git revision an
 configuration. Disabled, pending, error, or stale indexes do not provide current
 results; provider outages return explicit unavailable errors.
 
+A lost ready provider generation is also unavailable, not an empty result.
+Neo4j reads check the generation marker within their read transaction; Qdrant
+reports a missing collection. Local receipts alone do not prove provider storage
+still exists. After repairing the provider, use `--rebuild` explicitly: the
+ordinary worker skips an unchanged ready receipt. Rebuild creates fresh derived
+generations without changing authoritative Markdown or Git history.
+
+The separate [disposable server acceptance](managed-index-acceptance.md) exercises
+these contracts against real Neo4j and Qdrant containers with synthetic vectors.
+
 Builds materialize the full snapshot and all embeddings in process memory. The
 operator-controlled retention path bounds future generation growth, but streaming
 builds and provider-scale measurements are still required for production scale.

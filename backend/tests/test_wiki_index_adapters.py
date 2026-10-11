@@ -94,9 +94,11 @@ def test_neo4j_single_transaction_and_scoped_neighbors() -> None:
     assert "CREATE (:ManagedWikiGeneration" in queries[0]
     assert "CREATE (a)-[:LINKS_TO" in queries[2]
     assert tx.run.call_args_list[2].kwargs["edges"][0]["rel"] == "cites"
-    session.run.return_value = [{"id": "b"}]
+    session.execute_read.side_effect = lambda function: function(tx)
+    tx.run.return_value = MagicMock()
+    tx.run.return_value.__iter__.return_value = iter([{"id": "b"}])
     assert adapter.neighbors("namespace_attempt", ["a"], hops=3) == ["b"]
-    call = session.run.call_args
+    call = tx.run.call_args
     assert "*1..3" in call.args[0]
     assert "all(n IN nodes(path) WHERE n.generation = $generation)" in call.args[0]
     assert call.kwargs["generation"] == "namespace_attempt"
@@ -126,6 +128,22 @@ def test_bad_generation_and_graph_rejected_before_writes() -> None:
     with pytest.raises(ValueError, match="missing"):
         adapter.build("valid", broken)
     driver.session.assert_not_called()
+
+
+def test_missing_graph_generation_is_not_a_valid_empty_neighborhood() -> None:
+    driver = MagicMock()
+    session = driver.session.return_value.__enter__.return_value
+    tx = MagicMock()
+    session.execute_read.side_effect = lambda function: function(tx)
+    tx.run.return_value.single.return_value = None
+    session.run.return_value = []
+    adapter = Neo4jSnapshotAdapter(driver)
+    with pytest.raises(RuntimeError, match="generation is unavailable"):
+        adapter.neighbors("lost_generation", ["home"])
+    assert tx.run.call_count == 1
+    tx.run.return_value.single.return_value = {"generation": "empty_generation"}
+    tx.run.return_value.__iter__.return_value = iter([])
+    assert adapter.neighbors("empty_generation", ["home"]) == []
 
 
 def test_qdrant_writes_wait_and_does_not_publish_failed_attempt() -> None:

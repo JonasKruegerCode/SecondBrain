@@ -23,7 +23,8 @@ the module is skipped; a skipped run is not acceptance evidence. Testcontainers
 uses the existing `neo4j_container` (`neo4j:5`) and `qdrant_container`
 (`qdrant/qdrant:latest`) fixtures and cleans up their disposable containers.
 These image tags can change independently of the locked Python dependencies;
-inspect the images actually pulled when comparing runs. Do not point this gate
+the JUnit suite records their actual image IDs and repository digests. Inspect
+those identities when comparing runs. Do not point this gate
 at a private vault or production services.
 
 ## Evidence and CI
@@ -65,6 +66,10 @@ while graph and exact page reads remain available. An explicit rebuild must
 recover vector results without changing the authoritative snapshot. These checks
 do not establish persistence after container replacement, host loss, or a
 production volume failure.
+
+A separate graph-loss case deletes the ready Neo4j generation. Neighbor reads
+must return `index_unavailable`, not a misleading empty neighborhood, while
+semantic and exact reads remain usable. An explicit rebuild restores traversal.
 
 Retention checks are intended to exercise dry-run planning and explicit deletion
 against real providers while preserving the current ready generation, retained

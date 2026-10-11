@@ -176,6 +176,24 @@ def test_real_retention_preserves_current_and_untracked(indexed: IndexCoordinato
     assert len(indexed.semantic_search("harbor")["results"]) == 3
 
 
+def test_missing_real_graph_generation_is_explicit_and_rebuildable(
+    indexed: IndexCoordinator,
+) -> None:
+    current(indexed)
+    before = indexed.store.snapshot()
+    receipt = indexed._receipt("graph")
+    assert receipt
+    indexed.adapters["graph"].delete_generation(receipt["generation"])
+    with pytest.raises(WikiError) as error:
+        indexed.neighbors(["home"])
+    assert error.value.code == "index_unavailable"
+    assert len(indexed.semantic_search("harbor")["results"]) == 3
+    assert indexed.store.get_page("home")
+    indexed.run_once(rebuild=True)
+    assert indexed.neighbors(["home"])["pages"][0]["id"] == "harbor"
+    assert indexed.store.snapshot() == before
+
+
 def test_real_server_restart_receipts_and_missing_vector_recovery(
     indexed: IndexCoordinator, neo4j_container: Any, qdrant_container: Any
 ) -> None:

@@ -87,8 +87,16 @@ class Neo4jSnapshotAdapter:
         generation = _generation(generation)
         if not 1 <= hops <= 3 or not 1 <= limit <= 1000:
             raise ValueError("hops must be 1..3 and limit 1..1000")
-        with self.driver.session(database=self.database) as session:
-            result = session.run(
+
+        def read(tx: Any) -> list[str]:
+            marker = tx.run(
+                "MATCH (g:ManagedWikiGeneration {generation: $generation}) "
+                "RETURN g.generation AS generation",
+                generation=generation,
+            ).single()
+            if marker is None:
+                raise RuntimeError("Managed graph generation is unavailable")
+            result = tx.run(
                 "MATCH (a:ManagedWikiPage {generation: $generation}) "
                 "WHERE a.id IN $seeds "
                 f"MATCH path=(a)-[:LINKS_TO*1..{hops}]-(b:ManagedWikiPage) "
@@ -99,6 +107,9 @@ class Neo4jSnapshotAdapter:
                 limit=limit,
             )
             return [str(record["id"]) for record in result]
+
+        with self.driver.session(database=self.database) as session:
+            return session.execute_read(read)  # type: ignore[no-any-return]
 
     def list_generations(self, namespace: str) -> list[str]:
         prefix = _generation(namespace) + "_"
