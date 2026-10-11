@@ -126,6 +126,11 @@ before remote exposure. The API deliberately does not receive the MCP Bearer
 key, so browser access remains same-origin and can retain the deployment's
 existing proxy authentication.
 
+The backend healthcheck is a read-only readiness probe of the local bare Git
+authority. An empty vault is healthy; after publication, an unavailable object
+store or unreadable current commit makes the backend unhealthy instead of
+allowing the frontend to start against a false-positive `ok` response.
+
 For a containerized reverse proxy on an existing `proxy-network`, attach only
 the public-facing services with a local override:
 

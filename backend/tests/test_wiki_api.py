@@ -47,6 +47,33 @@ def test_optional_access_key_protects_reads_and_writes(tmp_path: Path) -> None:
         assert response.headers["cache-control"] == "no-store"
 
 
+def test_health_checks_the_local_git_authority(tmp_path: Path) -> None:
+    with TestClient(create_app(tmp_path)) as client:
+        assert client.get("/api/wiki/health").json() == {
+            "status": "ok",
+            "profile": "managed-wiki",
+        }
+        response = client.post(
+            "/api/wiki/pages/harbor",
+            json={
+                "markdown": "# Harbor\nA fictional example.",
+                "base_revision": None,
+                "request_id": "health-page",
+            },
+        )
+        assert response.status_code == 200
+        assert client.get("/api/wiki/health").status_code == 200
+
+        (tmp_path / ".wiki.git" / "objects").rename(tmp_path / "unavailable-objects")
+        failed = client.get("/api/wiki/health")
+        assert failed.status_code == 503
+        assert failed.headers["cache-control"] == "no-store"
+        assert failed.json() == {
+            "error": "storage_unavailable",
+            "message": "Local Git operation failed.",
+        }
+
+
 def test_link_resolution_matches_graph_and_keeps_ambiguity(tmp_path: Path) -> None:
     with TestClient(create_app(tmp_path)) as client:
         for key, body in {

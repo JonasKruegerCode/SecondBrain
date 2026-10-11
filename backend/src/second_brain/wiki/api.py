@@ -49,6 +49,7 @@ def create_app(
     worker = DeliveryWorker(delivery) if automatic_delivery else None
 
     async def health(request: Request) -> Response:
+        await run_in_threadpool(store.check_health)
         return JSONResponse({"status": "ok", "profile": "managed-wiki"})
 
     async def pages(request: Request) -> Response:

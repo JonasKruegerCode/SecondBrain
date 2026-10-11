@@ -55,6 +55,13 @@ localhost. Existing production proxy credentials are not changed. This milestone
 does not migrate the production vault. Explicit local Git import and independent
 HTTP MCP startup are described below.
 
+Compose gates the frontend on `/api/wiki/health`. That route now performs a
+cheap read-only check of the bare Git repository and, once a revision exists,
+the published commit object. It accepts a deliberately empty unborn vault but
+returns a sanitized 503 when the local authority disappears or becomes
+unreadable. This is a readiness check, not an off-host backup or a disk-durability
+test.
+
 ## Publication contract
 
 The directory's `.wiki.git` is a bare local Git repository. `refs/heads/wiki`

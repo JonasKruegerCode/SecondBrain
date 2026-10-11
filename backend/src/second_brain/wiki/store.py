@@ -140,6 +140,21 @@ class WikiStore:
     def _head(self) -> str:
         return self._git("rev-parse", "--verify", REF, check=False).decode().strip()
 
+    def check_health(self) -> None:
+        """Fail when the local content authority is no longer readable.
+
+        An empty, unborn vault is healthy. Once a revision exists, Git must be
+        able to resolve it as a commit. This is deliberately a cheap read-only
+        readiness probe rather than a full page listing or a synthetic write.
+        """
+        if self.repo.is_symlink() or not self.repo.is_dir():
+            raise WikiError("storage_unavailable", "Local history is unavailable.")
+        if self._git("rev-parse", "--is-bare-repository").decode().strip() != "true":
+            raise WikiError("storage_unavailable", "Local history is unavailable.")
+        head = self._head()
+        if head:
+            self._git("cat-file", "-e", f"{head}^{{commit}}")
+
     @staticmethod
     def _validate_id(page_id: str) -> None:
         if not ID_RE.fullmatch(page_id) or page_id in {".", ".."}:
