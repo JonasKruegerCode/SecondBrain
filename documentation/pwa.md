@@ -41,9 +41,16 @@ Offline reading, offline writes and offline LLM calls are outside the 2.0 scope.
 The runtime registers the worker with `updateViaCache: "none"` and asks it to
 check again when the app becomes visible. Nginx serves the worker with
 `no-cache, no-store, must-revalidate`. A changed worker installs into the normal
-waiting state; the current app shows **Update now**. That action sends
-`SKIP_WAITING`, and `controllerchange` reloads the app once. There is no silent
-asset-cache migration because there is no app cache.
+waiting state; the current app shows **Update now**. The button stays disabled
+while the editor has unsaved changes or a save response is pending, including an
+unchanged save. The notice explains whether to save/discard or wait for saving.
+Once safe, that action sends `SKIP_WAITING` and reloads the app once.
+
+If another tab activates the worker, a tab with unsaved changes or a pending
+save keeps its current document and editor. Its update notice remains available;
+after saving or deliberately discarding, **Update now** reloads into the active
+version. First installation claims the current online document without reloading.
+There is no silent asset-cache migration because there is no app cache.
 
 Changing deployed frontend assets without changing `service-worker.js` will not
 create a waiting worker. Bump its `RELEASE` value for each deployment that needs
@@ -61,6 +68,12 @@ cd frontend
 npm run test:browser
 ```
 
+`make acceptance PYTHON=backend/.venv/bin/python` supervises both services and
+runs the same browser suite in one command. The **Managed wiki browser acceptance**
+CI workflow runs it on pull requests with a fresh synthetic vault and retains
+only the structural result, browser report and synthetic update screenshots for
+seven days.
+
 The PWA browser regression asks Chromium's `Page.getAppManifest` for parse
 errors and `Page.getInstallabilityErrors` for unmet criteria, validates the install
 metadata/icons, waits for the root-scope worker, confirms empty CacheStorage,
@@ -68,7 +81,10 @@ checks the worker has no fetch handler, and toggles the browser offline to verif
 the visible connection notice at 390 px. A local same-origin proxy serves two
 worker revisions so the suite also observes a real waiting worker, applies
 **Update now**, and verifies the controlled reload without creating a private
-cache.
+cache. Additional browser cases verify that a second tab's update preserves the
+exact unsaved draft without a native unload dialog, then allows save or discard
+before reloading. A held response from the real save API also verifies the guard
+when the markdown is unchanged; the response is delayed, not replaced with a stub.
 
 These checks are browser emulation, not a physical Android/iOS installation.
 Homescreen creation, standalone launch, OS icon rendering and a production HTTPS

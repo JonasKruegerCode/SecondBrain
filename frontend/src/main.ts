@@ -175,6 +175,10 @@ function shell() {
   renderPwaState();
 }
 
+function canReloadApp() {
+  return !saving && !(editing && draft !== page?.markdown);
+}
+
 function renderPwaState() {
   const notice = app.querySelector<HTMLElement>(".pwa-notice");
   if (!notice) return;
@@ -182,13 +186,19 @@ function renderPwaState() {
   const button = notice.querySelector<HTMLButtonElement>("button")!;
   notice.hidden = false;
   button.hidden = true;
+  button.disabled = false;
   if (pwaState.offline) {
     notice.dataset.kind = "offline";
     label.textContent = "You’re offline. Saved browser drafts remain local; wiki and chat need a connection.";
   } else if (pwaState.updateAvailable) {
     notice.dataset.kind = "update";
-    label.textContent = "A new version of Secondbrain is ready.";
+    label.textContent = saving
+      ? "A new version is ready. Wait for saving to finish before updating."
+      : !canReloadApp()
+        ? "A new version is ready. Save or discard your changes before updating."
+        : "A new version of Secondbrain is ready.";
     button.hidden = false;
+    button.disabled = !canReloadApp();
     button.textContent = "Update now";
     button.onclick = applyUpdate;
   } else if (pwaState.installable) {
@@ -439,6 +449,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
     main.querySelector("textarea")!.addEventListener("input", (e) => {
       draft = (e.target as HTMLTextAreaElement).value;
       requestId = crypto.randomUUID();
+      renderPwaState();
     });
     main.querySelector("#save")!.addEventListener("click", () => void save());
   }
@@ -451,6 +462,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   if (focusTarget && !(focusTarget === "editor" && saving)) {
     main.querySelector<HTMLElement>(targets[focusTarget])?.focus();
   }
+  renderPwaState();
 }
 async function refreshDelivery(run: number, token: number, attempt = 0) {
   try {
@@ -528,12 +540,12 @@ window.addEventListener("hashchange", () => {
   focusFragment();
 });
 window.addEventListener("beforeunload", (e) => {
-  if (editing && draft !== page?.markdown) {
+  if (!canReloadApp()) {
     e.preventDefault();
     e.returnValue = "";
   }
 });
-startPwa();
+startPwa(canReloadApp);
 observePwa(state => {
   pwaState = state;
   renderPwaState();

@@ -1,0 +1,58 @@
+name: Managed wiki browser acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install poetry==2.1.3
+          poetry sync --no-interaction
+
+      - name: Install browser dependencies
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Exercise the real disposable wiki and browser
+        working-directory: backend
+        run: poetry run python ../scripts/run-wiki-acceptance.py
+
+      # Only synthetic structural evidence and screenshots; never archive a vault.
+      - name: Upload browser acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .demo/acceptance/*/result.json
+            .demo/acceptance/*/browser.log
+            .demo/browser-results/**/*.png
+          if-no-files-found: warn
+          retention-days: 7

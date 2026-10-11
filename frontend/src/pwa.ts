@@ -13,13 +13,15 @@ let installPrompt: InstallPrompt | undefined;
 let waitingWorker: ServiceWorker | undefined;
 let registration: ServiceWorkerRegistration | undefined;
 let reloading = false;
+let reloadPending = false;
+let canReload: () => boolean = () => true;
 const listeners = new Set<(state: PwaState) => void>();
 
 function state(): PwaState {
   return {
     offline: !navigator.onLine,
     installable: Boolean(installPrompt),
-    updateAvailable: Boolean(waitingWorker),
+    updateAvailable: Boolean(waitingWorker) || reloadPending,
   };
 }
 
@@ -59,14 +61,26 @@ export async function installApp(): Promise<void> {
 }
 
 export function applyUpdate() {
+  if (!canReload()) return;
+  if (reloadPending) {
+    reloadApp();
+    return;
+  }
   waitingWorker?.postMessage({ type: "SKIP_WAITING" });
+}
+
+function reloadApp() {
+  if (reloading || !canReload()) return;
+  reloading = true;
+  location.reload();
 }
 
 export function checkForUpdate() {
   void registration?.update();
 }
 
-export function startPwa() {
+export function startPwa(reloadAllowed: () => boolean = () => true) {
+  canReload = reloadAllowed;
   window.addEventListener("online", publish);
   window.addEventListener("offline", publish);
   window.addEventListener("beforeinstallprompt", event => {
@@ -83,10 +97,19 @@ export function startPwa() {
   });
 
   if (!("serviceWorker" in navigator)) return;
+  let hadController = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (reloading) return;
-    reloading = true;
-    location.reload();
+    // First installation claims the current online document; no reload is needed.
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
+    waitingWorker = undefined;
+    reloadPending = true;
+    publish();
+    // Another tab can activate the worker while this tab has an editor open.
+    // Keep the update notice actionable after saving or deliberately discarding.
+    reloadApp();
   });
   window.addEventListener("load", () => {
     void navigator.serviceWorker

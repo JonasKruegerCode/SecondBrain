@@ -1,4 +1,4 @@
-import { test, expect, APIRequestContext } from "@playwright/test";
+import { test, expect, APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
@@ -48,13 +48,27 @@ function contrastRatio(foreground: string, background: string) {
 
 async function pwaUpdateProxy() {
   let release = 1;
+  let saveGate: { reached: () => void; resume: Promise<void> } | undefined;
   const server = createServer(async (request, response) => {
     try {
       const path = request.url || "/";
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const upstream = await fetch(`http://127.0.0.1:5173${path}`, {
-        headers: { accept: request.headers.accept || "*/*" },
+        method: request.method,
+        headers: {
+          accept: request.headers.accept || "*/*",
+          ...(request.headers["content-type"] ? { "content-type": request.headers["content-type"] } : {}),
+        },
+        ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
       });
       let body = Buffer.from(await upstream.arrayBuffer());
+      if (request.method === "POST" && path.startsWith("/api/wiki/pages/") && saveGate) {
+        const gate = saveGate;
+        saveGate = undefined;
+        gate.reached();
+        await gate.resume;
+      }
       if (path.startsWith("/service-worker.js")) {
         body = Buffer.from(
           body
@@ -86,6 +100,14 @@ async function pwaUpdateProxy() {
   return {
     origin: `http://127.0.0.1:${address.port}`,
     bump: () => release++,
+    holdNextSave: () => {
+      let reached!: () => void;
+      let resume!: () => void;
+      const arrived = new Promise<void>(resolve => { reached = resolve; });
+      const pending = new Promise<void>(resolve => { resume = resolve; });
+      saveGate = { reached, resume: pending };
+      return { arrived, release: resume };
+    },
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
@@ -703,6 +725,10 @@ test("PWA metadata registers an online-only worker without private caches", asyn
   request,
   context,
 }) => {
+  await page.addInitScript(() => {
+    const key = "pwa-first-install-documents";
+    sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) || "0") + 1));
+  });
   await page.goto("/?overview=1");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
     "href",
@@ -751,6 +777,7 @@ test("PWA metadata registers an online-only worker without private caches", asyn
   expect(worker.scope).toBe("http://127.0.0.1:5173/");
   expect(worker.script).toMatch(/\/service-worker\.js$/);
   expect(worker.caches).toEqual([]);
+  expect(await page.evaluate(() => sessionStorage.getItem("pwa-first-install-documents"))).toBe("1");
 
   const serviceWorker = await (await request.get("/service-worker.js")).text();
   expect(serviceWorker).toContain("SKIP_WAITING");
@@ -785,6 +812,135 @@ test("PWA offers and applies a waiting worker update", async ({ page }) => {
     await expect(page.locator(".pwa-notice")).toBeHidden();
     expect(await page.evaluate(() => caches.keys())).toEqual([]);
   } finally {
+    await proxy.close();
+  }
+});
+
+
+async function offerPwaUpdate(page: Page, proxy: Awaited<ReturnType<typeof pwaUpdateProxy>>) {
+  proxy.bump();
+  await page.evaluate(async () => {
+    await (await navigator.serviceWorker.getRegistration())?.update();
+  });
+  await expect(page.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+}
+
+for (const finish of ["save", "discard"] as const) {
+  test(`PWA preserves a dirty tab when another tab updates, then permits ${finish} and reload`, async ({ page, context, request }, testInfo) => {
+    const fixture = await create(request, "# PWA draft fixture\nOriginal synthetic content.");
+    const draft = "# PWA draft fixture\nUnsaved synthetic draft.";
+    const proxy = await pwaUpdateProxy();
+    const other = await context.newPage();
+    let unexpectedDialogs = 0;
+    page.on("dialog", async dialog => {
+      unexpectedDialogs++;
+      await dialog.dismiss();
+    });
+    try {
+      await page.goto(`${proxy.origin}/wiki/${fixture.id}`);
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await other.goto(`${proxy.origin}/?overview=1`);
+      await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await page.getByRole("button", { name: "Edit page" }).click();
+      await page.getByRole("textbox", { name: /Markdown/ }).fill(draft);
+      await page.evaluate(() => {
+        (window as any).__pwaDocumentMarker = "dirty-original-document";
+        (window as any).__pwaControllerChanges = 0;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          (window as any).__pwaControllerChanges++;
+        });
+      });
+      await offerPwaUpdate(page, proxy);
+      const notice = page.locator('.pwa-notice[data-kind="update"]');
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await expect(notice).toContainText(/save.*discard/i);
+      if (finish === "save") {
+        await page.screenshot({ path: testInfo.outputPath("update-draft-desktop.png"), fullPage: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: testInfo.outputPath("update-draft-mobile.png"), fullPage: true });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+      }
+      await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+      await Promise.all([
+        other.waitForEvent("load"),
+        other.getByRole("button", { name: "Update now" }).click(),
+      ]);
+      await page.waitForFunction(() => (window as any).__pwaControllerChanges === 1);
+      await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+      expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBe("dirty-original-document");
+      expect(unexpectedDialogs).toBe(0);
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      if (finish === "save") {
+        await page.getByRole("button", { name: "Save changes" }).click();
+        await expect(page.locator(".notice")).toContainText("Saved");
+      } else {
+        page.removeAllListeners("dialog");
+        page.once("dialog", dialog => dialog.accept());
+        await page.getByRole("button", { name: "Cancel" }).click();
+      }
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+      await Promise.all([
+        page.waitForEvent("load"),
+        notice.getByRole("button", { name: "Update now" }).click(),
+      ]);
+      await expect(page.locator(".prose")).toContainText(finish === "save" ? "Unsaved synthetic draft." : "Original synthetic content.");
+      expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBeUndefined();
+      await expect(page.locator('.pwa-notice[data-kind="update"]')).toBeHidden();
+    } finally {
+      await other.close();
+      await page.close();
+      await proxy.close();
+    }
+  });
+}
+
+
+test("PWA blocks update during an unchanged save until the real response arrives", async ({ page, context, request }) => {
+  const fixture = await create(request, "# PWA saving fixture\nSynthetic unchanged text.");
+  const proxy = await pwaUpdateProxy();
+  const other = await context.newPage();
+  let held: ReturnType<typeof proxy.holdNextSave> | undefined;
+  let unexpectedDialogs = 0;
+  page.on("dialog", async dialog => { unexpectedDialogs++; await dialog.dismiss(); });
+  try {
+    await page.goto(`${proxy.origin}/wiki/${fixture.id}`);
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    await other.goto(`${proxy.origin}/?overview=1`);
+    await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    await page.getByRole("button", { name: "Edit page" }).click();
+    held = proxy.holdNextSave();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await held.arrived;
+    await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
+    await page.evaluate(() => {
+      (window as any).__pwaDocumentMarker = "saving-document";
+      (window as any).__pwaControllerChanges = 0;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        (window as any).__pwaControllerChanges++;
+      });
+    });
+    await offerPwaUpdate(page, proxy);
+    const notice = page.locator('.pwa-notice[data-kind="update"]');
+    await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+    await expect(notice).toContainText(/sav/i);
+    expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true);
+    await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+    await Promise.all([other.waitForEvent("load"), other.getByRole("button", { name: "Update now" }).click()]);
+    await page.waitForFunction(() => (window as any).__pwaControllerChanges === 1);
+    await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
+    expect(unexpectedDialogs).toBe(0);
+    expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBe("saving-document");
+    held.release();
+    await expect(page.locator(".notice")).toContainText("Saved");
+    await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+    await Promise.all([page.waitForEvent("load"), notice.getByRole("button", { name: "Update now" }).click()]);
+    await expect(page.locator(".prose")).toContainText("Synthetic unchanged text.");
+    expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBeUndefined();
+  } finally {
+    held?.release();
+    await other.close();
+    await page.close();
     await proxy.close();
   }
 });
