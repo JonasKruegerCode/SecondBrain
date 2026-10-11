@@ -222,6 +222,7 @@ in [managed indexes](documentation/managed-indexes.md) and
 - [Content-only Markdown export](documentation/wiki-export.md)
 - [Explicit managed Git sync](documentation/managed-git-sync.md)
 - [PWA privacy, installation and updates](documentation/pwa.md)
+- [Current review handoff and release gates](documentation/review-handoff.md)
 
 ## Current limits
 

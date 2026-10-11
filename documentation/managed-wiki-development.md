@@ -195,22 +195,19 @@ compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use onl
 a disposable synthetic vault: the suite deliberately creates, edits and deletes
 fixture pages. Test artifacts are kept under the ignored `.demo` directory.
 
-On 2026-10-10: 234 nonintegrative backend tests passed; repository Ruff and strict
-MyPy passed (75 source/test files). New exporter/setup/remote/CLI coverage uses
-real local Git, with frozen snapshots, no-replace outputs, byte preservation,
-conflicts, lost acknowledgements, restart, request identity, and prepared-object
-retention. A trusted generated pre-push guard validates Git's advertised remote
-OID before a normal non-force push; actual deletion/rewind race tests passed.
+The current evidence snapshot and copyable review summary live in
+[review-handoff.md](review-handoff.md). Keep commit-specific counts there instead
+of accumulating historical CI logs in this architecture guide. The durable
+coverage includes real local Git, separate-process writers, frozen imports,
+byte-preserving export/import, guarded remote publication, restart, request
+identity, prepared-object retention and delivery conflict recovery.
 
-A new twelve-page template -> plain export -> committed Git -> managed import
-roundtrip preserved every Markdown byte. The imported app was actually started;
-eleven browser tests against the actual API passed (one deliberate history-error
-injection uses an intercepted failed response), desktop 1440px/mobile 390px screenshots were
-inspected, and real network MCP SDK initialize/read/guidance/save agreed with
-REST revisions. No observed JavaScript errors or page overflow. Frontend TypeScript and both Vite builds passed for the updated UI. A new
-read-only review found and corrected worker lifecycle restart and baseline
-validation issues; pending payloads and external-change conflicts have real Git
-regressions.
+The twelve-page template -> plain export -> committed Git -> managed import
+roundtrip preserved every Markdown byte. The imported app and network MCP were
+also exercised against the real REST services. Browser evidence uses the
+fictional fixture at desktop and narrow viewports; deliberately intercepted
+error/model responses remain identified as synthetic contracts rather than live
+provider evidence.
 
 The preceding index milestone started real REST/MCP semantic services with
 embedded Qdrant and synthetic embeddings. Docker is unavailable here; container
@@ -220,8 +217,8 @@ real-model chat and actual device installation remain untested.
 The imported atlas was also opened in the running browser, and desktop/mobile
 screenshots were inspected. The narrow-view table inspection exposed excessive
 word wrapping; tables now scroll inside a keyboard-focusable region with readable
-column widths. A real demo-table regression covers 390px and 1440px views,
-keyboard scrolling and absence of page overflow.
+column widths. The browser contract covers 390px and 1440px views, keyboard
+scrolling and absence of page overflow.
 
 A synthetic 500-page Git import took 8.8 seconds in the development environment.
 Listing, current Markdown graph and lexical search took approximately 42–56 ms.
@@ -292,17 +289,12 @@ not production-scale or final galaxy acceptance.
 Run the reproducible scale path with `make demo-scale PYTHON=backend/.venv/bin/python`.
 Then, in another terminal, run
 `cd frontend && PLAYWRIGHT_SCALE=1 npm run test:browser -- e2e/scale.spec.ts`.
-The default twenty-case browser suite skips this costly opt-in fixture.
-
-Validated against actual isolated demo services: 250 nonintegrative backend tests,
-Ruff and strict MyPy, TypeScript and both Vite entries. Twenty Chromium cases in
-total cover reader/editor regressions, title ambiguity/deletion, fragments,
-delayed real responses, galaxy save/link/delete refresh and PWA install/update
-contracts. Desktop 1440 and mobile viewport 390 screenshots were inspected;
-light-shell contrast, label collisions and navigation overflow were corrected.
-Browser emulation is not a physical-device installation or hosted-provider/model
-test. One history response uses a synthetic error and one real page response is
-delayed; the remaining content and mutations use real services.
+The normal browser suite skips this costly opt-in fixture. Its current case count
+and exact commit evidence are recorded in
+[review-handoff.md](review-handoff.md). Browser emulation is not a
+physical-device installation or hosted-provider/model test. Deliberately
+intercepted failures and model responses remain explicit; ordinary content and
+mutations use the real local services.
 
 ## Read-only chat evidence
 
