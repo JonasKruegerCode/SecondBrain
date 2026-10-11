@@ -34,9 +34,12 @@ def _stop_transport(process: subprocess.Popen[bytes]) -> None:
     try:
         process.communicate(timeout=2)
     except subprocess.TimeoutExpired:
-        for stream in (process.stdin, process.stdout, process.stderr):
-            if stream is not None:
-                stream.close()
+        # Windows capture threads may still hold buffered stream locks. Closing
+        # their streams here could itself block on a surviving child.
+        if os.name == "posix":
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
         with suppress(subprocess.TimeoutExpired):
             process.wait(timeout=2)
 

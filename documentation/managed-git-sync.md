@@ -60,8 +60,10 @@ Errors and metadata contain neither remote URLs nor page bodies. Git subprocesse
 have a 45-second execution timeout. On POSIX, timed-out Git and its SSH children
 are killed as one isolated process group; pipe draining has a separate two-second
 bound (plus at most two seconds to reap Git). CLI interruption also stops the
-transport before propagating the interruption. Other platforms kill Git and bound
-pipe draining, but descendant cleanup is not established there. A timed-out push
+transport before propagating the interruption. Other platforms kill Git with
+bounded cleanup calls; capture threads may retain pipes from surviving children.
+Non-POSIX cleanup has not been exercised and does not establish descendant cleanup.
+A timed-out push
 can still have published remotely: retry with the same request ID to resolve its
 prepared receipt. This is not a total deadline for a multi-command delivery pass.
 
