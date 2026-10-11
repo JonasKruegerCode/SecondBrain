@@ -19,6 +19,7 @@ from second_brain.wiki.api import create_app
 from second_brain.wiki.index_adapters import Neo4jSnapshotAdapter, QdrantSnapshotAdapter
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.mcp import create_mcp
+from second_brain.wiki.scale_demo import create_scale_vault
 from second_brain.wiki.store import WikiError, WikiStore
 
 pytestmark = [
@@ -192,6 +193,39 @@ def test_missing_real_graph_generation_is_explicit_and_rebuildable(
     indexed.run_once(rebuild=True)
     assert indexed.neighbors(["home"])["pages"][0]["id"] == "harbor"
     assert indexed.store.snapshot() == before
+
+
+def test_real_indexes_accept_large_snapshot_and_exact_graph_context(
+    indexed: IndexCoordinator, tmp_path: Path, record_testsuite_property: Any
+) -> None:
+    vault = tmp_path / "scale"
+    fixture = create_scale_vault(vault, count=320)
+    assert fixture["pages"] == 320
+    assert fixture["edges"] == 648
+    record_testsuite_property("scale_pages", fixture["pages"])
+    record_testsuite_property("scale_edges", fixture["edges"])
+    scaled = IndexCoordinator(WikiStore(vault), indexed.adapters)
+    before = scaled.store.snapshot()
+    current(scaled)
+    graph = before["graph"]
+    seeds = {"scale-0000"}
+    reachable = set(seeds)
+    for _ in range(2):
+        reachable |= {
+            endpoint
+            for edge in graph["edges"]
+            if edge["source"] in reachable or edge["target"] in reachable
+            for endpoint in (edge["source"], edge["target"])
+        }
+    actual = scaled.neighbors(list(seeds), hops=2)
+    assert {page["id"] for page in actual["pages"]} == reachable - seeds
+    assert actual["revision"] == before["revision"]
+    results = scaled.semantic_search("observation", limit=50)
+    assert len(results["results"]) == 50
+    pages = {page["id"]: page for page in before["pages"]}
+    assert all(hit["revision"] == pages[hit["id"]]["revision"] for hit in results["results"])
+    assert scaled.graph_search("observation", hops=2)["revision"] == before["revision"]
+    assert scaled.store.snapshot() == before
 
 
 def test_real_server_restart_receipts_and_missing_vector_recovery(

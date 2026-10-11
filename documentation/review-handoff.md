@@ -9,8 +9,10 @@ running the named checks on the exact published commit.
 The branch is a coherent local development preview: the managed wiki, direct
 MCP, article UI/editor/history, knowledge galaxy, bounded read-only chat, PWA,
 first-start/import/export, recoverable indexing and guarded Git delivery are
-implemented. It is **not yet release- or merge-ready** because real provider,
-container/HTTPS, private migration and physical-device gates remain open.
+implemented. It is **not yet release- or merge-ready** because real model/hosted
+provider, production HTTPS, private migration and physical-device gates remain open.
+Disposable Docker/nginx/volume acceptance now runs separately in CI; require
+the actual results for the reviewed revision before relying on that evidence.
 
 ## Architecture and data flow
 
@@ -74,6 +76,12 @@ writes, restart persistence and independent-volume backup/restore. See the
 [stack acceptance guide](managed-stack-acceptance.md) for isolation and CI
 evidence. Adding the runner does not itself establish a passing Docker gate.
 
+The [managed index acceptance](managed-index-acceptance.md) runs Neo4j and Qdrant
+Testcontainers with real adapters and deterministic synthetic embeddings. It
+covers shared reads, freshness, generation loss/rebuild, server restart,
+retention and a bounded 320-page snapshot. This does not establish real-model
+quality, hosted providers or production load behavior.
+
 The demo and acceptance commands use only the public fictional Lantern Bay
 fixture. The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
@@ -120,8 +128,9 @@ On published commit `443819164cd56b9eba11af618be33f8654c943f3`
 
 - real OpenRouter multi-turn result and answer-quality inspection
 - hosted Neo4j, Qdrant and embedding-provider integration and retention under load
-- actual Compose image build/start, named-volume recovery, authenticated
-  reverse-proxy/HTTPS operation and off-host restore
+- production authenticated reverse-proxy/HTTPS operation and off-host restore;
+  disposable Compose build/start/restart and independent-volume recovery have
+  separate CI evidence
 - reviewed Git credentials and migration of the selected private legacy vault
 - physical Android/iOS installation, standalone launch, icons, updates, touch and
   screen-reader inspection

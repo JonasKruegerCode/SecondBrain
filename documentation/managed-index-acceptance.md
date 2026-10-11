@@ -71,6 +71,12 @@ A separate graph-loss case deletes the ready Neo4j generation. Neighbor reads
 must return `index_unavailable`, not a misleading empty neighborhood, while
 semantic and exact reads remain usable. An explicit rebuild restores traversal.
 
+The larger case imports the public 320-page, 648-link scale fixture, builds both
+real provider generations and compares two-hop traversal with the authoritative
+Markdown graph. It also checks bounded vector hits and GraphRAG revision
+agreement. This is a bounded data-path check, not production load testing or a
+semantic-quality benchmark; the injected vectors are intentionally synthetic.
+
 Retention checks are intended to exercise dry-run planning and explicit deletion
 against real providers while preserving the current ready generation, retained
 ready generations, and untracked targets. Cleanup remains operator initiated;
