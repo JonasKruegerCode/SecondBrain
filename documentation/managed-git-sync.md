@@ -159,7 +159,10 @@ IDs, and the absence of managed-internal objects from exported history. Syntheti
 process tests additionally verify actual pipe-holding descendant cleanup and
 sanitized timeout errors. An actual OpenSSH `-G` check verifies noninteractive,
 agent-only identity configuration and explicit trust-path quoting. It does not
-establish an authenticated connection to a private hosted repository.
+establish an authenticated connection to a private hosted repository. A separate
+opt-in [disposable OpenSSH acceptance](managed-ssh-acceptance.md) exercises real
+agent-authenticated push/pull, restart receipts and host/authentication refusal
+against a loopback server; it also does not establish private hosted permissions.
 
 ## Runtime delivery
 

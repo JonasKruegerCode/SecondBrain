@@ -82,6 +82,12 @@ covers shared reads, freshness, generation loss/rebuild, server restart,
 retention and a bounded 320-page snapshot. This does not establish real-model
 quality, hosted providers or production load behavior.
 
+The opt-in [SSH Git acceptance](managed-ssh-acceptance.md) uses an owned agent,
+fresh keys and a loopback OpenSSH server to exercise authenticated snapshot
+delivery and refusal of missing/changed host trust or unauthorized client keys.
+Its independent CI result must be checked; it does not validate hosted deploy-key
+permissions or operator credential mounts.
+
 The demo and acceptance commands use only the public fictional Lantern Bay
 fixture. The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
