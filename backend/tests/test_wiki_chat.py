@@ -82,6 +82,37 @@ def test_chat_iterates_over_real_search_and_page_services(tmp_path: Path) -> Non
     assert "solar beacon" in provider.requests[-1][-1]["content"]
 
 
+def test_chat_does_not_cite_unread_search_hits(tmp_path: Path) -> None:
+    provider = ScriptedProvider(
+        [
+            {"content": None, "tool_calls": [call("search_wiki", '{"query":"harbor"}', "s1")]},
+            {"content": "I found a possible match but did not open it.", "tool_calls": []},
+        ]
+    )
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        for page_id, title in (("harbor", "Harbor"), ("harbor-log", "Harbor log")):
+            assert (
+                client.post(
+                    f"/api/wiki/pages/{page_id}",
+                    json={
+                        "markdown": f"# {title}\nA fictional harbor record.",
+                        "base_revision": None,
+                        "request_id": f"seed-{page_id}",
+                    },
+                ).status_code
+                == 200
+            )
+        response = client.post(
+            "/api/wiki/chat", json={"messages": [{"role": "user", "content": "Find harbor"}]}
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["sources"] == []
+    assert result["activity"] == ["Searched the wiki for “harbor”."]
+    assert "harbor-log" in provider.requests[-1][-1]["content"]
+
+
 def test_chat_rejects_write_tools_and_keeps_page_unchanged(tmp_path: Path) -> None:
     provider = ScriptedProvider(
         [

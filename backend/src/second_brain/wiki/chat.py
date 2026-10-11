@@ -152,7 +152,11 @@ class WikiChat:
                     raise WikiError("chat_unavailable", "The model returned an empty answer.")
                 return {
                     "answer": content.strip(),
-                    "sources": list(sources.values()),
+                    # Search hits and graph neighbors help the model navigate, but
+                    # only an exact page read is citation evidence for the user.
+                    "sources": [
+                        source for source in sources.values() if source["evidence"] == "read"
+                    ],
                     "activity": activity,
                     "limits": {"tool_calls": calls, "max_tool_calls": MAX_TOOL_CALLS},
                 }

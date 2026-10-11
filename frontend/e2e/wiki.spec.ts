@@ -560,11 +560,11 @@ test("read-only chat keeps multi-turn context and conversations in this browser"
         answer: followUp
           ? "The follow-up connects the atlas to the night sky survey."
           : "The atlas begins at Lantern Bay.",
-        activity: followUp ? ["Read “Night sky survey”."] : ["Searched the wiki for “atlas”."],
+        activity: followUp ? ["Read “Night sky survey”."] : ["Read “Lantern Bay field atlas”."],
         sources: [
           followUp
             ? { id: "night-sky-survey", title: "Night sky survey", evidence: "read" }
-            : { id: "home", title: "Lantern Bay field atlas", evidence: "search" },
+            : { id: "home", title: "Lantern Bay field atlas", evidence: "read" },
         ],
         limits: { tool_calls: 1, max_tool_calls: 8 },
       }),

@@ -118,8 +118,10 @@ empty answers, timeouts, unavailable indexes, and exhausted limits become clean
 API failures without exposing credentials or raw provider errors.
 
 The response separates the answer, short observable activity labels, and exact
-page sources; it never returns hidden reasoning. The browser renders source links
-and stores conversations only in local storage, with new/delete controls. It sends
+sources for pages that were actually read. Search hits and graph neighbors remain
+navigation activity and are not exposed as citations. It never returns hidden
+reasoning. The browser renders source links and stores conversations only in local
+storage, with new/delete controls. It sends
 at most 12 recent messages for multi-turn context. The backend has no conversation
 archive and the service worker must not cache these private messages when PWA work
 lands. Chat remains available only through the same origin/authentication boundary

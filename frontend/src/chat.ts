@@ -1,6 +1,6 @@
 import "./chat.css";
 
-type Source = { id: string; title: string; evidence: "read" | "search" | "graph" };
+type Source = { id: string; title: string; evidence: "read" };
 type Message = {
   role: "user" | "assistant";
   content: string;
