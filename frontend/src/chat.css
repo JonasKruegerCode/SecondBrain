@@ -36,7 +36,7 @@
 .chat-thinking i { width: 7px; height: 7px; background: #5a9581; border-radius: 50%; animation: chat-pulse 1s infinite alternate; }
 @keyframes chat-pulse { to { opacity: .25; transform: scale(.75); } }
 .chat-error { margin: 0 34px 15px; padding: 12px 14px; background: #fff1ed; color: #885a50; border-radius: 9px; display: flex; justify-content: space-between; align-items: center; gap: 15px; font-size: 12px; }
-.chat-error button { background: transparent; color: inherit; font-weight: 700; text-decoration: underline; }
+.chat-error button { background: transparent; color: inherit; font-weight: 700; text-decoration: underline; min-height: 44px; min-width: 44px; padding: 8px 10px; flex-shrink: 0; }
 .chat-composer { margin: auto 34px 28px; padding: 12px; border: 1px solid #cfded2; border-radius: 13px; background: white; display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; box-shadow: 0 9px 30px #2a5b4710; }
 .chat-composer label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .chat-composer textarea { resize: vertical; border: 0; min-height: 47px; padding: 10px; color: #29473e; }

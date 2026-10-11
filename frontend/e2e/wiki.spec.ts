@@ -726,6 +726,9 @@ test("demo tour preserves an unanswered real chat question across reload and nav
   await page.screenshot({ path: testInfo.outputPath("unanswered-chat-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  const retryTarget = (await page.getByRole("button", { name: "Retry", exact: true }).boundingBox())!;
+  expect(retryTarget.height).toBeGreaterThanOrEqual(44);
+  expect(retryTarget.width).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.screenshot({ path: testInfo.outputPath("unanswered-chat-mobile.png"), fullPage: true });
   const after = await (await request.get("/api/wiki/graph")).json();
