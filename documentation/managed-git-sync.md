@@ -57,8 +57,13 @@ populated vault is refused by the importer.
 
 Returned remote metadata is a cached verification, never a live-current claim.
 Errors and metadata contain neither remote URLs nor page bodies. Git subprocesses
-have a 45-second timeout; a timed-out push can still have published remotely, so
-retry with the same request ID to resolve its prepared receipt.
+have a 45-second execution timeout. On POSIX, timed-out Git and its SSH children
+are killed as one isolated process group; pipe draining has a separate two-second
+bound (plus at most two seconds to reap Git). CLI interruption also stops the
+transport before propagating the interruption. Other platforms kill Git and bound
+pipe draining, but descendant cleanup is not established there. A timed-out push
+can still have published remotely: retry with the same request ID to resolve its
+prepared receipt. This is not a total deadline for a multi-command delivery pass.
 
 ## Target and authentication limits
 
@@ -67,10 +72,36 @@ are accepted for controlled local use and tests; remote targets support HTTP(S),
 SSH URLs with no username or username `git`, and `git@host:path` syntax. HTTP
 userinfo, passwords, query strings, fragments, external transport helpers and
 option-like targets are refused. URLs/remotes are never written to Git config.
-Authentication currently supports an existing SSH agent through `SSH_AUTH_SOCK`
-and credential-free HTTP(S). Ambient Git configuration, credential helpers,
-`GIT_ASKPASS`, and `GIT_SSH_COMMAND` are not inherited. There is no credential
-provisioning interface; the CLI below selects a target without persisting it.
+Authentication supports an existing SSH agent through `SSH_AUTH_SOCK` and
+credential-free HTTP(S). SSH is explicitly noninteractive, checks host keys
+strictly, ignores user/system SSH configuration, disables default private
+identity files and never forwards the agent. `~/.ssh/config` aliases, ports,
+ProxyCommand and IdentityFile settings therefore do not apply: select the real
+host/port in the SSH URL. Ambient Git configuration, credential helpers,
+Git/SSH askpass programs and `GIT_SSH_COMMAND` are not inherited.
+
+By default OpenSSH uses its normal known-hosts files. For an explicit trust
+boundary pass `ssh_known_hosts="/run/wiki/known_hosts"` in Python,
+`--ssh-known-hosts /run/wiki/known_hosts` to the CLI, or set
+`SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS=/run/wiki/known_hosts` for runtime delivery.
+The file must be an absolute regular nonsymlink file outside the managed vault;
+control characters and SSH expansion characters (`%`, `$`, double quotes and
+backslashes) are refused. Spaces are supported. Explicit trust disables the
+global known-hosts file. Pin a host key using an independently verified provider
+fingerprint, not an unverified network scan. Unknown or changed keys fail closed;
+the application never accepts a host key on first use.
+
+For container operation, load a narrowly scoped deploy key into a dedicated
+host SSH agent, mount only its socket and the reviewed known-hosts file read-only,
+and set the corresponding socket/trust paths in the backend container. Do not
+mount a private key, the complete home directory or an SSH configuration. Keep
+the socket/trust mounts outside the wiki volume so backups and exports contain
+neither. Set outbound delivery variables explicitly as in the
+[delivery guide](managed-delivery.md); the base preview Compose deliberately does
+not inherit host SSH credentials or enable remote delivery. A mounted agent socket
+still grants signing capability to that container: restrict its key to the chosen
+repository and required branch permissions. The deploy key remains operator-owned;
+no key provisioning or private HTTPS credential helper is provided.
 
 ## Explicit command-line workflow
 
@@ -122,7 +153,11 @@ Tests use only synthetic Markdown and temporary local bare remotes. They cover
 lost acknowledgements, restart, prepared retries, edits during push, forward
 conflicts including the comparison/push race, branch deletion/recreation,
 explicit pull guards and retries, object retention, target validation, duplicate
-IDs, and the absence of managed-internal objects from exported history.
+IDs, and the absence of managed-internal objects from exported history. Synthetic
+process tests additionally verify actual pipe-holding descendant cleanup and
+sanitized timeout errors. An actual OpenSSH `-G` check verifies noninteractive,
+agent-only identity configuration and explicit trust-path quoting. It does not
+establish an authenticated connection to a private hosted repository.
 
 ## Runtime delivery
 

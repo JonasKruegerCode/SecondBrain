@@ -21,7 +21,11 @@ def configured_delivery(store: WikiStore, indexes: IndexCoordinator) -> Delivery
     if not target or not branch:
         raise ValueError("Explicit managed Git target and branch are required.")
     remote = ManagedGitSync(
-        store, target, branch, os.environ.get("SECOND_BRAIN_WIKI_GIT_PREFIX", "")
+        store,
+        target,
+        branch,
+        os.environ.get("SECOND_BRAIN_WIKI_GIT_PREFIX", ""),
+        ssh_known_hosts=os.environ.get("SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS"),
     )
     baseline = os.environ.get("SECOND_BRAIN_WIKI_GIT_EXPECTED_REMOTE_REVISION")
     if baseline is None:
@@ -119,9 +123,7 @@ def main() -> None:
     if args.reconcile and (
         not args.base_revision or not (args.expected_remote_revision or args.remote_empty)
     ):
-        parser.error(
-            "Reconcile requires reviewed managed and remote heads (or --remote-empty)."
-        )
+        parser.error("Reconcile requires reviewed managed and remote heads (or --remote-empty).")
     if args.once and (args.base_revision or args.expected_remote_revision or args.remote_empty):
         parser.error("Revision guards are only used with --reconcile.")
     path = os.environ.get("SECOND_BRAIN_WIKI_VAULT")

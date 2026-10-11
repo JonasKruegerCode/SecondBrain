@@ -7,11 +7,12 @@ import json
 import os
 import re
 import shlex
+import signal
 import sqlite3
 import subprocess
 import sys
 import tempfile
-from contextlib import closing
+from contextlib import closing, suppress
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -19,12 +20,54 @@ from urllib.parse import urlsplit
 from second_brain.wiki.importer import _published_result, import_vault
 from second_brain.wiki.store import MAX_BYTES, WikiError, WikiStore
 
+GIT_TIMEOUT_SECONDS = 45
+
+
+def _stop_transport(process: subprocess.Popen[bytes]) -> None:
+    """Stop our transport group and bound cleanup even if a child retains pipes."""
+    if os.name == "posix":
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+    else:
+        with suppress(ProcessLookupError):
+            process.kill()
+    try:
+        process.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        with suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=2)
+
 
 class ManagedGitSync:
     """A caller-selected target; URLs and credentials are never persisted."""
 
-    def __init__(self, store: WikiStore, remote: str, branch: str, prefix: str = "") -> None:
+    def __init__(
+        self,
+        store: WikiStore,
+        remote: str,
+        branch: str,
+        prefix: str = "",
+        *,
+        ssh_known_hosts: str | None = None,
+    ) -> None:
         self.store = store
+        self.ssh_known_hosts = ssh_known_hosts
+        if ssh_known_hosts is not None:
+            trust = Path(ssh_known_hosts)
+            if (
+                not trust.is_absolute()
+                or not trust.is_file()
+                or trust.is_symlink()
+                or any(ord(c) < 32 for c in ssh_known_hosts)
+                or any(c in ssh_known_hosts for c in '%$"\\')
+                or trust.resolve().is_relative_to(store.path)
+            ):
+                raise WikiError(
+                    "invalid_ssh_trust", "Choose a regular trust file outside the vault."
+                )
         self.remote = remote
         if not remote or any(ord(c) < 32 for c in remote) or remote.startswith("-"):
             raise WikiError("invalid_remote", "Choose an explicit safe Git target.")
@@ -93,7 +136,11 @@ class ManagedGitSync:
         check: bool = True,
         hooks_path: Path | None = None,
     ) -> bytes:
-        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        clean_env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith("GIT_") and k not in {"SSH_ASKPASS", "SSH_ASKPASS_REQUIRE"}
+        }
         clean_env.update(
             {
                 "GIT_CONFIG_NOSYSTEM": "1",
@@ -105,9 +152,25 @@ class ManagedGitSync:
                 "GIT_COMMITTER_NAME": "Managed Wiki",
                 "GIT_COMMITTER_EMAIL": "wiki@localhost",
                 "GIT_LITERAL_PATHSPECS": "1",
+                # Use the existing agent and trusted known_hosts, never an ambient
+                # SSH config/askpass command or a default private identity file.
+                "GIT_SSH_COMMAND": (
+                    "ssh -F "
+                    + shlex.quote(os.devnull)
+                    + " -o BatchMode=yes -o StrictHostKeyChecking=yes"
+                    + " -o IdentityFile=none -o PasswordAuthentication=no"
+                    + " -o KbdInteractiveAuthentication=no -o ForwardAgent=no"
+                ),
                 **(env or {}),
             }
         )
+        if self.ssh_known_hosts is not None:
+            clean_env["GIT_SSH_COMMAND"] += (
+                " -o "
+                + shlex.quote('UserKnownHostsFile="' + self.ssh_known_hosts + '"')
+                + " -o GlobalKnownHostsFile="
+                + shlex.quote(os.devnull)
+            )
         command = [
             "git",
             "-c",
@@ -117,22 +180,28 @@ class ManagedGitSync:
         ]
         if bare:
             command += ["--git-dir", str(self.repo)]
+        process = subprocess.Popen(
+            command + list(args),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=clean_env,
+            start_new_session=os.name == "posix",
+        )
         try:
-            result = subprocess.run(
-                command + list(args),
-                input=data,
-                capture_output=True,
-                env=clean_env,
-                check=False,
-                timeout=45,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise WikiError("remote_unavailable", "Git target operation timed out.") from exc
-        if check and result.returncode:
+            output, _ = process.communicate(data, timeout=GIT_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            _stop_transport(process)
+            raise WikiError("remote_unavailable", "Git target operation timed out.") from None
+        except BaseException:
+            # CLI interruption must not leave an outbound publication running.
+            _stop_transport(process)
+            raise
+        if check and process.returncode:
             raise WikiError(
                 "remote_unavailable", "Git target operation failed; no overwrite attempted."
             )
-        return result.stdout
+        return output
 
     def _fetch(self) -> str | None:
         ref = "refs/heads/" + self.branch

@@ -77,3 +77,18 @@ def test_missing_explicit_guards_and_secret_url_refused(tmp_path: Path) -> None:
     )
     assert result.returncode != 0
     assert b"synthetic-token" not in result.stderr
+
+
+def test_cli_explicit_trust_file_and_sanitized_missing_file(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+    trust = tmp_path / "reviewed-known-hosts"
+    trust.write_text("synthetic trust")
+    result = command(tmp_path / "vault", remote, "--ssh-known-hosts", str(trust), "inspect")
+    assert result.returncode == 0
+    assert json.loads(result.stdout)["observed_remote_revision"] is None
+    missing = tmp_path / "private-trust-location"
+    denied = command(tmp_path / "vault", remote, "--ssh-known-hosts", str(missing), "inspect")
+    assert denied.returncode == 1
+    assert json.loads(denied.stderr)["error"] == "invalid_ssh_trust"
+    assert str(missing).encode() not in denied.stderr

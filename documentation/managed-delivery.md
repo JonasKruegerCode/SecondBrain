@@ -28,7 +28,10 @@ index work or roll back committed Markdown. Each successful provider generation
 still corresponds to one immutable content snapshot.
 
 Shutdown stops and joins the worker before closing index clients. Git subprocess
-calls have a 45-second timeout each; no total delivery deadline is promised.
+calls have a 45-second execution timeout each with bounded cleanup. On POSIX,
+the transport process group is killed on timeout, including pipe-holding SSH
+children. See [managed Git](managed-git-sync.md) for platform/cleanup limits;
+no total delivery deadline is promised.
 Neo4j provider timeout/connection limits and forced process termination remain
 operational work. A graceful shutdown may wait for an in-flight provider call.
 The restart tests use fault injection, not SIGKILL or power-loss tests.
@@ -62,7 +65,9 @@ tracks subsequent published heads. A different bootstrap value fails closed.
 Targets are keyed by a hash of URL/branch/prefix; the delivery database stores no
 URL or credentials. Transport authentication limits remain as documented in
 [managed Git](managed-git-sync.md): SSH agent or credential-free HTTP(S), no
-credential URL/helper provisioning. Demo startup overrides remote/provider flags
+credential URL/helper provisioning. An explicit reviewed known-hosts file can be
+selected with `SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS`; SSH ignores ambient config
+and requires agent authentication with strict host-key verification. Demo startup overrides remote/provider flags
 so an inherited production target cannot receive demo content.
 
 Before network work, the worker durably records a frozen content/expected-head

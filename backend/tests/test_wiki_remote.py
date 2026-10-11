@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -157,6 +160,54 @@ def test_failure_retains_prepared_snapshot(tmp_path: Path, monkeypatch: pytest.M
 def test_reject_credentials_and_helpers(tmp_path: Path, remote: str) -> None:
     with pytest.raises(WikiError):
         ManagedGitSync(WikiStore(tmp_path / "vault"), remote, "wiki")
+
+
+def test_explicit_ssh_trust_is_outside_vault(tmp_path: Path) -> None:
+    store, remote, _, _ = setup(tmp_path)
+    inside = store.path / "known_hosts"
+    inside.write_text("synthetic trust")
+    outside = tmp_path / "known hosts"
+    outside.write_text("synthetic trust")
+    link = tmp_path / "trust-link"
+    link.symlink_to(outside)
+    for path in (inside, link, tmp_path / "missing", Path("relative")):
+        with pytest.raises(WikiError) as caught:
+            ManagedGitSync(store, str(remote), "wiki", ssh_known_hosts=str(path))
+        assert caught.value.code == "invalid_ssh_trust"
+    sync = ManagedGitSync(store, str(remote), "wiki", ssh_known_hosts=str(outside))
+    assert sync.inspect()["observed_remote_revision"] is None
+
+
+@pytest.mark.skipif(shutil.which("ssh") is None, reason="OpenSSH is not installed")
+def test_actual_openssh_configuration_is_agent_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, remote, _, _ = setup(tmp_path)
+    trust = tmp_path / "known hosts"
+    trust.write_text("synthetic trust")
+    sync = ManagedGitSync(store, str(remote), "wiki", ssh_known_hosts=str(trust))
+    original = subprocess.Popen
+    observed: list[str] = []
+
+    def capture(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        observed.append(kwargs["env"]["GIT_SSH_COMMAND"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", capture)
+    sync.inspect()
+    monkeypatch.setattr(subprocess, "Popen", original)
+    config = subprocess.check_output(
+        [*shlex.split(observed[-1]), "-G", "example.invalid"],
+        stderr=subprocess.DEVNULL,
+        env={**os.environ, "SSH_AUTH_SOCK": "/synthetic/agent.sock"},
+    ).decode()
+    assert "batchmode yes\n" in config
+    assert "identityfile none\n" in config
+    assert "forwardagent no\n" in config
+    assert "stricthostkeychecking true\n" in config
+    assert f"userknownhostsfile {trust}\n" in config
+    assert "passwordauthentication no\n" in config
+    assert "kbdinteractiveauthentication no\n" in config
 
 
 def test_forward_race_normal_push_rejects(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -36,6 +36,24 @@ class RecordingIndex:
         self.closed = True
 
 
+def test_configured_delivery_uses_reviewed_ssh_trust_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = WikiStore(tmp_path / "vault")
+    remote = tmp_path / "remote.git"
+    trust = tmp_path / "reviewed-known-hosts"
+    trust.write_text("synthetic trust")
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_GIT_SYNC", "1")
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_GIT_REMOTE", str(remote))
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_GIT_BRANCH", "wiki")
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_GIT_EXPECTED_REMOTE_REVISION", "empty")
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS", str(trust))
+    delivery = configured_delivery(store, IndexCoordinator(store))
+    assert delivery.remote is not None
+    assert delivery.remote.ssh_known_hosts == str(trust)
+    assert delivery.status()["remote"]["state"] == "pending"
+
+
 def wait_current(delivery: DeliveryCoordinator) -> None:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:

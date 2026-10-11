@@ -16,6 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--remote", required=True)
     parser.add_argument("--branch", required=True)
     parser.add_argument("--prefix", default="")
+    parser.add_argument("--ssh-known-hosts", help="Reviewed trust file outside the managed vault")
     commands = parser.add_subparsers(dest="operation", required=True)
     commands.add_parser("inspect", help="Observe the remote pointer once; no content mutation")
     push = commands.add_parser("push", help="Publish reviewed local Markdown with normal Git push")
@@ -32,7 +33,13 @@ def main(argv: list[str] | None = None) -> int:
     pull.add_argument("--request-id", required=True)
     args = parser.parse_args(argv)
     try:
-        sync = ManagedGitSync(WikiStore(args.vault), args.remote, args.branch, args.prefix)
+        sync = ManagedGitSync(
+            WikiStore(args.vault),
+            args.remote,
+            args.branch,
+            args.prefix,
+            ssh_known_hosts=args.ssh_known_hosts,
+        )
         if args.operation == "inspect":
             result = sync.inspect()
         elif args.operation == "push":
