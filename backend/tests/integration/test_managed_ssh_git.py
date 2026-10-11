@@ -13,7 +13,7 @@ import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +52,7 @@ class SSHGit:
     trust: Path
     key: Path
     socket: Path
-    env: dict[str, str]
+    env: dict[str, str] = field(repr=False)
 
     def refs(self) -> str:
         return command("git", "--git-dir", str(self.remote), "show-ref", "--head")
