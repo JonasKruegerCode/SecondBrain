@@ -220,7 +220,7 @@ function navigate(path: string) {
   activeEntry = navigationEntry(activeEntry.index + 1);
   history.pushState(navigationState(), "", path);
   activeUrl = location.pathname + location.search + location.hash;
-  void route();
+  void route(true);
 }
 
 function viewReady(title: string) {
@@ -348,7 +348,7 @@ function cards(pages: Page[], fragment = "") {
     )
     .join("");
 }
-async function route() {
+async function route(focusArticle = false, reuseShell = false) {
   const run = ++generation;
   cleanupView?.();
   cleanupView = undefined;
@@ -357,7 +357,11 @@ async function route() {
   notice = "";
   noticeError = false;
   deliveryNotice = "";
-  shell();
+  if (reuseShell) {
+    // Resolving a link or a saved start page normalizes the URL within this
+    // load. Keep header/main focus chosen while the first real read was pending.
+    app.querySelector("header nav a[aria-current]")?.removeAttribute("aria-current");
+  } else shell();
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
   try {
@@ -382,7 +386,7 @@ async function route() {
       if (result.status === "resolved") {
         const path = url(result.candidates[0].id) + (result.fragment ? `#${encodeURIComponent(result.fragment)}` : "");
         replaceAppUrl(path);
-        void route();
+        void route(focusArticle, true);
       } else {
         main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
         viewReady(result.status === "ambiguous" ? "Choose a page" : "Missing page");
@@ -426,6 +430,10 @@ async function route() {
       if (run !== generation) return;
       page = loaded;
       renderPage();
+      if (focusArticle && !location.hash && document.activeElement === document.body) {
+        main.querySelector<HTMLElement>("article > h1")?.focus({ preventScroll: true });
+        window.scrollTo(0, 0);
+      }
       focusFragment();
       viewReady(loaded.title);
       return;
@@ -445,7 +453,7 @@ async function route() {
       !new URLSearchParams(location.search).has("overview")
     ) {
       replaceAppUrl(url(preferred));
-      void route();
+      void route(focusArticle, true);
       return;
     }
     main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
@@ -697,7 +705,7 @@ window.addEventListener("popstate", event => {
   if (entry) activeEntry = entry;
   else resetHistoryTracking(targetUrl);
   activeUrl = location.pathname + location.search + location.hash;
-  void route();
+  void route(true);
 });
 window.addEventListener("hashchange", () => {
   const targetUrl = location.pathname + location.search + location.hash;
