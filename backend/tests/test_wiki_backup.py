@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -163,3 +164,125 @@ def test_cli_round_trip(tmp_path: Path) -> None:
     assert restore.returncode == 0, restore.stderr
     assert json.loads(restore.stdout)["page_count"] == 1
     assert WikiStore(restored).get_page("home")["title"] == "CLI synthetic home"  # type: ignore[index]
+
+
+@pytest.mark.parametrize("removed", [1, 8, 16, 32])
+def test_truncated_compression_is_rejected_before_restore_publication(
+    tmp_path: Path, removed: int
+) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    store.save_page("home", "# Synthetic backup integrity", None, "integrity-home")
+    before = store.snapshot()
+    archive = tmp_path / "valid.tar.gz"
+    create_backup(vault, archive)
+    damaged = tmp_path / "damaged.tar.gz"
+    damaged.write_bytes(archive.read_bytes()[:-removed])
+    destination = tmp_path / "restored"
+
+    with pytest.raises(WikiError) as error:
+        restore_backup(damaged, destination)
+    assert error.value.code == "backup_invalid"
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".restored-restore-*"))
+    assert store.snapshot() == before
+
+    cli = subprocess.run(
+        [sys.executable, "-m", "second_brain.wiki.backup", "restore",
+         "--archive", str(damaged), "--vault", str(destination)],
+        env={
+            "PATH": os.environ["PATH"],
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
+        capture_output=True,
+        check=False,
+    )
+    assert cli.returncode == 1
+    assert json.loads(cli.stderr)["error"] == "backup_invalid"
+    assert cli.stdout == b""
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".restored-restore-*"))
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("fault", ["crc", "size", "trailing-stream"])
+def test_invalid_gzip_integrity_is_a_structured_failure(tmp_path: Path, fault: str) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    store.save_page("home", "# Synthetic compression integrity", None, "gzip-home")
+    before = store.snapshot()
+    archive = tmp_path / "valid.tar.gz"
+    create_backup(vault, archive)
+    data = bytearray(archive.read_bytes())
+    if fault == "trailing-stream":
+        data.extend(b"\x1f\x8b\x08")  # A second, incomplete gzip member after a valid tar.
+    else:
+        data[-8 if fault == "crc" else -4] ^= 1
+    damaged = tmp_path / "damaged.tar.gz"
+    damaged.write_bytes(data)
+    destination = tmp_path / "restored"
+    with pytest.raises(WikiError) as error:
+        restore_backup(damaged, destination)
+    assert error.value.code == "backup_invalid"
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".restored-restore-*"))
+    assert store.snapshot() == before
+
+
+def _repack_archive(
+    archive: Path,
+    target: Path,
+    mode: Literal["w", "w:gz", "w:bz2", "w:xz"],
+    manifest: bytes | None = None,
+) -> None:
+    with tarfile.open(archive, "r:gz") as source, tarfile.open(target, mode) as output:
+        for member in source.getmembers():
+            fileobj = source.extractfile(member)
+            assert fileobj is not None
+            data = (
+                manifest
+                if member.name == "manifest.json" and manifest is not None
+                else fileobj.read()
+            )
+            copied = tarfile.TarInfo(member.name)
+            copied.size = len(data)
+            output.addfile(copied, io.BytesIO(data))
+
+
+@pytest.mark.parametrize("manifest", [b"null", b"[]", b"1", b'"text"', b"\xff"])
+def test_invalid_manifest_shape_or_encoding_is_rejected(tmp_path: Path, manifest: bytes) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    store.save_page("home", "# Synthetic manifest integrity", None, "manifest-home")
+    before = store.snapshot()
+    archive = tmp_path / "valid.tar.gz"
+    create_backup(vault, archive)
+    damaged = tmp_path / "damaged.tar.gz"
+    _repack_archive(archive, damaged, "w:gz", manifest)
+    destination = tmp_path / "restored"
+    with pytest.raises(WikiError) as error:
+        restore_backup(damaged, destination)
+    assert error.value.code == "backup_invalid"
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".restored-restore-*"))
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("mode", ["w", "w:bz2", "w:xz"])
+def test_restore_preserves_supported_tar_compression_formats(
+    tmp_path: Path, mode: Literal["w", "w:bz2", "w:xz"]
+) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    created = store.save_page("home", "# Synthetic compatible backup", None, "compatible-home")
+    revision = store.snapshot()["revision"]
+    archive = tmp_path / "valid.tar.gz"
+    create_backup(vault, archive)
+    compatible = tmp_path / "compatible.tar"
+    _repack_archive(archive, compatible, mode)
+    destination = tmp_path / "restored"
+    assert restore_backup(compatible, destination)["revision"] == revision
+    restored = WikiStore(destination)
+    assert restored.save_page(
+        "home", "# Synthetic compatible backup", None, "compatible-home"
+    ) == created

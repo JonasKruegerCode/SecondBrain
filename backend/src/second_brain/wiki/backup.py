@@ -9,8 +9,10 @@ Provider-owned Neo4j/Qdrant data is derived and deliberately not included.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
+import lzma
 import os
 import shutil
 import sqlite3
@@ -18,6 +20,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -193,12 +196,18 @@ def _read_archive(archive: Path, destination: Path) -> tuple[dict[str, Any], Pat
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("wb") as output:
                 shutil.copyfileobj(fileobj, output)
+        # Tar readers can stop at their logical EOF before gzip validates its
+        # trailer. Drain in bounded chunks so incomplete streams cannot publish.
+        while source.fileobj.read(1024 * 1024):
+            pass
     try:
         manifest = json.loads((extracted / "manifest.json").read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, UnicodeError, OSError) as exc:
         raise _error("backup_invalid", "The archive manifest is invalid.") from exc
-    if manifest.get("archive_version") != ARCHIVE_VERSION or not isinstance(
-        manifest.get("files"), dict
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("archive_version") != ARCHIVE_VERSION
+        or not isinstance(manifest.get("files"), dict)
     ):
         raise _error("backup_invalid", "The archive version or file list is invalid.")
     if type(manifest.get("page_count")) is not int or manifest["page_count"] < 0:
@@ -250,7 +259,7 @@ def restore_backup(archive: Path | str, vault: Path | str) -> dict[str, Any]:
     try:
         try:
             manifest, extracted = _read_archive(source, prepared_root)
-        except tarfile.TarError as exc:
+        except (tarfile.TarError, EOFError, gzip.BadGzipFile, zlib.error, lzma.LZMAError) as exc:
             raise _error("backup_invalid", "The backup archive is invalid.") from exc
         repo = prepared / ".wiki.git"
         subprocess.run(

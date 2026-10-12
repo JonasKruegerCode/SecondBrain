@@ -40,7 +40,8 @@ python -m second_brain.wiki.backup restore \
   --vault /absolute/path/to/restored-vault
 ```
 
-Restore validates the member allowlist, checksums, Git bundle, Git object graph,
+Restore reads the compression stream through its end and validates the manifest
+shape/encoding, member allowlist, checksums, Git bundle, Git object graph,
 content revision, page count, and local SQLite integrity before publishing the
 new directory. An existing destination is refused, so recovery never overwrites
 the source vault. A failed restore leaves no partially published destination.
@@ -65,6 +66,9 @@ implicit merge or rollback over a live vault.
 The native synthetic regression covers populated and empty archives, full local
 history, request-receipt replay after restart, both SQLite ledgers, demo metadata,
 checksum/member validation, refusal to overwrite, and the real CLI round trip.
+Truncated gzip streams, invalid trailers and manifests are rejected before
+publication; CLI failures return structured `backup_invalid` errors. Valid plain
+tar, gzip, bzip2 and xz archives retain their existing restore support.
 Container invocation, named-volume recovery, production reverse proxy/HTTPS,
 external provider reconstruction, and a real off-host disaster restore remain
 deployment checks; they are not implied by the native test.
