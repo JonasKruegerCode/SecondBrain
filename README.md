@@ -74,6 +74,15 @@ on failure, and writes ignored logs plus a small JSON evidence record under
 existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
 checks remain separate release gates.
 
+To check the empty first-start path and persistence across an actual API/frontend
+restart, run `make acceptance-first-start PYTHON=backend/.venv/bin/python`.
+It starts with zero pages, creates only fictional test content, exercises the
+editor/navigation/graph, stops both services and starts them again on the same
+owned vault. The second browser phase checks the saved start page, exact content
+and revisions. Scripted transport delay/failure checks are separate from real
+outage evidence. Success removes the temporary vault and browser-state files;
+CI uploads only structural results, browser logs and synthetic screenshots.
+
 When a real key is available, the separate paid-provider gate checks two
 bounded turns, required page reads, visible sources, proportional answers and
 the read-only vault boundary against the fictional fixture. It records only

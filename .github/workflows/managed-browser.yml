@@ -44,6 +44,10 @@ jobs:
         working-directory: backend
         run: poetry run python ../scripts/run-wiki-acceptance.py
 
+      - name: Exercise empty first start and real service restart
+        working-directory: backend
+        run: poetry run python ../scripts/run-wiki-acceptance.py --first-start
+
       # Only synthetic structural evidence and screenshots; never archive a vault.
       - name: Upload browser acceptance evidence
         if: always()
@@ -54,5 +58,6 @@ jobs:
             .demo/acceptance/*/result.json
             .demo/acceptance/*/browser.log
             .demo/browser-results/**/*.png
+            .demo/acceptance/*/browser-*/**/*.png
           if-no-files-found: warn
           retention-days: 7

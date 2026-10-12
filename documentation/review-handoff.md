@@ -70,6 +70,7 @@ Install the locked Python and Node dependencies, then from the repository root:
 ```sh
 make demo PYTHON=backend/.venv/bin/python
 make acceptance PYTHON=backend/.venv/bin/python
+make acceptance-first-start PYTHON=backend/.venv/bin/python
 make check
 ```
 
@@ -91,8 +92,15 @@ delivery and refusal of missing/changed host trust or unauthorized client keys.
 Its independent CI result must be checked; it does not validate hosted deploy-key
 permissions or operator credential mounts.
 
-The demo and acceptance commands use only the public fictional Lantern Bay
-fixture. The acceptance runner starts the real API and Vite frontend, runs the
+The normal demo and acceptance commands use the public fictional Lantern Bay
+fixture. The first-start check begins empty and creates separate fictional
+pages through real REST services. Its two browser phases surround an actual
+API/Vite stop and restart on the same owned vault, checking exact revisions,
+content, saved start page and navigation. Delayed real graph responses and
+scripted transport aborts check loading/error/stale-route handling; they do not
+establish real outage behavior. Browser profile/page receipts are local phase
+inputs and are never uploaded; successful runs remove them and the vault.
+The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
 `.demo/acceptance/`. It clears inherited OpenRouter access.
 
