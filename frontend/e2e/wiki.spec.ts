@@ -3,6 +3,51 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
 
+test.describe("galaxy touch navigation", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("choosing a constellation brings its map into view", async ({ page }, testInfo) => {
+    await page.goto("/galaxy");
+    const cluster = page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" });
+    await cluster.tap();
+    await expect(page.locator(".galaxy-breadcrumb")).toContainText("Sky & navigation");
+    await page.screenshot({ path: testInfo.outputPath("touch-constellation.png") });
+    await expect(page.locator(".galaxy-stage")).toBeInViewport({ ratio: .8 });
+  });
+
+  test("tapping a star brings its article and evidence into view", async ({ page }, testInfo) => {
+    await page.goto("/galaxy");
+    const star = page.locator(".galaxy-star.is-core").first();
+    const id = await star.getAttribute("data-node");
+    await star.tap();
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id!);
+    await page.screenshot({ path: testInfo.outputPath("touch-page-evidence.png") });
+    await expect(page.locator(".galaxy-selected-heading")).toBeInViewport({ ratio: 1 });
+    await expect(page.locator(".galaxy-evidence")).toBeInViewport();
+    const neighbor = page.locator(".galaxy-evidence button[data-node]").last();
+    const neighborId = await neighbor.getAttribute("data-node");
+    await neighbor.scrollIntoViewIfNeeded();
+    expect(await page.locator(".galaxy-sidebar-content").evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+    await neighbor.tap();
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", neighborId!);
+    await expect(page.locator(".galaxy-selected-heading")).toBeInViewport({ ratio: 1 });
+    expect(await page.locator(".galaxy-sidebar-content").evaluate(el => el.scrollTop)).toBe(0);
+    await page.locator(".galaxy-selected-heading .galaxy-article").tap();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${neighborId}$`));
+  });
+
+  test("list navigation keeps the map hidden and reveals selected pages", async ({ page }) => {
+    await page.goto("/galaxy");
+    await page.getByRole("button", { name: "List view", exact: true }).tap();
+    await page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" }).tap();
+    await expect(page.locator(".galaxy-stage")).toBeHidden();
+    await page.locator(".galaxy-page").last().tap();
+    await expect(page.locator(".galaxy-stage")).toBeHidden();
+    await expect(page.locator(".galaxy-selected-heading")).toBeInViewport({ ratio: 1 });
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeInViewport();
+  });
+});
+
 async function create(request: APIRequestContext, markdown: string) {
   const id = `e2e-${randomUUID()}`;
   const response = await request.post(`/api/wiki/pages/${id}`, {

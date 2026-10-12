@@ -227,6 +227,11 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     root.querySelector<HTMLInputElement>("input")!.value = "";
     render();
   };
+  const revealMobile = (element: HTMLElement) => {
+    if (window.matchMedia("(max-width: 680px)").matches) {
+      element.scrollIntoView({ block: "start", behavior: "instant" });
+    }
+  };
   const click = (event: MouseEvent) => {
     const target = (event.target as Element).closest<HTMLElement>("[data-node],[data-cluster],[data-action],[data-open]");
     if (!target || !root.contains(target)) return;
@@ -239,10 +244,17 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     if (target.dataset.node !== undefined) {
       select(target.dataset.node);
       if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
+      else if (window.matchMedia("(max-width: 680px)").matches) {
+        // Replacing the list can retain its inner scroll offset. Reveal the
+        // selected article and evidence together without stealing keyboard focus.
+        sidebar.scrollTop = 0;
+        revealMobile(sidebar.parentElement!);
+      }
     }
     else if (target.dataset.cluster !== undefined) {
       selectedCluster = Number(target.dataset.cluster); selectedNode = null; scale = 1; panX = panY = 0; render();
       if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus();
+      else if (!listOnly) revealMobile(root.querySelector<HTMLElement>(".galaxy-map")!);
     } else switch (target.dataset.action) {
       case "overview": {
         const previous = selectedCluster;

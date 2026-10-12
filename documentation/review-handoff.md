@@ -134,6 +134,12 @@ and its matching CI runs rather than treating these counts as current.
   article reload, nested-list/code rendering boundaries, bounded local chat
   storage/recovery/deletion across stale tabs, and PWA save/update coordination.
   Scripted chat transport checks do not establish real-model quality.
+- Narrow-screen galaxy pointer navigation reveals a chosen constellation's map
+  or the selected page's article and exact link evidence. Touch-emulation checks
+  include selecting a neighbor after scrolling the evidence panel, opening its
+  article, and keeping the map hidden in list view. Keyboard focus and desktop
+  layout remain separate paths. Small-map labels and physical touch ergonomics
+  still need device inspection; emulated taps do not establish device usability.
 - CI artifacts contain only synthetic structural/browser evidence and expire
   under the workflows' seven-day retention. They are browser emulation and
   synthetic infrastructure, not physical-device or production evidence.
