@@ -612,6 +612,117 @@ test("mobile direct page and missing link state remain readable", async ({
   ).toBeVisible();
 });
 
+for (const direction of ["back", "forward"] as const) {
+  test(`rejecting browser ${direction} preserves the complete article history`, async ({ page, request }) => {
+    const last = await create(request, "# Last history article\nSynthetic final destination.");
+    const middle = await create(request, `# Middle history article\nOriginal.\n\n[[${last.id}|Next article]]`);
+    const first = await create(request, `# First history article\n[[${middle.id}|Next article]]`);
+    await page.goto(`/wiki/${first.id}`);
+    await page.getByRole("link", { name: "Next article", exact: true }).click();
+    await expect(page.locator("article h1")).toHaveText("Middle history article");
+    await page.getByRole("link", { name: "Next article", exact: true }).click();
+    await expect(page.locator("article h1")).toHaveText("Last history article");
+    await page.goBack();
+    await expect(page.locator("article h1")).toHaveText("Middle history article");
+    const length = await page.evaluate(() => history.length);
+    await page.getByRole("button", { name: "Edit page" }).click();
+    const draft = "# Middle history article\nUnsaved synthetic draft.";
+    await page.getByRole("textbox", { name: /Markdown/ }).fill(draft);
+    const dialog = page.waitForEvent("dialog");
+    await page.evaluate(direction => history[direction](), direction);
+    await (await dialog).dismiss();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${middle.id}$`));
+    await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+    expect(await page.evaluate(() => history.length)).toBe(length);
+    const discard = page.waitForEvent("dialog");
+    const click = page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await (await discard).accept();
+    await click;
+    await expect(page.getByRole("button", { name: "Edit page" })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${first.id}$`));
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${middle.id}$`));
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${last.id}$`));
+    await expect(page.locator("article h1")).toHaveText("Last history article");
+    expect(await page.evaluate(() => history.length)).toBe(length);
+  });
+}
+
+test("blocked traversal preserves history while a real save acknowledgement is pending", async ({ page, request }, testInfo) => {
+  const last = await create(request, "# Save history last\nSynthetic destination.");
+  const middle = await create(request, `# Save history middle\nOriginal.\n\n[[${last.id}|Next article]]`);
+  const first = await create(request, `# Save history first\n[[${middle.id}|Next article]]`);
+  await page.goto(`/wiki/${first.id}`);
+  await page.getByRole("link", { name: "Next article", exact: true }).click();
+  await expect(page.locator("article h1")).toHaveText("Save history middle");
+  await page.getByRole("link", { name: "Next article", exact: true }).click();
+  await expect(page.locator("article h1")).toHaveText("Save history last");
+  await page.goBack();
+  await expect(page.locator("article h1")).toHaveText("Save history middle");
+  const length = await page.evaluate(() => history.length);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let captured!: () => void;
+  const published = new Promise<void>(resolve => { captured = resolve; });
+  await page.route(`**/api/wiki/pages/${middle.id}`, async route => {
+    if (route.request().method() !== "POST") { await route.continue(); return; }
+    const response = await route.fetch();
+    expect(response.ok()).toBeTruthy();
+    captured();
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.getByRole("button", { name: "Edit page" }).click();
+    await page.getByRole("textbox", { name: /Markdown/ }).fill("# Save history middle\nSaved synthetic content.");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await published;
+    await page.evaluate(() => history.forward());
+    await expect(page).toHaveURL(new RegExp(`/wiki/${middle.id}$`));
+    expect(await page.evaluate(() => history.length)).toBe(length);
+    await expect(page.getByRole("textbox", { name: /Markdown/ })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath("history-pending-save-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: testInfo.outputPath("history-pending-save-mobile.png"), fullPage: true });
+    release();
+    await expect(page.locator(".notice")).toContainText("Saved locally");
+    await expect(page.locator("article h1")).toHaveText("Save history middle");
+    await expect(page.locator(".prose")).toContainText("Saved synthetic content.");
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${first.id}$`));
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${middle.id}$`));
+    await expect(page.locator(".prose")).toContainText("Saved synthetic content.");
+    await page.goForward();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${last.id}$`));
+    expect(await page.evaluate(() => history.length)).toBe(length);
+  } finally { release(); }
+});
+
+test("bare fragment links keep tracked history and preserve an editor during traversal", async ({ page, request }) => {
+  const fixture = await create(request, "# Fragment history\n[Jump to notes](#Notes)\n\n## Notes\nSynthetic notes.");
+  await page.goto(`/wiki/${fixture.id}`);
+  const length = await page.evaluate(() => history.length);
+  await page.getByRole("link", { name: "Jump to notes", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}#Notes$`));
+  await expect(page.locator("#section-1")).toBeFocused();
+  expect(await page.evaluate(() => history.length)).toBe(length + 1);
+  await page.getByRole("link", { name: "Jump to notes", exact: true }).click();
+  expect(await page.evaluate(() => history.length)).toBe(length + 1);
+  await page.getByRole("button", { name: "Edit page" }).click();
+  const draft = "# Fragment history\nUnsaved synthetic notes.";
+  await page.getByRole("textbox", { name: /Markdown/ }).fill(draft);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
+  await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+  await page.goForward();
+  await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}#Notes$`));
+  await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+  expect(await page.evaluate(() => history.length)).toBe(length + 1);
+});
+
 test("canceling browser back keeps the unsaved editor draft and URL", async ({
   page,
   request,

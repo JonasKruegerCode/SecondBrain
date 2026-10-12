@@ -19,6 +19,13 @@ type Page = {
   excerpt?: string;
 };
 const app = document.querySelector<HTMLDivElement>("#app")!;
+type NavigationEntry = { session: string; index: number; id: string };
+const navigationKey = "secondbrain.navigation";
+let navigationSession = crypto.randomUUID();
+const navigationEntry = (index: number): NavigationEntry => ({ session: navigationSession, index, id: crypto.randomUUID() });
+let activeEntry = navigationEntry(0);
+let restoringHistory = false;
+let historyRestoreTimer: number | undefined;
 let page: Page | null = null,
   draft = "",
   editing = false,
@@ -144,15 +151,49 @@ function articleMarkdown(s: string) {
   // Frontmatter remains visible in the raw editor and Git history, but is not article prose.
   return s.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, "");
 }
+function navigationState() {
+  const state = history.state;
+  return { ...(state && typeof state === "object" && !Array.isArray(state) ? state : {}), [navigationKey]: activeEntry };
+}
+function readNavigationEntry(state: any): NavigationEntry | null {
+  const entry = state?.[navigationKey];
+  return entry?.session === navigationSession && Number.isSafeInteger(entry.index) && entry.index >= 0 &&
+    typeof entry.id === "string" && entry.id ? entry : null;
+}
+function replaceAppUrl(path: string) {
+  history.replaceState(navigationState(), "", path);
+  activeUrl = location.pathname + location.search + location.hash;
+}
+function resetHistoryTracking(path: string) {
+  // An untracked entry has no reliable relative position. Preserve the editor
+  // and forward stack by replacing this one entry, then start a fresh session.
+  navigationSession = crypto.randomUUID();
+  activeEntry = navigationEntry(0);
+  restoringHistory = false;
+  window.clearTimeout(historyRestoreTimer);
+  replaceAppUrl(path);
+}
+function restoreHistory(entry: NavigationEntry | null) {
+  const delta = entry ? activeEntry.index - entry.index : 0;
+  if (delta) {
+    restoringHistory = true;
+    // Never queue competing corrections or leave navigation blocked forever.
+    historyRestoreTimer = window.setTimeout(() => {
+      if (restoringHistory) resetHistoryTracking(activeUrl);
+    }, 1000);
+    history.go(delta);
+  } else resetHistoryTracking(activeUrl);
+}
 function navigate(path: string) {
-  if (saving) return;
+  if (saving || restoringHistory) return;
   if (
     editing &&
     draft !== page?.markdown &&
     !confirm("Leave this page? Unsaved changes will be lost.")
   )
     return;
-  history.pushState({}, "", path);
+  activeEntry = navigationEntry(activeEntry.index + 1);
+  history.pushState(navigationState(), "", path);
   activeUrl = location.pathname + location.search + location.hash;
   void route();
 }
@@ -166,11 +207,21 @@ function viewReady(title: string) {
 }
 
 app.addEventListener("click", (e) => {
+  if (e.defaultPrevented) return;
   const a = (e.target as HTMLElement).closest("a");
   const href = a?.getAttribute("href");
-  if (href?.startsWith("/") && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+  if ((href?.startsWith("/") || href?.startsWith("#")) && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
     e.preventDefault();
-    navigate(href);
+    if (href.startsWith("#")) {
+      if (restoringHistory) return;
+      const path = location.pathname + location.search + href;
+      if (new URL(path, location.origin).href !== location.href) {
+        activeEntry = navigationEntry(activeEntry.index + 1);
+        history.pushState(navigationState(), "", path);
+        activeUrl = location.pathname + location.search + location.hash;
+      }
+      focusFragment();
+    } else navigate(href);
   }
 });
 function shell() {
@@ -226,7 +277,8 @@ function focusFragment() {
   try { fragment = decodeURIComponent(location.hash.slice(1)); } catch { return; }
   const slug = (s: string) => s.trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
   const headings = Array.from(app.querySelectorAll<HTMLHeadingElement>(".prose h1,.prose h2,.prose h3,.prose h4,.prose h5,.prose h6"));
-  const target = headings.find(h => h.id === fragment) || headings.find(h => slug(h.textContent || "") === slug(fragment));
+  const target = (fragment === "main-content" ? app.querySelector<HTMLElement>("#main-content") : null) ||
+    headings.find(h => h.id === fragment) || headings.find(h => slug(h.textContent || "") === slug(fragment));
   if (target) { target.focus({ preventScroll: true }); target.scrollIntoView({ block: "start" }); }
 }
 
@@ -303,8 +355,7 @@ async function route() {
       const result = data.resolutions[0];
       if (result.status === "resolved") {
         const path = url(result.candidates[0].id) + (result.fragment ? `#${encodeURIComponent(result.fragment)}` : "");
-        history.replaceState({}, "", path);
-        activeUrl = path;
+        replaceAppUrl(path);
         void route();
       } else {
         main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
@@ -321,11 +372,7 @@ async function route() {
         const q = input.value.trim();
         // Typing the next draft does not change ownership of the submitted query.
         const current = () => run === generation && searchRun === searchGeneration;
-        history.replaceState(
-          {},
-          "",
-          q ? "/search?q=" + encodeURIComponent(q) : "/search",
-        );
+        replaceAppUrl(q ? "/search?q=" + encodeURIComponent(q) : "/search");
         const results = main.querySelector("#results")!;
         results.innerHTML = '<p class="quiet">Searching…</p>';
         try {
@@ -371,8 +418,7 @@ async function route() {
       start?.id === preferred &&
       !new URLSearchParams(location.search).has("overview")
     ) {
-      history.replaceState({}, "", url(preferred));
-      activeUrl = url(preferred);
+      replaceAppUrl(url(preferred));
       void route();
       return;
     }
@@ -585,21 +631,44 @@ async function save() {
     renderPage(editing ? "editor" : "heading");
   }
 }
-window.addEventListener("popstate", () => {
+window.addEventListener("popstate", event => {
+  const entry = readNavigationEntry(event.state);
+  const targetUrl = location.pathname + location.search + location.hash;
+  if (restoringHistory) {
+    if (entry?.id === activeEntry.id && targetUrl === activeUrl) {
+      restoringHistory = false;
+      window.clearTimeout(historyRestoreTimer);
+    }
+    return;
+  }
+  const previous = new URL(activeUrl, location.origin);
+  if (previous.pathname === location.pathname && previous.search === location.search) {
+    // Unknown native entries cannot safely imply a new relative position.
+    if (entry && (entry.id !== activeEntry.id || targetUrl === activeUrl)) {
+      activeEntry = entry;
+      replaceAppUrl(targetUrl);
+    } else resetHistoryTracking(targetUrl);
+    focusFragment();
+    return;
+  }
   if (
     saving ||
     (editing &&
       draft !== page?.markdown &&
       !confirm("Leave this page? Unsaved changes will be lost."))
   ) {
-    history.pushState({}, "", activeUrl);
+    restoreHistory(entry);
     return;
   }
+  if (entry) activeEntry = entry;
+  else resetHistoryTracking(targetUrl);
   activeUrl = location.pathname + location.search + location.hash;
   void route();
 });
 window.addEventListener("hashchange", () => {
-  activeUrl = location.pathname + location.search + location.hash;
+  const targetUrl = location.pathname + location.search + location.hash;
+  if (restoringHistory || targetUrl === activeUrl) return;
+  resetHistoryTracking(targetUrl);
   focusFragment();
 });
 window.addEventListener("beforeunload", (e) => {
@@ -608,6 +677,7 @@ window.addEventListener("beforeunload", (e) => {
     e.returnValue = "";
   }
 });
+replaceAppUrl(activeUrl);
 startPwa(canReloadApp);
 observePwa(state => {
   pwaState = state;
