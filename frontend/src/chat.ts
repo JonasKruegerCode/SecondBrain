@@ -34,6 +34,7 @@ const MAX_WIKI_ACTIONS = 8;
 // This bounded fallback disappears on document reload and is never sent to an archive.
 let tabConversations: Conversation[] | undefined;
 let tabTombstones: Tombstone[] | undefined;
+let tabDirtyIds: Set<string> | undefined;
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -129,7 +130,7 @@ function load(): { conversations: Conversation[]; tombstones: Tombstone[]; unava
   return readPersistent();
 }
 
-function save(conversations: Conversation[], tombstones: Tombstone[]): boolean {
+function save(conversations: Conversation[], tombstones: Tombstone[], dirtyIds: Set<string>): boolean {
   try {
     // Persist deletion intent before the conversation snapshot. A stale tab can then
     // merge without resurrecting a conversation if the second write is interrupted.
@@ -137,10 +138,12 @@ function save(conversations: Conversation[], tombstones: Tombstone[]): boolean {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
     tabConversations = undefined;
     tabTombstones = undefined;
+    tabDirtyIds = undefined;
     return true;
   } catch {
     tabConversations = conversations;
     tabTombstones = tombstones;
+    tabDirtyIds = new Set(conversations.filter(item => dirtyIds.has(item.id)).map(item => item.id));
     return false;
   }
 }
@@ -156,7 +159,9 @@ export function renderChat(main: Element, api: Api): () => void {
   let storageUnavailable = loaded.unavailable;
   if (!conversations.length) conversations = [freshConversation()];
   let activeId = conversations[0].id;
-  const dirtyIds = new Set<string>();
+  // Preserve pending writes across SPA navigation while browser storage is full.
+  // A restored in-tab snapshot must still merge its unsaved messages on recovery.
+  const dirtyIds = new Set(tabDirtyIds);
   const deletedIds = new Map<string, number>();
   let busy = false;
   let error = "";
@@ -199,7 +204,7 @@ export function renderChat(main: Element, api: Api): () => void {
     conversations = [active, ...conversations.filter(item => item.id !== active.id)]
       .slice(0, MAX_CONVERSATIONS);
     conversations.forEach(item => { item.messages = boundedMessages(item.messages); });
-    storageUnavailable = !save(conversations, tombstones);
+    storageUnavailable = !save(conversations, tombstones, dirtyIds);
     if (!storageUnavailable) {
       dirtyIds.clear();
       deletedIds.clear();

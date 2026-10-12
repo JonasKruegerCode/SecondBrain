@@ -1572,6 +1572,45 @@ test("chat storage failure explains session-only answers and unsuccessful persis
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === "synthetic-storage"))).toBeFalsy();
 });
 
+test("chat storage recovery retains unsaved conversations after article navigation", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+      id: "saved-before-quota", title: "Saved before quota", updated: 1,
+      messages: [{ role: "user", content: "Previously saved question." }],
+    }]));
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "secondbrain.chat.conversations.v1")
+        throw new DOMException("Synthetic full storage", "QuotaExceededError");
+      return set.call(this, key, value);
+    };
+    window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+  });
+  await page.route("**/api/wiki/chat", route => route.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ answer: "Synthetic answer during quota failure.", sources: [], activity: [] }) }));
+  await page.goto("/chat");
+  await page.getByLabel("Message").fill("Unsaved follow-up in existing conversation.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic answer during quota failure.");
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.getByLabel("Message").fill("Unsaved independent conversation.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic answer during quota failure.");
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.locator(".chat-storage-notice")).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.locator(".chat-storage-notice")).toHaveCount(0);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1") || "[]"));
+  expect(stored.find((item: { id: string }) => item.id === "saved-before-quota").messages).toHaveLength(3);
+  expect(stored.some((item: { messages: Array<{ content: string }> }) =>
+    item.messages.some(message => message.content === "Unsaved independent conversation."))).toBeTruthy();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await page.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.locator(".chat-history-list button")).toHaveCount(3);
+});
+
 test("galaxy keyboard return restores its originating page and constellation", async ({ page }) => {
   await page.goto("/galaxy");
   const sky = page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" });
