@@ -215,12 +215,14 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: Math.max(340, rows * 300) + 55 + Math.floor(i / 15) * 55 }));
     if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
     // Bound enlarged targets by actual spacing in smaller constellations.
-    // Above 120 stars preserve the original logical hit radius; the page list
-    // remains the precise selection path without quadratic spacing work.
+    // Above 120 stars use a conservative bound from the elliptical ring layout:
+    // different rings are at least .8 times their radial step apart; same-ring
+    // chords and the core gap are wider. Keep targets disjoint without a
+    // quadratic scan. The page list remains the comfortable dense touch path.
     hitSpacing = Infinity;
     if (active) {
       const points = [...positions.values()];
-      if (points.length > 120) hitSpacing = 40;
+      if (points.length > 120) hitSpacing = .8 * 145 / Math.ceil((active.members.length - 1) / 16);
       else for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
         hitSpacing = Math.min(hitSpacing, Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y));
       }

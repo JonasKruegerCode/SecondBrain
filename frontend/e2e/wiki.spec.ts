@@ -156,6 +156,71 @@ test.describe("galaxy touch navigation", () => {
       await request.delete(`/api/wiki/pages/${item.id}`, { data: { base_revision: item.revision, request_id: randomUUID() } });
     }
   });
+
+  test("dense constellations keep distinct targets and unlinked pages stay reachable", async ({ page, request }, testInfo) => {
+    // Real Git publications for setup and cleanup dominate this bounded fixture.
+    test.setTimeout(180_000);
+    const group = `density-${randomUUID()}`;
+    const ids = Array.from({ length: 128 }, (_, i) => `${group}-${i}`);
+    const saved: { id: string; revision: string }[] = [];
+    try {
+      for (const [i, id] of ids.entries()) {
+        const response = await request.post(`/api/wiki/pages/${id}`, { data: {
+          markdown: `---\ngalaxy_group: ${group}\ngalaxy_label: Dense synthetic constellation\ngalaxy_anchor: ${i === 0}\n---\n# Dense page ${i + 1}\n[[${ids[(i + 1) % ids.length]}]]`,
+          base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true);
+        saved.push({ id, revision: (await response.json()).revision });
+      }
+      await page.goto("/galaxy");
+      await page.locator(".galaxy-cluster").filter({ hasText: "Dense synthetic constellation" }).tap();
+      await expect(page.locator(".galaxy-star")).toHaveCount(128);
+      const targets = () => page.locator(".galaxy-star").evaluateAll(elements => elements.map(element => {
+        const star = element as SVGGraphicsElement, matrix = star.getScreenCTM()!;
+        const center = new DOMPoint(0, 0).matrixTransform(matrix);
+        return { id: star.getAttribute("data-node")!, x: center.x, y: center.y, r: Number(star.querySelector(".galaxy-hit")!.getAttribute("r")) * matrix.a };
+      }));
+      const distinct = async () => {
+        const points = await targets();
+        let clearance = Infinity, pair = [points[0], points[1]];
+        for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+          const gap = Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y) - points[i].r - points[j].r;
+          if (gap < clearance) { clearance = gap; pair = [points[i], points[j]]; }
+        }
+        expect(clearance, "dense hit circles must not intercept their neighbors").toBeGreaterThan(0);
+        return pair;
+      };
+      await page.screenshot({ path: testInfo.outputPath("dense-128.png") });
+      const pair = await distinct();
+      for (const target of pair) {
+        await page.locator(`.galaxy-star[data-node="${target.id}"]`).tap();
+        await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", target.id);
+      }
+      for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Zoom in", exact: true }).tap();
+      await distinct();
+      await page.getByRole("button", { name: "All constellations" }).tap();
+      for (let i = 0; i < 40; i++) {
+        const item = await create(request, `# Unlinked synthetic page ${i + 1}\nAn independent fictional note.`);
+        saved.push(item);
+      }
+      await page.reload();
+      const last = saved.at(-1)!;
+      const star = page.locator(`.galaxy-star[data-node="${last.id}"]`);
+      await star.focus();
+      await expect(star).toBeInViewport();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", last.id);
+      await expect(page.locator(".galaxy-evidence li")).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath("unlinked-selection.png") });
+      await page.locator(".galaxy-selected-heading .galaxy-article").tap();
+      await expect(page).toHaveURL(new RegExp(`/wiki/${last.id}$`));
+    } finally {
+      for (const item of saved.reverse()) {
+        const response = await request.delete(`/api/wiki/pages/${item.id}`, { data: { base_revision: item.revision, request_id: randomUUID() } });
+        expect(response.ok(), "synthetic density fixture cleanup").toBe(true);
+      }
+    }
+  });
 });
 
 async function create(request: APIRequestContext, markdown: string) {

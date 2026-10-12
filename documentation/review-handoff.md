@@ -141,8 +141,10 @@ and its matching CI runs rather than treating these counts as current.
   layout remain separate paths. Focused maps fit the available aspect ratio and
   keep label size stable across zoom/resize. Spaced stars use 44-pixel hit circles;
   up to 120 stars, actual spacing caps targets to prevent overlap. Larger
-  constellations retain the original logical target cap and the precise page-list
-  path. Dense 40-page maps have separate rendered-spacing and selection checks.
+  constellations use a conservative elliptical-ring spacing bound without a
+  quadratic scan, retaining disjoint targets and the precise page-list path.
+  Dense 40- and 128-page maps have rendered-spacing and selection checks; small
+  nonoverlapping targets do not establish comfortable physical touch usability.
   Overview titles/counts and bridge numbers use screen-scaled font sizes;
   narrow maps use two columns with measured middle ellipsis, preserving full
   names in constellation details and tooltips. Counts avoid nearby labels or
@@ -161,6 +163,9 @@ and its matching CI runs rather than treating these counts as current.
 
 ## Known release gates
 
+- A narrow overview with 24 constellations still crowds its labels. The large
+  snapshot opens in the usable list view; the manual map overview needs further
+  decluttering before claiming full visual acceptance of many constellations.
 - real OpenRouter multi-turn result and answer-quality inspection
 - hosted Neo4j, Qdrant and embedding-provider integration and retention under load
 - production authenticated reverse-proxy/HTTPS operation and off-host restore;
