@@ -46,6 +46,9 @@ losing or resurrecting independent conversations.
   the view. Chat arrival leaves the composer unfocused. Fresh document loads retain the skip-link path;
   fragments take precedence. A header/main focus deliberately chosen while a
   read is pending is preserved, including internal saved-start/link redirects.
+- Search normalizes submitted queries while retaining the current URL fragment;
+  direct fragment destinations, reload and history remain usable. Later form
+  submissions keep their input focus, including a new or empty query.
 - Reopening local Git history reads current commits, including newer agent saves.
   Reopening during a pending read shares that request; late history replies after
   leaving the article cannot replace the next article's history.

@@ -4,16 +4,89 @@ import { randomUUID } from "node:crypto";
 for (const width of [390, 1440]) {
   test(`search query normalization retains its fragment destination (${width})`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 844 });
-    await page.goto("/search?q=tide%20clock#main-content");
+    await page.goto("/search?q=%20tide%20clock%20#main-content");
     await expect(page.locator('#results a[href="/wiki/tide-clock"]')).toBeVisible();
     const observed = await page.evaluate(() => ({ hash: location.hash, tag: document.activeElement?.tagName }));
     console.log(`[search-fragment] ${JSON.stringify({ width, observed })}`);
-    // Diagnostic expectations document the real baseline, not accepted behavior.
-    expect(observed.hash).toBe("");
-    expect(observed.tag).toBe("BODY");
+    expect(observed.hash).toBe("#main-content");
+    expect(observed.tag).toBe("MAIN");
+    await expect(page).toHaveURL(/\/search\?q=tide%20clock#main-content$/);
+    await expect(page.locator("#main-content")).toBeFocused();
     await page.screenshot({ path: info.outputPath(`search-fragment-${width}.png`) });
+    await page.keyboard.press("Tab");
+    const input = page.getByRole("textbox", { name: "Search pages" });
+    await expect(input).toBeFocused();
+    await input.fill(" night sky ");
+    await page.keyboard.press("Enter");
+    await expect(page.locator('#results a[href="/wiki/night-sky-survey"]')).toBeVisible();
+    await expect(page).toHaveURL(/\/search\?q=night%20sky#main-content$/);
+    await expect(input).toBeFocused();
+    await input.fill("  ");
+    const blank = page.waitForResponse(response => response.url().endsWith("/api/wiki/search?q="));
+    await page.keyboard.press("Enter");
+    await (await blank).finished();
+    await expect(page).toHaveURL(/\/search#main-content$/);
+    await expect(input).toBeFocused();
+    await expect(page.locator("#results")).toContainText("No pages found.");
   });
 }
+
+test("a delayed initial search respects newer fragment and input choices", async ({ page }) => {
+  let release!: () => void;
+  let received!: () => void;
+  let delivered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const held = new Promise<void>(resolve => { received = resolve; });
+  const completed = new Promise<void>(resolve => { delivered = resolve; });
+  const pattern = "**/api/wiki/search?q=tide%20clock";
+  await page.route(pattern, async route => {
+    const response = await route.fetch();
+    received();
+    await gate;
+    await route.fulfill({ response });
+    delivered();
+  });
+  try {
+    await page.goto("/search?q=tide%20clock#main-content");
+    await held;
+    await expect(page.locator("#main-content")).toBeFocused();
+    const input = page.getByRole("textbox", { name: "Search pages" });
+    await input.fill("Unsubmitted next thought");
+    await input.focus();
+    // Script a native address-fragment change while the actual payload is held.
+    await page.evaluate(() => { location.hash = "another-fragment"; });
+    await expect(page).toHaveURL(/#another-fragment$/);
+    release();
+    await completed;
+    await expect(page.locator('#results a[href="/wiki/tide-clock"]')).toBeVisible();
+    await expect(input).toHaveValue("Unsubmitted next thought");
+    await expect(input).toBeFocused();
+    await expect(page).toHaveURL(/\/search\?q=tide%20clock#another-fragment$/);
+  } finally { release(); await page.unroute(pattern); }
+});
+
+test("search query fragments survive result navigation, history and reload", async ({ page }) => {
+  await page.goto("/search?q=tide%20clock#main-content");
+  const result = page.locator('#results a[href="/wiki/tide-clock"]');
+  await expect(result).toBeVisible();
+  await expect(page.locator("#main-content")).toBeFocused();
+  await result.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("article > h1")).toHaveText("Tide clock project");
+  await expect(page.locator("article > h1")).toBeFocused();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/search\?q=tide%20clock#main-content$/);
+  await expect(page.locator("#main-content")).toBeFocused();
+  await expect(result).toBeVisible();
+  await page.goForward();
+  await expect(page.locator("article > h1")).toBeFocused();
+  await page.goBack();
+  await expect(page.locator("#main-content")).toBeFocused();
+  await page.reload();
+  await expect(page).toHaveURL(/#main-content$/);
+  await expect(page.locator("#main-content")).toBeFocused();
+  await expect(result).toBeVisible();
+});
 
 for (const width of [390, 1440]) {
   test(`keyboard navigation reaches each view's content (${width})`, async ({ page }, info) => {

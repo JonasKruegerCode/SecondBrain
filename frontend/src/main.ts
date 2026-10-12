@@ -415,7 +415,9 @@ async function route(focusView = false, reuseShell = false) {
         const q = input.value.trim();
         // Typing the next draft does not change ownership of the submitted query.
         const current = () => run === generation && searchRun === searchGeneration;
-        replaceAppUrl(q ? "/search?q=" + encodeURIComponent(q) : "/search");
+        // Normalize the submitted query without discarding its reading target.
+        // Use the current fragment, never a route-start value or a late reply.
+        replaceAppUrl((q ? "/search?q=" + encodeURIComponent(q) : "/search") + location.hash);
         const results = main.querySelector("#results")!;
         results.innerHTML = '<p class="quiet">Searching…</p>';
         try {
