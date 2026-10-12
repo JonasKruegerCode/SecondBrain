@@ -68,7 +68,7 @@ vault and the real local API/frontend:
 make acceptance PYTHON=backend/.venv/bin/python
 ```
 
-This waits for both services, runs the wiki and focused history browser suites, stops them even
+This waits for both services, runs the wiki, history and keyboard skip-link suites, stops them even
 on failure, and writes ignored logs plus a small JSON evidence record under
 `.demo/acceptance/`. It disables external model calls and never targets an
 existing or personal vault. Real OpenRouter, container, HTTPS and physical-device

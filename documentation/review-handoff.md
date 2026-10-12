@@ -112,6 +112,15 @@ responses: keyboard loading, pending-read deduplication, refreshed agent edits,
 transport failure/retry and late success/failure after article navigation.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
+Two skip-link cases compare actual viewport geometry and keyboard behavior at
+390 and 1440 pixels. First Tab reveals the navigation bypass; Enter focuses the
+main content, and the next Tab enters its first control. The same-fragment path
+is checked too. A scrolled full-page Chromium capture can include the unfocused
+fixed link even though its rectangle remains entirely above the real viewport.
+The paired viewport images and before/after geometry distinguish that capture
+artifact from the interface. Do not infer a visible overlay from full-page
+pixels alone or from Playwright's offscreen `toBeVisible()` result.
+
 The local Git-import runner uses the actual setup CLI and three browser phases:
 empty Git without seeding, the public atlas with two original source commits,
 and restart after a browser edit and saved start page. It compares every page's
@@ -141,25 +150,32 @@ does not establish hosted index, deployment or device behavior.
 
 ## Evidence snapshot
 
-Verified published implementation baseline `54ccdd87a97e844aca9bb9790e6749bac239ae8f`
-(tree `f94328a21d62eb60dbfec782b6e9dcb992f29347`, 2026-10-12).
+Verified published implementation baseline `fc136028244134112d0dbb29acf6576bf9740b92`
+(tree `585501d90a5ad32aeb35b69ea0fc3340c971c94d`, 2026-10-12).
 These results identify that exact baseline; for later commits inspect the
 current [draft PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18)
 and its matching CI runs rather than treating these counts as current.
 
-- A new two-tab browser test first reproduced an independent-conversation loss
-  and deletion resurrection. After the persistence fix, the focused real-browser
-  chat suite passed 9/9. Strict app/E2E TypeScript and the production build pass.
-- The complete local real API/Vite acceptance passed 50/50 in 68.482 seconds.
-  Its structural result records `external_model_calls=false` and
-  `vault_retained=false`; this is not a real-model check and retains no success
-  vault.
-- All six workflows passed: [Backend #91](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38203081037),
-  Frontend #70, [Managed stack #33](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38203081036),
-  Managed index #31, Managed SSH #20 and
-  [Managed browser #16](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38203081052).
+- The real CI API/Vite/Chromium acceptance passed 75/75 in 63.505 seconds with
+  services, including fresh history and both skip-link viewport/keyboard cases.
+  Existing empty-first-start/restart phases passed in 7.787 seconds; the three
+  local-Git import phases passed in 11.522 seconds. Their two/six phase skips are
+  intentional. Native import/skip-link browser execution was unavailable because
+  the temporary Chromium environment expired and its replacement download was
+  blocked; do not describe the CI browser pass as a native local pass.
+- All three structural records show `external_model_calls=false`,
+  `vault_retained=false` and `phase_inputs_retained=false`; the import source is
+  removed too. Artifact `11770743390`, ZIP SHA256
+  `e3467f74f3fb5a16decd9981387478f85e7db58906fc11aeac915c7a80daaba3`,
+  was downloaded and matched GitHub's digest. Paired viewport/full-page/focused
+  images were opened and inspected. No source repositories, vaults, browser
+  state or page receipts are archived. This is not a real-model/device check.
+- All six workflows passed: [Backend #111](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38302838040),
+  Frontend #90, [Managed stack #53](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38302837894),
+  Managed index #51, Managed SSH #40 and
+  [Managed browser #36](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38302837865).
   Backend Ruff and strict MyPy over 88 files passed with 328 tests and 12
-  explicit opt-in skips (58.77 seconds); backend and frontend image builds pass.
+  explicit opt-in skips (64.05 seconds); backend and frontend image builds pass.
 - Managed index passed 7/7 against real isolated Neo4j/Qdrant with synthetic
   embeddings. Managed SSH passed 5/5 with its owned agent and loopback OpenSSH.
   The managed stack passed its built HTTPS/auth, controlled address-change and
