@@ -104,7 +104,12 @@ test.describe("galaxy touch navigation", () => {
     });
     for (const width of [390, 320, 1440, 390]) {
       await page.setViewportSize({ width, height: 844 });
-      await expect.poll(async () => (await metrics()).smallest).toBeGreaterThanOrEqual(9.99);
+      // A larger viewport initially scales the previous fonts up, so a minimum
+      // size alone passes before ResizeObserver has refitted the new columns.
+      await expect.poll(async () => {
+        const measured = await metrics();
+        return Math.abs(measured.smallest - 11) < .01 && measured.titlesInside && measured.separated && measured.distinct && measured.bridgesClear && measured.starsClear;
+      }).toBe(true);
       const measured = await metrics();
       expect(measured.titlesInside).toBe(true);
       expect(measured.separated).toBe(true);
