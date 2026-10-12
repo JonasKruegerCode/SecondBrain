@@ -48,6 +48,10 @@ jobs:
         working-directory: backend
         run: poetry run python ../scripts/run-wiki-acceptance.py --first-start
 
+      - name: Exercise local Git import and preserved browser edits
+        working-directory: backend
+        run: poetry run python ../scripts/run-wiki-import-acceptance.py
+
       # Only synthetic structural evidence and screenshots; never archive a vault.
       - name: Upload browser acceptance evidence
         if: always()

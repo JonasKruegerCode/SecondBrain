@@ -74,6 +74,7 @@ Install the locked Python and Node dependencies, then from the repository root:
 make demo PYTHON=backend/.venv/bin/python
 make acceptance PYTHON=backend/.venv/bin/python
 make acceptance-first-start PYTHON=backend/.venv/bin/python
+make acceptance-import PYTHON=backend/.venv/bin/python
 make check
 ```
 
@@ -110,6 +111,16 @@ The normal suite includes focused history checks against actual Git-backed REST
 responses: keyboard loading, pending-read deduplication, refreshed agent edits,
 transport failure/retry and late success/failure after article navigation.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
+
+The local Git-import runner uses the actual setup CLI and three browser phases:
+empty Git without seeding, the public atlas with two original source commits,
+and restart after a browser edit and saved start page. It compares every page's
+exact content/revision, real source history and the full graph; checks links,
+search and galaxy at desktop and narrow widths; and refuses new first-start or
+template requests over the edited wiki. An identical import retry retains its
+original receipt while reporting the newer content revision. The source remains
+unchanged. Owned source repositories, vaults, browser state and page receipts are
+not uploaded. This gate does not establish a private or remote Git migration.
 
 For the opt-in tall-map probe, create an isolated vault with
 `python -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,

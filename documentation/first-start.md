@@ -32,6 +32,19 @@ publication revision; `current_revision` separately shows any later content.
 For deliberate later replacements, use the [guarded importer](wiki-import.md)
 with a reviewed whole-wiki base revision.
 
+Rehearse this path with `make acceptance-import PYTHON=backend/.venv/bin/python`
+from the repository root after installing the locked dependencies and Playwright
+Chromium. The isolated runner uses only synthetic local Git repositories: an
+empty source and the public twelve-page atlas with original source history.
+Three real browser phases check the empty start, imported navigation/search/
+galaxy/history and persistence after a browser edit, identical setup retry and
+API/frontend restart. Competing first-start/template requests must refuse the
+populated destination without losing edits. Source files, source HEAD, all page
+content/revisions, history and graph are compared. Successful runs remove the
+owned sources, vaults and browser phase inputs; CI publishes only structural
+results, browser logs and synthetic screenshots. Remote authentication, private
+vault migration, real models and physical-device installation remain separate.
+
 Start the chosen profile, for example:
 
 ```sh

@@ -68,7 +68,7 @@ vault and the real local API/frontend:
 make acceptance PYTHON=backend/.venv/bin/python
 ```
 
-This waits for both services, runs `frontend/e2e/wiki.spec.ts`, stops them even
+This waits for both services, runs the wiki and focused history browser suites, stops them even
 on failure, and writes ignored logs plus a small JSON evidence record under
 `.demo/acceptance/`. It disables external model calls and never targets an
 existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
@@ -82,6 +82,15 @@ owned vault. The second browser phase checks the saved start page, exact content
 and revisions. Scripted transport delay/failure checks are separate from real
 outage evidence. Success removes the temporary vault and browser-state files;
 CI uploads only structural results, browser logs and synthetic screenshots.
+
+For explicit local Git import, run
+`make acceptance-import PYTHON=backend/.venv/bin/python`. It prepares an empty
+repository and the public atlas with two original commits, imports both through
+the setup CLI, and checks real article links, search, history and galaxy views.
+A browser edit and saved start page must survive an identical import retry and
+an API/frontend restart. New first-start imports and template seeding must refuse
+the populated vault; the source repository must remain unchanged. All inputs are
+owned and disposable; this does not validate a private migration or remote clone.
 
 When a real key is available, the separate paid-provider gate checks two
 bounded turns, required page reads, visible sources, proportional answers and

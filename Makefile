@@ -2,7 +2,7 @@
 PYTHON ?= python3
 
 # Opt-in managed wiki; does not stop or touch production containers/volumes.
-.PHONY: demo demo-scale acceptance acceptance-first-start acceptance-openrouter acceptance-stack
+.PHONY: demo demo-scale acceptance acceptance-first-start acceptance-import acceptance-openrouter acceptance-stack
 demo:
 	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-demo.py
 
@@ -17,6 +17,10 @@ acceptance:
 # Empty wiki, first real pages, then actual API/Vite restart on the same vault.
 acceptance-first-start:
 	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-acceptance.py --first-start
+
+# Owned local Git sources, exact import/retry checks and real browser restart.
+acceptance-import:
+	PYTHONPATH=backend/src $(PYTHON) scripts/run-wiki-import-acceptance.py
 
 # Explicit paid-provider gate. Sends only the public fictional demo fixture.
 acceptance-openrouter:
