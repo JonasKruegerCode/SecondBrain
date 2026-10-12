@@ -117,19 +117,62 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   root.querySelector(".galaxy-method p")!.append(document.createTextNode(" In the overview, dashed lines combine all real page links between each pair of constellations, including reciprocal links. Their counts do not imply links between the core pages. Select a page to inspect exact source, target and direction."));
   root.querySelector(".galaxy-mapnote span:last-child")!.append(document.createTextNode(" · Use the page list for closely spaced stars."));
   let hitSpacing = Infinity;
+  let overviewColumns = 3;
+  const columnsForWidth = () => linked.length <= 2 || (stage.clientWidth > 0 && stage.clientWidth < 520) ? 2 : 3;
   const setView = () => {
     const svg = stage.querySelector("svg");
     if (!svg || !stage.clientWidth || !stage.clientHeight) return;
     const active = selectedCluster !== null;
     const aspect = stage.clientWidth / stage.clientHeight;
     const baseWidth = active ? Math.max(460, 460 * aspect) : 1100;
-    const baseHeight = active ? baseWidth / aspect : height;
+    // Reserve screen-scaled headroom even when a tall overview is fitted by
+    // height; otherwise its first readable heading would sit outside the SVG.
+    const overviewUnit = Math.min(stage.clientWidth / 1100, stage.clientHeight / height);
+    const baseHeight = active ? baseWidth / aspect : height + 96 / overviewUnit;
     const width = baseWidth / scale, viewHeight = baseHeight / scale;
     panX = Math.max(-350, Math.min(350, panX)); panY = Math.max(-height / 3, Math.min(height / 3, panY));
     svg.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${(height - viewHeight) / 2 + panY} ${width} ${viewHeight}`);
+    const unit = Math.min(stage.clientWidth / width, stage.clientHeight / viewHeight);
+    svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text").forEach(label => {
+      const count = label.classList.contains("galaxy-count");
+      label.style.fontSize = `${(count ? 11 : 14) / unit}px`;
+      label.setAttribute("y", String(Number(label.dataset.top) - (count ? 6 : 24) / unit));
+      const full = label.dataset.label!;
+      label.textContent = count && !active && 1100 / overviewColumns * unit < 200 ? full.split(" · ")[0] : full;
+      const available = active ? stage.clientWidth - 24 : 1100 / overviewColumns * unit - 16;
+      const letters = [...label.textContent];
+      if (label.getComputedTextLength() * unit > available) {
+        let low = 0, high = letters.length;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          label.textContent = `${letters.slice(0, Math.ceil(middle * .65)).join("")}…${letters.slice(letters.length - Math.floor(middle * .35)).join("")}`;
+          if (label.getComputedTextLength() * unit <= available) low = middle;
+          else high = middle - 1;
+        }
+        label.textContent = `${letters.slice(0, Math.ceil(low * .65)).join("")}…${letters.slice(letters.length - Math.floor(low * .35)).join("")}`;
+      }
+    });
+    const occupied = [...svg.querySelectorAll<SVGGraphicsElement>(".galaxy-neighborhood text, .galaxy-dot")].map(label => label.getBoundingClientRect());
+    const bounds = svg.getBoundingClientRect();
+    svg.querySelectorAll<SVGTextElement>(".galaxy-bridge-count").forEach(label => {
+      label.style.fontSize = `${11 / unit}px`;
+      label.style.strokeWidth = `${3 / unit}px`;
+      label.style.visibility = "hidden";
+      // Keep counts near their real link segment, without painting over
+      // constellation names or other counts. Dense maps retain exact totals
+      // in the line title and constellation details if no nearby slot fits.
+      for (const [dx, dy] of [[0, -8], [0, 12], [14, 0], [-14, 0], [0, -24], [0, 24]]) {
+        label.setAttribute("x", String(Number(label.dataset.x) + dx / unit));
+        label.setAttribute("y", String(Number(label.dataset.y) + dy / unit));
+        const box = label.getBoundingClientRect();
+        if (box.left < bounds.left || box.right > bounds.right || box.top < bounds.top || box.bottom > bounds.bottom) continue;
+        if (occupied.some(other => box.left < other.right + 3 && box.right > other.left - 3 && box.top < other.bottom + 3 && box.bottom > other.top - 3)) continue;
+        label.style.visibility = "visible"; occupied.push(box); break;
+      }
+    });
+    svg.querySelectorAll<SVGTextElement>(".galaxy-shelf").forEach(label => { label.style.fontSize = `${11 / unit}px`; });
     if (active) {
-      const unit = Math.min(stage.clientWidth / width, stage.clientHeight / viewHeight);
-      svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text, .galaxy-star text").forEach(label => {
+      svg.querySelectorAll<SVGTextElement>(".galaxy-star text").forEach(label => {
         const size = label.classList.contains("galaxy-count") ? 11 : label.closest(".galaxy-star") ? 12 : 14;
         label.style.fontSize = `${size / unit}px`;
         if (label.closest(".galaxy-star")) {
@@ -151,7 +194,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
     if (listOnly) { stage.innerHTML = ""; return; }
     const positions = new Map<string, Point>(), centers = new Map<number, Point>();
-    const columns = linked.length <= 2 ? 2 : 3;
+    const columns = overviewColumns = columnsForWidth();
     const rows = Math.ceil(linked.length / columns);
     height = active ? 600 : Math.max(480, rows * 300 + (isolated.length ? 140 : 0));
     const shown = active ? [active] : linked;
@@ -198,7 +241,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         // Keep labels away from the shared midpoint of crossing diagonals.
         const x = a.x + (b.x - a.x) * .42, y = a.y + (b.y - a.y) * .42;
         const label = `${link.count} explicit link${link.count === 1 ? "" : "s"} between ${clusterName(clusters[link.from])} and ${clusterName(clusters[link.to])}`;
-        return `<g class="galaxy-aggregate-link"><line class="galaxy-edge is-bridge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(label)}</title></line>${link.count > 1 ? `<text class="galaxy-bridge-count" x="${x}" y="${y - 6}" text-anchor="middle">${link.count}</text>` : ""}</g>`;
+        return `<g class="galaxy-aggregate-link"><line class="galaxy-edge is-bridge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(label)}</title></line>${link.count > 1 ? `<text class="galaxy-bridge-count" x="${x}" y="${y - 6}" data-x="${x}" data-y="${y}" text-anchor="middle">${link.count}</text>` : ""}</g>`;
       }).join("");
     })() : "";
     const individualLinks = compactOverview ? "" : edges.map(e => {
@@ -214,7 +257,9 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const p = centers.get(c.id)!;
       const size = active ? 225 : 125;
       const label = clusterName(c);
-      return `<g class="galaxy-neighborhood" style="--cluster-color:${color(c)}"><ellipse cx="${p.x}" cy="${p.y}" rx="${size}" ry="${size * .8}"/><text x="${p.x}" y="${p.y - size * .8 - 15}" text-anchor="middle">${escape(label.length > 31 ? label.slice(0, 28) + "…" : label)}</text><text class="galaxy-count" x="${p.x}" y="${p.y - size * .8 + 3}" text-anchor="middle">${c.members.length} pages · ${c.curated ? "curated" : c.isolated ? "unlinked" : "link topology"}</text></g>`;
+      const count = `${c.members.length} pages · ${c.curated ? "curated" : c.isolated ? "unlinked" : "link topology"}`;
+      const top = p.y - size * .8;
+      return `<g class="galaxy-neighborhood" style="--cluster-color:${color(c)}"><title>${escape(label)} · ${escape(count)}</title><ellipse cx="${p.x}" cy="${p.y}" rx="${size}" ry="${size * .8}"/><text x="${p.x}" y="${top - 15}" data-top="${top}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text><text class="galaxy-count" x="${p.x}" y="${top + 3}" data-top="${top}" data-label="${escape(count)}" text-anchor="middle">${escape(count)}</text></g>`;
     }).join("");
     const stars = [...positions].map(([id, p]) => {
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
@@ -370,7 +415,13 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   stage.addEventListener("pointerdown", pointerdown); stage.addEventListener("pointermove", pointermove);
   stage.addEventListener("pointerup", pointerup); stage.addEventListener("pointercancel", pointerup);
   render();
-  const resize = new ResizeObserver(() => setView());
+  const resize = new ResizeObserver(() => {
+    if (selectedCluster === null && !listOnly && columnsForWidth() !== overviewColumns) {
+      const focused = document.activeElement?.closest<SVGElement>(".galaxy-star")?.dataset.node;
+      renderMap();
+      if (focused) [...stage.querySelectorAll<SVGElement>(".galaxy-star")].find(el => el.dataset.node === focused)?.focus({ preventScroll: true });
+    } else setView();
+  });
   resize.observe(stage);
   return () => {
     resize.disconnect();

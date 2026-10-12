@@ -80,6 +80,77 @@ test.describe("galaxy touch navigation", () => {
     await page.locator(".galaxy-selected-heading .galaxy-article").tap();
     await expect(page).toHaveURL(new RegExp(`/wiki/${id}$`));
   });
+
+  test("overview labels stay readable and separate through resize and zoom", async ({ page }, testInfo) => {
+    await page.goto("/galaxy");
+    const metrics = () => page.locator(".galaxy-stage svg").evaluate(svg => {
+      const unit = (svg as SVGSVGElement).getScreenCTM()!.a;
+      const labels = [...svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text, .galaxy-bridge-count")];
+      const titles = [...svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text:not(.galaxy-count)")];
+      const counts = [...svg.querySelectorAll<SVGTextElement>(".galaxy-count")];
+      const bounds = svg.getBoundingClientRect();
+      const rects = titles.map(el => el.getBoundingClientRect());
+      const visibleLabels = labels.filter(el => getComputedStyle(el).visibility !== "hidden").map(el => el.getBoundingClientRect());
+      const dots = [...svg.querySelectorAll(".galaxy-dot")].map(el => el.getBoundingClientRect());
+      const bridges = [...svg.querySelectorAll(".galaxy-bridge-count")].filter(el => getComputedStyle(el).visibility !== "hidden").map(el => el.getBoundingClientRect());
+      return {
+        smallest: Math.min(...labels.map(el => parseFloat(getComputedStyle(el).fontSize) * unit)),
+        titlesInside: rects.every(r => r.left >= bounds.left && r.right <= bounds.right && r.top >= bounds.top && r.bottom <= bounds.bottom),
+        separated: rects.every((r, i) => counts[i].getBoundingClientRect().top >= r.bottom + 1),
+        distinct: rects.every((r, i) => rects.slice(i + 1).every(b => r.right <= b.left || b.right <= r.left || r.bottom <= b.top || b.bottom <= r.top)),
+        bridgesClear: visibleLabels.every((r, i) => visibleLabels.slice(i + 1).every(b => r.right <= b.left || b.right <= r.left || r.bottom <= b.top || b.bottom <= r.top)),
+        starsClear: bridges.every(r => dots.every(b => r.right <= b.left || b.right <= r.left || r.bottom <= b.top || b.bottom <= r.top)),
+      };
+    });
+    for (const width of [390, 320, 1440, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect.poll(async () => (await metrics()).smallest).toBeGreaterThanOrEqual(9.99);
+      const measured = await metrics();
+      expect(measured.titlesInside).toBe(true);
+      expect(measured.separated).toBe(true);
+      expect(measured.distinct).toBe(true);
+      expect(measured.bridgesClear).toBe(true);
+      expect(measured.starsClear).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`overview-readable-${width}.png`), fullPage: true });
+    }
+    await page.getByRole("button", { name: "Zoom in", exact: true }).tap();
+    expect((await metrics()).smallest).toBeGreaterThanOrEqual(9.99);
+    expect((await metrics()).separated).toBe(true);
+    await page.getByRole("button", { name: "Reset", exact: true }).tap();
+    await page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" }).tap();
+    await page.getByRole("button", { name: "All constellations" }).tap();
+    await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(6);
+    expect((await metrics()).smallest).toBeGreaterThanOrEqual(9.99);
+    const id = await page.locator(".galaxy-star.is-core").first().getAttribute("data-node");
+    await page.locator(`.galaxy-star[data-node="${id}"]`).focus();
+    for (const width of [1440, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(page.locator(`.galaxy-star[data-node="${id}"]`)).toBeFocused();
+    }
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id!);
+  });
+
+  test("long overview labels fit without losing their full names", async ({ page, request }, testInfo) => {
+    const label = "Fictional constellation with a deliberately long title ✨ and stable identity";
+    const item = await create(request, `---\ngalaxy_group: long-${randomUUID()}\ngalaxy_label: ${label}\n---\n# Long-name core\n[[home]]`);
+    try {
+      await page.goto("/galaxy");
+      const neighborhood = page.locator(".galaxy-neighborhood").filter({ has: page.locator("title", { hasText: label }) });
+      const title = neighborhood.locator("text:not(.galaxy-count)");
+      await expect(title).toContainText("…");
+      await expect(neighborhood.locator("title")).toContainText(label);
+      const box = (await title.boundingBox())!;
+      expect(box.width).toBeLessThanOrEqual(155);
+      await page.screenshot({ path: testInfo.outputPath("overview-long-name.png"), fullPage: true });
+      await page.locator(".galaxy-cluster").filter({ hasText: label }).tap();
+      await expect(page.locator(".galaxy-breadcrumb")).toContainText(label);
+      await page.locator(".galaxy-page").tap();
+      await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", item.id);
+    } finally {
+      await request.delete(`/api/wiki/pages/${item.id}`, { data: { base_revision: item.revision, request_id: randomUUID() } });
+    }
+  });
 });
 
 async function create(request: APIRequestContext, markdown: string) {

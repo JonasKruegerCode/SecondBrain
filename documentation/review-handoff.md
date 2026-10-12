@@ -143,8 +143,13 @@ and its matching CI runs rather than treating these counts as current.
   up to 120 stars, actual spacing caps targets to prevent overlap. Larger
   constellations retain the original logical target cap and the precise page-list
   path. Dense 40-page maps have separate rendered-spacing and selection checks.
-  Overview labels and physical touch ergonomics remain separate QA concerns;
-  emulated taps do not establish device usability.
+  Overview titles/counts and bridge numbers use screen-scaled font sizes;
+  narrow maps use two columns with measured middle ellipsis, preserving full
+  names in constellation details and tooltips. Counts avoid nearby labels or
+  defer to the exact link title/details when no local placement fits. Resize
+  retains the focused keyboard star across column changes. Very dense maps and
+  physical touch ergonomics remain separate QA concerns; emulated taps do not
+  establish device usability.
 - CI artifacts contain only synthetic structural/browser evidence and expire
   under the workflows' seven-day retention. They are browser emulation and
   synthetic infrastructure, not physical-device or production evidence.

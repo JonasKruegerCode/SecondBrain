@@ -41,6 +41,19 @@ test("large real vault has a compact stable map and usable mutation path", async
     ])),
   );
   await page.screenshot({ path: "../.demo/scale-map-overview.png", fullPage: true });
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect.poll(() => page.locator(".galaxy-neighborhood text:not(.galaxy-count)").evaluateAll(elements => {
+      const svg = (elements[0] as SVGTextElement).ownerSVGElement!;
+      const bounds = svg.getBoundingClientRect();
+      return elements.every(element => {
+        const label = element as SVGTextElement, box = label.getBoundingClientRect();
+        return parseFloat(getComputedStyle(label).fontSize) * label.getScreenCTM()!.a >= 13.99 && box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom;
+      });
+    })).toBe(true);
+    await page.screenshot({ path: `../.demo/scale-map-overview-${width}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   await page.locator(".galaxy-cluster").last().click();
   await expect(page.locator(".galaxy-breadcrumb")).toContainText(
@@ -107,6 +120,12 @@ test("large real vault has a compact stable map and usable mutation path", async
   await page.goto("/galaxy");
   await page.getByRole("button", { name: "Map view" }).click();
   await expect(page.locator(".galaxy-star")).toHaveCount(8);
+  // Responsive columns intentionally differ; mutation stability is compared
+  // at the same viewport as the initial snapshot.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect.poll(() => page.locator(".galaxy-star").evaluateAll(elements =>
+    Object.fromEntries(elements.map(element => [element.getAttribute("data-node"), element.getAttribute("transform")])),
+  )).toEqual(corePositions);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   expect(await page.locator(".galaxy-star").evaluateAll(elements =>
     Object.fromEntries(elements.map(element => [
@@ -114,6 +133,7 @@ test("large real vault has a compact stable map and usable mutation path", async
       element.getAttribute("transform"),
     ])),
   )).toEqual(corePositions);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: "../.demo/scale-map-mobile.png", fullPage: true });
   await search.fill(id);
