@@ -134,6 +134,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/history.spec.ts",
             "e2e/skip-link.spec.ts",
             "e2e/article-focus.spec.ts",
+            "e2e/view-focus.spec.ts",
         ]
     )
     phases = ("create", "restart") if args.first_start else ("demo",)
