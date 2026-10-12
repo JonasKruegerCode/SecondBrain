@@ -1268,6 +1268,41 @@ test("read-only chat keeps multi-turn context and conversations in this browser"
   await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
 });
 
+test("chat preserves independent tab conversations and does not resurrect a deleted one", async ({ page, context }) => {
+  const other = await context.newPage();
+  for (const tab of [page, other]) {
+    await tab.route("**/api/wiki/chat", route => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ answer: "Synthetic tab answer.", sources: [], activity: [] }),
+    }));
+  }
+
+  await page.goto("/chat");
+  await other.goto("/chat");
+  await page.getByLabel("Message").fill("Question from the first tab.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic tab answer.");
+  await other.getByLabel("Message").fill("Question from the second tab.");
+  await other.getByRole("button", { name: "Send" }).click();
+  await expect(other.locator(".chat-message.assistant")).toContainText("Synthetic tab answer.");
+
+  const storedQuestions = () => page.evaluate(() =>
+    JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1") || "[]")
+      .flatMap((conversation: { messages: Array<{ role: string; content: string }> }) => conversation.messages)
+      .filter((message: { role: string }) => message.role === "user")
+      .map((message: { content: string }) => message.content),
+  );
+  await expect.poll(storedQuestions).toEqual([
+    "Question from the second tab.",
+    "Question from the first tab.",
+  ]);
+
+  await page.getByRole("button", { name: "Delete conversation" }).click();
+  await other.getByRole("button", { name: "New", exact: true }).click();
+  await expect.poll(storedQuestions).toEqual(["Question from the second tab."]);
+  await other.close();
+});
+
 test("PWA metadata registers an online-only worker without private caches", async ({
   page,
   request,

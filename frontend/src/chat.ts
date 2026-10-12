@@ -8,6 +8,7 @@ type Message = {
   activity?: string[];
 };
 type Conversation = { id: string; title: string; messages: Message[]; updated: number };
+type Tombstone = { id: string; deleted: number };
 type ChatResponse = {
   answer: string;
   sources: Source[];
@@ -16,6 +17,7 @@ type ChatResponse = {
 type Api = (path: string, options?: RequestInit) => Promise<any>;
 
 const STORAGE_KEY = "secondbrain.chat.conversations.v1";
+const DELETED_STORAGE_KEY = "secondbrain.chat.deleted.v1";
 const esc = (value: string) =>
   value.replace(
     /[&<>"']/g,
@@ -24,12 +26,14 @@ const esc = (value: string) =>
 const pageUrl = (id: string) => "/wiki/" + encodeURIComponent(id);
 
 const MAX_CONVERSATIONS = 20;
+const MAX_TOMBSTONES = 100;
 const MAX_MESSAGES = 24;
 // Each backend wiki action can add at most one read source and activity entry.
 const MAX_WIKI_ACTIONS = 8;
 // Failed browser writes must not discard a chat when following a wiki source.
 // This bounded fallback disappears on document reload and is never sent to an archive.
 let tabConversations: Conversation[] | undefined;
+let tabTombstones: Tombstone[] | undefined;
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -57,17 +61,10 @@ function boundedMessages(messages: Message[]): Message[] {
   }));
 }
 
-function load(): { conversations: Conversation[]; unavailable: boolean } {
-  if (tabConversations) return { conversations: tabConversations, unavailable: true };
-  let raw: string | null;
-  try {
-    raw = localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return { conversations: [], unavailable: true };
-  }
+function parseConversations(raw: string | null): Conversation[] {
   try {
     const value: unknown = JSON.parse(raw || "[]");
-    if (!Array.isArray(value)) return { conversations: [], unavailable: false };
+    if (!Array.isArray(value)) return [];
     const conversations: Conversation[] = [];
     const ids = new Set<string>();
     for (const item of value) {
@@ -80,19 +77,70 @@ function load(): { conversations: Conversation[]; unavailable: boolean } {
         messages: boundedMessages(item.messages) });
       if (conversations.length === MAX_CONVERSATIONS) break;
     }
-    return { conversations, unavailable: false };
+    return conversations;
   } catch {
-    return { conversations: [], unavailable: false };
+    return [];
   }
 }
 
-function save(conversations: Conversation[]): boolean {
+function parseTombstones(raw: string | null): Tombstone[] {
   try {
+    const value: unknown = JSON.parse(raw || "[]");
+    if (!Array.isArray(value)) return [];
+    const tombstones: Tombstone[] = [];
+    const ids = new Set<string>();
+    for (const item of value) {
+      if (!record(item) || typeof item.id !== "string" || !item.id || ids.has(item.id) ||
+          typeof item.deleted !== "number" || !Number.isFinite(item.deleted) || item.deleted < 0) continue;
+      ids.add(item.id);
+      tombstones.push({ id: item.id, deleted: item.deleted });
+      if (tombstones.length === MAX_TOMBSTONES) break;
+    }
+    return tombstones;
+  } catch {
+    return [];
+  }
+}
+
+function applyTombstones(conversations: Conversation[], tombstones: Tombstone[]): Conversation[] {
+  const deleted = new Map(tombstones.map(item => [item.id, item.deleted]));
+  return conversations.filter(item => (deleted.get(item.id) ?? -1) < item.updated);
+}
+
+function readPersistent(): { conversations: Conversation[]; tombstones: Tombstone[]; unavailable: boolean } {
+  try {
+    const tombstones = parseTombstones(localStorage.getItem(DELETED_STORAGE_KEY));
+    return {
+      conversations: applyTombstones(parseConversations(localStorage.getItem(STORAGE_KEY)), tombstones),
+      tombstones,
+      unavailable: false,
+    };
+  } catch {
+    return { conversations: [], tombstones: [], unavailable: true };
+  }
+}
+
+function load(): { conversations: Conversation[]; tombstones: Tombstone[]; unavailable: boolean } {
+  if (tabConversations) return {
+    conversations: tabConversations,
+    tombstones: tabTombstones || [],
+    unavailable: true,
+  };
+  return readPersistent();
+}
+
+function save(conversations: Conversation[], tombstones: Tombstone[]): boolean {
+  try {
+    // Persist deletion intent before the conversation snapshot. A stale tab can then
+    // merge without resurrecting a conversation if the second write is interrupted.
+    localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify(tombstones));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
     tabConversations = undefined;
+    tabTombstones = undefined;
     return true;
   } catch {
     tabConversations = conversations;
+    tabTombstones = tombstones;
     return false;
   }
 }
@@ -104,22 +152,58 @@ function freshConversation(): Conversation {
 export function renderChat(main: Element, api: Api): () => void {
   const loaded = load();
   let conversations = loaded.conversations;
+  let tombstones = loaded.tombstones;
   let storageUnavailable = loaded.unavailable;
   if (!conversations.length) conversations = [freshConversation()];
   let activeId = conversations[0].id;
+  const dirtyIds = new Set<string>();
+  const deletedIds = new Map<string, number>();
   let busy = false;
   let error = "";
   let alive = true;
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
   const persist = () => {
+    const stored = readPersistent();
+    const merged = new Map(stored.unavailable
+      ? conversations.map(item => [item.id, item] as const)
+      : stored.conversations.map(item => [item.id, item] as const));
+    for (const item of conversations) {
+      if (!dirtyIds.has(item.id)) continue;
+      const other = merged.get(item.id);
+      if (!other || item.updated >= other.updated) merged.set(item.id, item);
+    }
+    const deleted = new Map<string, number>();
+    for (const item of [...stored.tombstones, ...tombstones]) {
+      deleted.set(item.id, Math.max(deleted.get(item.id) ?? -1, item.deleted));
+    }
+    for (const [id, timestamp] of deletedIds) {
+      deleted.set(id, Math.max(deleted.get(id) ?? -1, timestamp));
+    }
+    for (const [id, item] of merged) {
+      if ((deleted.get(id) ?? -1) >= item.updated) merged.delete(id);
+    }
+    tombstones = [...deleted].map(([id, timestamp]) => ({ id, deleted: timestamp }))
+      .sort((a, b) => b.deleted - a.deleted)
+      .slice(0, MAX_TOMBSTONES);
+    conversations = [...merged.values()].sort((a, b) => b.updated - a.updated);
+    if (!conversations.length) {
+      const replacement = freshConversation();
+      conversations = [replacement];
+      activeId = replacement.id;
+    } else if (!conversations.some(item => item.id === activeId)) {
+      activeId = conversations[0].id;
+    }
     const active = current();
-    conversations.sort((a, b) => b.updated - a.updated);
     // Keep the active conversation even if an earlier device saved future timestamps.
     conversations = [active, ...conversations.filter(item => item.id !== active.id)]
       .slice(0, MAX_CONVERSATIONS);
     conversations.forEach(item => { item.messages = boundedMessages(item.messages); });
-    storageUnavailable = !save(conversations);
+    storageUnavailable = !save(conversations, tombstones);
+    if (!storageUnavailable) {
+      dirtyIds.clear();
+      deletedIds.clear();
+    }
   };
   const render = (focusComposer = false) => {
     const conversation = current();
@@ -154,11 +238,15 @@ export function renderChat(main: Element, api: Api): () => void {
       const next = freshConversation();
       conversations.unshift(next);
       activeId = next.id;
+      dirtyIds.add(next.id);
       error = "";
       persist();
       render(true);
     };
     main.querySelector<HTMLButtonElement>('[data-action="delete"]')!.onclick = () => {
+      const removed = current();
+      deletedIds.set(removed.id, Math.max(Date.now(), removed.updated + 1));
+      dirtyIds.delete(removed.id);
       conversations = conversations.filter(item => item.id !== activeId);
       if (!conversations.length) conversations = [freshConversation()];
       activeId = conversations[0].id;
@@ -176,7 +264,8 @@ export function renderChat(main: Element, api: Api): () => void {
       item.messages.push({ role: "user", content });
       item.messages = item.messages.slice(-MAX_MESSAGES);
       item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
-      item.updated = Date.now();
+      item.updated = Math.max(Date.now(), item.updated + 1);
+      dirtyIds.add(item.id);
       error = "";
       persist();
       void requestAnswer();
@@ -212,7 +301,8 @@ export function renderChat(main: Element, api: Api): () => void {
         sources: result.sources,
         activity: result.activity,
       });
-      conversation.updated = Date.now();
+      conversation.updated = Math.max(Date.now(), conversation.updated + 1);
+      dirtyIds.add(conversation.id);
       persist();
     } catch (cause) {
       if (!alive || activeId !== requestId) return;
