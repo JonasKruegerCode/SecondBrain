@@ -300,6 +300,14 @@ export function renderChat(main: Element, api: Api): () => void {
   const requestAnswer = async () => {
     if (busy) return;
     const conversation = current();
+    // Retry uses the same read boundary as a new submission. A transcript
+    // deleted in another tab must not be sent back to the provider.
+    if (readPersistent().tombstones.some(item => item.id === conversation.id)) {
+      error = "";
+      persist();
+      render(true);
+      return;
+    }
     const requestId = conversation.id;
     busy = true;
     error = "";
@@ -326,6 +334,10 @@ export function renderChat(main: Element, api: Api): () => void {
       persist();
     } catch (cause) {
       if (!alive || activeId !== requestId) return;
+      if (readPersistent().tombstones.some(item => item.id === requestId)) {
+        persist();
+        return;
+      }
       error = (cause as Error).message + " Your question is still here; retry when ready.";
     } finally {
       if (alive) {

@@ -560,10 +560,11 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
 });
 }
 
-test("a stalled save body times out after successful headers and replays the real receipt", async ({ page, request }) => {
+test("a stalled save body times out after successful headers and replays the real receipt", async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Save body fixture\nBefore.");
   const proxy = await pwaUpdateProxy();
   let gate: ReturnType<typeof proxy.holdNextSave> | undefined;
+  let phase = "opening the proxied article";
   try {
     await page.goto(`${proxy.origin}/wiki/${fixture.id}`);
     await expect(page.locator("article h1")).toHaveText("Save body fixture");
@@ -574,16 +575,24 @@ test("a stalled save body times out after successful headers and replays the rea
     gate = proxy.holdNextSave(true);
     const headers = page.waitForResponse(response => response.request().method() === "POST" &&
       response.url().endsWith(`/api/wiki/pages/${fixture.id}`));
+    phase = "waiting for the committed save to reach the body gate";
     await page.getByRole("button", { name: "Save changes" }).click();
-    await gate.arrived;
+    let arrived = false;
+    void gate.arrived.then(() => { arrived = true; });
+    await test.step("Receive the committed save at the body gate", async () => {
+      await expect.poll(() => arrived, { message: "The real save never reached the body-stall gate", timeout: 10_000 }).toBeTruthy();
+    });
+    phase = "waiting for successful headers before the held response body";
     expect((await headers).status()).toBe(200); // Browser received real successful headers, not the body.
     const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(saved.markdown).toBe(draft);
+    phase = "advancing the body deadline and waiting for the recoverable error";
     await page.clock.fastForward(30_001);
     await expect(page.locator(".notice")).toContainText("save response timed out");
     await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
     await expect(page.getByRole("textbox", { name: /Markdown/ })).toBeEnabled();
     gate.release();
+    phase = "replaying the identical real save receipt";
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.locator(".notice")).toContainText("Saved locally");
     const recovered = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
@@ -591,9 +600,15 @@ test("a stalled save body times out after successful headers and replays the rea
     const history = await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json();
     expect(history.history).toHaveLength(2);
   } finally {
+    // These synthetic checkpoints stay in browser.log when the runner can only
+    // report a whole-test timeout, including a stall during proxy teardown.
+    console.info(`[save-body] status=${testInfo.status}; last phase=${phase}; entering cleanup`);
     gate?.release();
-    await page.close();
-    await proxy.close();
+    await test.step("Close the browser and owned body-stall proxy", async () => {
+      await page.close();
+      await proxy.close();
+    });
+    console.info("[save-body] cleanup completed");
   }
 });
 
@@ -1354,6 +1369,41 @@ test(`chat deletion in another tab survives a follow-up and an in-flight answer 
   expect(await page.evaluate(id => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === id), inFlightId)).toBeFalsy();
   await expect(stale.getByLabel("Message")).toBeEnabled();
   await stale.close();
+});
+}
+
+for (const failureAfterDeletion of [false, true]) {
+test(`chat retry respects another tab's deletion (${failureAfterDeletion ? "late failure" : "earlier failure"})`, async ({ page, context }) => {
+  let calls = 0;
+  let arrived!: () => void;
+  const requested = new Promise<void>(resolve => { arrived = resolve; });
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/wiki/chat", async route => {
+    calls++;
+    arrived();
+    if (failureAfterDeletion) await held;
+    if (calls === 1) await route.fulfill({ status: 503, contentType: "application/json",
+      body: JSON.stringify({ error: "chat_unavailable", message: "Synthetic provider unavailable." }) });
+    else await route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ answer: "This stale request should not be sent.", sources: [], activity: [] }) });
+  });
+  await page.goto("/chat");
+  await page.getByLabel("Message").fill("Synthetic question deleted before retry.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await requested;
+  if (!failureAfterDeletion) await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  const other = await context.newPage();
+  await other.goto("/chat");
+  await other.getByRole("button", { name: "Delete conversation" }).click();
+  if (failureAfterDeletion) release();
+  else await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
+  await expect(page.locator(".chat-conversation-notice")).toContainText("deleted in another tab");
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Message")).toBeEnabled();
+  expect(calls).toBe(1); // A retry must not resend the deleted transcript.
+  await other.close();
 });
 }
 
