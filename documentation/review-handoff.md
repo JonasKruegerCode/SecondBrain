@@ -162,7 +162,11 @@ and its matching CI runs rather than treating these counts as current.
   on the full retained map. Panning and keyboard focus can reach its final row;
   small overviews still fit all rows. A separate real 320-page/24-constellation
   probe checks retained cores/bridges, 320/390/1440-pixel layouts, pan, zoom,
-  reset and distant keyboard selection. Very dense maps and
+  reset and distant keyboard selection. Real group changes and core deletion
+  also check fresh revisions, deterministic replacement cores, missing-target
+  evidence, list membership and article navigation. The old snapshot reports
+  a deleted article as missing until refresh; the scale probe restores and
+  compares the original nodes and edges after its mutations. Very dense maps and
   physical touch ergonomics remain separate QA concerns; emulated taps do not
   establish device usability.
 - CI artifacts contain only synthetic structural/browser evidence and expire

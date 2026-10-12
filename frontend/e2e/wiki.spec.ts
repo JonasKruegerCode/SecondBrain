@@ -145,7 +145,7 @@ test.describe("galaxy touch navigation", () => {
     try {
       for (const [index, id] of ids.entries()) {
         const response = await request.post(`/api/wiki/pages/${id}`, { data: {
-          markdown: `---\ngalaxy_group: ${id}\ngalaxy_label: Synthetic constellation ${index + 1}\n---\n# Synthetic core ${index + 1}\n\n[[${ids[(index + 1) % ids.length]}]]`,
+          markdown: `---\ngalaxy_group: ${id}\ngalaxy_label: Synthetic constellation ${index + 1}\ngalaxy_anchor: true\n---\n# Synthetic core ${index + 1}\n\n[[${ids[(index + 1) % ids.length]}]]`,
           base_revision: null, request_id: randomUUID(),
         } });
         expect(response.ok()).toBe(true);
@@ -157,6 +157,45 @@ test.describe("galaxy touch navigation", () => {
       await checkTallOverview(page, testInfo);
       await expect(page.locator(".galaxy-neighborhood")).toHaveCount(24);
       await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(26);
+
+      // Change the actual snapshot while its old map is open. A new page
+      // keeps the first group alive when its original core is deleted.
+      const fallback = await create(request, `---\ngalaxy_group: ${ids[0]}\ngalaxy_label: Synthetic constellation 1\n---\n# Synthetic replacement core\n\n[[${ids[0]}]] and [[${ids[1]}]].`);
+      saved.push(fallback);
+      const regrouped = await request.post(`/api/wiki/pages/${ids[2]}`, { data: {
+        markdown: `---\ngalaxy_group: ${ids[1]}\ngalaxy_label: Synthetic constellation 2\n---\n# Regrouped synthetic page\n\n[[${ids[3]}]]`,
+        base_revision: saved[2].revision, request_id: randomUUID(),
+      } });
+      expect(regrouped.ok()).toBe(true);
+      saved[2].revision = (await regrouped.json()).revision;
+      const removed = await request.delete(`/api/wiki/pages/${ids[0]}`, { data: { base_revision: saved[0].revision, request_id: randomUUID() } });
+      expect(removed.ok()).toBe(true);
+      saved.shift();
+      await expect(page.locator(".galaxy-neighborhood")).toHaveCount(24);
+      const revisionBefore = await page.locator(".galaxy-revision").textContent();
+      await page.getByRole("link", { name: "Refresh snapshot" }).click();
+      await expect(page.locator(".galaxy-neighborhood")).toHaveCount(23);
+      await expect(page.locator(".galaxy-revision")).not.toHaveText(revisionBefore!);
+      await expect(page.locator(`.galaxy-star[data-node="${ids[0]}"]`)).toHaveCount(0);
+      await expect(page.locator(`.galaxy-star[data-node="${fallback.id}"]`)).toHaveClass(/is-core/);
+      await expect(page.locator(".galaxy-status")).toContainText("2 unresolved targets");
+      await page.getByRole("button", { name: /^Synthetic constellation 2 / }).click();
+      await expect(page.locator(".galaxy-star")).toHaveCount(2);
+      await page.locator(`.galaxy-page[data-node="${ids[2]}"]`).click();
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Regrouped synthetic page");
+      await page.getByRole("link", { name: "Open article" }).click();
+      await expect(page).toHaveURL(new RegExp(`/wiki/${ids[2]}$`));
+      await expect(page.locator("article h1")).toHaveText("Regrouped synthetic page");
+      await page.getByRole("link", { name: "Galaxy", exact: true }).click();
+      await page.getByRole("button", { name: "List view", exact: true }).click();
+      await page.getByRole("button", { name: /^Synthetic constellation 1 / }).click();
+      await expect(page.locator(".galaxy-stage")).toBeHidden();
+      await page.locator(`.galaxy-page[data-node="${fallback.id}"]`).click();
+      await expect(page.locator(".galaxy-evidence")).not.toContainText(ids[0]);
+      await expect(page.locator(".galaxy-problems")).toContainText(ids[0]);
+      await page.getByRole("link", { name: "Open article" }).click();
+      await expect(page).toHaveURL(new RegExp(`/wiki/${fallback.id}$`));
+      await page.screenshot({ path: testInfo.outputPath("tall-mutated-article.png"), fullPage: true });
     } finally {
       for (const item of saved) {
         const response = await request.delete(`/api/wiki/pages/${item.id}`, { data: { base_revision: item.revision, request_id: randomUUID() } });
