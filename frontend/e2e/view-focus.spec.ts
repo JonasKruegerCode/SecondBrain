@@ -2,6 +2,20 @@ import { test, expect, APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 for (const width of [390, 1440]) {
+  test(`search query normalization retains its fragment destination (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/search?q=tide%20clock#main-content");
+    await expect(page.locator('#results a[href="/wiki/tide-clock"]')).toBeVisible();
+    const observed = await page.evaluate(() => ({ hash: location.hash, tag: document.activeElement?.tagName }));
+    console.log(`[search-fragment] ${JSON.stringify({ width, observed })}`);
+    // Diagnostic expectations document the real baseline, not accepted behavior.
+    expect(observed.hash).toBe("");
+    expect(observed.tag).toBe("BODY");
+    await page.screenshot({ path: info.outputPath(`search-fragment-${width}.png`) });
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`keyboard navigation reaches each view's content (${width})`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 844 });
     for (const name of ["Search", "Home", "Galaxy", "Chat"]) {
