@@ -96,6 +96,14 @@ fixture. The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
 `.demo/acceptance/`. It clears inherited OpenRouter access.
 
+For the opt-in tall-map probe, create an isolated vault with
+`python -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,
+start `scripts/run-wiki-demo.py --vault .demo/tall-vault`, then run
+`PLAYWRIGHT_TALL=1 npm run test:browser -- e2e/tall.spec.ts` from `frontend`.
+Use the installed backend environment and `PYTHONPATH=backend/src` for the
+Python commands. This uses real Markdown/Git and graph services, with no model
+calls; it is separate from the normal browser CI suite.
+
 With explicit approval for paid external calls and a real key:
 
 ```sh
@@ -149,7 +157,12 @@ and its matching CI runs rather than treating these counts as current.
   narrow maps use two columns with measured middle ellipsis, preserving full
   names in constellation details and tooltips. Counts avoid nearby labels or
   defer to the exact link title/details when no local placement fits. Resize
-  retains the focused keyboard star across column changes. Very dense maps and
+  retains the focused keyboard star across column changes. If fitting every
+  row would crowd readable labels, an explicitly labeled overview window opens
+  on the full retained map. Panning and keyboard focus can reach its final row;
+  small overviews still fit all rows. A separate real 320-page/24-constellation
+  probe checks retained cores/bridges, 320/390/1440-pixel layouts, pan, zoom,
+  reset and distant keyboard selection. Very dense maps and
   physical touch ergonomics remain separate QA concerns; emulated taps do not
   establish device usability.
 - CI artifacts contain only synthetic structural/browser evidence and expire
@@ -163,9 +176,6 @@ and its matching CI runs rather than treating these counts as current.
 
 ## Known release gates
 
-- A narrow overview with 24 constellations still crowds its labels. The large
-  snapshot opens in the usable list view; the manual map overview needs further
-  decluttering before claiming full visual acceptance of many constellations.
 - real OpenRouter multi-turn result and answer-quality inspection
 - hosted Neo4j, Qdrant and embedding-provider integration and retention under load
 - production authenticated reverse-proxy/HTTPS operation and off-host restore;

@@ -128,11 +128,27 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     // Reserve screen-scaled headroom even when a tall overview is fitted by
     // height; otherwise its first readable heading would sit outside the SVG.
     const overviewUnit = Math.min(stage.clientWidth / 1100, stage.clientHeight / height);
-    const baseHeight = active ? baseWidth / aspect : height + 96 / overviewUnit;
+    const fitHeight = height + 96 / overviewUnit;
+    const fitUnit = Math.min(stage.clientWidth / 1100, stage.clientHeight / fitHeight);
+    // Fitting many rows makes readable labels collide. Keep the full world,
+    // but open a width-fitted window when row spacing would fall below 64px.
+    // This decision is independent of zoom, avoiding mode changes mid-gesture.
+    const crowded = !active && 300 * fitUnit < 64;
+    const baseHeight = active ? baseWidth / aspect : crowded ? 1100 / aspect : fitHeight;
     const width = baseWidth / scale, viewHeight = baseHeight / scale;
-    panX = Math.max(-350, Math.min(350, panX)); panY = Math.max(-height / 3, Math.min(height / 3, panY));
-    svg.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${(height - viewHeight) / 2 + panY} ${width} ${viewHeight}`);
     const unit = Math.min(stage.clientWidth / width, stage.clientHeight / viewHeight);
+    const originY = crowded ? -120 + (baseHeight - viewHeight) / 2 : (height - viewHeight) / 2;
+    panX = Math.max(-350, Math.min(350, panX));
+    // Include the entire world and a screen-scaled focus margin, so distant
+    // cores and unlinked shelves stay reachable by pointer and keyboard.
+    panY = crowded
+      ? Math.max(-120 - originY, Math.min(Math.max(-120 - originY, height + 26 / unit - viewHeight - originY), panY))
+      : Math.max(-height / 3, Math.min(height / 3, panY));
+    svg.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${originY + panY} ${width} ${viewHeight}`);
+    if (!active) root.querySelector(".galaxy-breadcrumb span")!.textContent = crowded ? "Overview window" : "Galaxy overview";
+    root.querySelector(".galaxy-mapnote span:last-child")!.textContent = crowded
+      ? "This window shows part of the map. Drag to pan · + / − to zoom · Use the list for every page."
+      : "Drag to pan · + / − to zoom · Use the page list for closely spaced stars.";
     svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text").forEach(label => {
       const count = label.classList.contains("galaxy-count");
       label.style.fontSize = `${(count ? 11 : 14) / unit}px`;
@@ -380,8 +396,10 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     // only enough to expose the star and its focus ring in the current map.
     const visible = () => {
       const view = svg.viewBox.baseVal;
-      return position.e >= view.x + margin && position.e <= view.x + view.width - margin &&
-        position.f >= view.y + margin && position.f <= view.y + view.height - margin;
+      // Panning onto a boundary can differ by floating-point rounding. Do
+      // not reset an already exposed star for a subpixel arithmetic error.
+      return position.e >= view.x + margin - .01 && position.e <= view.x + view.width - margin + .01 &&
+        position.f >= view.y + margin - .01 && position.f <= view.y + view.height - margin + .01;
     };
     const view = svg.viewBox.baseVal;
     panX += Math.min(0, position.e - view.x - margin) + Math.max(0, position.e - view.x - view.width + margin);

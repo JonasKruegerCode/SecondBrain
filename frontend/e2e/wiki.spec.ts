@@ -2,6 +2,7 @@ import { test, expect, APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
+import { checkTallOverview } from "./galaxy-window";
 
 test.describe("galaxy touch navigation", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -134,6 +135,34 @@ test.describe("galaxy touch navigation", () => {
     }
     await page.keyboard.press("Enter");
     await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id!);
+  });
+
+  test("many real constellations keep readable labels and reachable distant cores", async ({ page, request }, testInfo) => {
+    test.setTimeout(60_000);
+    const group = `tall-${randomUUID()}`;
+    const ids = Array.from({ length: 20 }, (_, i) => `${group}-${i}`);
+    const saved: { id: string; revision: string }[] = [];
+    try {
+      for (const [index, id] of ids.entries()) {
+        const response = await request.post(`/api/wiki/pages/${id}`, { data: {
+          markdown: `---\ngalaxy_group: ${id}\ngalaxy_label: Synthetic constellation ${index + 1}\n---\n# Synthetic core ${index + 1}\n\n[[${ids[(index + 1) % ids.length]}]]`,
+          base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true);
+        saved.push({ id, revision: (await response.json()).revision });
+      }
+      await page.goto("/galaxy");
+      await expect(page.locator(".galaxy-neighborhood")).toHaveCount(24);
+      await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(26);
+      await checkTallOverview(page, testInfo);
+      await expect(page.locator(".galaxy-neighborhood")).toHaveCount(24);
+      await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(26);
+    } finally {
+      for (const item of saved) {
+        const response = await request.delete(`/api/wiki/pages/${item.id}`, { data: { base_revision: item.revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
   });
 
   test("long overview labels fit without losing their full names", async ({ page, request }, testInfo) => {
