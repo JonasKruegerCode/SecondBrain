@@ -31,7 +31,9 @@ Markdown graph navigation without those providers.
 The optional chat is a bounded OpenRouter function-calling loop over search,
 exact page reads and graph neighbors. It has no write tool and no backend
 conversation archive. Visible sources contain only pages the model actually
-read; browser-local conversations can be deleted.
+read. Browser-local conversations are bounded and deletable; each write merges
+the current store, and bounded deletion tombstones prevent a stale tab from
+losing or resurrecting independent conversations.
 
 ## User and operator paths
 
@@ -105,38 +107,38 @@ does not establish hosted index, deployment or device behavior.
 
 ## Evidence snapshot
 
-Verified published implementation baseline `f426c41fdee800cbd580f360eeaf8ba7b551fd14`
-(tree `739f1706be853fd3765061b4741fb0cd51a94416`, 2026-10-11).
+Verified published implementation baseline `54ccdd87a97e844aca9bb9790e6749bac239ae8f`
+(tree `f94328a21d62eb60dbfec782b6e9dcb992f29347`, 2026-10-12).
 These results identify that exact baseline; for later commits inspect the
 current [draft PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18)
-and its matching CI runs rather than treating older counts as current.
+and its matching CI runs rather than treating these counts as current.
 
-- All six workflows passed: Backend #82, Frontend #61, Managed stack #24,
-  Managed index #22, Managed SSH #11 and Managed browser #7. Backend Ruff and
-  strict MyPy over 88 source files passed, with 307 tests and 12 opt-in skips
-  (52.21 seconds); the backend image build also passed.
-- [Managed browser #7](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38175845458)
-  passed 35/35 real API/Vite cases (22.5 seconds; 24.501 with services).
-  Downloaded artifact `11715972062` confirms no external model calls and no
-  retained success vault. ZIP SHA256:
-  `3d1f9795f7b799b2d3b3eb90603409ad05bdb23cdb5d0581ae07b6870683e6e7`.
-- [Managed stack #24](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38175845454)
-  passed 72 structural gates plus six Chromium checks in 59.598 seconds.
-  Downloaded artifact `11714744972` confirms a forced backend address change
-  without frontend restart, preserved API read/write/query/history contracts,
-  synthetic HTTPS/password protection and independent-volume restore. Cleanup
-  is confirmed. ZIP SHA256:
-  `5ca2a9e0efd5be3319e455577cf30c24ad904909fdc98eb7755f6aa4e1cd7eae`.
-- Both artifacts expire on 2026-10-18 and identify CI test-merge `b19fb1a`,
-  not a merge to main. Built Home desktop/narrow screenshots were opened and
-  inspected. This is browser emulation and synthetic infrastructure.
+- A new two-tab browser test first reproduced an independent-conversation loss
+  and deletion resurrection. After the persistence fix, the focused real-browser
+  chat suite passed 9/9. Strict app/E2E TypeScript and the production build pass.
+- The complete local real API/Vite acceptance passed 50/50 in 68.482 seconds.
+  Its structural result records `external_model_calls=false` and
+  `vault_retained=false`; this is not a real-model check and retains no success
+  vault.
+- All six workflows passed: [Backend #91](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38203081037),
+  Frontend #70, [Managed stack #33](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38203081036),
+  Managed index #31, Managed SSH #20 and
+  [Managed browser #16](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38203081052).
+  Backend Ruff and strict MyPy over 88 files passed with 328 tests and 12
+  explicit opt-in skips (58.77 seconds); backend and frontend image builds pass.
+- Managed index passed 7/7 against real isolated Neo4j/Qdrant with synthetic
+  embeddings. Managed SSH passed 5/5 with its owned agent and loopback OpenSSH.
+  The managed stack passed its built HTTPS/auth, controlled address-change and
+  independent-volume recovery checks, including six Chromium proxy checks.
 - Browser coverage includes revision conflicts/retries, real link/graph refresh,
   article reload, nested-list/code rendering boundaries, bounded local chat
-  storage and recovery, and PWA save/update coordination across tabs. Scripted
-  chat transport checks do not establish real-model quality.
-- Real isolated Neo4j/Qdrant with synthetic embeddings and owned loopback
-  OpenSSH/agent delivery remain separately evidenced by their dedicated guides.
-  Hosted configuration, production load and private Git permissions remain open.
+  storage/recovery/deletion across stale tabs, and PWA save/update coordination.
+  Scripted chat transport checks do not establish real-model quality.
+- CI artifacts contain only synthetic structural/browser evidence and expire
+  under the workflows' seven-day retention. They are browser emulation and
+  synthetic infrastructure, not physical-device or production evidence.
+- Hosted index configuration, production load and private Git permissions remain
+  open despite the isolated provider and SSH fixtures.
 - A read-only merge-tree comparison against `main 1f0cd1e` had no conflicts.
   The earlier intermittent ordinary restart failure remains unexplained;
   controlled address-change recovery is independently verified.
