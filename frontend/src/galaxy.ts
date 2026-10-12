@@ -269,6 +269,27 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
     }
   };
+  const focusin = (event: FocusEvent) => {
+    const star = event.target as SVGGraphicsElement;
+    if (!star.matches(".galaxy-star")) return;
+    const svg = star.ownerSVGElement;
+    const position = star.transform.baseVal.consolidate()?.matrix;
+    if (!svg || !position) return;
+    // SVG focus does not scroll a clipped viewBox as HTML focus would. Move
+    // only enough to expose the star and its focus ring in the current map.
+    const visible = () => {
+      const view = svg.viewBox.baseVal;
+      return position.e >= view.x + 24 && position.e <= view.x + view.width - 24 &&
+        position.f >= view.y + 24 && position.f <= view.y + view.height - 24;
+    };
+    const view = svg.viewBox.baseVal;
+    panX += Math.min(0, position.e - view.x - 24) + Math.max(0, position.e - view.x - view.width + 24);
+    panY += Math.min(0, position.f - view.y - 24) + Math.max(0, position.f - view.y - view.height + 24);
+    setView();
+    // Very distant shelves can exceed the bounded pan range. An overview is
+    // preferable to leaving keyboard focus outside the map indefinitely.
+    if (!visible()) { scale = 1; panX = panY = 0; setView(); }
+  };
   const input = () => {
     query = root.querySelector<HTMLInputElement>("input")!.value.trim().toLowerCase(); render();
   };
@@ -289,13 +310,13 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     if (drag && stage.hasPointerCapture(drag.pointerId)) stage.releasePointerCapture(drag.pointerId);
     drag = null;
   };
-  root.addEventListener("click", click); root.addEventListener("keydown", keydown);
+  root.addEventListener("click", click); root.addEventListener("keydown", keydown); root.addEventListener("focusin", focusin);
   root.querySelector("input")!.addEventListener("input", input);
   stage.addEventListener("pointerdown", pointerdown); stage.addEventListener("pointermove", pointermove);
   stage.addEventListener("pointerup", pointerup); stage.addEventListener("pointercancel", pointerup);
   render();
   return () => {
-    root.removeEventListener("click", click); root.removeEventListener("keydown", keydown);
+    root.removeEventListener("click", click); root.removeEventListener("keydown", keydown); root.removeEventListener("focusin", focusin);
     root.querySelector("input")?.removeEventListener("input", input);
     stage.removeEventListener("pointerdown", pointerdown); stage.removeEventListener("pointermove", pointermove);
     stage.removeEventListener("pointerup", pointerup); stage.removeEventListener("pointercancel", pointerup);

@@ -1733,6 +1733,43 @@ test("galaxy keyboard return restores its originating page and constellation", a
   await expect(sky).toBeFocused();
 });
 
+for (const width of [1440, 390]) {
+  test(`galaxy keeps keyboard stars visible after zoom (${width})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/galaxy");
+    const star = page.locator(".galaxy-star").first();
+    await expect(star).toBeVisible();
+    for (let step = 0; step < 6; step++) await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+    await page.getByRole("button", { name: "List view", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(star).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath(`galaxy-keyboard-zoom-${width}.png`), fullPage: true });
+    const visible = () => star.evaluate(element => {
+      const node = element.getBoundingClientRect();
+      const stage = element.closest(".galaxy-stage")!.getBoundingClientRect();
+      const x = node.left + node.width / 2, y = node.top + node.height / 2;
+      return x >= stage.left + 8 && x <= stage.right - 8 && y >= stage.top + 8 && y <= stage.bottom - 8;
+    });
+    expect(await visible(), "focused star must remain inside the clipped map").toBe(true);
+    const map = (await page.locator(".galaxy-stage").boundingBox())!;
+    await page.mouse.move(map.x + map.width - 12, map.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(map.x + 12, map.y + map.height - 12, { steps: 8 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.getSelection()?.toString() || ""), "map dragging must not select SVG labels").toBe("");
+    await page.getByRole("button", { name: "List view", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(star).toBeFocused();
+    expect(await visible(), "keyboard focus must also recover a panned map").toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`galaxy-keyboard-pan-${width}.png`), fullPage: true });
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/wiki\//);
+    await expect(page.locator("article h1")).toBeVisible();
+  });
+}
+
 for (const finish of ["save", "discard"] as const) {
   test(`PWA preserves a dirty tab when another tab updates, then permits ${finish} and reload`, async ({ page, context, request }, testInfo) => {
     const fixture = await create(request, "# PWA draft fixture\nOriginal synthetic content.");
