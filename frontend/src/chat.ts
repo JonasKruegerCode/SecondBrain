@@ -104,8 +104,8 @@ function parseTombstones(raw: string | null): Tombstone[] {
 }
 
 function applyTombstones(conversations: Conversation[], tombstones: Tombstone[]): Conversation[] {
-  const deleted = new Map(tombstones.map(item => [item.id, item.deleted]));
-  return conversations.filter(item => (deleted.get(item.id) ?? -1) < item.updated);
+  const deleted = new Set(tombstones.map(item => item.id));
+  return conversations.filter(item => !deleted.has(item.id));
 }
 
 function readPersistent(): { conversations: Conversation[]; tombstones: Tombstone[]; unavailable: boolean } {
@@ -165,6 +165,7 @@ export function renderChat(main: Element, api: Api): () => void {
   const deletedIds = new Map<string, number>();
   let busy = false;
   let error = "";
+  let conversationNotice = "";
   let alive = true;
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
@@ -185,13 +186,16 @@ export function renderChat(main: Element, api: Api): () => void {
     for (const [id, timestamp] of deletedIds) {
       deleted.set(id, Math.max(deleted.get(id) ?? -1, timestamp));
     }
-    for (const [id, item] of merged) {
-      if ((deleted.get(id) ?? -1) >= item.updated) merged.delete(id);
+    // UUIDs are never reused: a retained deletion marker wins over later stale
+    // edits and answers as well as over unedited snapshots.
+    for (const id of merged.keys()) {
+      if (deleted.has(id)) merged.delete(id);
     }
     tombstones = [...deleted].map(([id, timestamp]) => ({ id, deleted: timestamp }))
       .sort((a, b) => b.deleted - a.deleted)
       .slice(0, MAX_TOMBSTONES);
     conversations = [...merged.values()].sort((a, b) => b.updated - a.updated);
+    if (deleted.has(activeId)) conversationNotice = "This conversation was deleted in another tab.";
     if (!conversations.length) {
       const replacement = freshConversation();
       conversations = [replacement];
@@ -227,6 +231,7 @@ export function renderChat(main: Element, api: Api): () => void {
           ${busy ? `<div class="chat-thinking"><i></i>Searching and reading…</div>` : ""}
         </div>
         ${retryNotice ? `<div class="chat-error" role="alert"><span>${esc(retryNotice)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
+        ${conversationNotice ? `<div class="chat-storage-notice chat-conversation-notice" role="status">${esc(conversationNotice)}</div>` : ""}
         ${storageUnavailable ? `<div class="chat-storage-notice" role="status">Browser storage is unavailable. New messages stay only in this tab until it is reloaded; previously saved conversations may remain after deletion.</div>` : ""}
         <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy ? "disabled" : ""}></textarea><button class="primary" ${busy ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
       </div>
@@ -235,6 +240,7 @@ export function renderChat(main: Element, api: Api): () => void {
       button.onclick = () => {
         activeId = button.dataset.conversation!;
         error = "";
+        conversationNotice = "";
         persist(); // Keep the selected conversation when leaving or reloading Chat.
         render(false);
       };
@@ -245,6 +251,7 @@ export function renderChat(main: Element, api: Api): () => void {
       activeId = next.id;
       dirtyIds.add(next.id);
       error = "";
+      conversationNotice = "";
       persist();
       render(true);
     };
@@ -256,6 +263,7 @@ export function renderChat(main: Element, api: Api): () => void {
       if (!conversations.length) conversations = [freshConversation()];
       activeId = conversations[0].id;
       error = "";
+      conversationNotice = "";
       persist();
       render(false);
     };
@@ -265,7 +273,14 @@ export function renderChat(main: Element, api: Api): () => void {
       const input = form.querySelector<HTMLTextAreaElement>("textarea")!;
       const content = input.value.trim();
       if (!content || busy) return;
-      const item = current();
+      let item = current();
+      const stored = readPersistent();
+      if (stored.tombstones.some(deleted => deleted.id === item.id)) {
+        item = freshConversation();
+        conversations.unshift(item);
+        activeId = item.id;
+        conversationNotice = "The previous conversation was deleted in another tab. Your message started a new conversation.";
+      }
       item.messages.push({ role: "user", content });
       item.messages = item.messages.slice(-MAX_MESSAGES);
       item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
@@ -313,7 +328,7 @@ export function renderChat(main: Element, api: Api): () => void {
       if (!alive || activeId !== requestId) return;
       error = (cause as Error).message + " Your question is still here; retry when ready.";
     } finally {
-      if (alive && activeId === requestId) {
+      if (alive) {
         busy = false;
         render(true);
       }

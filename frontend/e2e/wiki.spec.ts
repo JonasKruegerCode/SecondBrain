@@ -1303,6 +1303,60 @@ test("chat preserves independent tab conversations and does not resurrect a dele
   await other.close();
 });
 
+for (const width of [1440, 390]) {
+test(`chat deletion in another tab survives a follow-up and an in-flight answer (${width}px)`, async ({ page, context }, testInfo) => {
+  await page.route("**/api/wiki/chat", route => route.fulfill({ contentType: "application/json",
+    body: JSON.stringify({ answer: "Synthetic initial answer.", sources: [], activity: [] }) }));
+  await page.goto("/chat");
+  await page.getByLabel("Message").fill("Question to be deleted.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic initial answer.");
+  const deletedId = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].id);
+  const stale = await context.newPage();
+  await stale.setViewportSize({ width, height: 844 });
+  let submitted: { messages: Array<{ role: string; content: string }> } | undefined;
+  await stale.route("**/api/wiki/chat", route => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ answer: "Synthetic fresh answer.", sources: [], activity: [] }) });
+  });
+  await stale.goto("/chat");
+  await page.getByRole("button", { name: "Delete conversation" }).click();
+  await stale.getByLabel("Message").fill("Follow-up after deletion.");
+  await stale.getByRole("button", { name: "Send" }).click();
+  await expect(stale.locator(".chat-message.assistant").last()).toContainText("Synthetic fresh answer.");
+  expect(await page.evaluate(id => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === id), deletedId)).toBeFalsy();
+  expect(submitted?.messages).toEqual([{ role: "user", content: "Follow-up after deletion." }]);
+  await expect(stale.locator(".chat-conversation-notice")).toContainText("started a new conversation");
+  expect(await stale.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await stale.screenshot({ path: testInfo.outputPath("chat-deleted-tab.png"), fullPage: true });
+
+  await page.reload();
+  await expect(page.locator(".chat-message.user")).toContainText("Follow-up after deletion.");
+  const inFlightId = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].id);
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  await stale.unroute("**/api/wiki/chat");
+  await stale.route("**/api/wiki/chat", async route => {
+    await hold;
+    await route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ answer: "Synthetic delayed answer.", sources: [], activity: [] }) });
+  });
+  const requested = stale.waitForRequest("**/api/wiki/chat");
+  await stale.getByLabel("Message").fill("Question whose answer arrives after deletion.");
+  await stale.getByRole("button", { name: "Send" }).click();
+  await requested;
+  await page.getByRole("button", { name: "Delete conversation" }).click();
+  release();
+  await expect(stale.locator(".chat-thinking")).toHaveCount(0);
+  await expect(stale.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
+  await expect(stale.locator(".chat-conversation-notice")).toContainText("deleted in another tab");
+  expect(await page.evaluate(id => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === id), inFlightId)).toBeFalsy();
+  await expect(stale.getByLabel("Message")).toBeEnabled();
+  await stale.close();
+});
+}
+
 test("PWA metadata registers an online-only worker without private caches", async ({
   page,
   request,
