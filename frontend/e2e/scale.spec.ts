@@ -47,9 +47,37 @@ test("large real vault has a compact stable map and usable mutation path", async
     "Synthetic constellation 8",
   );
   await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  expect(await page.locator(".galaxy-sidebar-content").evaluate(element => element.scrollTop), "new constellation heading must not retain the scrolled overview offset").toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: "../.demo/scale-map-cluster.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const targets = () => page.locator(".galaxy-star").evaluateAll(elements => elements.map(element => {
+    const star = element as SVGGraphicsElement;
+    const matrix = star.getScreenCTM()!;
+    const center = new DOMPoint(0, 0).matrixTransform(matrix);
+    return { id: star.getAttribute("data-node")!, x: center.x, y: center.y, radius: Number(star.querySelector(".galaxy-hit")!.getAttribute("r")) * matrix.a };
+  }));
+  await expect.poll(async () => (await targets()).length).toBe(40);
+  // Dense stars keep distinct hit circles rather than relying on paint order.
+  const checkTargets = async () => {
+    const points = await targets();
+    let clearance = Infinity;
+    for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+      clearance = Math.min(clearance, Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y) - points[i].radius - points[j].radius);
+    }
+    expect(clearance, "real rendered hit circles must stay disjoint").toBeGreaterThan(0);
+  };
+  await checkTargets();
+  for (let step = 0; step < 3; step++) await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await checkTargets();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await page.screenshot({ path: "../.demo/scale-map-focused-mobile.png", fullPage: true });
+  for (const point of (await targets()).slice(0, 2)) {
+    await page.locator(`.galaxy-star[data-node="${point.id}"]`).click();
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", point.id);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole("button", { name: "All constellations" }).click();
   await page.getByRole("button", { name: "List view" }).click();
 

@@ -115,11 +115,32 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const status = root.querySelector<HTMLElement>(".galaxy-status")!;
   const bridgeLegend = root.querySelector<HTMLElement>(".galaxy-legend-bridge")!.parentElement!;
   root.querySelector(".galaxy-method p")!.append(document.createTextNode(" In the overview, dashed lines combine all real page links between each pair of constellations, including reciprocal links. Their counts do not imply links between the core pages. Select a page to inspect exact source, target and direction."));
+  root.querySelector(".galaxy-mapnote span:last-child")!.append(document.createTextNode(" · Use the page list for closely spaced stars."));
+  let hitSpacing = Infinity;
   const setView = () => {
     const svg = stage.querySelector("svg");
-    const width = 1100 / scale, viewHeight = height / scale;
+    if (!svg || !stage.clientWidth || !stage.clientHeight) return;
+    const active = selectedCluster !== null;
+    const aspect = stage.clientWidth / stage.clientHeight;
+    const baseWidth = active ? Math.max(460, 460 * aspect) : 1100;
+    const baseHeight = active ? baseWidth / aspect : height;
+    const width = baseWidth / scale, viewHeight = baseHeight / scale;
     panX = Math.max(-350, Math.min(350, panX)); panY = Math.max(-height / 3, Math.min(height / 3, panY));
-    svg?.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${(height - viewHeight) / 2 + panY} ${width} ${viewHeight}`);
+    svg.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${(height - viewHeight) / 2 + panY} ${width} ${viewHeight}`);
+    if (active) {
+      const unit = Math.min(stage.clientWidth / width, stage.clientHeight / viewHeight);
+      svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text, .galaxy-star text").forEach(label => {
+        const size = label.classList.contains("galaxy-count") ? 11 : label.closest(".galaxy-star") ? 12 : 14;
+        label.style.fontSize = `${size / unit}px`;
+        if (label.closest(".galaxy-star")) {
+          label.setAttribute("y", String(24 / unit));
+          label.style.strokeWidth = `${3 / unit}px`;
+        }
+      });
+      svg.querySelectorAll<SVGCircleElement>(".galaxy-hit").forEach(hit => {
+        hit.setAttribute("r", String(Math.min(22 / unit, hitSpacing * .45)));
+      });
+    }
   };
   function renderMap() {
     const active = selectedCluster === null ? null : clusters[selectedCluster];
@@ -150,6 +171,17 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     });
     if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: Math.max(340, rows * 300) + 55 + Math.floor(i / 15) * 55 }));
     if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
+    // Bound enlarged targets by actual spacing in smaller constellations.
+    // Above 120 stars preserve the original logical hit radius; the page list
+    // remains the precise selection path without quadratic spacing work.
+    hitSpacing = Infinity;
+    if (active) {
+      const points = [...positions.values()];
+      if (points.length > 120) hitSpacing = 40;
+      else for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+        hitSpacing = Math.min(hitSpacing, Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y));
+      }
+    }
     const bundledBridges = !active ? (() => {
       const grouped = new Map<string, { from: number; to: number; count: number }>();
       bridges.forEach(e => {
@@ -180,7 +212,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     const svgLinks = bundledBridges + individualLinks;
     const halos = shown.map(c => {
       const p = centers.get(c.id)!;
-      const size = active ? 245 : 125;
+      const size = active ? 225 : 125;
       const label = clusterName(c);
       return `<g class="galaxy-neighborhood" style="--cluster-color:${color(c)}"><ellipse cx="${p.x}" cy="${p.y}" rx="${size}" ry="${size * .8}"/><text x="${p.x}" y="${p.y - size * .8 - 15}" text-anchor="middle">${escape(label.length > 31 ? label.slice(0, 28) + "…" : label)}</text><text class="galaxy-count" x="${p.x}" y="${p.y - size * .8 + 3}" text-anchor="middle">${c.members.length} pages · ${c.curated ? "curated" : c.isolated ? "unlinked" : "link topology"}</text></g>`;
     }).join("");
@@ -215,6 +247,10 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     } else {
       sidebar.innerHTML = `<div class="galaxy-panel-heading"><h2>Choose a constellation</h2><span>${linked.length}</span></div><p class="galaxy-muted">Curated groups come from page metadata. Uncurated groups describe link topology only.</p>${linked.map(c => `<button type="button" class="galaxy-cluster" data-cluster="${c.id}" style="--cluster-color:${color(c)}"><i></i><span>${escape(clusterName(c))}<small>${c.members.length} pages · ${c.curated ? "curated" : "link topology"} · ${bridges.filter(e => membership.get(e.source) === c.id || membership.get(e.target) === c.id).length} cross-links</small></span><b>↗</b></button>`).join("")}${isolated.length ? `<div class="galaxy-panel-heading galaxy-unlinked-heading"><h3>Unlinked pages</h3><span>${isolated.length}</span></div><p class="galaxy-muted">These pages have no links to other pages.</p>${isolated.map(c => button(c.core)).join("")}` : ""}`;
     }
+    // New list/detail content starts at its heading. Keyboard return handling
+    // can then reveal the originating page explicitly instead of retaining an
+    // unrelated offset from the previous constellation list.
+    sidebar.scrollTop = 0;
     const issues = (graph.missing_targets?.length || 0) + (graph.ambiguous_targets?.length || 0);
     status.textContent = selectedNode ? `${name(selectedNode)} selected. ${edges.filter(e => e.source === selectedNode || e.target === selectedNode).length} resolved links.` : `${bridges.length} explicit links cross constellations.${issues ? ` ${issues} unresolved targets are excluded from the map.` : ""}`;
   }
@@ -245,9 +281,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       select(target.dataset.node);
       if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
       else if (window.matchMedia("(max-width: 680px)").matches) {
-        // Replacing the list can retain its inner scroll offset. Reveal the
-        // selected article and evidence together without stealing keyboard focus.
-        sidebar.scrollTop = 0;
+        // Reveal article and evidence without stealing keyboard focus.
         revealMobile(sidebar.parentElement!);
       }
     }
@@ -275,7 +309,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         }
         break;
       }
-      case "zoom-in": scale = Math.min(2.5, scale + .25); setView(); break;
+      case "zoom-in": scale = Math.min(selectedCluster === null ? 2.5 : 4, scale + .25); setView(); break;
       case "zoom-out": scale = Math.max(.75, scale - .25); setView(); break;
       case "reset": scale = 1; panX = panY = 0; setView(); break;
       case "list": listOnly = !listOnly; target.setAttribute("aria-pressed", String(listOnly)); target.textContent = listOnly ? "Map view" : "List view"; render(); break;
@@ -294,16 +328,17 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     const svg = star.ownerSVGElement;
     const position = star.transform.baseVal.consolidate()?.matrix;
     if (!svg || !position) return;
+    const margin = 26 / (svg.getScreenCTM()?.a || 1);
     // SVG focus does not scroll a clipped viewBox as HTML focus would. Move
     // only enough to expose the star and its focus ring in the current map.
     const visible = () => {
       const view = svg.viewBox.baseVal;
-      return position.e >= view.x + 24 && position.e <= view.x + view.width - 24 &&
-        position.f >= view.y + 24 && position.f <= view.y + view.height - 24;
+      return position.e >= view.x + margin && position.e <= view.x + view.width - margin &&
+        position.f >= view.y + margin && position.f <= view.y + view.height - margin;
     };
     const view = svg.viewBox.baseVal;
-    panX += Math.min(0, position.e - view.x - 24) + Math.max(0, position.e - view.x - view.width + 24);
-    panY += Math.min(0, position.f - view.y - 24) + Math.max(0, position.f - view.y - view.height + 24);
+    panX += Math.min(0, position.e - view.x - margin) + Math.max(0, position.e - view.x - view.width + margin);
+    panY += Math.min(0, position.f - view.y - margin) + Math.max(0, position.f - view.y - view.height + margin);
     setView();
     // Very distant shelves can exceed the bounded pan range. An overview is
     // preferable to leaving keyboard focus outside the map indefinitely.
@@ -320,9 +355,10 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   };
   const pointermove = (event: PointerEvent) => {
     if (!drag) return;
-    const bounds = stage.getBoundingClientRect();
-    panX = drag.px - (event.clientX - drag.x) * 1100 / bounds.width / scale;
-    panY = drag.py - (event.clientY - drag.y) * height / bounds.height / scale;
+    const unit = stage.querySelector("svg")?.getScreenCTM()?.a;
+    if (!unit) return;
+    panX = drag.px - (event.clientX - drag.x) / unit;
+    panY = drag.py - (event.clientY - drag.y) / unit;
     setView();
   };
   const pointerup = () => {
@@ -334,7 +370,10 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   stage.addEventListener("pointerdown", pointerdown); stage.addEventListener("pointermove", pointermove);
   stage.addEventListener("pointerup", pointerup); stage.addEventListener("pointercancel", pointerup);
   render();
+  const resize = new ResizeObserver(() => setView());
+  resize.observe(stage);
   return () => {
+    resize.disconnect();
     root.removeEventListener("click", click); root.removeEventListener("keydown", keydown); root.removeEventListener("focusin", focusin);
     root.querySelector("input")?.removeEventListener("input", input);
     stage.removeEventListener("pointerdown", pointerdown); stage.removeEventListener("pointermove", pointermove);

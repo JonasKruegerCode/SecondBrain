@@ -138,8 +138,13 @@ and its matching CI runs rather than treating these counts as current.
   or the selected page's article and exact link evidence. Touch-emulation checks
   include selecting a neighbor after scrolling the evidence panel, opening its
   article, and keeping the map hidden in list view. Keyboard focus and desktop
-  layout remain separate paths. Small-map labels and physical touch ergonomics
-  still need device inspection; emulated taps do not establish device usability.
+  layout remain separate paths. Focused maps fit the available aspect ratio and
+  keep label size stable across zoom/resize. Spaced stars use 44-pixel hit circles;
+  up to 120 stars, actual spacing caps targets to prevent overlap. Larger
+  constellations retain the original logical target cap and the precise page-list
+  path. Dense 40-page maps have separate rendered-spacing and selection checks.
+  Overview labels and physical touch ergonomics remain separate QA concerns;
+  emulated taps do not establish device usability.
 - CI artifacts contain only synthetic structural/browser evidence and expire
   under the workflows' seven-day retention. They are browser emulation and
   synthetic infrastructure, not physical-device or production evidence.

@@ -46,6 +46,40 @@ test.describe("galaxy touch navigation", () => {
     await expect(page.locator(".galaxy-selected-heading")).toBeInViewport({ ratio: 1 });
     await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeInViewport();
   });
+
+  test("focused map keeps labels and spaced touch targets usable after resize and zoom", async ({ page }, testInfo) => {
+    await page.goto("/galaxy");
+    await page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" }).tap();
+    const metrics = () => page.locator(".galaxy-stage svg").evaluate(svg => {
+      const core = svg.querySelector<SVGGraphicsElement>(".galaxy-star.is-core")!;
+      const unit = core.getScreenCTM()!.a;
+      const map = svg.getBoundingClientRect();
+      return {
+        hit: Number(core.querySelector(".galaxy-hit")!.getAttribute("r")) * 2 * unit,
+        label: parseFloat(getComputedStyle(core.querySelector("text")!).fontSize) * unit,
+        centersVisible: [...svg.querySelectorAll<SVGGraphicsElement>(".galaxy-star")].every(star => {
+          const point = new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!);
+          return point.x >= map.left + 8 && point.x <= map.right - 8 && point.y >= map.top + 8 && point.y <= map.bottom - 8;
+        }),
+      };
+    });
+    for (const width of [390, 320, 1280, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect.poll(async () => (await metrics()).label).toBeGreaterThanOrEqual(11.99);
+      expect((await metrics()).hit).toBeGreaterThanOrEqual(43.99);
+      expect((await metrics()).centersVisible).toBe(true);
+    }
+    await page.screenshot({ path: testInfo.outputPath("touch-focused-fit.png") });
+    await page.getByRole("button", { name: "Zoom in", exact: true }).tap();
+    await expect.poll(async () => (await metrics()).label).toBeGreaterThanOrEqual(11.99);
+    expect((await metrics()).hit).toBeGreaterThanOrEqual(43.99);
+    await page.getByRole("button", { name: "Reset", exact: true }).tap();
+    expect((await metrics()).centersVisible).toBe(true);
+    const id = await page.locator(".galaxy-star.is-core").getAttribute("data-node");
+    await page.locator(".galaxy-star.is-core").tap();
+    await page.locator(".galaxy-selected-heading .galaxy-article").tap();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${id}$`));
+  });
 });
 
 async function create(request: APIRequestContext, markdown: string) {
