@@ -129,7 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     suites = (
         ["e2e/first-start.spec.ts"]
         if args.first_start
-        else ["e2e/wiki.spec.ts", "e2e/history.spec.ts"]
+        else ["e2e/wiki.spec.ts", "e2e/history.spec.ts", "e2e/skip-link.spec.ts"]
     )
     phases = ("create", "restart") if args.first_start else ("demo",)
     browser_command = ["npm", "run", "test:browser", "--", *suites]
