@@ -104,7 +104,7 @@ header {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI";
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 23px;
   font-weight: 800;
   letter-spacing: -1px;
@@ -167,7 +167,7 @@ main {
   color: var(--muted-text);
 }
 .intro h1 {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI";
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 58px;
   line-height: 1.15;
   letter-spacing: -2.9px;
