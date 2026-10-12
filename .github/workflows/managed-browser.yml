@@ -42,6 +42,8 @@ jobs:
 
       - name: Exercise the real disposable wiki and browser
         working-directory: backend
+        env:
+          PLAYWRIGHT_FOCUS_BASELINE: "1"
         run: poetry run python ../scripts/run-wiki-acceptance.py
 
       - name: Exercise empty first start and real service restart
