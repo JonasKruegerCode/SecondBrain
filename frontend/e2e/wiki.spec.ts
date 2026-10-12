@@ -195,6 +195,7 @@ test.describe("galaxy touch navigation", () => {
       await expect(page.locator(".galaxy-problems")).toContainText(ids[0]);
       await page.getByRole("link", { name: "Open article" }).click();
       await expect(page).toHaveURL(new RegExp(`/wiki/${fallback.id}$`));
+      await expect(page.locator("article h1")).toHaveText("Synthetic replacement core");
       await page.screenshot({ path: testInfo.outputPath("tall-mutated-article.png"), fullPage: true });
     } finally {
       for (const item of saved) {
