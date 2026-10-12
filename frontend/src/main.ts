@@ -348,7 +348,7 @@ function cards(pages: Page[], fragment = "") {
     )
     .join("");
 }
-async function route(focusArticle = false, reuseShell = false) {
+async function route(focusView = false, reuseShell = false) {
   const run = ++generation;
   cleanupView?.();
   cleanupView = undefined;
@@ -364,17 +364,30 @@ async function route(focusArticle = false, reuseShell = false) {
   } else shell();
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
+  const complete = (title: string) => {
+    if (run !== generation) return;
+    const heading = main.querySelector<HTMLElement>("h1");
+    if (heading) heading.tabIndex = -1;
+    // Announce the new reading destination only when navigation removed the
+    // old focus. Never steal a focus explicitly chosen during an async read.
+    if (focusView && !location.hash && document.activeElement === document.body) {
+      heading?.focus({ preventScroll: true });
+      window.scrollTo(0, 0);
+    }
+    focusFragment();
+    viewReady(title);
+  };
   try {
     if (location.pathname === "/chat") {
       cleanupView = renderChat(main, api);
-      viewReady("Chat");
+      complete("Chat");
       return;
     }
     if (location.pathname === "/galaxy") {
       const graph: Graph = await api("/graph");
       if (run !== generation) return;
       cleanupView = renderGalaxy(main, graph);
-      viewReady("Galaxy");
+      complete("Galaxy");
       return;
     }
     if (location.pathname === "/resolve") {
@@ -386,10 +399,10 @@ async function route(focusArticle = false, reuseShell = false) {
       if (result.status === "resolved") {
         const path = url(result.candidates[0].id) + (result.fragment ? `#${encodeURIComponent(result.fragment)}` : "");
         replaceAppUrl(path);
-        void route(focusArticle, true);
+        void route(focusView, true);
       } else {
         main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
-        viewReady(result.status === "ambiguous" ? "Choose a page" : "Missing page");
+        complete(result.status === "ambiguous" ? "Choose a page" : "Missing page");
       }
       return;
     }
@@ -419,7 +432,7 @@ async function route(focusArticle = false, reuseShell = false) {
         void search();
       };
       if (input.value) void search();
-      viewReady("Search");
+      complete("Search");
       return;
     }
     if (location.pathname.startsWith("/wiki/")) {
@@ -430,12 +443,7 @@ async function route(focusArticle = false, reuseShell = false) {
       if (run !== generation) return;
       page = loaded;
       renderPage();
-      if (focusArticle && !location.hash && document.activeElement === document.body) {
-        main.querySelector<HTMLElement>("article > h1")?.focus({ preventScroll: true });
-        window.scrollTo(0, 0);
-      }
-      focusFragment();
-      viewReady(loaded.title);
+      complete(loaded.title);
       return;
     }
     const { pages } = await api("/pages");
@@ -453,15 +461,15 @@ async function route(focusArticle = false, reuseShell = false) {
       !new URLSearchParams(location.search).has("overview")
     ) {
       replaceAppUrl(url(preferred));
-      void route(focusArticle, true);
+      void route(focusView, true);
       return;
     }
     main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
-    viewReady("Home");
+    complete("Home");
   } catch (e) {
     if (run !== generation) return;
     main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${(e as any).status === 404 ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc((e as Error).message)}</p><a href="/?overview=1" class="primary">Back to home →</a></section>`;
-    viewReady((e as any).status === 404 ? "Missing page" : "Workspace unavailable");
+    complete((e as any).status === 404 ? "Missing page" : "Workspace unavailable");
   }
 }
 function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {

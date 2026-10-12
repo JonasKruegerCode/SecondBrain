@@ -41,8 +41,9 @@ losing or resurrecting independent conversations.
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
-- Explicit article navigation focuses the destination title, so the next Tab
-  continues within the article. Fresh document loads retain the skip-link path;
+- Explicit navigation focuses the destination title for articles, Home, Search,
+  Galaxy, Chat, link choices and route errors, so the next Tab continues within
+  the view. Chat arrival leaves the composer unfocused. Fresh document loads retain the skip-link path;
   fragments take precedence. A header/main focus deliberately chosen while a
   read is pending is preserved, including internal saved-start/link redirects.
 - Reopening local Git history reads current commits, including newer agent saves.
