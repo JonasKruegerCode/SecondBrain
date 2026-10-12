@@ -335,6 +335,137 @@ test("search finds a unique real page and opens its direct route", async ({
   await expect(page.locator(".prose")).toContainText(term);
 });
 
+async function observeSearchBodyCompletion(page: Page) {
+  // Observe body completion after the UI promise chain, without changing response data.
+  await page.addInitScript(() => {
+    const parse = Response.prototype.json;
+    (window as any).__settledSearchBodies = 0;
+    Response.prototype.json = async function () {
+      const body = await parse.call(this);
+      if (this.url && new URL(this.url).pathname === "/api/wiki/search") {
+        setTimeout(() => { (window as any).__settledSearchBodies++; }, 0);
+      }
+      return body;
+    };
+  });
+}
+
+for (const older of ["failure", "success"] as const) {
+  test(`latest submitted search survives an older ${older}`, async ({ page, request }, testInfo) => {
+    await observeSearchBodyCompletion(page);
+    const firstTerm = `queued-${randomUUID()}`;
+    const secondTerm = `current-${randomUUID()}`;
+    const first = await create(request, `# Earlier search fixture\n${firstTerm}`);
+    const second = await create(request, `# Current search fixture\n${secondTerm}`);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let captured!: () => void;
+    const arrived = new Promise<void>(resolve => { captured = resolve; });
+    let firstRequest = true;
+    await page.route("**/api/wiki/search?**", async route => {
+      if (new URL(route.request().url()).searchParams.get("q") !== firstTerm || !firstRequest) {
+        await route.continue();
+        return;
+      }
+      firstRequest = false;
+      const response = await route.fetch(); // Capture the actual older service snapshot.
+      expect((await response.json()).results[0].id).toBe(first.id);
+      captured();
+      await gate;
+      if (older === "failure") {
+        // Explicit transport/UI failure injection, not an observed backend outage.
+        await route.fulfill({ status: 503, json: { message: "Delayed synthetic search outage." } });
+      } else await route.fulfill({ response });
+    });
+    const submit = async (query: string) => {
+      await page.getByRole("textbox", { name: "Search pages" }).fill(query);
+      await page.getByRole("button", { name: "Search", exact: false }).click();
+    };
+    try {
+      await page.goto("/search");
+      await submit(firstTerm);
+      await arrived;
+      if (older === "success") {
+        await update(request, first.id, `# Updated search fixture\n${firstTerm}`, first.revision);
+      }
+      await submit(secondTerm);
+      await expect(page.locator(`#results a[href="/wiki/${second.id}"]`)).toBeVisible();
+      if (older === "success") {
+        // A -> B -> A has the same input value but a newer content snapshot.
+        await submit(firstTerm);
+        await expect(page.locator("#results .card h3")).toHaveText("Updated search fixture");
+      }
+      release();
+      await page.waitForFunction(count => (window as any).__settledSearchBodies === count, older === "success" ? 3 : 2);
+      await expect(page.locator("#results .card h3")).toHaveText(older === "success" ? "Updated search fixture" : "Current search fixture");
+      await expect(page.locator("#results .error")).toHaveCount(0);
+      await expect(page).toHaveURL(new RegExp(`/search\\?q=${older === "success" ? firstTerm : secondTerm}$`));
+      if (older === "failure") {
+        let unavailable = true;
+        await page.route(`**/api/wiki/search?q=${secondTerm}`, async route => {
+          if (unavailable) {
+            unavailable = false;
+            await route.fulfill({ status: 503, json: { message: "Current synthetic search outage." } });
+          } else await route.continue();
+        });
+        await submit(secondTerm);
+        await expect(page.locator("#results .error")).toHaveText("Current synthetic search outage.");
+        await submit(secondTerm);
+        await expect(page.locator("#results .card h3")).toHaveText("Current search fixture");
+        await expect(page.locator("#results .error")).toHaveCount(0);
+      }
+      if (older === "success") {
+        await page.screenshot({ path: testInfo.outputPath("search-latest-desktop.png"), fullPage: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: testInfo.outputPath("search-latest-mobile.png"), fullPage: true });
+      }
+      const target = older === "success" ? first.id : second.id;
+      await page.locator(`#results a[href="/wiki/${target}"]`).click();
+      await expect(page).toHaveURL(new RegExp(`/wiki/${target}$`));
+    } finally {
+      release();
+    }
+  });
+}
+
+test("submitted search finishes while the next query remains an unsubmitted draft", async ({ page, request }) => {
+  await observeSearchBodyCompletion(page);
+  const term = `submitted-${randomUUID()}`;
+  const fixture = await create(request, `# Submitted search fixture\n${term}`);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let captured!: () => void;
+  const arrived = new Promise<void>(resolve => { captured = resolve; });
+  let searches = 0;
+  page.on("request", request => {
+    if (new URL(request.url()).pathname === "/api/wiki/search") searches++;
+  });
+  await page.route(`**/api/wiki/search?q=${term}`, async route => {
+    const response = await route.fetch();
+    captured();
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto("/search");
+    const input = page.getByRole("textbox", { name: "Search pages" });
+    await input.fill(term);
+    await page.getByRole("button", { name: "Search" }).click();
+    await arrived;
+    await input.fill("Unsubmitted next query");
+    release();
+    await page.waitForFunction(() => (window as any).__settledSearchBodies === 1);
+    await expect(page.locator("#results .card h3")).toHaveText("Submitted search fixture");
+    await expect(input).toHaveValue("Unsubmitted next query");
+    await expect(page).toHaveURL(new RegExp(`/search\\?q=${term}$`));
+    expect(searches).toBe(1);
+    await page.locator(`#results a[href="/wiki/${fixture.id}"]`).click();
+    await expect(page.locator("article h1")).toHaveText("Submitted search fixture");
+  } finally {
+    release();
+  }
+});
+
 test("editor saves Markdown and reads current delivery status", async ({
   page,
   request,

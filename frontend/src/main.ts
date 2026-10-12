@@ -315,8 +315,12 @@ async function route() {
     if (location.pathname === "/search") {
       main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW YOUR CURIOSITY</div><h1>Find a thought.</h1><p>Search your pages, pick up a thread, and keep going.</p></section><form><span>⌕</span><input aria-label="Search pages" placeholder="Search your knowledge…" value="${esc(new URLSearchParams(location.search).get("q") || "")}"><button class="primary">Search →</button></form><div id="results"><p class="quiet">A name, an idea, a phrase. Start anywhere.</p></div>`;
       const input = main.querySelector("input")!;
+      let searchGeneration = 0;
       const search = async () => {
+        const searchRun = ++searchGeneration;
         const q = input.value.trim();
+        // Typing the next draft does not change ownership of the submitted query.
+        const current = () => run === generation && searchRun === searchGeneration;
         history.replaceState(
           {},
           "",
@@ -326,9 +330,10 @@ async function route() {
         results.innerHTML = '<p class="quiet">Searching…</p>';
         try {
           const data = await api("/search?q=" + encodeURIComponent(q));
-          if (run !== generation || input.value.trim() !== q) return;
-          results.innerHTML = `<div class="section-heading"><h2>${data.results.length} results</h2></div><div class="grid">${data.results.length ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
+          if (!current()) return;
+          results.innerHTML = `<div class="section-heading"><h2>${data.results.length} ${data.results.length === 1 ? "result" : "results"}</h2></div><div class="grid">${data.results.length ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
         } catch (e) {
+          if (!current()) return;
           results.innerHTML = `<p class="error">${esc((e as Error).message)}</p>`;
         }
       };
