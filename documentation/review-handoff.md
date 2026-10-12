@@ -41,6 +41,9 @@ losing or resurrecting independent conversations.
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- Reopening local Git history reads current commits, including newer agent saves.
+  Reopening during a pending read shares that request; late history replies after
+  leaving the article cannot replace the next article's history.
 - Save conflicts preserve the local draft and require a fresh read plus deliberate
   reconciliation. Lost acknowledgements are retried with the same request ID and
   payload.
@@ -103,6 +106,10 @@ inputs and are never uploaded; successful runs remove them and the vault.
 The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
 `.demo/acceptance/`. It clears inherited OpenRouter access.
+The normal suite includes focused history checks against actual Git-backed REST
+responses: keyboard loading, pending-read deduplication, refreshed agent edits,
+transport failure/retry and late success/failure after article navigation.
+Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
 For the opt-in tall-map probe, create an isolated vault with
 `python -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,

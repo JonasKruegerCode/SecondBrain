@@ -126,9 +126,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--vault",
         str(vault),
     ]
-    suite = "e2e/first-start.spec.ts" if args.first_start else "e2e/wiki.spec.ts"
+    suites = (
+        ["e2e/first-start.spec.ts"]
+        if args.first_start
+        else ["e2e/wiki.spec.ts", "e2e/history.spec.ts"]
+    )
     phases = ("create", "restart") if args.first_start else ("demo",)
-    browser_command = ["npm", "run", "test:browser", "--", suite]
+    browser_command = ["npm", "run", "test:browser", "--", *suites]
     if args.first_start:
         command.append("--empty")
         env.update(
@@ -224,7 +228,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "finished_at": finished.isoformat(),
         "duration_seconds": round((finished - started).total_seconds(), 3),
         "git_head": _git_head(root),
-        "suite": f"frontend/{suite}",
+        "suite": f"frontend/{suites[0]}",
+        "suites": [f"frontend/{suite}" for suite in suites],
         "fixture": "empty-first-start" if args.first_start else "fictional-template",
         "services": [
             "http://127.0.0.1:8000/api/wiki/health",

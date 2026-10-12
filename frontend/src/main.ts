@@ -535,10 +535,12 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   }
   const historyPanel = main.querySelector<HTMLDetailsElement>(".page-history")!;
   const historyPageId = page.id;
-  let historyLoaded = false;
+  let historyLoading = false;
   historyPanel.addEventListener("toggle", async () => {
-    if (!historyPanel.open || historyLoaded) return;
-    historyLoaded = true;
+    if (!historyPanel.open || historyLoading) return;
+    // Reopening reads current agent edits; toggling during a pending read must
+    // still share that request rather than launching duplicate history loads.
+    historyLoading = true;
     const content = historyPanel.querySelector(".history-content")!;
     content.textContent = "Loading recent changes…";
     try {
@@ -551,8 +553,9 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
       }).join("")}</ol>` : '<p>No local commits for this page yet.</p>';
     } catch (e) {
       if (!historyPanel.isConnected) return;
-      historyLoaded = false;
-      content.innerHTML = `<p class="error">${esc((e as Error).message)} Close and reopen history to retry.</p>`;
+      content.innerHTML = `<div class="error"><p>${esc((e as Error).message)}</p><p>Close and reopen history to retry.</p></div>`;
+    } finally {
+      historyLoading = false;
     }
   });
   main.querySelector("#start")!.addEventListener("click", () => {
