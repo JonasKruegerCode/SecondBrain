@@ -41,6 +41,11 @@ losing or resurrecting independent conversations.
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- A continuous fictional-atlas browser rehearsal follows Home -> article ->
+  wikilink -> real search -> constellation/star/link evidence -> article ->
+  Chat. With the demo's unconfigured provider it verifies the actual unavailable
+  response and local question reload/deletion, never a fabricated answer. This
+  automated path is not the final real-model demo rehearsal.
 - Explicit navigation focuses the destination title for articles, Home, Search,
   Galaxy, Chat, link choices and route errors, so the next Tab continues within
   the view. Chat arrival leaves the composer unfocused. Fresh document loads retain the skip-link path;
