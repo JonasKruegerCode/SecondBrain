@@ -66,6 +66,8 @@ async function screenshots(page: Page, info: TestInfo, state: string, assertion:
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 844 }); await assertion();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    const target = await page.locator(".page-history summary").boundingBox();
+    expect(target!.height, "History reopening must retain a usable touch target").toBeGreaterThanOrEqual(44);
     await page.locator(".page-history").scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath(`history-${state}-${width}.png`), fullPage: true });
   }

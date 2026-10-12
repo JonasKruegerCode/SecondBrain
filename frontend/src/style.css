@@ -674,7 +674,7 @@ textarea {
 .prose :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 24px; }
 .prose :is(h1, h2, h3, h4, h5, h6):focus-visible, .article-toc a:focus-visible, .page-history summary:focus-visible { outline: 2px solid #287969; outline-offset: 5px; border-radius: 3px; }
 .page-history { border-top: 1px solid #dce7dc; margin-top: 38px; padding-top: 22px; color: #566b5f; font-size: 13px; overflow-wrap: anywhere; }
-.page-history summary { cursor: pointer; color: #294b3b; font-weight: 600; padding: 6px 0; }
+.page-history summary { cursor: pointer; color: #294b3b; font-weight: 600; min-height: 44px; padding: 12px 0; line-height: 20px; }
 .history-context { line-height: 1.6; margin: 10px 0 18px; }
 .history-list { list-style: none; margin: 0; padding: 0; }
 .history-list li { padding: 15px 0; border-top: 1px solid #e6ece3; }
