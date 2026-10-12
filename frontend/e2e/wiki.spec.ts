@@ -119,6 +119,27 @@ async function pwaUpdateProxy() {
   };
 }
 
+test("demo galaxy summarizes bridges without dropping its pages or internal links", async ({ page }, testInfo) => {
+  const bridges = [
+    "12 explicit links between Archive practice and Atlas crossroads",
+    "11 explicit links between Archive practice and Shore observations",
+    "15 explicit links between Archive practice and Sky & navigation",
+    "9 explicit links between Atlas crossroads and Shore observations",
+    "8 explicit links between Atlas crossroads and Sky & navigation",
+    "4 explicit links between Shore observations and Sky & navigation",
+  ];
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-star")).toHaveCount(12);
+    await expect(page.locator(".galaxy-edge:not(.is-bridge)")).toHaveCount(22);
+    await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(6);
+    expect((await page.locator(".galaxy-aggregate-link title").allTextContents()).sort()).toEqual([...bridges].sort());
+    await expect(page.locator(".galaxy-mapnote")).toContainText("Combined links between constellations");
+    await page.screenshot({ path: testInfo.outputPath(`demo-galaxy-bridges-${width}.png`), fullPage: true });
+  }
+});
+
 test("home opens a wiki page, resolves an alias, and survives back and reload", async ({
   page,
 }) => {
@@ -1732,6 +1753,38 @@ test("galaxy keyboard return restores its originating page and constellation", a
   await page.keyboard.press("Enter");
   await expect(sky).toBeFocused();
 });
+
+for (const width of [1440, 390]) {
+  test(`galaxy overview bundles real bridges and retains directional evidence (${width})`, async ({ page, request }, testInfo) => {
+    const group = randomUUID();
+    const pages = await Promise.all(["Alpha core", "Alpha leaf", "Beta core", "Beta leaf"].map(title => create(request, `# ${title}\nSynthetic bridge fixture.`)));
+    const [a, al, b, bl] = pages;
+    const markdown = [
+      `---\ngalaxy_group: alpha-${group}\ngalaxy_label: Bridge Alpha ${group}\ngalaxy_anchor: true\n---\n# Alpha core\n[[${al.id}]] [[${b.id}]] [[${bl.id}]]`,
+      `---\ngalaxy_group: alpha-${group}\n---\n# Alpha leaf\n[[${b.id}]]`,
+      `---\ngalaxy_group: beta-${group}\ngalaxy_label: Bridge Beta ${group}\ngalaxy_anchor: true\n---\n# Beta core\n[[${a.id}]]`,
+      `---\ngalaxy_group: beta-${group}\n---\n# Beta leaf\n[[${al.id}]]`,
+    ];
+    for (let i = 0; i < pages.length; i++) await update(request, pages[i].id, markdown[i], pages[i].revision);
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-star").first()).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`galaxy-bridge-overview-${width}.png`), fullPage: true });
+    const title = page.locator(".galaxy-aggregate-link title").filter({ hasText: `Bridge Alpha ${group}` });
+    await expect(title).toHaveCount(1);
+    await expect(title).toHaveText(`5 explicit links between Bridge Alpha ${group} and Bridge Beta ${group}`);
+    await page.locator(`.galaxy-star[data-node="${a.id}"]`).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Alpha core");
+    await expect(page.locator(".galaxy-evidence li")).toHaveCount(4);
+    await expect(page.locator(".galaxy-evidence li").filter({ hasText: "Beta core" })).toHaveCount(2);
+    await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`galaxy-bridge-evidence-${width}.png`), fullPage: true });
+    await page.locator(".galaxy-selected-heading .galaxy-article").click();
+    await expect(page).toHaveURL(new RegExp(`/wiki/${a.id}$`));
+    await expect(page.locator("article h1")).toHaveText("Alpha core");
+  });
+}
 
 for (const width of [1440, 390]) {
   test(`galaxy keeps keyboard stars visible after zoom (${width})`, async ({ page }, testInfo) => {

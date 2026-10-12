@@ -113,6 +113,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const stage = root.querySelector<HTMLElement>(".galaxy-stage")!;
   const sidebar = root.querySelector<HTMLElement>(".galaxy-sidebar-content")!;
   const status = root.querySelector<HTMLElement>(".galaxy-status")!;
+  const bridgeLegend = root.querySelector<HTMLElement>(".galaxy-legend-bridge")!.parentElement!;
+  root.querySelector(".galaxy-method p")!.append(document.createTextNode(" In the overview, dashed lines combine all real page links between each pair of constellations, including reciprocal links. Their counts do not imply links between the core pages. Select a page to inspect exact source, target and direction."));
   const setView = () => {
     const svg = stage.querySelector("svg");
     const width = 1100 / scale, viewHeight = height / scale;
@@ -122,6 +124,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   function renderMap() {
     const active = selectedCluster === null ? null : clusters[selectedCluster];
     const compactOverview = largeGraph && !active;
+    bridgeLegend.lastChild!.textContent = active ? "Link across constellations" : "Combined links between constellations";
     stage.hidden = listOnly;
     root.classList.toggle("is-list-view", listOnly);
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
@@ -147,7 +150,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     });
     if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: Math.max(340, rows * 300) + 55 + Math.floor(i / 15) * 55 }));
     if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
-    const svgLinks = compactOverview ? (() => {
+    const bundledBridges = !active ? (() => {
       const grouped = new Map<string, { from: number; to: number; count: number }>();
       bridges.forEach(e => {
         const source = membership.get(e.source)!;
@@ -160,17 +163,21 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       return [...grouped.values()].map(link => {
         const a = centers.get(link.from), b = centers.get(link.to);
         if (!a || !b) return "";
-        const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+        // Keep labels away from the shared midpoint of crossing diagonals.
+        const x = a.x + (b.x - a.x) * .42, y = a.y + (b.y - a.y) * .42;
         const label = `${link.count} explicit link${link.count === 1 ? "" : "s"} between ${clusterName(clusters[link.from])} and ${clusterName(clusters[link.to])}`;
         return `<g class="galaxy-aggregate-link"><line class="galaxy-edge is-bridge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(label)}</title></line>${link.count > 1 ? `<text class="galaxy-bridge-count" x="${x}" y="${y - 6}" text-anchor="middle">${link.count}</text>` : ""}</g>`;
       }).join("");
-    })() : edges.map(e => {
+    })() : "";
+    const individualLinks = compactOverview ? "" : edges.map(e => {
       const a = positions.get(e.source), b = positions.get(e.target);
       if (!a || !b || e.source === e.target) return "";
       const cross = membership.get(e.source) !== membership.get(e.target);
+      if (!active && cross) return "";
       const selected = selectedNode === e.source || selectedNode === e.target;
       return `<line class="galaxy-edge${cross ? " is-bridge" : ""}${selected ? " is-active" : ""}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(`${name(e.source)} → ${name(e.target)} (${e.rel || "wikilink"})`)}</title></line>`;
     }).join("");
+    const svgLinks = bundledBridges + individualLinks;
     const halos = shown.map(c => {
       const p = centers.get(c.id)!;
       const size = active ? 245 : 125;
