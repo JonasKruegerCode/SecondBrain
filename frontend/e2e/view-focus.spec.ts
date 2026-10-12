@@ -130,7 +130,11 @@ test("resolved links retain header focus chosen during the real resolution read"
   let received!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const held = new Promise<void>(resolve => { received = resolve; });
-  const pattern = "**/api/wiki/resolve-links?*";
+  // Hold only this navigation read, not the destination article's independent
+  // wikilink hydration requests, which may still be running during cleanup.
+  const pattern = "**/api/wiki/resolve-links?source=&target=night-sky-survey";
+  let delivered!: () => void;
+  const completed = new Promise<void>(resolve => { delivered = resolve; });
   try {
     await page.goto(`/wiki/${source.id}`);
     await expect(page.locator("article > h1")).toHaveText("Resolve source");
@@ -139,12 +143,14 @@ test("resolved links retain header focus chosen during the real resolution read"
       received();
       await gate;
       await route.fulfill({ response });
+      delivered();
     });
     await activate(page, "Resolve survey");
     await held;
     const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
     await search.focus();
     release();
+    await completed;
     await expect(page.locator("article > h1")).toHaveText("Night sky survey");
     await expect(search).toBeFocused();
   } finally {
