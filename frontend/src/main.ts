@@ -32,6 +32,7 @@ let page: Page | null = null,
   saving = false,
   requestId = "",
   notice = "",
+  noticeError = false,
   deliveryNotice = "",
   generation = 0,
   deliveryGeneration = 0,
@@ -75,13 +76,37 @@ marked.use({
   ],
 });
 async function api(path: string, options?: RequestInit) {
-  const r = await fetch("/api/wiki" + path, options);
-  const b = await r.json();
-  if (!r.ok)
-    throw Object.assign(new Error(b.message || "Unable to open this page."), {
-      status: r.status,
-    });
-  return b;
+  const controller = new AbortController();
+  const signal = options?.signal;
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  let timedOut = false;
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, path === "/chat" ? 120_000 : 30_000);
+  try {
+    const r = await fetch("/api/wiki" + path, { ...options, signal: controller.signal });
+    const b = await r.json();
+    if (!r.ok)
+      throw Object.assign(new Error(b.message || "Unable to open this page."), {
+        status: r.status,
+      });
+    return b;
+  } catch (error) {
+    if (timedOut) {
+      // Aborting the response does not establish whether the server published a write.
+      const savingPage = options?.method === "POST" && path.startsWith("/pages/");
+      throw new Error(savingPage
+        ? "The save response timed out. The change may already be saved. Retry the unchanged draft to check."
+        : "Request timed out. Check your connection and try again.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+  }
 }
 function markdown(s: string) {
   const doc = new DOMParser().parseFromString(
@@ -330,6 +355,7 @@ async function route() {
   page = null;
   editing = false;
   notice = "";
+  noticeError = false;
   deliveryNotice = "";
   shell();
   const main = app.querySelector("main")!;
@@ -433,7 +459,7 @@ async function route() {
 function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   if (!page) return;
   const main = app.querySelector("main")!;
-  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${notice.startsWith("Conflict") ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${noticeError ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
   if (!editing) {
     const prose = main.querySelector(".prose")!;
     prose.append(markdown(articleMarkdown(page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
@@ -533,8 +559,10 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
     try {
       localStorage.setItem("secondbrain.startpage", page!.id);
       notice = "This is now your start page.";
+      noticeError = false;
     } catch {
       notice = "Your browser could not remember this preference.";
+      noticeError = true;
     }
     renderPage("start");
   });
@@ -552,6 +580,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
       requestId = crypto.randomUUID();
     }
     notice = "";
+    noticeError = false;
     renderPage(editing ? "editor" : "edit");
   });
   if (editing) {
@@ -605,6 +634,7 @@ async function save() {
   if (!page || saving) return;
   saving = true;
   notice = "";
+  noticeError = false;
   renderPage();
   try {
     const result = await api("/pages/" + encodeURIComponent(page.id), {
@@ -622,6 +652,7 @@ async function save() {
     deliveryNotice = "Checking workspace indexing and remote delivery…";
     void refreshDelivery(generation, ++deliveryGeneration);
   } catch (e) {
+    noticeError = true;
     notice =
       (e as any).status === 409
         ? "Conflict: this page has a newer revision. Your draft is preserved. Copy it before reloading to review the latest version."

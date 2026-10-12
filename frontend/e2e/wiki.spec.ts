@@ -48,7 +48,7 @@ function contrastRatio(foreground: string, background: string) {
 
 async function pwaUpdateProxy() {
   let release = 1;
-  let saveGate: { reached: () => void; resume: Promise<void> } | undefined;
+  let saveGate: { reached: () => void; resume: Promise<void>; body: boolean } | undefined;
   const server = createServer(async (request, response) => {
     try {
       const path = request.url || "/";
@@ -63,12 +63,6 @@ async function pwaUpdateProxy() {
         ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
       });
       let body = Buffer.from(await upstream.arrayBuffer());
-      if (request.method === "POST" && path.startsWith("/api/wiki/pages/") && saveGate) {
-        const gate = saveGate;
-        saveGate = undefined;
-        gate.reached();
-        await gate.resume;
-      }
       if (path.startsWith("/service-worker.js")) {
         body = Buffer.from(
           body
@@ -85,7 +79,17 @@ async function pwaUpdateProxy() {
           }
         });
       }
-      response.writeHead(upstream.status);
+      if (request.method === "POST" && path.startsWith("/api/wiki/pages/") && saveGate) {
+        const gate = saveGate;
+        saveGate = undefined;
+        if (gate.body) {
+          response.writeHead(upstream.status);
+          response.flushHeaders();
+        }
+        gate.reached();
+        await gate.resume;
+      }
+      if (!response.headersSent) response.writeHead(upstream.status);
       response.end(body);
     } catch {
       response.writeHead(502);
@@ -100,12 +104,12 @@ async function pwaUpdateProxy() {
   return {
     origin: `http://127.0.0.1:${address.port}`,
     bump: () => release++,
-    holdNextSave: () => {
+    holdNextSave: (body = false) => {
       let reached!: () => void;
       let resume!: () => void;
       const arrived = new Promise<void>(resolve => { reached = resolve; });
       const pending = new Promise<void>(resolve => { resume = resolve; });
-      saveGate = { reached, resume: pending };
+      saveGate = { reached, resume: pending, body };
       return { arrived, release: resume };
     },
     close: () =>
@@ -493,6 +497,174 @@ test("editor saves Markdown and reads current delivery status", async ({
   expect(saved.markdown).toContain("After the edit.");
   await page.reload();
   await expect(page.locator(".prose")).toContainText("After the edit.");
+});
+
+for (const retryMode of ["unchanged", "edited"] as const) {
+test(`a timed-out save preserves its ${retryMode} draft without another publication`, async ({ page, request }, testInfo) => {
+  const fixture = await create(request, "# Save timeout fixture\nBefore.");
+  await page.goto(`/wiki/${fixture.id}`);
+  await page.clock.install();
+  const payloads: { request_id: string; base_revision: string; markdown: string }[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let captured!: () => void;
+  const published = new Promise<void>(resolve => { captured = resolve; });
+  await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+    if (route.request().method() !== "POST") { await route.continue(); return; }
+    payloads.push(route.request().postDataJSON());
+    if (payloads.length > 1) { await route.continue(); return; }
+    const response = await route.fetch();
+    expect(response.ok()).toBeTruthy();
+    captured();
+    await gate;
+    await route.fulfill({ response }).catch(() => {}); // The client may already have aborted.
+  });
+  try {
+    await page.getByRole("button", { name: "Edit page" }).click();
+    const draft = "# Save timeout fixture\nA synthetic saved change.";
+    const editor = page.getByRole("textbox", { name: /Markdown/ });
+    await editor.fill(draft);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await published;
+    const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(saved.markdown).toBe(draft);
+    await page.clock.fastForward(30_001);
+    await expect(page.locator(".notice")).toContainText("timed out");
+    await expect(page.locator(".notice")).toHaveClass(/error/);
+    await expect(editor).toHaveValue(draft);
+    await expect(editor).toBeEnabled();
+    await expect(editor).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath("save-timeout-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: testInfo.outputPath("save-timeout-mobile.png"), fullPage: true });
+    release();
+    if (retryMode === "edited") await editor.fill("# Save timeout fixture\nA further unsaved change.");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".notice")).toContainText(retryMode === "unchanged" ? "Saved locally" : "Conflict");
+    if (retryMode === "unchanged") await expect(page.locator(".notice")).not.toHaveClass(/error/);
+    expect(payloads).toHaveLength(2);
+    if (retryMode === "unchanged") expect(payloads[1]).toEqual(payloads[0]);
+    else {
+      expect(payloads[1].request_id).not.toBe(payloads[0].request_id);
+      expect(payloads[1].base_revision).toBe(payloads[0].base_revision);
+      await expect(editor).toHaveValue("# Save timeout fixture\nA further unsaved change.");
+      await expect(editor).toBeFocused();
+    }
+    const retry = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(retry.revision).toBe(saved.revision);
+    const history = await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json();
+    expect(history.history).toHaveLength(2); // Creation plus the one actual edit.
+    expect(retry.markdown).toBe(draft);
+    if (retryMode === "unchanged") await expect(page.locator(".prose")).toContainText("A synthetic saved change.");
+  } finally { release(); }
+});
+}
+
+test("a stalled save body times out after successful headers and replays the real receipt", async ({ page, request }) => {
+  const fixture = await create(request, "# Save body fixture\nBefore.");
+  const proxy = await pwaUpdateProxy();
+  let gate: ReturnType<typeof proxy.holdNextSave> | undefined;
+  try {
+    await page.goto(`${proxy.origin}/wiki/${fixture.id}`);
+    await expect(page.locator("article h1")).toHaveText("Save body fixture");
+    await page.clock.install();
+    await page.getByRole("button", { name: "Edit page" }).click();
+    const draft = "# Save body fixture\nSynthetic change behind held body.";
+    await page.getByRole("textbox", { name: /Markdown/ }).fill(draft);
+    gate = proxy.holdNextSave(true);
+    const headers = page.waitForResponse(response => response.request().method() === "POST" &&
+      response.url().endsWith(`/api/wiki/pages/${fixture.id}`));
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await gate.arrived;
+    expect((await headers).status()).toBe(200); // Browser received real successful headers, not the body.
+    const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(saved.markdown).toBe(draft);
+    await page.clock.fastForward(30_001);
+    await expect(page.locator(".notice")).toContainText("save response timed out");
+    await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+    await expect(page.getByRole("textbox", { name: /Markdown/ })).toBeEnabled();
+    gate.release();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".notice")).toContainText("Saved locally");
+    const recovered = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(recovered.revision).toBe(saved.revision);
+    const history = await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json();
+    expect(history.history).toHaveLength(2);
+  } finally {
+    gate?.release();
+    await page.close();
+    await proxy.close();
+  }
+});
+
+test("a timed-out search leaves a retryable error and accepts a fresh real response", async ({ page, request }) => {
+  const term = `timeout${randomUUID().replace(/-/g, "")}`;
+  const fixture = await create(request, `# Search timeout fixture\n${term}`);
+  await page.goto("/search");
+  await expect(page.getByRole("heading", { name: "Find a thought." })).toBeVisible();
+  await page.clock.install();
+  let searches = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let captured!: () => void;
+  const responseReady = new Promise<void>(resolve => { captured = resolve; });
+  await page.route("**/api/wiki/search?**", async route => {
+    if (++searches > 1) { await route.continue(); return; }
+    const response = await route.fetch();
+    expect(response.ok()).toBeTruthy();
+    captured();
+    await gate;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  try {
+    await page.getByRole("textbox", { name: "Search pages" }).fill(term);
+    await page.getByRole("button", { name: "Search" }).click();
+    await responseReady;
+    await page.clock.fastForward(30_001);
+    await expect(page.locator("#results .error")).toContainText("Request timed out");
+    await expect(page.getByRole("textbox", { name: "Search pages" })).toHaveValue(term);
+    release();
+    await page.getByRole("button", { name: "Search" }).click();
+    await expect(page.locator(`#results a[href="/wiki/${fixture.id}"]`)).toBeVisible();
+    await expect(page.locator("#results .error")).toHaveCount(0);
+    expect(searches).toBe(2);
+  } finally { release(); }
+});
+
+test("chat has a longer bounded response deadline and preserves a retryable question", async ({ page }) => {
+  await page.goto("/chat");
+  await expect(page.locator("#chat-input")).toBeVisible();
+  await page.clock.install();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let captured!: () => void;
+  const responseReady = new Promise<void>(resolve => { captured = resolve; });
+  let calls = 0;
+  await page.route("**/api/wiki/chat", async route => {
+    if (++calls > 1) { await route.continue(); return; }
+    const response = await route.fetch(); // Real unconfigured-provider error, never a fake answer.
+    captured();
+    await gate;
+    await route.fulfill({ response }).catch(() => {});
+  });
+  try {
+    await page.locator("#chat-input").fill("What can this synthetic wiki support?");
+    await page.getByRole("button", { name: "Send", exact: false }).click();
+    await responseReady;
+    await page.clock.fastForward(30_001);
+    await expect(page.locator("#chat-input")).toBeDisabled();
+    await expect(page.locator(".chat-error")).toHaveCount(0);
+    await page.clock.fastForward(90_000);
+    await expect(page.locator(".chat-error")).toContainText("Request timed out");
+    await expect(page.locator("#chat-input")).toBeEnabled();
+    await expect(page.locator(".chat-message.user")).toContainText("What can this synthetic wiki support?");
+    await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+    release();
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.locator(".chat-error")).toContainText("not configured");
+    expect(calls).toBe(2);
+    await expect(page.locator(".chat-message.user")).toHaveCount(1);
+  } finally { release(); }
 });
 
 test("concurrent revision conflict preserves the editor draft", async ({
