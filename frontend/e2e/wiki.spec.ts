@@ -2246,6 +2246,94 @@ for (const finish of ["save", "discard"] as const) {
 }
 
 
+for (const finish of ["clear", "send"] as const) {
+  test(`PWA protects a chat draft through ${finish} and another tab's update`, async ({ page, context }, testInfo) => {
+    await page.setViewportSize({ width: finish === "send" ? 390 : 1440, height: 1000 });
+    const proxy = await pwaUpdateProxy();
+    const other = await context.newPage();
+    const question = "What does the fictional tide clock measure?";
+    const answer = "Synthetic update test reply: the tide clock marks a navigation window.";
+    let releaseReply!: () => void;
+    let reachedReply!: () => void;
+    const pendingReply = new Promise<void>(resolve => { releaseReply = resolve; });
+    const replyArrived = new Promise<void>(resolve => { reachedReply = resolve; });
+    await page.route("**/api/wiki/chat", async route => {
+      reachedReply();
+      await pendingReply;
+      await route.fulfill({ json: { answer, sources: [], activity: [] } });
+    });
+    try {
+      await page.goto(`${proxy.origin}/chat`);
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await other.goto(`${proxy.origin}/?overview=1`);
+      await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      const input = page.getByRole("textbox", { name: "Message", exact: true });
+      // Cover both a draft that predates the offer and typing after the offer.
+      if (finish === "send") await input.fill(question);
+      await offerPwaUpdate(page, proxy);
+      const notice = page.locator('.pwa-notice[data-kind="update"]');
+      if (finish === "clear") {
+        await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+        await input.fill(question);
+      }
+      await expect(notice).toContainText("Send or clear your message");
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await page.evaluate(() => {
+        (window as any).__pwaChatDocument = "original-chat-document";
+        (window as any).__pwaChatControllerChanges = 0;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          (window as any).__pwaChatControllerChanges++;
+        });
+      });
+      await page.screenshot({ path: testInfo.outputPath(`update-chat-draft-${finish}.png`), fullPage: true });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(finish === "send" ? 390 : 1440);
+      if (finish === "send") {
+        await page.getByRole("button", { name: "Send", exact: false }).click();
+        await replyArrived;
+        await expect(notice).toContainText("Wait for your chat reply");
+        await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      }
+      await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+      await Promise.all([
+        other.waitForEvent("load"),
+        other.getByRole("button", { name: "Update now" }).click(),
+      ]);
+      await page.waitForFunction(() => (window as any).__pwaChatControllerChanges === 1);
+      if (finish === "clear") await expect(input).toHaveValue(question);
+      else {
+        await expect(page.locator(".chat-message.user")).toContainText(question);
+        await expect(page.locator(".chat-thinking")).toBeVisible();
+        await expect(notice).toContainText("Wait for your chat reply");
+      }
+      expect(await page.evaluate(() => (window as any).__pwaChatDocument)).toBe("original-chat-document");
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      if (finish === "send") {
+        releaseReply();
+        await expect(page.locator(".chat-message.assistant")).toContainText(answer);
+        await expect.poll(() => page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toContain(answer);
+      } else {
+        await input.fill("");
+      }
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+      await Promise.all([
+        page.waitForEvent("load"),
+        notice.getByRole("button", { name: "Update now" }).click(),
+      ]);
+      expect(await page.evaluate(() => (window as any).__pwaChatDocument)).toBeUndefined();
+      await expect(page.locator('.pwa-notice[data-kind="update"]')).toBeHidden();
+      if (finish === "send") {
+        await expect(page.locator(".chat-message.user")).toContainText(question);
+        await expect(page.locator(".chat-message.assistant")).toContainText(answer);
+      } else await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("");
+    } finally {
+      releaseReply();
+      await other.close();
+      await page.close();
+      await proxy.close();
+    }
+  });
+}
+
 test("PWA blocks update during an unchanged save until the real response arrives", async ({ page, context, request }) => {
   const fixture = await create(request, "# PWA saving fixture\nSynthetic unchanged text.");
   const proxy = await pwaUpdateProxy();

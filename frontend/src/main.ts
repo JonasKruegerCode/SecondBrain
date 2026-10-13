@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import "./style.css";
 import { renderGalaxy, Graph } from "./galaxy";
-import { renderChat } from "./chat";
+import { chatReloadBlocker, renderChat } from "./chat";
 import { applyUpdate, installApp, observePwa, PwaState, startPwa } from "./pwa";
 type HistoryEntry = { commit: string; date: string; message: string };
 type Backlinks = {
@@ -259,7 +259,7 @@ function shell() {
 }
 
 function canReloadApp() {
-  return !saving && !(editing && draft !== page?.markdown);
+  return !saving && !(editing && draft !== page?.markdown) && !chatReloadBlocker();
 }
 
 function renderPwaState() {
@@ -277,6 +277,10 @@ function renderPwaState() {
     notice.dataset.kind = "update";
     label.textContent = saving
       ? "A new version is ready. Wait for saving to finish before updating."
+      : chatReloadBlocker() === "reply"
+        ? "A new version is ready. Wait for your chat reply before updating."
+      : chatReloadBlocker() === "draft"
+        ? "A new version is ready. Send or clear your message before updating."
       : !canReloadApp()
         ? "A new version is ready. Save or discard your changes before updating."
         : "A new version of Secondbrain is ready.";
@@ -379,7 +383,7 @@ async function route(focusView = false, reuseShell = false) {
   };
   try {
     if (location.pathname === "/chat") {
-      cleanupView = renderChat(main, api);
+      cleanupView = renderChat(main, api, renderPwaState);
       complete("Chat");
       return;
     }

@@ -36,6 +36,10 @@ const MAX_WIKI_ACTIONS = 8;
 let tabConversations: Conversation[] | undefined;
 let tabTombstones: Tombstone[] | undefined;
 let tabDirtyIds: Set<string> | undefined;
+let reloadBlocker: () => "draft" | "reply" | undefined = () => undefined;
+export function chatReloadBlocker() {
+  return reloadBlocker();
+}
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -153,7 +157,7 @@ function freshConversation(): Conversation {
   return { id: crypto.randomUUID(), title: "New conversation", messages: [], updated: Date.now() };
 }
 
-export function renderChat(main: Element, api: Api): () => void {
+export function renderChat(main: Element, api: Api, stateChanged: () => void = () => {}): () => void {
   const loaded = load();
   let conversations = loaded.conversations;
   let tombstones = loaded.tombstones;
@@ -169,6 +173,8 @@ export function renderChat(main: Element, api: Api): () => void {
   let conversationNotice = "";
   let contextNotice = "";
   let alive = true;
+  reloadBlocker = () => !alive ? undefined : busy ? "reply"
+    : main.querySelector<HTMLTextAreaElement>("#chat-input")?.value ? "draft" : undefined;
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
   const persist = () => {
@@ -277,6 +283,7 @@ export function renderChat(main: Element, api: Api): () => void {
       render(false);
     };
     const form = main.querySelector<HTMLFormElement>(".chat-composer")!;
+    form.querySelector<HTMLTextAreaElement>("textarea")!.oninput = stateChanged;
     form.onsubmit = event => {
       event.preventDefault();
       const input = form.querySelector<HTMLTextAreaElement>("textarea")!;
@@ -304,6 +311,7 @@ export function renderChat(main: Element, api: Api): () => void {
     if (!busy && focusComposer)
       main.querySelector<HTMLTextAreaElement>("#chat-input")?.focus({ preventScroll: true });
     main.querySelector(".chat-messages")?.scrollTo({ top: 1_000_000 });
+    stateChanged();
   };
 
   const requestAnswer = async () => {
@@ -359,5 +367,6 @@ export function renderChat(main: Element, api: Api): () => void {
   render(false);
   return () => {
     alive = false;
+    stateChanged();
   };
 }
