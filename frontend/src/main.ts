@@ -31,6 +31,7 @@ const readingPoints = new Map<string, ReadingPoint>();
 const readingStorageKey = "secondbrain.reading-points";
 let readingStorageTimer: number | undefined;
 let viewComplete = false;
+let readingReady = false;
 let readingInterrupted = false;
 function persistReadingPoints() {
   window.clearTimeout(readingStorageTimer);
@@ -62,7 +63,7 @@ function resumeReadingPoints() {
   } catch {} // Malformed/unavailable tab storage must never block the initial read.
 }
 function rememberReadingPoint() {
-  if (!viewComplete || restoringHistory) return;
+  if (!readingReady || restoringHistory) return;
   readingPoints.delete(activeEntry.id);
   readingPoints.set(activeEntry.id, { x: Math.max(0, scrollX), y: Math.max(0, scrollY) });
   // Reading positions belong to visits, not URLs; keep this tab's memory bounded.
@@ -71,7 +72,7 @@ function rememberReadingPoint() {
   if (readingStorageTimer === undefined) readingStorageTimer = window.setTimeout(persistReadingPoints, 100);
 }
 window.addEventListener("scroll", rememberReadingPoint, { passive: true });
-const interruptReading = () => { if (!viewComplete) readingInterrupted = true; };
+const interruptReading = () => { if (!readingReady) readingInterrupted = true; };
 window.addEventListener("wheel", interruptReading, { passive: true });
 window.addEventListener("touchmove", interruptReading, { passive: true });
 window.addEventListener("pointerdown", interruptReading, { passive: true });
@@ -413,6 +414,7 @@ function cards(pages: Page[], fragment = "") {
 async function route(focusView = false, reuseShell = false, readingPoint?: ReadingPoint) {
   const run = ++generation;
   viewComplete = false;
+  readingReady = false;
   if (!reuseShell) readingInterrupted = false;
   cleanupView?.();
   cleanupView = undefined;
@@ -443,7 +445,10 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     if (ready && (focusView || readingPoint) && !location.hash && untouchedFocus && !readingInterrupted)
       window.scrollTo(readingPoint?.x || 0, readingPoint?.y || 0);
     focusFragment();
-    viewComplete = ready;
+    // A usable search form already owns fragment/input navigation, while its
+    // pending results are not yet tall enough to restore a reading position.
+    viewComplete = true;
+    readingReady = ready;
     rememberReadingPoint();
     viewReady(title);
   };
@@ -500,7 +505,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
         } finally {
           // Search results determine document height. Restore only once the
           // actual initial payload has rendered, never against the loading view.
-          if (current() && !viewComplete) complete("Search");
+          if (current() && !readingReady) complete("Search");
         }
       };
       main.querySelector("form")!.onsubmit = (e) => {
@@ -784,7 +789,7 @@ window.addEventListener("popstate", event => {
       return;
     }
     focusFragment();
-    if (!location.hash) {
+    if (!location.hash && readingReady) {
       const point = readingPoints.get(activeEntry.id);
       window.scrollTo(point?.x || 0, point?.y || 0);
     }
