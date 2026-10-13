@@ -73,7 +73,7 @@ the key and opt in:
 
 ```bash
 OPENROUTER_API_KEY=... PYTHONPATH=backend/src \
-  python scripts/run-wiki-demo.py --with-openrouter
+  "$WIKI_PYTHON" scripts/run-wiki-demo.py --with-openrouter
 ```
 
 Then ask a question about the atlas and a follow-up. The model can only call the
@@ -81,6 +81,37 @@ bounded search, page-read, and graph-neighbor tools. The browser keeps and can
 delete conversation history locally; the backend stores no chat transcript.
 This is a paid external call, distinct from the deterministic demo and browser
 regression suite.
+
+## Manual presentation rehearsal
+
+Use the fictional atlas for shared screenshots or review. The automated browser
+rehearsal checks the unavailable-provider path; it does not stand in for this
+human tour or real answer-quality inspection. Record the tested Git head,
+viewport/browser, provider enabled or unavailable, and any failed step:
+
+1. Start the documented demo, open Home, follow **Mira Quill** to the archive
+   method, and use its field-notebook link. The route should read naturally,
+   with clear introductions and a useful path back to Home.
+2. Search for `tide`, open the tide clock, then use History. Edit only the
+   synthetic page, save, reload, and verify that both content and history reflect
+   the save. A local save is distinct from optional index/remote delivery.
+3. Open the galaxy, choose a constellation and a star, inspect the named link
+   evidence and open its article. Return to the overview and find the page with
+   graph search. Repeat navigation at a narrow viewport and with the keyboard.
+4. With the explicit provider opt-in above, ask: “What warning does the tide
+   clock page give about real navigation or shore access?” Then: “Compare that
+   with the salt marsh pilot result. What remains uncertain?” Inspect the actual
+   answers and open their read sources. The atlas explicitly rejects real-world
+   navigation use; the pilot's limitations must remain visible. Without a key,
+   record the unavailable state and leave real-model acceptance open.
+5. Reload the conversation, confirm its locally retained turns, then delete it
+   and verify its removal. Stop and restart the demo; reopen the edited article
+   and saved Home choice. Demo edits persist, while conversation deletion remains
+   a browser-local action.
+
+Use the separate real-provider gate below for structural tool/read-only checks.
+Human answer inspection and physical Android/iOS installation still need their
+own evidence; viewport emulation establishes neither.
 
 For a repeatable real-provider release gate instead of a manual chat, run:
 

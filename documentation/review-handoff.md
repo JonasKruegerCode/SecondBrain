@@ -162,12 +162,19 @@ unchanged. Owned source repositories, vaults, browser state and page receipts ar
 not uploaded. This gate does not establish a private or remote Git migration.
 
 For the opt-in tall-map probe, create an isolated vault with
-`python -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,
-start `scripts/run-wiki-demo.py --vault .demo/tall-vault`, then run
+`"$WIKI_PYTHON" -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,
+start `"$WIKI_PYTHON" scripts/run-wiki-demo.py --vault .demo/tall-vault`, then run
 `PLAYWRIGHT_TALL=1 npm run test:browser -- e2e/tall.spec.ts` from `frontend`.
-Use the installed backend environment and `PYTHONPATH=backend/src` for the
-Python commands. This uses real Markdown/Git and graph services, with no model
+Use the selected Poetry Python from the setup above and export
+`PYTHONPATH="$PWD/backend/src"` from the repository root before the Python
+commands. This uses real Markdown/Git and graph services, with no model
 calls; it is separate from the normal browser CI suite.
+
+For the human presentation route and its evidence checklist, use the
+[manual demo rehearsal](demo-start.md#manual-presentation-rehearsal). It includes
+readability, actual saved content/history, galaxy link evidence, two related
+questions with source inspection, local deletion and restart. It is a recipe,
+not a claim that real-model or physical-device acceptance has passed.
 
 With explicit approval for paid external calls and a real key:
 
