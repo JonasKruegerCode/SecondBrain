@@ -718,6 +718,9 @@ async function save() {
 }
 window.addEventListener("popstate", event => {
   history.scrollRestoration = "manual";
+  // Traversal can arrive before the last scroll event. Manual restoration
+  // leaves the outgoing view in place until this handler replaces it.
+  rememberReadingPoint();
   const entry = readNavigationEntry(event.state);
   const targetUrl = location.pathname + location.search + location.hash;
   if (restoringHistory) {
