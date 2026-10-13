@@ -46,6 +46,13 @@ while the editor has unsaved changes or a save response is pending, including an
 unchanged save. The notice explains whether to save/discard or wait for saving.
 Once safe, that action sends `SKIP_WAITING` and reloads the app once.
 
+Unsent chat messages and pending replies also block the update. Send or clear
+the composer, then wait for the answer to finish. If browser storage fails,
+nonempty unsaved conversations remain protected in the current document even
+after navigating to an article. Recover storage and persist the conversation,
+or deliberately delete its unsaved messages, before updating. The notice
+explains which state is blocking reload; it does not add a backend chat archive.
+
 If another tab activates the worker, a tab with unsaved changes or a pending
 save keeps its current document and editor. Its update notice remains available;
 after saving or deliberately discarding, **Update now** reloads into the active
@@ -85,6 +92,10 @@ cache. Additional browser cases verify that a second tab's update preserves the
 exact unsaved draft without a native unload dialog, then allows save or discard
 before reloading. A held response from the real save API also verifies the guard
 when the markdown is unchanged; the response is delayed, not replaced with a stub.
+Chat cases cover both typing before/after an update offer, foreign-tab activation
+with an unsent message or pending reply, and storage recovery/deletion after
+article navigation. The worker transitions and reloads are real browser actions;
+chat replies and full-storage errors in these cases are explicitly scripted.
 
 These checks are browser emulation, not a physical Android/iOS installation.
 Homescreen creation, standalone launch, OS icon rendering and a production HTTPS

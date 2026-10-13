@@ -281,6 +281,8 @@ function renderPwaState() {
         ? "A new version is ready. Wait for your chat reply before updating."
       : chatReloadBlocker() === "draft"
         ? "A new version is ready. Send or clear your message before updating."
+      : chatReloadBlocker() === "storage"
+        ? "A new version is ready. Recover browser storage or delete unsaved conversations before updating."
       : !canReloadApp()
         ? "A new version is ready. Save or discard your changes before updating."
         : "A new version of Secondbrain is ready.";

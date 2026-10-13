@@ -38,7 +38,13 @@ let tabTombstones: Tombstone[] | undefined;
 let tabDirtyIds: Set<string> | undefined;
 let reloadBlocker: () => "draft" | "reply" | undefined = () => undefined;
 export function chatReloadBlocker() {
-  return reloadBlocker();
+  const active = reloadBlocker();
+  if (active) return active;
+  // Failed writes survive SPA navigation only in this document. Protect them
+  // even after Chat is unmounted, until persisted or deliberately deleted.
+  if (tabConversations?.some(item => item.messages.length > 0 && tabDirtyIds?.has(item.id)))
+    return "storage";
+  return undefined;
 }
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

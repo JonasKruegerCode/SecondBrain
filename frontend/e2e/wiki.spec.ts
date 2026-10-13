@@ -2334,6 +2334,80 @@ for (const finish of ["clear", "send"] as const) {
   });
 }
 
+for (const finish of ["recover", "delete"] as const) {
+  test(`PWA retains session-only chat across navigation and another tab's update until ${finish}`, async ({ page, context }, testInfo) => {
+    const proxy = await pwaUpdateProxy();
+    const other = await context.newPage();
+    const question = "Synthetic unsaved storage question.";
+    const answer = "Synthetic reply retained only in this tab.";
+    await page.addInitScript(() => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key === "secondbrain.chat.conversations.v1")
+          throw new DOMException("Synthetic full storage", "QuotaExceededError");
+        return set.call(this, key, value);
+      };
+      window.addEventListener("synthetic-storage-ready", () => {
+        Storage.prototype.setItem = set;
+      }, { once: true });
+    });
+    await page.route("**/api/wiki/chat", route => route.fulfill({ json: { answer, sources: [], activity: [] } }));
+    try {
+      await page.goto(`${proxy.origin}/chat`);
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await other.goto(`${proxy.origin}/?overview=1`);
+      await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await page.getByLabel("Message").fill(question);
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect(page.locator(".chat-message.assistant")).toContainText(answer);
+      await expect(page.locator(".chat-storage-notice")).toContainText("only in this tab");
+      expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toBeNull();
+      await offerPwaUpdate(page, proxy);
+      const notice = page.locator('.pwa-notice[data-kind="update"]');
+      await expect(notice).toContainText("Recover browser storage or delete unsaved conversations");
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await page.getByRole("link", { name: "Home", exact: true }).click();
+      await expect(page.locator("article h1")).toBeVisible();
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await page.evaluate(() => {
+        (window as any).__pwaStorageDocument = "session-only-document";
+        (window as any).__pwaStorageControllerChanges = 0;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          (window as any).__pwaStorageControllerChanges++;
+        });
+      });
+      await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+      await Promise.all([other.waitForEvent("load"), other.getByRole("button", { name: "Update now" }).click()]);
+      await page.waitForFunction(() => (window as any).__pwaStorageControllerChanges === 1);
+      expect(await page.evaluate(() => (window as any).__pwaStorageDocument)).toBe("session-only-document");
+      await page.getByRole("link", { name: "Chat", exact: true }).click();
+      await expect(page.locator(".chat-message.assistant")).toContainText(answer);
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await page.screenshot({ path: testInfo.outputPath(`update-chat-storage-${finish}.png`), fullPage: true });
+      if (finish === "recover") {
+        await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+        await page.getByRole("button", { name: "New", exact: true }).click();
+        await page.locator(".chat-history-list button").filter({ hasText: question }).click();
+        await expect(page.locator(".chat-storage-notice")).toHaveCount(0);
+        expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toContain(answer);
+      } else {
+        await page.getByRole("button", { name: "Delete conversation" }).click();
+        await expect(page.locator(".chat-message")).toHaveCount(0);
+      }
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+      await Promise.all([page.waitForEvent("load"), notice.getByRole("button", { name: "Update now" }).click()]);
+      expect(await page.evaluate(() => (window as any).__pwaStorageDocument)).toBeUndefined();
+      await expect(page.locator('.pwa-notice[data-kind="update"]')).toBeHidden();
+      if (finish === "recover") await expect(page.locator(".chat-message.assistant")).toContainText(answer);
+      else await expect(page.locator(".chat-message")).toHaveCount(0);
+    } finally {
+      await other.close();
+      await page.close();
+      await proxy.close();
+    }
+  });
+}
+
 test("PWA blocks update during an unchanged save until the real response arrives", async ({ page, context, request }) => {
   const fixture = await create(request, "# PWA saving fixture\nSynthetic unchanged text.");
   const proxy = await pwaUpdateProxy();
