@@ -86,7 +86,7 @@ repository root (the subshells keep the terminal there):
 
 ```sh
 (cd backend && poetry sync --no-interaction)
-(cd frontend && npm ci && npx playwright install chromium)
+(cd frontend && npm ci && npx playwright install --with-deps chromium)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
 make demo PYTHON="$WIKI_PYTHON"
 make acceptance PYTHON="$WIKI_PYTHON"

@@ -7,20 +7,22 @@ Use Linux or WSL for this milestone: managed worker/template locks use `fcntl`,
 and atomic plain export requires Linux `renameat2`. Native Windows execution has
 not been accepted; the intended container runtime is Linux.
 
-From the repository root, use your prepared backend Python environment and a new
-destination. Replace `python` below with that environment's executable.
+Install the locked dependencies using the [main setup instructions](../README.md).
+From the repository root, select Poetry's actual Python executable and a new
+destination:
 
 ```sh
 export PYTHONPATH="$PWD/backend/src"
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
 
 # An empty persistent wiki, with no fictional pages.
-python -m second_brain.wiki.setup --vault .demo/empty --mode empty
+"$WIKI_PYTHON" -m second_brain.wiki.setup --vault .demo/empty --mode empty
 
 # The explicitly fictional twelve-page Lantern Bay atlas.
-python -m second_brain.wiki.setup --vault .demo/example --mode template
+"$WIKI_PYTHON" -m second_brain.wiki.setup --vault .demo/example --mode template
 
 # A committed, clean, complete local Git clone; optionally scope its wiki folder.
-python -m second_brain.wiki.setup --vault .demo/imported --mode import \
+"$WIKI_PYTHON" -m second_brain.wiki.setup --vault .demo/imported --mode import \
   --source /absolute/path/to/local-clone --prefix 1_knowledge/wiki \
   --request-id first-import
 ```
@@ -32,7 +34,7 @@ publication revision; `current_revision` separately shows any later content.
 For deliberate later replacements, use the [guarded importer](wiki-import.md)
 with a reviewed whole-wiki base revision.
 
-Rehearse this path with `make acceptance-import PYTHON=backend/.venv/bin/python`
+Rehearse this path with `make acceptance-import PYTHON="$WIKI_PYTHON"`
 from the repository root after installing the locked dependencies and Playwright
 Chromium. The isolated runner uses only synthetic local Git repositories: an
 empty source and the public twelve-page atlas with original source history.
@@ -49,7 +51,7 @@ Start the chosen profile, for example:
 
 ```sh
 SECOND_BRAIN_WIKI_VAULT="$PWD/.demo/example" \
-  python -m uvicorn second_brain.wiki.api:app_factory --factory \
+  "$WIKI_PYTHON" -m uvicorn second_brain.wiki.api:app_factory --factory \
   --host 127.0.0.1 --port 8000
 ```
 

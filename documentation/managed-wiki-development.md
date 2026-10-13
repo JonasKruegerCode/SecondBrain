@@ -138,7 +138,8 @@ Local MCP uses the **same** WikiStore:
 
 ```sh
 SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/managed-vault \
-PYTHONPATH=backend/src backend/.venv/bin/python -m second_brain.wiki.mcp
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+PYTHONPATH=backend/src "$WIKI_PYTHON" -m second_brain.wiki.mcp
 ```
 
 This is a local stdio transport. The `wiki://guidance` resource documents concise
@@ -195,7 +196,8 @@ not claimed. Do not use this milestone as the final production migration.
 ### Browser regression command
 
 Start the isolated demo, then run `cd frontend && npm run test:browser`. Install
-Playwright Chromium once with `npx playwright install chromium`; an existing
+Playwright Chromium and Linux host libraries once with
+`npx playwright install --with-deps chromium`; an existing
 compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use only
 a disposable synthetic vault: the suite deliberately creates, edits and deletes
 fixture pages. Test artifacts are kept under the ignored `.demo` directory.
@@ -307,7 +309,8 @@ their individual links. The browser contract also confirms that core positions s
 stable after a real page mutation. This is useful evidence for the checked fixture,
 not production-scale or final galaxy acceptance.
 
-Run the reproducible scale path with `make demo-scale PYTHON=backend/.venv/bin/python`.
+Run the reproducible scale path with `make demo-scale PYTHON="$WIKI_PYTHON"`,
+using the Poetry executable selected in the startup recipe above.
 Then, in another terminal, run
 `cd frontend && PLAYWRIGHT_SCALE=1 npm run test:browser -- e2e/scale.spec.ts`.
 The normal browser suite skips this costly opt-in fixture. Its current case count

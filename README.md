@@ -65,7 +65,7 @@ To rehearse the normal acceptance path in one command, use a fresh disposable
 vault and the real local API/frontend:
 
 ```sh
-(cd frontend && npx playwright install chromium)
+(cd frontend && npx playwright install --with-deps chromium)
 make acceptance PYTHON="$WIKI_PYTHON"
 ```
 

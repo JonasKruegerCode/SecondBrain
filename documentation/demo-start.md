@@ -6,25 +6,23 @@ Use this profile to try the core editable wiki before attempting a migration of 
 
 ## Run locally
 
-From the repository root, prepare the Python backend environment according to the main setup instructions. The backend must be importable, for example by using the backend's Poetry environment or setting `PYTHONPATH=backend/src`. Then explicitly choose a **new empty directory**:
+Use the Linux/WSL prerequisites in the [main setup instructions](../README.md).
+From the repository root, install the locked dependencies, select Poetry's actual
+Python executable and start both services with the isolated launcher:
 
 ```bash
-export PYTHONPATH="$PWD/backend/src"
-python -m second_brain.wiki.demo --vault .demo/vault
-SECOND_BRAIN_WIKI_VAULT="$PWD/.demo/vault" \
-  python -m uvicorn second_brain.wiki.api:app_factory --factory \
-  --host 127.0.0.1 --port 8000
+(cd backend && poetry sync --no-interaction)
+(cd frontend && npm ci)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+make demo PYTHON="$WIKI_PYTHON"
 ```
 
-In a second terminal, from the repository root:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open the local Vite URL printed in that terminal. Keep the API terminal running. The frontend development profile connects to the local standalone wiki API.
+Open <http://127.0.0.1:5173>. The launcher uses the separate `.demo/vault`,
+requires no remote or model key, clears inherited OpenRouter access and retains
+your later demo edits. It never seeds an existing nonempty wiki implicitly.
+For a new empty destination, explicit template choice or Git import, use the
+[first-start profiles](first-start.md). Stop the launcher before starting another
+profile on the same ports.
 
 The combined launcher treats both services as long-running peers. If either API
 or frontend exits unexpectedly, it stops the other service and returns a nonzero
@@ -38,7 +36,9 @@ The normal automated demo path can be exercised without coordinating two
 terminals:
 
 ```sh
-make acceptance PYTHON=backend/.venv/bin/python
+(cd frontend && npx playwright install --with-deps chromium)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+make acceptance PYTHON="$WIKI_PYTHON"
 ```
 
 The acceptance runner creates a new vault below `.demo/acceptance/`, starts the
@@ -85,7 +85,7 @@ regression suite.
 For a repeatable real-provider release gate instead of a manual chat, run:
 
 ```bash
-OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON=backend/.venv/bin/python
+OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON="$WIKI_PYTHON"
 ```
 
 The gate seeds a fresh fictional vault, asks two related questions, requires
@@ -107,7 +107,7 @@ The polished atlas stays deliberately small. For an opt-in real-service scale
 check, create a fresh generated 320-page vault and start the same API/frontend:
 
 ```sh
-make demo-scale PYTHON=backend/.venv/bin/python
+make demo-scale PYTHON="$WIKI_PYTHON"
 ```
 
 In a second terminal, run its separate browser contract:
