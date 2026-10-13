@@ -2329,21 +2329,24 @@ for (const finish of ["save", "discard"] as const) {
 }
 
 
-for (const finish of ["clear", "send"] as const) {
+for (const finish of ["clear", "send", "stop"] as const) {
   test(`PWA protects a chat draft through ${finish} and another tab's update`, async ({ page, context }, testInfo) => {
-    await page.setViewportSize({ width: finish === "send" ? 390 : 1440, height: 1000 });
+    await page.setViewportSize({ width: finish === "clear" ? 1440 : 390, height: 1000 });
     const proxy = await pwaUpdateProxy();
     const other = await context.newPage();
     const question = "What does the fictional tide clock measure?";
     const answer = "Synthetic update test reply: the tide clock marks a navigation window.";
     let releaseReply!: () => void;
     let reachedReply!: () => void;
+    let deliveredReply!: () => void;
     const pendingReply = new Promise<void>(resolve => { releaseReply = resolve; });
     const replyArrived = new Promise<void>(resolve => { reachedReply = resolve; });
+    const replyDelivered = new Promise<void>(resolve => { deliveredReply = resolve; });
     await page.route("**/api/wiki/chat", async route => {
       reachedReply();
       await pendingReply;
       await route.fulfill({ json: { answer, sources: [], activity: [] } });
+      deliveredReply();
     });
     try {
       await page.goto(`${proxy.origin}/chat`);
@@ -2352,7 +2355,7 @@ for (const finish of ["clear", "send"] as const) {
       await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
       const input = page.getByRole("textbox", { name: "Message", exact: true });
       // Cover both a draft that predates the offer and typing after the offer.
-      if (finish === "send") await input.fill(question);
+      if (finish !== "clear") await input.fill(question);
       await offerPwaUpdate(page, proxy);
       const notice = page.locator('.pwa-notice[data-kind="update"]');
       if (finish === "clear") {
@@ -2369,8 +2372,8 @@ for (const finish of ["clear", "send"] as const) {
         });
       });
       await page.screenshot({ path: testInfo.outputPath(`update-chat-draft-${finish}.png`), fullPage: true });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(finish === "send" ? 390 : 1440);
-      if (finish === "send") {
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(finish === "clear" ? 1440 : 390);
+      if (finish !== "clear") {
         await page.getByRole("button", { name: "Send", exact: false }).click();
         await replyArrived;
         await expect(notice).toContainText("Wait for your chat reply");
@@ -2394,6 +2397,17 @@ for (const finish of ["clear", "send"] as const) {
         releaseReply();
         await expect(page.locator(".chat-message.assistant")).toContainText(answer);
         await expect.poll(() => page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toContain(answer);
+      } else if (finish === "stop") {
+        const aborted = page.waitForEvent("requestfailed", request => new URL(request.url()).pathname === "/api/wiki/chat");
+        await page.getByRole("button", { name: "Stop reply", exact: true }).click();
+        await aborted;
+        releaseReply();
+        await replyDelivered;
+        await expect(page.locator(".chat-error")).toContainText("Reply stopped.");
+        await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+        const stored = await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"));
+        expect(stored).toContain(question);
+        expect(stored).not.toContain(answer);
       } else {
         await input.fill("");
       }
@@ -2407,6 +2421,10 @@ for (const finish of ["clear", "send"] as const) {
       if (finish === "send") {
         await expect(page.locator(".chat-message.user")).toContainText(question);
         await expect(page.locator(".chat-message.assistant")).toContainText(answer);
+      } else if (finish === "stop") {
+        await expect(page.locator(".chat-message.user")).toContainText(question);
+        await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+        await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
       } else await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("");
     } finally {
       releaseReply();
