@@ -550,8 +550,18 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     complete("Home");
   } catch (e) {
     if (run !== generation) return;
-    main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${(e as any).status === 404 ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc((e as Error).message)}</p><a href="/?overview=1" class="primary">Back to home →</a></section>`;
-    complete((e as any).status === 404 ? "Missing page" : "Workspace unavailable");
+    const missing = (e as any).status === 404;
+    const message = e instanceof TypeError
+      ? "The workspace could not be reached. Check your connection and try again."
+      : (e as Error).message;
+    main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${missing ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc(message)}</p>${missing ? "" : '<p><button id="retry-workspace" class="primary">Try again →</button></p>'}<a href="/?overview=1" class="${missing ? "primary" : "subtle"}">Back to home →</a></section>`;
+    const retry = main.querySelector<HTMLButtonElement>("#retry-workspace");
+    if (retry) retry.onclick = () => {
+      // Reload this visit, retaining its URL and history position. A later
+      // navigation must not revive this failed route through a stale button.
+      if (run === generation) void route(true, false, readingPoint);
+    };
+    complete(missing ? "Missing page" : "Workspace unavailable");
   }
 }
 function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {

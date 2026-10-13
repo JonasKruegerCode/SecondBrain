@@ -149,11 +149,17 @@ test("first start: empty workspace, real first pages, edit and saved preference"
   await screenshots(page, info, "first-start-scripted-transport-error", async () => {
     await expect(page.getByRole("heading", { name: "Couldn’t open the workspace." })).toBeVisible();
     await expect(page.locator(".galaxy")).toHaveCount(0);
+    await expect(page.locator("main")).toContainText("Check your connection and try again.");
   });
-  await page.getByRole("link", { name: "Home", exact: true }).click();
-  await page.getByRole("link", { name: "Galaxy", exact: true }).click();
+  const failedUrl = page.url();
+  const historyLength = await page.evaluate(() => history.length);
+  await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.locator(".galaxy-snapshot")).toContainText("2 pages");
   await expect(page.locator(".galaxy-star")).toHaveCount(2);
+  expect(page.url()).toBe(failedUrl);
+  expect(await page.evaluate(() => history.length)).toBe(historyLength);
+  await expect(page.locator("main h1")).toBeFocused();
+  await expect(page.getByRole("link", { name: "Galaxy", exact: true })).toHaveAttribute("aria-current", "page");
   await page.goto("/");
   await expect(page).toHaveURL(/\/wiki\/first-note$/);
   await screenshots(page, info, "first-start-saved-note", async () => {
