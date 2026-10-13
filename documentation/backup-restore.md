@@ -9,11 +9,14 @@ concerns; derived indexes are rebuilt against the restored content revision.
 
 ## Create a backup
 
-From the repository root, with the backend environment prepared:
+Run all commands from the repository root. Prepare the locked backend and select
+Poetry's actual Python rather than assuming an activated shell or `.venv` path:
 
 ```sh
+(cd backend && poetry sync --no-interaction)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
 export PYTHONPATH="$PWD/backend/src"
-python -m second_brain.wiki.backup create \
+"$WIKI_PYTHON" -m second_brain.wiki.backup create \
   --vault /absolute/path/to/managed-vault \
   --archive /absolute/path/to/backups/wiki-2026-10-10.tar.gz
 ```
@@ -35,7 +38,7 @@ recorded provider/remote state describe the same operational moment.
 Restore only into a new path:
 
 ```sh
-python -m second_brain.wiki.backup restore \
+"$WIKI_PYTHON" -m second_brain.wiki.backup restore \
   --archive /absolute/path/to/backups/wiki-2026-10-10.tar.gz \
   --vault /absolute/path/to/restored-vault
 ```
@@ -52,7 +55,7 @@ optional providers:
 
 ```sh
 SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/restored-vault \
-  python -m second_brain.wiki.delivery_runtime --once
+  "$WIKI_PYTHON" -m second_brain.wiki.delivery_runtime --once
 ```
 
 Index receipts that do not match the restored content are reported as pending and
@@ -69,6 +72,7 @@ checksum/member validation, refusal to overwrite, and the real CLI round trip.
 Truncated gzip streams, invalid trailers and manifests are rejected before
 publication; CLI failures return structured `backup_invalid` errors. Valid plain
 tar, gzip, bzip2 and xz archives retain their existing restore support.
-Container invocation, named-volume recovery, production reverse proxy/HTTPS,
-external provider reconstruction, and a real off-host disaster restore remain
-deployment checks; they are not implied by the native test.
+The separate [disposable stack acceptance](managed-stack-acceptance.md) covers
+container invocation and named-volume recovery with synthetic content. Neither
+that isolated stack nor the native test establishes production reverse
+proxy/HTTPS, external provider reconstruction, or a real off-host disaster restore.

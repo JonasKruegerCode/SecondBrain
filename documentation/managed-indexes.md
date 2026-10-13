@@ -35,10 +35,11 @@ returns distinct page IDs excluding seed IDs, and checks the generation of every
 node along each path. Hops are restricted to 1–3 and limits to 1–1000. The managed
 account needs permission to create the uniqueness constraint.
 
-The adapter's transaction behavior and Cypher construction have been tested with
-an explicit mocked transaction. A live Neo4j server has **not** been verified in
-this validation; server version, privileges, constraint creation, transaction
-rollback, and query execution still need an integration check in the deployment.
+Unit tests cover transaction behavior and Cypher construction with an explicit
+mocked transaction. The separate [disposable server acceptance](managed-index-acceptance.md)
+also exercises real Neo4j with synthetic content. Neither establishes the
+server version, account privileges, or operational behavior of your deployment;
+verify that configuration separately.
 
 ## Qdrant
 
@@ -93,32 +94,48 @@ these exact opt-in flags equal `1`:
 | Vector | `SECOND_BRAIN_WIKI_VECTOR_INDEX=1` | `QDRANT_URL`, `SECOND_BRAIN_WIKI_VECTOR_DIMENSION`, existing `LLM_PROVIDER` and embedding-provider credentials/model settings; optional `QDRANT_API_KEY` |
 
 The vector opt-in deliberately loads the existing embedding provider factory.
+Choose `LLM_PROVIDER=openrouter` with server-side `OPENROUTER_API_KEY`, or
+`LLM_PROVIDER=gcp` with `GCP_API_KEY`. Set `EMBEDDING_MODEL` deliberately and
+match `SECOND_BRAIN_WIKI_VECTOR_DIMENSION` to that model's actual output.
+`OPENROUTER_EMBEDDING_PROVIDER` and `GCP_ENDPOINT_URL` are optional routing
+settings for their respective providers. Keep keys outside the vault and
+frontend; these commands can make paid embedding requests when vector indexing
+is enabled. Provider/model quality remains a separate acceptance gate.
 Without opt-in, ordinary managed wiki startup needs neither backend nor an
 embedding provider. Keep the same configuration in API, MCP, and worker processes.
 
-From the backend environment, build configured indexes once:
+Run from the repository root with the locked backend dependencies and the
+explicit provider configuration above. Select Poetry's actual Python:
 
 ```sh
-python -m second_brain.wiki.indexes
+(cd backend && poetry sync --no-interaction)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+export PYTHONPATH="$PWD/backend/src"
+```
+
+Build configured indexes once:
+
+```sh
+"$WIKI_PYTHON" -m second_brain.wiki.indexes
 ```
 
 Force fresh builds even for an already current snapshot:
 
 ```sh
-python -m second_brain.wiki.indexes --rebuild
+"$WIKI_PYTHON" -m second_brain.wiki.indexes --rebuild
 ```
 
 Preview cleanup candidates while retaining the current and previous ready
 generation and requiring a 24-hour grace period:
 
 ```sh
-python -m second_brain.wiki.indexes --prune
+"$WIKI_PYTHON" -m second_brain.wiki.indexes --prune
 ```
 
 After reviewing that output, apply the same plan explicitly:
 
 ```sh
-python -m second_brain.wiki.indexes --prune --apply
+"$WIKI_PYTHON" -m second_brain.wiki.indexes --prune --apply
 ```
 
 `--keep-ready` and `--min-age-hours` adjust the conservative defaults. Cleanup

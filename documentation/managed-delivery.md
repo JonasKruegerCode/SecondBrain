@@ -45,7 +45,17 @@ synchronization. Configuring a reviewed existing remote commits to replacing its
 selected Markdown set with the managed snapshot; review/import those contents
 first. Files outside the prefix and non-Markdown files are preserved.
 
-Example for a deliberately empty synthetic branch:
+Run from the repository root with the locked backend dependencies. Select
+Poetry's actual Python rather than a fixed `.venv` location:
+
+```sh
+(cd backend && poetry sync --no-interaction)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+export PYTHONPATH="$PWD/backend/src"
+```
+
+Example for a deliberately empty synthetic branch (create the disposable bare
+repository first, as in the [explicit Git workflow](managed-git-sync.md)):
 
 ```sh
 export SECOND_BRAIN_WIKI_GIT_SYNC=1
@@ -54,7 +64,7 @@ export SECOND_BRAIN_WIKI_GIT_BRANCH=wiki
 export SECOND_BRAIN_WIKI_GIT_PREFIX=notes
 export SECOND_BRAIN_WIKI_GIT_EXPECTED_REMOTE_REVISION=empty
 export SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/managed-vault
-PYTHONPATH=backend/src backend/.venv/bin/python -m uvicorn \
+"$WIKI_PYTHON" -m uvicorn \
   second_brain.wiki.api:app_factory --factory --host 127.0.0.1 --port 8000
 ```
 
@@ -84,10 +94,10 @@ local wiki. Then acknowledge the reviewed local whole-wiki head and the actual
 reviewed remote pointer:
 
 ```sh
-PYTHONPATH=backend/src backend/.venv/bin/python -m second_brain.wiki.delivery_runtime --reconcile \
+"$WIKI_PYTHON" -m second_brain.wiki.delivery_runtime --reconcile \
   --base-revision REVIEWED_MANAGED_HEAD --expected-remote-revision REVIEWED_REMOTE_HEAD
 # For a deliberately reviewed missing branch, use --remote-empty instead.
-PYTHONPATH=backend/src backend/.venv/bin/python -m second_brain.wiki.delivery_runtime --once
+"$WIKI_PYTHON" -m second_brain.wiki.delivery_runtime --once
 ```
 
 Keep the same explicit target environment above. Reconciliation only operates

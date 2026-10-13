@@ -1,10 +1,20 @@
 # Plain Markdown export
 
-Run from the backend environment with an explicit vault, output directory and
-expected whole-vault revision (the `revision` returned by `WikiStore.snapshot()`):
+Run from the repository root after preparing the locked backend dependencies.
+Select Poetry's actual environment; it need not live in `backend/.venv`:
 
 ```sh
-python -m second_brain.wiki.exporter --vault /path/to/vault \
+(cd backend && poetry sync --no-interaction)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+export PYTHONPATH="$PWD/backend/src"
+```
+
+Choose an explicit vault, output directory and expected whole-vault revision
+(the `revision` returned by `WikiStore.snapshot()`, also exposed by the graph).
+This is a Git snapshot ID, not a page revision token:
+
+```sh
+"$WIKI_PYTHON" -m second_brain.wiki.exporter --vault /path/to/vault \
   --destination /path/to/plain-wiki --base-revision COMMIT_SHA
 ```
 

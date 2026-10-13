@@ -107,21 +107,25 @@ no key provisioning or private HTTPS credential helper is provided.
 
 ## Explicit command-line workflow
 
-With the backend environment active, set `PYTHONPATH=backend/src` from the checkout
-root. Choose your own target and branch; this example uses a **disposable local
+Run from the checkout root with the locked backend dependencies and Poetry's
+actual Python. Choose your own target and branch; this example uses a **disposable local
 bare repository**, not an existing personal or production target:
 
 ```sh
+(cd backend && poetry sync --no-interaction)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+export PYTHONPATH="$PWD/backend/src"
+
 git init --bare /absolute/path/to/synthetic-remote.git
 
-python -m second_brain.wiki.git_cli --vault /absolute/path/to/managed-vault \
+"$WIKI_PYTHON" -m second_brain.wiki.git_cli --vault /absolute/path/to/managed-vault \
   --remote /absolute/path/to/synthetic-remote.git --branch wiki inspect
 
-python -m second_brain.wiki.git_cli --vault /absolute/path/to/managed-vault \
+"$WIKI_PYTHON" -m second_brain.wiki.git_cli --vault /absolute/path/to/managed-vault \
   --remote /absolute/path/to/synthetic-remote.git --branch wiki push \
   --base-revision REVIEWED_MANAGED_HEAD --remote-empty --request-id first-push
 
-python -m second_brain.wiki.git_cli --vault /absolute/path/to/new-managed-vault \
+"$WIKI_PYTHON" -m second_brain.wiki.git_cli --vault /absolute/path/to/new-managed-vault \
   --remote /absolute/path/to/synthetic-remote.git --branch wiki pull \
   --managed-empty --expected-remote-revision REVIEWED_REMOTE_HEAD \
   --request-id first-pull
