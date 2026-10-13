@@ -128,7 +128,6 @@ def test_openrouter_acceptance_keeps_only_structural_evidence() -> None:
     summary = validate(
         result,
         required_page="tide-clock",
-        required_terms=("not", "forecast"),
     )
 
     assert summary == {
@@ -141,7 +140,7 @@ def test_openrouter_acceptance_keeps_only_structural_evidence() -> None:
     assert answer not in json.dumps(summary)
 
 
-def test_openrouter_acceptance_requires_the_expected_read_and_fact() -> None:
+def test_openrouter_acceptance_requires_the_expected_read() -> None:
     values = openrouter_acceptance_runner()
     validate = cast(Callable[..., dict[str, Any]], values["_validate_turn"])
     result = {
@@ -152,7 +151,7 @@ def test_openrouter_acceptance_requires_the_expected_read_and_fact() -> None:
     }
 
     with pytest.raises(values["AcceptanceError"], match="required page tide-clock"):
-        validate(result, required_page="tide-clock", required_terms=("not",))
+        validate(result, required_page="tide-clock")
 
 
 def test_openrouter_acceptance_runs_two_turns_without_mutating_fixture(tmp_path: Path) -> None:
@@ -196,11 +195,98 @@ def test_openrouter_acceptance_runs_two_turns_without_mutating_fixture(tmp_path:
             return self.replies.pop(0)
 
     provider = Provider()
-    result = asyncio.run(run_chat(tmp_path, lambda: provider))
+    progress = values["Progress"]()
+    result = asyncio.run(run_chat(tmp_path, lambda: provider, progress))
 
     assert result["first_turn"]["read_source_ids"] == ["tide-clock"]
     assert result["follow_up"]["read_source_ids"] == ["salt-marsh"]
+    assert progress.provider_invocations_attempted == 4
+    assert progress.provider_invocations_completed == 4
+    assert progress.turns_attempted == 2
+    assert progress.turns_completed == 2
+    assert progress.vault_unchanged is True
     assert any(
         message.get("role") == "assistant" and "not a real forecast" in message.get("content", "")
         for message in provider.requests[2]
     )
+
+
+@pytest.mark.parametrize("fail_stage", [
+    "seed", "provider_init", "first_turn", "follow_up", "mutation", "cleanup", "success",
+])
+def test_openrouter_failure_evidence_records_only_observed_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_stage: str,
+) -> None:
+    values = openrouter_acceptance_runner()
+    main = cast(Callable[..., int], values["main"])
+    namespace = main.__globals__
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-no-network-key")
+    monkeypatch.setitem(namespace, "_artifact_dir", lambda root: tmp_path)
+    seed = namespace["seed_vault"]
+
+    class Provider:
+        def __init__(self) -> None:
+            if fail_stage == "provider_init":
+                raise RuntimeError("sensitive provider detail")
+            self.calls = 0
+
+        async def tool_chat(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            self.calls += 1
+            if fail_stage == "mutation":
+                store = values["WikiStore"](tmp_path / "vault")
+                home = store.get_page("home")
+                store.save_page("home", "# Synthetic changed home\n", home["revision"], "change")
+                raise RuntimeError("sensitive mutation detail")
+            if fail_stage == "first_turn" or fail_stage == "follow_up" and self.calls == 3:
+                raise RuntimeError("sensitive provider detail")
+            if self.calls in (1, 3):
+                page_id = "tide-clock" if self.calls == 1 else "salt-marsh"
+                return {"tool_calls": [{"id": "read", "function": {
+                    "name": "read_page", "arguments": json.dumps({"page_id": page_id}),
+                }}]}
+            # These intentionally wrong fixture claims cannot be blessed as
+            # answer quality merely because they mention the question's terms.
+            return {"content": (
+                "Use this real forecast for navigation and shore access. "
+                "The experiment proves that tide alone caused the difference."
+            )}
+
+    async def run(vault: Path, *, progress: Any) -> dict[str, Any]:
+        return cast(dict[str, Any], await values["_run_chat"](vault, Provider, progress))
+
+    def seed_or_fail(vault: Path) -> Any:
+        if fail_stage == "seed":
+            raise RuntimeError("sensitive seed detail")
+        return seed(vault)
+
+    monkeypatch.setitem(namespace, "seed_vault", seed_or_fail)
+    monkeypatch.setitem(namespace, "_run_chat", run)
+    if fail_stage == "cleanup":
+        cleanup = MagicMock()
+        cleanup.rmtree.side_effect = PermissionError("sensitive cleanup detail")
+        monkeypatch.setitem(namespace, "shutil", cleanup)
+    assert main(["--confirm-paid-provider"]) == (0 if fail_stage == "success" else 1)
+    evidence = json.loads((tmp_path / "result.json").read_text())
+    expected = {
+        "seed": (0, 0, 0, 0, None),
+        "provider_init": (0, 0, 0, 0, True),
+        "first_turn": (1, 0, 1, 0, True),
+        "follow_up": (3, 2, 2, 1, True),
+        "mutation": (1, 0, 1, 0, False),
+        "cleanup": (4, 4, 2, 2, True),
+        "success": (4, 4, 2, 2, True),
+    }[fail_stage]
+    assert tuple(evidence[key] for key in (
+        "provider_invocations_attempted", "provider_invocations_completed",
+        "turns_attempted", "turns_completed", "vault_unchanged",
+    )) == expected
+    assert evidence["multi_turn"] is (fail_stage in ("cleanup", "success"))
+    assert evidence["acceptance_scope"] == "structural"
+    assert evidence["answer_quality_reviewed"] is False
+    assert evidence["vault_retained"] is (fail_stage not in ("seed", "success"))
+    assert evidence["cleanup_attempted"] is (fail_stage in ("cleanup", "success"))
+    assert evidence["cleanup_ok"] is (
+        {"cleanup": False, "success": True}.get(fail_stage)
+    )
+    assert "sensitive" not in (tmp_path / "result.json").read_text()
+    assert "real forecast" not in (tmp_path / "result.json").read_text()

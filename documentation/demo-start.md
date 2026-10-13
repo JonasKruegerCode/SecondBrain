@@ -181,8 +181,21 @@ the model to read the named evidence pages, checks bounded tool use and the
 unchanged read-only vault, and then removes the vault on success. Its JSON
 record under `.demo/openrouter-acceptance/` contains only timings, model name,
 source IDs, counts and pass/fail metadata—never answers, prompts, credentials
-or page content. This incurs real provider usage and cannot run without the
-explicit opt-in encoded by the Make target.
+or page content. Schema 2 explicitly marks the scope as **structural** and
+`answer_quality_reviewed=false`: reading the right pages and returning bounded
+text cannot establish that an answer interprets them correctly. Mere presence
+of words such as “navigation” or “tide alone” is not a factual quality check.
+Use the manual two-question tour above to inspect the caution, comparison and
+uncertainty; a structural pass leaves that answer-quality gate open.
+
+Evidence records attempted/completed client invocations and chat turns separately.
+These counts do not prove HTTP delivery, count the client's internal retries or
+confirm provider billing. A seed failure records zero invocations/turns and
+unknown (`null`) vault integrity; an observed unchanged vault remains `true`
+even when the provider fails. This incurs real provider usage and cannot run
+without the explicit opt-in encoded by the Make target.
+Cleanup is also observed: a failed vault removal fails the run and records the
+actual retained state, with a sanitized error type and no exception details.
 
 The service worker does not cache the demo or its API responses. Turning the
 browser offline while the app is open shows the connection notice; a cold offline

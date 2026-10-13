@@ -182,8 +182,14 @@ With explicit approval for paid external calls and a real key:
 OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON="$WIKI_PYTHON"
 ```
 
-This is the only check above that establishes real OpenRouter behavior. It still
-does not establish hosted index, deployment or device behavior.
+With a real configured provider this is a structural OpenRouter check, not an
+answer-quality review. Its schema-2 evidence distinguishes attempted/completed
+client invocations and chat turns, and records vault integrity as unknown if
+not checked. Reading the required pages does not prove correct interpretation;
+the record explicitly keeps `answer_quality_reviewed=false`. Inspect the actual
+answers and cited pages through the manual tour before closing that gate.
+Client counts do not establish HTTP delivery, internal retry counts or billing.
+Hosted index, deployment and device behavior remain separate.
 
 ## Evidence snapshot
 

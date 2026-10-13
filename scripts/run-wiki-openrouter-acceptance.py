@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,29 @@ FOLLOW_UP = (
 
 class AcceptanceError(RuntimeError):
     """The real-provider result did not meet a structural acceptance criterion."""
+
+
+@dataclass
+class Progress:
+    provider_invocations_attempted: int = 0
+    provider_invocations_completed: int = 0
+    turns_attempted: int = 0
+    turns_completed: int = 0
+    vault_unchanged: bool | None = None
+
+
+class ObservedProvider:
+    """Count client invocations, without claiming HTTP delivery or billing."""
+
+    def __init__(self, provider: Any, progress: Progress) -> None:
+        self.provider = provider
+        self.progress = progress
+
+    async def tool_chat(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        self.progress.provider_invocations_attempted += 1
+        result: dict[str, Any] = await self.provider.tool_chat(*args, **kwargs)
+        self.progress.provider_invocations_completed += 1
+        return result
 
 
 def _artifact_dir(root: Path, now: datetime | None = None) -> Path:
@@ -65,7 +89,6 @@ def _validate_turn(
     result: dict[str, Any],
     *,
     required_page: str,
-    required_terms: tuple[str, ...],
 ) -> dict[str, Any]:
     answer = result.get("answer")
     sources = result.get("sources")
@@ -86,9 +109,8 @@ def _validate_turn(
         raise AcceptanceError("The chat result omitted tool-call limits.")
     if not 1 <= limits["tool_calls"] <= limits.get("max_tool_calls", 0):
         raise AcceptanceError("The provider did not complete within the tool-call contract.")
-    normalized = answer.casefold()
-    if not any(term.casefold() in normalized for term in required_terms):
-        raise AcceptanceError("The answer omitted the fixture's required caution or uncertainty.")
+    # Reading evidence and bounded text do not prove that the answer interprets
+    # it correctly. Keyword presence also accepts negated or contradictory facts.
     return {
         "answer_characters": len(answer),
         "tool_calls": limits["tool_calls"],
@@ -105,21 +127,22 @@ def _validate_turn(
 async def _run_chat(
     vault: Path,
     provider_factory: Callable[[], Any] = OpenRouterClient,
+    progress: Progress | None = None,
 ) -> dict[str, Any]:
+    progress = progress or Progress()
     store = WikiStore(vault)
     indexes = IndexCoordinator(store)
     before = _content_digest(store)
     try:
-        chat = WikiChat(store, indexes, provider_factory())
+        chat = WikiChat(store, indexes, ObservedProvider(provider_factory(), progress))
+        progress.turns_attempted += 1
         first = await asyncio.wait_for(
             chat.answer([{"role": "user", "content": FIRST_QUESTION}]),
             timeout=240,
         )
-        first_summary = _validate_turn(
-            first,
-            required_page="tide-clock",
-            required_terms=("not", "real", "forecast", "navigation", "shore access"),
-        )
+        progress.turns_completed += 1
+        first_summary = _validate_turn(first, required_page="tide-clock")
+        progress.turns_attempted += 1
         second = await asyncio.wait_for(
             chat.answer(
                 [
@@ -130,16 +153,16 @@ async def _run_chat(
             ),
             timeout=240,
         )
-        second_summary = _validate_turn(
-            second,
-            required_page="salt-marsh",
-            required_terms=("uncertain", "cannot", "several", "conditions", "tide alone"),
-        )
+        progress.turns_completed += 1
+        second_summary = _validate_turn(second, required_page="salt-marsh")
         if _content_digest(store) != before:
             raise AcceptanceError("The read-only chat changed the demo vault.")
         return {"first_turn": first_summary, "follow_up": second_summary}
     finally:
-        indexes.close()
+        try:
+            progress.vault_unchanged = _content_digest(store) == before
+        finally:
+            indexes.close()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -168,18 +191,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     status = "failed"
     failure_type: str | None = None
     turns: dict[str, Any] | None = None
+    progress = Progress()
     try:
         seed_vault(vault)
-        turns = asyncio.run(_run_chat(vault))
+        turns = asyncio.run(_run_chat(vault, progress=progress))
         status = "passed"
     except Exception as exc:  # Provider details may contain sensitive request metadata.
         failure_type = type(exc).__name__
-    keep_vault = args.keep_vault or status != "passed"
-    if not keep_vault:
-        shutil.rmtree(vault, ignore_errors=True)
+    cleanup_attempted = not args.keep_vault and status == "passed"
+    cleanup_ok: bool | None = None
+    if cleanup_attempted:
+        try:
+            shutil.rmtree(vault)
+            cleanup_ok = not vault.exists()
+        except OSError as exc:
+            cleanup_ok = False
+            failure_type = type(exc).__name__
+        if not cleanup_ok:
+            status = "failed"
     finished = datetime.now(UTC)
     evidence = {
-        "schema": 1,
+        "schema": 2,
+        "acceptance_scope": "structural",
+        "answer_quality_reviewed": False,
         "status": status,
         "started_at": started.isoformat(),
         "finished_at": finished.isoformat(),
@@ -187,16 +221,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         "provider": "openrouter",
         "model": settings.DEFAULT_MODEL,
         "fixture": "examples/demo-vault",
-        "external_model_calls": True,
-        "multi_turn": True,
+        "paid_provider_opt_in": True,
+        "provider_invocations_attempted": progress.provider_invocations_attempted,
+        "provider_invocations_completed": progress.provider_invocations_completed,
+        "turns_attempted": progress.turns_attempted,
+        "turns_completed": progress.turns_completed,
+        "multi_turn": progress.turns_completed == 2,
         "answer_content_recorded": False,
-        "vault_unchanged": status == "passed",
-        "vault_retained": keep_vault,
+        "vault_unchanged": progress.vault_unchanged,
+        "cleanup_attempted": cleanup_attempted,
+        "cleanup_ok": cleanup_ok,
+        "vault_retained": vault.exists(),
         "turns": turns,
         "failure_type": failure_type,
     }
     result_path.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
-    print(f"OpenRouter acceptance {status}. Evidence: {result_path}")
+    print(
+        f"OpenRouter structural acceptance {status}. Answer quality remains unreviewed. "
+        f"Evidence: {result_path}"
+    )
     return 0 if status == "passed" else 1
 
 
