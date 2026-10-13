@@ -3,6 +3,65 @@ import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
 
 for (const width of [390, 1440]) {
+  for (const failure of ["deleted after listing", "transport unavailable"] as const) {
+    test(`saved start falls back without changing direct URLs (${failure}, ${width})`, async ({ page, request }, info) => {
+      const fixture = await create(request, "# Synthetic saved start\n\nA recoverable starting point.");
+      let deleted = false, visitLength = 0, targetReads = 0;
+      const pattern = `**/api/wiki/pages/${fixture.id}`;
+      await page.setViewportSize({ width, height: 844 });
+      try {
+        await page.goto(`/wiki/${fixture.id}`);
+        await page.getByRole("button", { name: "Set as start page" }).click();
+        await page.goto("/search");
+        await expect(page.locator("main h1")).toHaveText("Find a thought.");
+        await page.route(pattern, async route => {
+          targetReads++;
+          visitLength = await page.evaluate(() => history.length);
+          if (failure === "deleted after listing") {
+            // The real list was returned before the real revision-guarded delete.
+            const result = await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+              base_revision: fixture.revision, request_id: randomUUID(),
+            } });
+            expect(result.ok()).toBe(true);
+            deleted = true;
+            await route.continue(); // Actual 404 from the running service.
+          } else await route.abort("failed"); // Explicit transport injection only.
+        }, { times: 1 });
+        await page.goto("/");
+        await expect(page).toHaveURL(/\/\?overview=1$/);
+        await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+        await expect(page.locator(".start-page-notice")).toContainText("could not be opened");
+        await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
+        expect(targetReads).toBe(1);
+        expect(await page.evaluate(() => history.length)).toBe(visitLength);
+        expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe(fixture.id);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: info.outputPath(`start-fallback-${failure.startsWith("deleted") ? "deleted" : "transport"}-${width}.png`), fullPage: true });
+        await page.goBack();
+        await expect(page).toHaveURL(/\/search$/);
+        await expect(page.locator("main h1")).toHaveText("Find a thought.");
+        if (!deleted) await page.route(pattern, route => route.abort("failed"), { times: 1 });
+        await page.goto(`/wiki/${fixture.id}`);
+        await expect(page.getByRole("heading", { name: deleted ? "This page is missing." : "Couldn’t open the workspace." })).toBeVisible();
+        await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
+        await expect(page.locator(".start-page-notice")).toHaveCount(0);
+        if (!deleted) {
+          await page.getByRole("button", { name: "Try again" }).click();
+          await expect(page.locator("article h1")).toHaveText("Synthetic saved start");
+          await page.goto("/");
+          await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
+        }
+      } finally {
+        await page.unroute(pattern);
+        if (!deleted) expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+          base_revision: fixture.revision, request_id: randomUUID(),
+        } })).ok()).toBe(true);
+      }
+    });
+  }
+}
+
+for (const width of [390, 1440]) {
   test(`search query normalization retains its fragment destination (${width})`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/search?q=%20tide%20clock%20#main-content");

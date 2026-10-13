@@ -1073,6 +1073,8 @@ test("start page persists, overview stays reachable, and deletion falls back", a
   await expect(
     page.getByRole("heading", { name: "A growing collection" }),
   ).toBeVisible();
+  await expect(page.locator(".start-page-notice")).toContainText("no longer exists");
+  expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe(fixture.id);
   await expect(
     page.getByRole("link", { name: /Open Lantern Bay/ }),
   ).toBeVisible();

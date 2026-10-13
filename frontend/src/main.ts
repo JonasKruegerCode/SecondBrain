@@ -411,7 +411,8 @@ function cards(pages: Page[], fragment = "") {
     )
     .join("");
 }
-async function route(focusView = false, reuseShell = false, readingPoint?: ReadingPoint) {
+async function route(focusView = false, reuseShell = false, readingPoint?: ReadingPoint,
+  startNavigation: { fallbackOnError?: boolean; notice?: string } = {}) {
   const run = ++generation;
   viewComplete = false;
   readingReady = false;
@@ -427,6 +428,8 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     // Resolving a link or a saved start page normalizes the URL within this
     // load. Keep header/main focus chosen while the first real read was pending.
     app.querySelector("header nav a[aria-current]")?.removeAttribute("aria-current");
+    if (location.pathname === "/")
+      app.querySelector('header nav a[href="/?overview=1"]')?.setAttribute("aria-current", "page");
   } else shell();
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
@@ -543,13 +546,33 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
       !new URLSearchParams(location.search).has("overview")
     ) {
       replaceAppUrl(url(preferred));
-      void route(focusView, true, readingPoint);
+      void route(focusView, true, readingPoint, { fallbackOnError: true });
       return;
     }
+    const startNotice = startNavigation.notice ||
+      (preferred && !pages.some((p: Page) => p.id === preferred) &&
+        !new URLSearchParams(location.search).has("overview")
+        ? "Your saved start page no longer exists. Home is shown instead." : "");
     main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
+    if (startNotice) {
+      const message = document.createElement("p");
+      message.className = "start-page-notice";
+      message.setAttribute("role", "status");
+      message.textContent = startNotice;
+      main.querySelector(".home > div")!.prepend(message);
+    }
     complete("Home");
   } catch (e) {
     if (run !== generation) return;
+    if (startNavigation.fallbackOnError) {
+      // Only automatic start-page navigation falls back. Direct article URLs
+      // retain their normal error/retry state, and the saved preference remains.
+      replaceAppUrl("/?overview=1");
+      void route(focusView, true, readingPoint, {
+        notice: "Your saved start page could not be opened. Home is shown instead. Your start-page choice is unchanged.",
+      });
+      return;
+    }
     const missing = (e as any).status === 404;
     const message = e instanceof TypeError
       ? "The workspace could not be reached. Check your connection and try again."

@@ -184,6 +184,15 @@ main {
   color: var(--muted-text);
   margin-bottom: 29px;
 }
+.intro .start-page-notice {
+  padding: 12px 16px;
+  border: 1px solid #d5e3d9;
+  border-radius: 10px;
+  background: #edf4ed;
+  color: #315c51;
+  font-size: 14px;
+  line-height: 1.6;
+}
 .primary {
   display: inline-flex;
   align-items: center;
