@@ -98,10 +98,13 @@ viewport/browser, provider enabled or unavailable, and any failed step:
    method, and use its field-notebook link. The route should read naturally,
    with clear introductions and a useful path back to Home.
    On a longer article, follow an in-text link and use browser Back/Forward:
-   the reading point should return for that visit. Fragment links still take
-   precedence; choosing another focus or scrolling during a pending read must
-   not be overridden. Positions stay in bounded tab memory, without page data,
-   and are discarded on full reload; native document restoration is separate.
+   the reading point should return for that visit, including after reloading the
+   destination and then using Back/Forward. Fragment links still take precedence;
+   choosing another focus or scrolling during a pending read must not be
+   overridden. A bounded, tab-scoped session cache retains at most 100 random
+   visit IDs and their x/y coordinates across full reloads. It contains no URLs
+   or page content; unavailable or invalid storage starts a fresh navigation
+   session without restoring old coordinates.
 2. Search for `tide`, open the tide clock, then use History. Edit only the
    synthetic page, save, reload, and verify that both content and history reflect
    the save. A local save is distinct from optional index/remote delivery.
@@ -121,7 +124,9 @@ viewport/browser, provider enabled or unavailable, and any failed step:
 
 Use the separate real-provider gate below for structural tool/read-only checks.
 Human answer inspection and physical Android/iOS installation still need their
-own evidence; viewport emulation establishes neither.
+own evidence; viewport emulation establishes neither. The reading-position
+regressions use real API reads and disposable synthetic pages in Chromium at
+390- and 1440-pixel widths; they do not establish physical-device behavior.
 
 For a repeatable real-provider release gate instead of a manual chat, run:
 

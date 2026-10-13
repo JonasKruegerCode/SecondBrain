@@ -28,14 +28,47 @@ let restoringHistory = false;
 let historyRestoreTimer: number | undefined;
 type ReadingPoint = { x: number; y: number };
 const readingPoints = new Map<string, ReadingPoint>();
+const readingStorageKey = "secondbrain.reading-points";
+let readingStorageTimer: number | undefined;
 let viewComplete = false;
 let readingInterrupted = false;
+function persistReadingPoints() {
+  window.clearTimeout(readingStorageTimer);
+  readingStorageTimer = undefined;
+  try {
+    // Only opaque visit IDs and coordinates: no article, URL, draft or chat data.
+    sessionStorage.setItem(readingStorageKey, JSON.stringify({ session: navigationSession, points: [...readingPoints] }));
+  } catch {} // Reading and in-document history still work when storage is blocked/full.
+}
+function resumeReadingPoints() {
+  try {
+    const raw = sessionStorage.getItem(readingStorageKey);
+    if (!raw || raw.length > 32768) return;
+    const cached = JSON.parse(raw);
+    const entry = history.state?.[navigationKey];
+    if (typeof cached?.session !== "string" || !cached.session || cached.session.length > 100 ||
+      entry?.session !== cached.session || !Number.isSafeInteger(entry.index) || entry.index < 0 ||
+      typeof entry.id !== "string" || !entry.id || entry.id.length > 100 ||
+      !Array.isArray(cached.points) || cached.points.length > 100) return;
+    const points = new Map<string, ReadingPoint>();
+    for (const item of cached.points) {
+      if (!Array.isArray(item) || item.length !== 2 || typeof item[0] !== "string" || !item[0] || item[0].length > 100 ||
+        !item[1] || ![item[1].x, item[1].y].every(value => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1e7)) return;
+      points.set(item[0], { x: item[1].x, y: item[1].y });
+    }
+    navigationSession = cached.session;
+    activeEntry = { session: entry.session, index: entry.index, id: entry.id };
+    points.forEach((point, id) => readingPoints.set(id, point));
+  } catch {} // Malformed/unavailable tab storage must never block the initial read.
+}
 function rememberReadingPoint() {
   if (!viewComplete || restoringHistory) return;
   readingPoints.delete(activeEntry.id);
-  readingPoints.set(activeEntry.id, { x: scrollX, y: scrollY });
+  readingPoints.set(activeEntry.id, { x: Math.max(0, scrollX), y: Math.max(0, scrollY) });
   // Reading positions belong to visits, not URLs; keep this tab's memory bounded.
   if (readingPoints.size > 100) readingPoints.delete(readingPoints.keys().next().value!);
+  // Coalesce scroll writes; document lifecycle events flush the final snapshot.
+  if (readingStorageTimer === undefined) readingStorageTimer = window.setTimeout(persistReadingPoints, 100);
 }
 window.addEventListener("scroll", rememberReadingPoint, { passive: true });
 const interruptReading = () => { if (!viewComplete) readingInterrupted = true; };
@@ -395,18 +428,22 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
   } else shell();
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';
-  const complete = (title: string) => {
+  let routeFocusedHeading: HTMLElement | null = null;
+  const complete = (title: string, ready = true) => {
     if (run !== generation) return;
     const heading = main.querySelector<HTMLElement>("h1");
     if (heading) heading.tabIndex = -1;
     // Announce the new reading destination only when navigation removed the
     // old focus. Never steal a focus explicitly chosen during an async read.
-    if (focusView && !location.hash && document.activeElement === document.body) {
+    const untouchedFocus = document.activeElement === document.body || document.activeElement === routeFocusedHeading;
+    if (focusView && !location.hash && untouchedFocus) {
       heading?.focus({ preventScroll: true });
-      if (!readingInterrupted) window.scrollTo(readingPoint?.x || 0, readingPoint?.y || 0);
+      routeFocusedHeading = heading;
     }
+    if (ready && (focusView || readingPoint) && !location.hash && untouchedFocus && !readingInterrupted)
+      window.scrollTo(readingPoint?.x || 0, readingPoint?.y || 0);
     focusFragment();
-    viewComplete = true;
+    viewComplete = ready;
     rememberReadingPoint();
     viewReady(title);
   };
@@ -460,14 +497,19 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
         } catch (e) {
           if (!current()) return;
           results.innerHTML = `<p class="error">${esc((e as Error).message)}</p>`;
+        } finally {
+          // Search results determine document height. Restore only once the
+          // actual initial payload has rendered, never against the loading view.
+          if (current() && !viewComplete) complete("Search");
         }
       };
       main.querySelector("form")!.onsubmit = (e) => {
         e.preventDefault();
+        readingInterrupted = true;
         void search();
       };
       if (input.value) void search();
-      complete("Search");
+      complete("Search", !input.value);
       return;
     }
     if (location.pathname.startsWith("/wiki/")) {
@@ -769,15 +811,23 @@ window.addEventListener("hashchange", () => {
   focusFragment();
 });
 window.addEventListener("beforeunload", (e) => {
+  rememberReadingPoint();
+  persistReadingPoints();
   if (!canReloadApp()) {
     e.preventDefault();
     e.returnValue = "";
-  } else history.scrollRestoration = "auto"; // Return control for full document navigation.
+  }
 });
+window.addEventListener("pagehide", () => {
+  rememberReadingPoint();
+  persistReadingPoints();
+});
+resumeReadingPoints();
+history.scrollRestoration = "manual";
 replaceAppUrl(activeUrl);
 startPwa(canReloadApp);
 observePwa(state => {
   pwaState = state;
   renderPwaState();
 });
-void route();
+void route(false, false, readingPoints.get(activeEntry.id));

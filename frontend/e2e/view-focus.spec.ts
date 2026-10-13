@@ -256,6 +256,193 @@ for (const width of [390, 1440]) {
   });
 }
 
+// These reads use disposable pages saved through the real API. Holding a fetched
+// response delays delivery only; it does not replace the backend payload.
+for (const width of [390, 1440]) {
+  test(`full reload preserves reading points across Back and Forward (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    const owned: string[] = [];
+    try {
+      const target = await create(request, readingPage("Reload reading target"));
+      owned.push(target.id);
+      const source = await create(request, readingPage("Reload reading source", target.id));
+      owned.push(source.id);
+      await page.goto(`/wiki/${source.id}`);
+      await expect(page.locator("article > h1")).toHaveText("Reload reading source");
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await expectReadingPoint(page, 900);
+      await followVisibleReadingLink(page);
+      await expect(page.locator("article > h1")).toHaveText("Reload reading target");
+      await page.evaluate(() => window.scrollTo(0, 1500));
+      await expectReadingPoint(page, 1500);
+      await page.reload();
+      await expect(page.locator("article > h1")).toHaveText("Reload reading target");
+      await expectReadingPoint(page, 1500);
+      await page.screenshot({ path: info.outputPath(`reload-reading-${width}.png`) });
+      await page.goBack();
+      await expect(page.locator("article > h1")).toHaveText("Reload reading source");
+      await expectReadingPoint(page, 900);
+      await page.goForward();
+      await expect(page.locator("article > h1")).toHaveText("Reload reading target");
+      await expectReadingPoint(page, 1500);
+      const cache = await page.evaluate(() => JSON.parse(sessionStorage.getItem("secondbrain.reading-points")!));
+      expect(cache.points.length).toBeLessThanOrEqual(100);
+      expect(Object.keys(cache).sort()).toEqual(["points", "session"]);
+      for (const [id, point] of cache.points) {
+        expect(typeof id).toBe("string");
+        expect(Object.keys(point).sort()).toEqual(["x", "y"]);
+      }
+      expect(JSON.stringify(cache)).not.toContain(source.id);
+      expect(JSON.stringify(cache)).not.toContain("Synthetic reading paragraph");
+    } finally { await deleteReadingPages(request, owned); }
+  });
+
+  test(`delayed reload respects deliberate header focus and scroll (${width})`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const owned: string[] = [];
+    let release: (() => void) | undefined;
+    let pattern: string | undefined;
+    try {
+      const source = await create(request, readingPage("Delayed reload source"));
+      owned.push(source.id);
+      await page.goto(`/wiki/${source.id}`);
+      await expect(page.locator("article > h1")).toHaveText("Delayed reload source");
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await expectReadingPoint(page, 900);
+      let received!: () => void;
+      let delivered!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const held = new Promise<void>(resolve => { received = resolve; });
+      const completed = new Promise<void>(resolve => { delivered = resolve; });
+      pattern = `**/api/wiki/pages/${source.id}`;
+      await page.route(pattern, async route => {
+        const response = await route.fetch();
+        received();
+        await gate;
+        await route.fulfill({ response });
+        delivered();
+      });
+      const reload = page.reload({ waitUntil: "domcontentloaded" });
+      await held;
+      await reload;
+      const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
+      await search.focus();
+      await page.mouse.wheel(0, -300);
+      const chosenPoint = await page.evaluate(() => scrollY);
+      release!();
+      await completed;
+      await expect(page.locator("article > h1")).toHaveText("Delayed reload source");
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(search).toBeFocused();
+      await expectReadingPoint(page, chosenPoint);
+      expect(chosenPoint).not.toBe(900);
+    } finally {
+      release?.();
+      if (pattern) await page.unroute(pattern);
+      await deleteReadingPages(request, owned);
+    }
+  });
+}
+
+test("delayed search reload restores after real result cards arrive", async ({ page, request }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const owned: string[] = [];
+  const query = `reloadsearch${randomUUID().replace(/-/g, "")}`;
+  const pattern = `**/api/wiki/search?q=${query}`;
+  let release: (() => void) | undefined;
+  try {
+    for (let index = 0; index < 16; index++) {
+      const result = await create(request, `# ${query} observation ${index + 1}\n\nSynthetic search fixture. Clouds and stones provide a quiet reading route for this disposable observation.`);
+      owned.push(result.id);
+    }
+    await page.goto(`/search?q=${query}`);
+    await expect(page.locator("#results .card")).toHaveCount(16);
+    await page.evaluate(() => window.scrollTo(0, 900));
+    await expectReadingPoint(page, 900);
+    let received!: () => void;
+    let delivered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const held = new Promise<void>(resolve => { received = resolve; });
+    const completed = new Promise<void>(resolve => { delivered = resolve; });
+    await page.route(pattern, async route => {
+      const response = await route.fetch();
+      received();
+      await gate;
+      await route.fulfill({ response });
+      delivered();
+    });
+    const reload = page.reload({ waitUntil: "domcontentloaded" });
+    await held;
+    await reload;
+    await expect(page.locator("#results")).toHaveText("Searching…");
+    release!();
+    await completed;
+    await expect(page.locator("#results .card")).toHaveCount(16);
+    await expectReadingPoint(page, 900);
+    await page.screenshot({ path: info.outputPath("reload-search-390.png") });
+  } finally {
+    release?.();
+    await page.unroute(pattern);
+    await deleteReadingPages(request, owned);
+  }
+});
+
+test("a fragment wins over the cached reading point after full reload", async ({ page, request }) => {
+  const owned: string[] = [];
+  try {
+    const source = await create(request, readingPage("Fragment reload source") + "\n\n## Reload destination\n\nThe fragment takes priority.");
+    owned.push(source.id);
+    await page.goto(`/wiki/${source.id}#reload-destination`);
+    const destination = page.getByRole("heading", { name: "Reload destination", exact: true });
+    await expect(destination).toBeFocused();
+    await page.evaluate(() => window.scrollTo(0, 900));
+    await expectReadingPoint(page, 900);
+    await page.reload();
+    await expect(destination).toBeFocused();
+    await expect(page).toHaveURL(/#reload-destination$/);
+    await expect.poll(async () => page.evaluate(() => scrollY)).toBeGreaterThan(1500);
+    await expect(destination).toBeInViewport();
+  } finally { await deleteReadingPages(request, owned); }
+});
+
+test("unavailable or invalid tab storage cannot resume stale reading coordinates", async ({ page, request }) => {
+  const owned: string[] = [];
+  try {
+    const source = await create(request, readingPage("Storage fallback source"));
+    owned.push(source.id);
+    // Every reload retains a real history entry. Each invalid cache must force
+    // a fresh navigation session and a harmless initial reading position.
+    await page.addInitScript(() => {
+      const failure = history.state?.__e2eStorageFailure;
+      if (failure === "unavailable") {
+        // Block only sessionStorage, without changing localStorage or API reads.
+        Object.defineProperty(window, "sessionStorage", { get() { throw new DOMException("Storage disabled", "SecurityError"); } });
+      } else if (failure === "corrupt" || failure === "mismatched") {
+        sessionStorage.setItem("secondbrain.reading-points", failure === "corrupt" ? "{broken" : JSON.stringify({
+          session: "different-tab-session", points: [["stale-visit", { x: 0, y: 900 }]],
+        }));
+      }
+    });
+    for (const failure of ["corrupt", "mismatched", "unavailable"] as const) {
+      await page.goto(`/wiki/${source.id}`);
+      await expect(page.locator("article > h1")).toHaveText("Storage fallback source");
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await expectReadingPoint(page, 900);
+      const previousSession = await page.evaluate(() => history.state["secondbrain.navigation"].session);
+      await page.evaluate(failure => {
+        history.replaceState({ ...history.state, __e2eStorageFailure: failure }, "");
+      }, failure);
+      await page.reload();
+      await expect(page.locator("article > h1")).toHaveText("Storage fallback source");
+      // Let queued layout/restoration frames run before asserting no stale jump.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expectReadingPoint(page, 0);
+      expect(await page.evaluate(() => history.state["secondbrain.navigation"].session)).not.toBe(previousSession);
+      // Keep the hard-blocked case last; the earlier cases retain normal storage.
+    }
+  } finally { await deleteReadingPages(request, owned); }
+});
+
 test("Back during a pending same-page visit restores its completed reading point", async ({ page, request }) => {
   const owned: string[] = [];
   let release: (() => void) | undefined;
