@@ -1,6 +1,7 @@
 """Start an isolated real-content demo; no remote Git or LLM is required."""
 
 import argparse
+import json
 import os
 import signal
 import subprocess
@@ -26,28 +27,54 @@ def _wait_for_children(
         time.sleep(poll_interval)
 
 
-def _stop_children(children: Sequence[subprocess.Popen[bytes]]) -> None:
-    for index, child in enumerate(children):
-        if child.poll() is not None:
-            continue
+def _stop_children(children: Sequence[subprocess.Popen[bytes]], *, grace_seconds: float = 5) -> None:
+    failed = False
+    for child in children:
         try:
-            if index == 1:
-                os.killpg(child.pid, signal.SIGTERM)
-            else:
-                child.terminate()
+            os.killpg(child.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
+        except OSError:
+            failed = True
     for child in children:
+        try:
+            child.wait(timeout=grace_seconds)
+        except subprocess.TimeoutExpired:
+            pass
+        # The wrapper can exit before its descendants. Finish the owned group
+        # even when the leader is already reaped, then reap any killed leader.
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            failed = True
         try:
             child.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            child.kill()
+            failed = True
+    if failed:
+        raise RuntimeError("Could not stop all owned demo process groups.")
+
+
+def _record_processes(path: Path | None, children: Sequence[subprocess.Popen[bytes]],
+                      *, complete: bool) -> None:
+    if path is None:
+        return
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps({
+        "supervisor_pid": os.getpid(),
+        "process_group_ids": [child.pid for child in children],
+        "launch_complete": complete,
+    }), encoding="utf-8")
+    temporary.replace(path)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vault", type=Path)
+    parser.add_argument("--process-state", type=Path, help=argparse.SUPPRESS)
     start = parser.add_mutually_exclusive_group()
     start.add_argument("--empty", action="store_true", help="Start without the fictional template")
     start.add_argument(
@@ -62,6 +89,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Allow the chat to use the explicitly configured OPENROUTER_API_KEY",
     )
     args = parser.parse_args(argv)
+    if args.process_state and (args.process_state.exists() or
+                              args.process_state.with_name(args.process_state.name + ".tmp").exists()):
+        parser.error("process state must be a fresh runner-owned path")
     if args.with_openrouter and not os.environ.get("OPENROUTER_API_KEY"):
         parser.error("--with-openrouter requires OPENROUTER_API_KEY")
     if args.scale_pages is not None and not 251 <= args.scale_pages <= 2_000:
@@ -106,6 +136,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, stop)
     exit_code = 0
     try:
+        _record_processes(args.process_state, children, complete=False)
         children.append(
             subprocess.Popen(
                 [
@@ -121,8 +152,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ],
                 cwd=root,
                 env=env,
+                start_new_session=True,
             )
         )
+        _record_processes(args.process_state, children, complete=False)
         children.append(
             subprocess.Popen(
                 [
@@ -139,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 start_new_session=True,
             )
         )
+        _record_processes(args.process_state, children, complete=True)
         print(
             f"Managed wiki demo: http://127.0.0.1:5173 — vault {vault} — "
             "Ctrl+C stops both processes.",
@@ -149,7 +183,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        _stop_children(children)
+        try:
+            _stop_children(children)
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            exit_code = 1
     return exit_code
 
 

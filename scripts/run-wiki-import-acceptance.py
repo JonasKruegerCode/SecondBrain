@@ -52,6 +52,8 @@ def main() -> int:
     phases: list[dict[str, Any]] = []
     checks: dict[str, bool] = {}
     supervisor: subprocess.Popen[bytes] | None = None
+    process_state: Path | None = None
+    service_cleanup_ok = True
     failure: str | None = None
     status = "failed"
     client = build_opener(ProxyHandler({}))
@@ -215,6 +217,7 @@ def main() -> int:
                 checks["new_first_start_and_empty_import_refused"] = True
                 checks["template_refused_existing_contents"] = True
             phase_env = {**env, "PLAYWRIGHT_GIT_IMPORT_PHASE": phase}
+            process_state = directory / f"processes-{phase}.json"
             with (directory / "services.log").open("ab") as services:
                 # Intentionally use the normal launcher without --empty: an
                 # already initialized imported vault must never be auto-seeded.
@@ -224,6 +227,8 @@ def main() -> int:
                         str(root / "scripts" / "run-wiki-demo.py"),
                         "--vault",
                         str(target),
+                        "--process-state",
+                        str(process_state),
                     ],
                     cwd=root,
                     env=phase_env,
@@ -298,7 +303,7 @@ def main() -> int:
                     }
                 )
                 require(completed.returncode == 0, f"{phase} browser check failed")
-                helpers["_stop_process_group"](supervisor)
+                helpers["_stop_process_group"](supervisor, process_state)
                 supervisor = None
             require(
                 unchanged() == baseline,
@@ -310,13 +315,18 @@ def main() -> int:
         failure = str(exc)
     finally:
         if supervisor is not None:
-            helpers["_stop_process_group"](supervisor)
+            try:
+                helpers["_stop_process_group"](supervisor, process_state)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                service_cleanup_ok = False
+                status = "failed"
+                failure = f"{failure + '; ' if failure else ''}{exc}"
 
     if status == "passed" and not args.keep_vault:
         try:
             for path in (source, empty_source, vault, empty_vault):
                 shutil.rmtree(path)
-            for path in (inputs, receipt, state):
+            for path in (inputs, receipt, state, *directory.glob("processes-*.json")):
                 path.unlink(missing_ok=True)
         except OSError as exc:
             status, failure = (
@@ -334,6 +344,8 @@ def main() -> int:
         "suite": "frontend/e2e/git-import.spec.ts",
         "browser_phases": phases,
         "service_restarts": int(any(phase["phase"] == "restart" for phase in phases)),
+        "service_cleanup_ok": service_cleanup_ok,
+        "process_records_retained": any(directory.glob("processes-*.json*")),
         "checks": checks,
         "external_model_calls": False,
         "vault_retained": any(path.exists() for path in (vault, empty_vault)),

@@ -30,6 +30,21 @@ status instead of reporting a successful demo. Ctrl+C/SIGTERM remains a clean
 operator stop. This makes the command suitable for a supervised rehearsal while
 still keeping it separate from a production deployment.
 
+The API and npm/Vite each run in a launcher-owned process group. Shutdown signals
+both groups even when a wrapper has already exited, escalates remaining groups
+and reaps the direct children. Disposable browser/import runners also keep an
+owned process receipt so emergency cleanup can reach both groups after a
+supervisor exits. Unconfirmed cleanup fails the run, preserves its inputs and
+still writes evidence with `service_cleanup_ok=false`. A complete receipt must
+identify the expected supervisor and exactly two valid groups. Process receipts
+are removed after success and are never included in CI artifact uploads.
+
+Forced death between creating a child and recording its group remains an
+unconfirmed shutdown: an incomplete/missing receipt cannot guarantee that every
+child stopped. Keep the failed evidence and resolve the owned processes before
+starting another run on the same ports. This is process supervision, not a
+power-loss or operating-system crash guarantee.
+
 ## Run the disposable acceptance rehearsal
 
 The normal automated demo path can be exercised without coordinating two

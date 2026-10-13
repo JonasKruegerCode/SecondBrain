@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
 import runpy
+import signal
+import socket
 import subprocess
+import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -41,7 +47,7 @@ def test_unexpected_service_exit_is_nonzero() -> None:
     assert wait([api, web], poll_interval=0) == 17
 
 
-def test_cleanup_skips_exited_processes_and_escalates_timeout(
+def test_cleanup_signals_exited_groups_escalates_and_reaps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     values = runner()
@@ -50,23 +56,176 @@ def test_cleanup_skips_exited_processes_and_escalates_timeout(
     monkeypatch.setattr(values["os"], "killpg", killpg)
     api = MagicMock()
     api.poll.return_value = None
-    api.wait.side_effect = subprocess.TimeoutExpired("api", 5)
+    api.pid = 1234
+    api.wait.side_effect = [subprocess.TimeoutExpired("api", 5), None]
     web = MagicMock()
     web.pid = 4321
     web.poll.return_value = None
 
     stop([api, web])
 
-    api.terminate.assert_called_once_with()
-    api.kill.assert_called_once_with()
-    killpg.assert_called_once_with(4321, values["signal"].SIGTERM)
-    web.wait.assert_called_once_with(timeout=5)
+    assert killpg.call_args_list == [
+        ((1234, signal.SIGTERM),), ((4321, signal.SIGTERM),),
+        ((1234, signal.SIGKILL),), ((4321, signal.SIGKILL),),
+    ]
+    assert api.wait.call_count == 2
+    assert web.wait.call_count == 2
 
     exited = MagicMock()
+    exited.pid = 8765
     exited.poll.return_value = 0
     stop([exited])
-    exited.terminate.assert_not_called()
-    exited.wait.assert_called_once_with(timeout=5)
+    assert killpg.call_args_list[-2:] == [
+        ((8765, signal.SIGTERM),), ((8765, signal.SIGKILL),),
+    ]
+    assert exited.wait.call_count == 2
+
+
+@pytest.mark.parametrize("leader", ["exited", "term", "ignore"])
+@pytest.mark.parametrize("owner", ["demo", "acceptance"])
+def test_cleanup_closes_owned_descendant_after_wrapper_exit(
+    leader: str, owner: str, tmp_path: Path,
+) -> None:
+    stop = cast(Callable[..., None], runner()["_stop_children"])
+    child_code = (
+        "import socket,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "s=socket.socket(); s.bind(('127.0.0.1',0)); s.listen(); "
+        "print(s.getsockname()[1],flush=True); time.sleep(30)"
+    )
+    behavior = (
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN); " if leader == "ignore"
+        else "signal.signal(signal.SIGTERM,lambda *args:sys.exit(0)); "
+    )
+    wrapper_code = (
+        "import subprocess,sys,signal,time; " + behavior +
+        f"p=subprocess.Popen([sys.executable,'-c',{child_code!r}],"
+        "stdout=subprocess.PIPE,text=True); "
+        "print(p.stdout.readline().strip(),flush=True); " +
+        ("time.sleep(30)" if leader != "exited" else "")
+    )
+    wrapper = subprocess.Popen(
+        [sys.executable, "-c", wrapper_code], start_new_session=True,
+        stdout=subprocess.PIPE, text=True,
+    )
+    supervisor: subprocess.Popen[bytes] | None = None
+    peer: subprocess.Popen[bytes] | None = None
+    try:
+        assert wrapper.stdout is not None
+        port = int(wrapper.stdout.readline())
+        if leader == "exited":
+            wrapper.wait(timeout=5)
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            pass
+        if owner == "demo":
+            stop([wrapper], grace_seconds=0.05)
+        else:
+            supervisor = subprocess.Popen(
+                [sys.executable, "-c", "pass"], start_new_session=True,
+            )
+            supervisor.wait(timeout=5)
+            peer = subprocess.Popen(
+                [sys.executable, "-c", "pass"], start_new_session=True,
+            )
+            peer.wait(timeout=5)
+            state = tmp_path / "processes.json"
+            state.write_text(json.dumps({
+                "supervisor_pid": supervisor.pid,
+                "process_group_ids": [wrapper.pid, peer.pid],
+                "launch_complete": True,
+            }))
+            cleanup = cast(Callable[..., None], acceptance_runner()["_stop_process_group"])
+            cleanup(supervisor, state)
+            wrapper.wait(timeout=5)
+        assert wrapper.poll() is not None
+        deadline = time.monotonic() + 2
+        while True:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                    pass
+            except OSError:
+                break
+            assert time.monotonic() < deadline, "Owned descendant still serves after cleanup"
+            time.sleep(0.01)
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(wrapper.pid, signal.SIGKILL)
+        wrapper.wait(timeout=5)
+        if supervisor is not None:
+            supervisor.wait(timeout=5)
+        if peer is not None:
+            peer.wait(timeout=5)
+        if wrapper.stdout is not None:
+            wrapper.stdout.close()
+
+
+@pytest.mark.parametrize("record", [
+    {"supervisor_pid": 9999, "process_group_ids": [1234], "launch_complete": True},
+    {"supervisor_pid": 4321, "process_group_ids": [True], "launch_complete": True},
+    {"supervisor_pid": 4321, "process_group_ids": [2**64], "launch_complete": True},
+])
+def test_acceptance_rejects_unowned_process_records_without_signaling_their_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, record: dict[str, Any],
+) -> None:
+    values = acceptance_runner()
+    cleanup = cast(Callable[..., None], values["_stop_process_group"])
+    state = tmp_path / "processes.json"
+    state.write_text(json.dumps(record))
+    process = MagicMock(pid=4321, returncode=0)
+    killpg = MagicMock()
+    monkeypatch.setattr(values["os"], "killpg", killpg)
+    with pytest.raises(RuntimeError, match="cleanup could not be confirmed"):
+        cleanup(process, state)
+    assert all(call.args[0] == 4321 for call in killpg.call_args_list)
+
+
+@pytest.mark.parametrize("groups", [[], [1234]])
+def test_acceptance_does_not_confirm_an_incomplete_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, groups: list[int],
+) -> None:
+    values = acceptance_runner()
+    cleanup = cast(Callable[..., None], values["_stop_process_group"])
+    state = tmp_path / "processes.json"
+    state.write_text(json.dumps({
+        "supervisor_pid": 4321, "process_group_ids": groups, "launch_complete": True,
+    }))
+    process = MagicMock(pid=4321, returncode=0)
+    monkeypatch.setattr(values["os"], "killpg", MagicMock())
+    with pytest.raises(RuntimeError, match="cleanup could not be confirmed"):
+        cleanup(process, state)
+
+
+def test_acceptance_cleanup_failure_still_writes_failed_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = acceptance_runner()
+    main = cast(Callable[..., int], values["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    supervisor = MagicMock(pid=4321)
+
+    def start(*args: Any, **kwargs: Any) -> Any:
+        command = args[0]
+        vault = Path(command[command.index("--vault") + 1])
+        vault.mkdir()
+        (vault / "owned-fixture").touch()
+        return supervisor
+
+    processes = MagicMock()
+    processes.Popen.side_effect = start
+    processes.run.return_value = MagicMock(returncode=0, stdout="synthetic-head")
+    processes.TimeoutExpired = subprocess.TimeoutExpired
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    monkeypatch.setitem(namespace, "_wait_for_http", lambda *args, **kwargs: None)
+    monkeypatch.setitem(namespace, "_stop_process_group", MagicMock(
+        side_effect=RuntimeError("synthetic cleanup failure"),
+    ))
+    assert main([]) == 1
+    files = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
+    assert len(files) == 1
+    result = json.loads(files[0].read_text())
+    assert result["status"] == "failed"
+    assert result["service_cleanup_ok"] is False
+    assert result["vault_retained"] is True
 
 
 def test_acceptance_waits_for_http_without_environment_proxy() -> None:

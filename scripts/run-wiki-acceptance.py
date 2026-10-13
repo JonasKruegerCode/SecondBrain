@@ -44,16 +44,54 @@ def _wait_for_http(
     raise RuntimeError(f"timed out waiting for {url}: {last_error}")
 
 
-def _stop_process_group(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
-        return
+def _stop_process_group(process: subprocess.Popen[bytes],
+                        process_state: Path | None = None) -> None:
+    groups: list[int] = []
+    failed = False
+    if process_state is not None:
+        try:
+            record = json.loads(process_state.read_text(encoding="utf-8"))
+            candidate = record["process_group_ids"]
+            if (
+                record["supervisor_pid"] != process.pid
+                or not isinstance(candidate, list) or len(candidate) > 2
+                or any(type(pid) is not int or not 1 < pid <= 2_147_483_647
+                       or pid in (process.pid, os.getpgrp()) for pid in candidate)
+                or len(set(candidate)) != len(candidate)
+            ):
+                raise ValueError("Invalid owned process record")
+            groups = candidate
+            failed = record.get("launch_complete") is not True or len(groups) != 2
+        except (OSError, ValueError, KeyError, TypeError):
+            failed = True
     try:
         os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except OSError:
+        failed = True
+    try:
         process.wait(timeout=10)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
-        if process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        failed = True
+    # The launcher can die before its finally block. Its two separate sessions
+    # are recorded before browser work; never infer their exit from its PID.
+    for group in [process.pid, *groups]:
+        for signum in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(group, signum)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                failed = True
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        failed = True
+    if process.returncode != 0:
+        failed = True
+    if failed:
+        raise RuntimeError("Owned demo service cleanup could not be confirmed.")
 
 
 def _git_head(root: Path) -> str | None:
@@ -149,6 +187,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     browser_phases: list[dict[str, Any]] = []
     service_starts = 0
     supervisor: subprocess.Popen[bytes] | None = None
+    process_state: Path | None = None
+    service_cleanup_ok = True
 
     env = {**os.environ}
     env.pop("OPENROUTER_API_KEY", None)
@@ -210,6 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         for phase in phases:
             phase_env = {**env, "PLAYWRIGHT_FIRST_START_PHASE": phase}
+            process_state = artifact_dir / f"processes-{phase}.json"
             phase_command = browser_command
             if args.first_start:
                 # Preserve each phase's images and the ordinary suite's output.
@@ -220,7 +261,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ]
             with service_log.open("ab") as services:
                 supervisor = subprocess.Popen(
-                    command,
+                    [*command, "--process-state", str(process_state)],
                     cwd=root,
                     env=phase_env,
                     stdout=services,
@@ -263,20 +304,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 # Stop and reap the real API/Vite supervisor before starting
                 # the next phase on the same owned, persistent vault.
-                _stop_process_group(supervisor)
+                _stop_process_group(supervisor, process_state)
                 supervisor = None
         status = "passed"
     except (OSError, RuntimeError) as exc:
         failure = str(exc)
     finally:
         if supervisor is not None:
-            _stop_process_group(supervisor)
+            try:
+                _stop_process_group(supervisor, process_state)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                service_cleanup_ok = False
+                status = "failed"
+                failure = f"{failure + '; ' if failure else ''}{exc}"
 
     keep_vault = args.keep_vault or status != "passed"
     if not keep_vault:
         try:
             shutil.rmtree(vault)
-            for name in ("browser-state.json", "pages.json"):
+            for name in ("browser-state.json", "pages.json", *[
+                f"processes-{phase}.json" for phase in phases
+            ]):
                 (artifact_dir / name).unlink(missing_ok=True)
         except OSError as exc:
             status = "failed"
@@ -311,6 +359,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "browser_exit_code": browser_status,
         "browser_phases": browser_phases,
         "service_restarts": max(0, service_starts - 1),
+        "service_cleanup_ok": service_cleanup_ok,
+        "process_records_retained": any(artifact_dir.glob("processes-*.json*")),
         "vault_retained": keep_vault,
         "phase_inputs_retained": phase_inputs_retained,
         "failure": failure,
