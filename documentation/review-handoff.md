@@ -81,13 +81,17 @@ profile.
 
 ## Reproduce the demo and checks
 
-Install the locked Python and Node dependencies, then from the repository root:
+Use Linux or WSL with Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. From the
+repository root (the subshells keep the terminal there):
 
 ```sh
-make demo PYTHON=backend/.venv/bin/python
-make acceptance PYTHON=backend/.venv/bin/python
-make acceptance-first-start PYTHON=backend/.venv/bin/python
-make acceptance-import PYTHON=backend/.venv/bin/python
+(cd backend && poetry sync --no-interaction)
+(cd frontend && npm ci && npx playwright install chromium)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+make demo PYTHON="$WIKI_PYTHON"
+make acceptance PYTHON="$WIKI_PYTHON"
+make acceptance-first-start PYTHON="$WIKI_PYTHON"
+make acceptance-import PYTHON="$WIKI_PYTHON"
 make check
 ```
 
@@ -120,6 +124,15 @@ inputs and are never uploaded; successful runs remove them and the vault.
 The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
 `.demo/acceptance/`. It clears inherited OpenRouter access.
+For a concrete intermittent failure, `--browser-grep PATTERN --repeat-each N`
+selects a bounded diagnostic run against the same real services. Its structural
+record includes the filter and repetition count; a filtered pass is not full
+acceptance. First-start phases reject these options. The save-body test records
+monotonic phase timings and runner fixture/hook timings, including final status.
+Its earlier 30-second timeout remains unexplained: a provisional `passed` inside
+test cleanup does not prove subsequent request/context teardown completed. Five
+isolated repetitions on `6394004` passed (0.552–0.603 seconds per test), with
+1–3 ms request and 4–6 ms context teardown. This non-reproduction is not a fix.
 The normal suite includes focused history checks against actual Git-backed REST
 responses: keyboard loading, pending-read deduplication, refreshed agent edits,
 transport failure/retry and late success/failure after article navigation.
@@ -155,7 +168,7 @@ calls; it is separate from the normal browser CI suite.
 With explicit approval for paid external calls and a real key:
 
 ```sh
-OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON=backend/.venv/bin/python
+OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON="$WIKI_PYTHON"
 ```
 
 This is the only check above that establishes real OpenRouter behavior. It still

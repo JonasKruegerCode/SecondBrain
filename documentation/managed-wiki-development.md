@@ -9,12 +9,15 @@ managed vault.
 
 ## Start and stop
 
-From the checkout, install the locked backend dependencies with `cd backend &&
-poetry install`, then frontend dependencies with `cd frontend && npm ci`. From
-the repository root run:
+Use Linux or WSL with Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. From the
+repository root, install the locked dependencies and locate Poetry's actual
+Python executable; an in-project `backend/.venv` is not required:
 
 ```sh
-make demo PYTHON=backend/.venv/bin/python
+(cd backend && poetry sync --no-interaction)
+(cd frontend && npm ci)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+make demo PYTHON="$WIKI_PYTHON"
 ```
 
 Open <http://127.0.0.1:5173>. The demo uses `.demo/vault`, separate from the legacy
@@ -23,7 +26,7 @@ The first launch explicitly seeds a fictional atlas; later launches retain all
 edits. To start empty in another directory:
 
 ```sh
-PYTHONPATH=backend/src backend/.venv/bin/python scripts/run-wiki-demo.py \
+PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-demo.py \
   --vault .demo/empty-vault --empty
 ```
 
@@ -46,7 +49,9 @@ External index providers, secrets and proxy configuration remain separate.
 
 The separate `docker-compose.wiki.yml` describes an empty managed installation
 on `127.0.0.1:8080` plus managed HTTP MCP on `127.0.0.1:3001`. Its container
-build/start has not yet been verified. Both services use an independent
+build/start, HTTPS/auth, restart and independent-volume restore have separate
+[disposable CI acceptance](managed-stack-acceptance.md); inspect the actual run
+for the reviewed revision. Both services use an independent
 `managed_wiki` volume; the backend port is not exposed. Only the MCP service
 receives the configured Bearer key, while browser/API access remains behind the
 deployment's same-origin reverse-proxy authentication. Put authenticated HTTPS

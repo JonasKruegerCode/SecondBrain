@@ -29,17 +29,18 @@ Never point managed and legacy writers at the same vault.
 
 ## Try the fictional demo
 
-Prerequisites are Python 3.12, Git, Node 20+, and the locked backend/frontend
-dependencies:
+Prerequisites are Linux or WSL, Python 3.12, Poetry 2.1.3, Git, Make, Node 20+, and
+the locked backend/frontend dependencies. Run these commands from the repository
+root; the subshells keep the terminal there:
 
 ```sh
 git clone https://github.com/JonasKruegerCode/SecondBrain.git
 cd SecondBrain
 git switch secondbrain-2.0
-cd backend && poetry install && cd ..
-cd frontend && npm ci && cd ..
-cd backend
-PYTHONPATH=src poetry run python ../scripts/run-wiki-demo.py
+(cd backend && poetry sync --no-interaction)
+(cd frontend && npm ci)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+make demo PYTHON="$WIKI_PYTHON"
 ```
 
 Open <http://127.0.0.1:5173>. The command creates or reopens an isolated
@@ -51,12 +52,11 @@ The default demo disables external model calls. To test paid OpenRouter chat
 deliberately:
 
 ```sh
-cd backend
-OPENROUTER_API_KEY=... PYTHONPATH=src poetry run python \
-  ../scripts/run-wiki-demo.py --with-openrouter
+OPENROUTER_API_KEY=... PYTHONPATH=backend/src "$WIKI_PYTHON" \
+  scripts/run-wiki-demo.py --with-openrouter
 ```
 
-Use `python scripts/run-wiki-demo.py --help` for custom vault options. See the
+Use `"$WIKI_PYTHON" scripts/run-wiki-demo.py --help` for custom vault options. See the
 [demo tour](documentation/demo-start.md) and
 [development guide](documentation/managed-wiki-development.md) for the complete
 commands and verification boundary.
@@ -65,17 +65,18 @@ To rehearse the normal acceptance path in one command, use a fresh disposable
 vault and the real local API/frontend:
 
 ```sh
-make acceptance PYTHON=backend/.venv/bin/python
+(cd frontend && npx playwright install chromium)
+make acceptance PYTHON="$WIKI_PYTHON"
 ```
 
-This waits for both services, runs the wiki, history and keyboard skip-link suites, stops them even
+This waits for both services, runs all six normal browser suites, stops them even
 on failure, and writes ignored logs plus a small JSON evidence record under
 `.demo/acceptance/`. It disables external model calls and never targets an
 existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
 checks remain separate release gates.
 
 To check the empty first-start path and persistence across an actual API/frontend
-restart, run `make acceptance-first-start PYTHON=backend/.venv/bin/python`.
+restart, run `make acceptance-first-start PYTHON="$WIKI_PYTHON"`.
 It starts with zero pages, creates only fictional test content, exercises the
 editor/navigation/graph, stops both services and starts them again on the same
 owned vault. The second browser phase checks the saved start page, exact content
@@ -84,7 +85,7 @@ outage evidence. Success removes the temporary vault and browser-state files;
 CI uploads only structural results, browser logs and synthetic screenshots.
 
 For explicit local Git import, run
-`make acceptance-import PYTHON=backend/.venv/bin/python`. It prepares an empty
+`make acceptance-import PYTHON="$WIKI_PYTHON"`. It prepares an empty
 repository and the public atlas with two original commits, imports both through
 the setup CLI, and checks real article links, search, history and galaxy views.
 A browser edit and saved start page must survive an identical import retry and
@@ -98,7 +99,7 @@ the read-only vault boundary against the fictional fixture. It records only
 structural evidence (never answers, prompts, credentials or page content):
 
 ```sh
-OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON=backend/.venv/bin/python
+OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON="$WIKI_PYTHON"
 ```
 
 This command deliberately requires both the key and an explicit paid-provider
@@ -108,16 +109,16 @@ infrastructure acceptance.
 ## Choose a persistent first start
 
 The managed wiki requires an explicit destination and supports empty, fictional
-template, or local Git import:
+template, or local Git import. Use the prepared backend environment from above:
 
 ```sh
 export PYTHONPATH="$PWD/backend/src"
 
-python -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode empty
+"$WIKI_PYTHON" -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode empty
 # or:
-python -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode template
+"$WIKI_PYTHON" -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode template
 # or:
-python -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode import \
+"$WIKI_PYTHON" -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode import \
   --source /absolute/path/to/local-git-clone --prefix path/to/wiki \
   --request-id first-import
 ```
@@ -131,23 +132,26 @@ history without copying credentials or remote configuration. Full rules:
 
 ### Native
 
+From the repository root, select the same backend environment in each terminal.
+
 ```sh
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
 export PYTHONPATH="$PWD/backend/src"
 export SECOND_BRAIN_WIKI_VAULT=/srv/secondbrain/vault
 
 # Wiki REST API for the web UI
-python -m uvicorn second_brain.wiki.api:app_factory --factory \
+"$WIKI_PYTHON" -m uvicorn second_brain.wiki.api:app_factory --factory \
   --host 127.0.0.1 --port 8000
 
 # In another terminal: local stdio MCP
-python -m second_brain.wiki.mcp
+"$WIKI_PYTHON" -m second_brain.wiki.mcp
 ```
 
 For Streamable HTTP MCP, use the explicit factory and a server-side Bearer key:
 
 ```sh
 SECOND_BRAIN_WIKI_API_KEY=replace-with-a-secret \
-python -m uvicorn second_brain.wiki.mcp:http_app_factory --factory \
+"$WIKI_PYTHON" -m uvicorn second_brain.wiki.mcp:http_app_factory --factory \
   --host 127.0.0.1 --port 3001
 ```
 
@@ -195,8 +199,10 @@ Route the wiki host to `frontend:80` and the MCP host to `mcp:3001`. Keep the
 existing proxy password on the wiki host, configure HTTPS, and add the exact MCP
 host/origin to `.env.wiki`; do not expose either upstream directly.
 
-Container build/start is described but not yet accepted in the current
-development environment because no Docker-compatible runtime was available.
+Disposable image build/start, HTTPS/auth, restart and independent-volume recovery
+have separate [CI acceptance](documentation/managed-stack-acceptance.md). Inspect
+the reviewed revision's actual run; this does not accept your production proxy,
+private credentials, migration or off-host recovery.
 Use [backup and restore](documentation/backup-restore.md) before migration.
 
 ## Managed MCP tools
@@ -250,7 +256,7 @@ evidence. It does **not** yet claim:
 - a real OpenRouter multi-turn acceptance run
 - hosted Neo4j/Qdrant/embedding-provider acceptance
 - physical Android/iOS installation or production HTTPS/update verification
-- verified Compose images, named-volume recovery or off-host disaster recovery
+- production Compose operation or off-host disaster recovery
 - completed production authentication, Git credential and legacy-vault migration
 
 Do not treat the preview as a completed production cutover.
