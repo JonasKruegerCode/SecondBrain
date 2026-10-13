@@ -2367,7 +2367,8 @@ for (const finish of ["recover", "delete"] as const) {
       await expect(notice).toContainText("Recover browser storage or delete unsaved conversations");
       await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
       await page.getByRole("link", { name: "Home", exact: true }).click();
-      await expect(page.locator("article h1")).toBeVisible();
+      await page.locator('.grid a[href="/wiki/mira-quill"]').click();
+      await expect(page.locator("article h1")).toHaveText("Mira Quill — fictional archivist");
       await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
       await page.evaluate(() => {
         (window as any).__pwaStorageDocument = "session-only-document";
