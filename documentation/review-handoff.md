@@ -88,6 +88,15 @@ lexical/semantic/GraphRAG search, graph,
 history, index/delivery status and bounded chat. Mutation requests carry
 `base_revision` and `request_id`.
 
+REST rejects invalid authentication with a sanitized 401 response and `no-store`,
+including non-ASCII header bytes. Browser writes and chat reject malformed
+Origins with sanitized 403 responses before content or model dispatch. Origin
+validation rejects invalid authorities, user information, paths, queries,
+fragments, whitespace and control bytes; it compares the proxy-visible Host
+authority so HTTPS reverse proxies keep working. Authenticated nonbrowser
+requests without Origin remain supported. These are application boundary
+regressions, not production reverse-proxy or physical-browser acceptance.
+
 Managed MCP exposes ten deterministic tools: page read/list/search/save/delete,
 graph/neighbors, history, index status and delivery status. The
 `wiki://guidance` resource documents the editorial and retry contract.

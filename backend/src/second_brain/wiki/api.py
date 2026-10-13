@@ -26,6 +26,29 @@ from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiError, WikiStore
 
 
+def _same_origin_authority(origin: str, host: str | None) -> bool:
+    """Validate an untrusted Origin before comparing the proxy-visible authority."""
+    if not origin or any(
+        character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+        for character in origin
+    ):
+        return False
+    try:
+        parsed = urlsplit(origin)
+        # Accessing port also rejects invalid or out-of-range values.
+        _ = parsed.port
+        return bool(
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+            and not (parsed.path or parsed.query or parsed.fragment)
+            and parsed.netloc == host
+        )
+    except ValueError:
+        return False
+
+
 def create_app(
     vault_path: str | Path,
     api_key: str = "",
@@ -67,7 +90,7 @@ def create_app(
             return JSONResponse(result)
         # No wildcard CORS. Same-origin browser writes protect proxy-authenticated deployments.
         origin = request.headers.get("origin")
-        if origin and urlsplit(origin).netloc != request.headers.get("host"):
+        if origin is not None and not _same_origin_authority(origin, request.headers.get("host")):
             return JSONResponse({"error": "origin_rejected"}, status_code=403)
         chunks = bytearray()
         async for chunk in request.stream():
@@ -162,7 +185,7 @@ def create_app(
     async def chat_answer(request: Request) -> Response:
         nonlocal chat
         origin = request.headers.get("origin")
-        if origin and urlsplit(origin).netloc != request.headers.get("host"):
+        if origin is not None and not _same_origin_authority(origin, request.headers.get("host")):
             return JSONResponse({"error": "origin_rejected"}, status_code=403)
         chunks = bytearray()
         async for chunk in request.stream():
@@ -272,7 +295,7 @@ def create_app(
 
     async def privacy(request: Request, call_next: Any) -> Response:
         if api_key and not secrets.compare_digest(
-            request.headers.get("authorization", ""), f"Bearer {api_key}"
+            request.headers.get("authorization", "").encode(), f"Bearer {api_key}".encode()
         ):
             return JSONResponse(
                 {"error": "unauthorized"}, status_code=401, headers={"Cache-Control": "no-store"}

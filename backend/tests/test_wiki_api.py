@@ -1,8 +1,117 @@
 from pathlib import Path
 
+import pytest
 from starlette.testclient import TestClient
 
+from second_brain.llm.providers.openrouter.client import OpenRouterClient
 from second_brain.wiki.api import create_app
+from second_brain.wiki.chat import WikiChat
+from second_brain.wiki.store import WikiStore
+
+
+@pytest.mark.parametrize(
+    "authorization", [b"Bearer \xff", b"Bearer \xc3\xa9", b"Bearer wrong", b""]
+)
+def test_invalid_auth_is_private_and_rejected_before_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, authorization: bytes
+) -> None:
+    app = create_app(tmp_path, "synthetic-test-key")
+    store = app.state.wiki_store
+    saved = store.save_page("harbor", "# Harbor\nSynthetic text.", None, "seed")
+    before = store.snapshot()
+
+    def unexpected(*args: object, **kwargs: object) -> None:
+        pytest.fail("An unauthorized request reached a content service.")
+
+    monkeypatch.setattr(WikiStore, "get_page", unexpected)
+    monkeypatch.setattr(WikiStore, "save_page", unexpected)
+    monkeypatch.setattr(WikiStore, "delete_page", unexpected)
+    monkeypatch.setattr(OpenRouterClient, "__init__", unexpected)
+    monkeypatch.setattr(WikiChat, "answer", unexpected)
+    with TestClient(app) as client:
+        for method, path, body in (
+            ("GET", "/api/wiki/pages/harbor", None),
+            ("POST", "/api/wiki/pages/harbor", {
+                "markdown": "# Unauthorized edit", "base_revision": saved["revision"],
+                "request_id": "unauthorized-save",
+            }),
+            ("DELETE", "/api/wiki/pages/harbor", {
+                "base_revision": saved["revision"], "request_id": "unauthorized-delete",
+            }),
+            ("POST", "/api/wiki/chat", {"messages": [{"role": "user", "content": "Hello"}]}),
+        ):
+            response = client.request(
+                method, path, json=body, headers=[(b"authorization", authorization)]
+            )
+            assert response.status_code == 401
+            assert response.json() == {"error": "unauthorized"}
+            assert response.headers["cache-control"] == "no-store"
+        assert client.get("/api/wiki/health", headers={
+            "Authorization": "Bearer synthetic-test-key",
+        }).status_code == 200
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("origin", [
+    "http://[broken", "http://testserver:wrong", "http://testserver:65536",
+    "http://testserver/path", "http://testserver?q=x", "http://testserver#x",
+    "http://user@testserver", "http://testserver ", "ftp://testserver",
+    "https://unrelated.example", "null", "", "\x00http://testserver", "\x7fhttp://testserver",
+])
+def test_invalid_origin_rejected_before_mutation_or_chat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    app = create_app(tmp_path, "synthetic-test-key")
+    store = app.state.wiki_store
+    saved = store.save_page("harbor", "# Harbor\nSynthetic text.", None, "seed")
+    before = store.snapshot()
+
+    def unexpected(*args: object, **kwargs: object) -> None:
+        pytest.fail("A rejected origin reached a content service.")
+
+    monkeypatch.setattr(WikiStore, "save_page", unexpected)
+    monkeypatch.setattr(WikiStore, "delete_page", unexpected)
+    monkeypatch.setattr(WikiStore, "get_page", unexpected)
+    monkeypatch.setattr(OpenRouterClient, "__init__", unexpected)
+    monkeypatch.setattr(WikiChat, "answer", unexpected)
+    with TestClient(app) as client:
+        for method, path, body in (
+            ("POST", "/api/wiki/pages/harbor", {
+                "markdown": "# Unwanted edit", "base_revision": saved["revision"],
+                "request_id": "origin-save",
+            }),
+            ("DELETE", "/api/wiki/pages/harbor", {
+                "base_revision": saved["revision"], "request_id": "origin-delete",
+            }),
+            ("POST", "/api/wiki/chat", {"messages": [{"role": "user", "content": "Hello"}]}),
+        ):
+            response = client.request(method, path, json=body, headers={
+                "Authorization": "Bearer synthetic-test-key", "Origin": origin,
+            })
+            assert response.status_code == 403
+            assert response.json() == {"error": "origin_rejected"}
+            assert response.headers["cache-control"] == "no-store"
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("origin", [None, "http://testserver", "https://testserver"])
+def test_same_authority_and_nonbrowser_mutations_remain_available(
+    tmp_path: Path, origin: str | None
+) -> None:
+    headers = {"Authorization": "Bearer synthetic-test-key"}
+    if origin is not None:
+        headers["Origin"] = origin
+    with TestClient(create_app(tmp_path, "synthetic-test-key")) as client:
+        response = client.post("/api/wiki/pages/harbor", headers=headers, json={
+            "markdown": "# Harbor\nSynthetic text.", "base_revision": None, "request_id": "save",
+        })
+        assert response.status_code == 200
+        revision = response.json()["revision"]
+        assert client.get("/api/wiki/pages/harbor", headers=headers).json()["revision"] == revision
+        assert client.request("DELETE", "/api/wiki/pages/harbor", headers=headers, json={
+            "base_revision": revision, "request_id": "delete",
+        }).status_code == 200
+        assert client.get("/api/wiki/pages/harbor", headers=headers).status_code == 404
 
 
 def test_backlinks_authority_bounds_auth_and_private_cache(tmp_path: Path) -> None:
