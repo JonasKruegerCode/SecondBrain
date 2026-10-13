@@ -41,9 +41,14 @@ tracebacks. Automatic HTTPX tracing is suppressed around these requests; bounded
 client spans still expose timing and status. Synthetic transport regressions
 exercise HTTP/transport/JSON failures, successful retry and cancellation during
 request/backoff. They do not establish real-provider delivery or billing behavior.
-HTTPX request logs are suppressed only in the provider task's context because
-their INFO messages include server-controlled reason phrases. Concurrent ordinary
-requests retain their logs; this is not a global logging-level change.
+HTTPX INFO and HTTPcore DEBUG transport logs are suppressed only in the provider
+task's context because they can include peer-controlled reason phrases, response
+headers and exception text. Filters attach to HTTPcore's actual emitting loggers;
+a parent-logger filter would not intercept child records. Real loopback HTTP/1.1
+tests with the default HTTPX transport verify success, HTTP/JSON failure and
+cancellation, positive-control DEBUG output, concurrent ordinary logging, same-task
+restoration and client closure. Ordinary requests retain their logs; levels are
+unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy behavior.
 
 ## User and operator paths
 

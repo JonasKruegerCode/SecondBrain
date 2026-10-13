@@ -29,16 +29,26 @@ _PROVIDER_REQUEST: ContextVar[bool] = ContextVar("openrouter_request", default=F
 
 class _ProviderLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        # HTTPX INFO includes the server-controlled reason phrase. Keep the
-        # bounded client diagnostics while leaving other concurrent traffic alone.
+        # HTTPX INFO and HTTPcore DEBUG can include peer-controlled reason
+        # phrases, headers and exception text. Other tasks retain their logs.
         return not _PROVIDER_REQUEST.get()
 
 
-logging.getLogger("httpx").addFilter(_ProviderLogFilter())
+# Logger filters do not run on child records propagated to parent handlers.
+# Attach to the actual HTTPcore transport emitters, not just its parent logger.
+for _transport_logger in (
+    "httpx",
+    "httpcore.connection",
+    "httpcore.http11",
+    "httpcore.http2",
+    "httpcore.proxy",
+    "httpcore.socks",
+):
+    logging.getLogger(_transport_logger).addFilter(_ProviderLogFilter())
 
 
 @contextmanager
-def _bounded_httpx_logs() -> Iterator[None]:
+def _bounded_transport_logs() -> Iterator[None]:
     token = _PROVIDER_REQUEST.set(True)
     try:
         yield
@@ -146,7 +156,7 @@ class OpenRouterClient(LLMClient):
                     try:
                         # Automatic HTTPX spans may retain raw transport exceptions.
                         # Keep our bounded status/timing spans instead.
-                        with suppress_http_instrumentation(), _bounded_httpx_logs():
+                        with suppress_http_instrumentation(), _bounded_transport_logs():
                             async with httpx.AsyncClient(timeout=60.0) as client:
                                 with tracer.start_as_current_span(
                                     "openrouter.http_request",

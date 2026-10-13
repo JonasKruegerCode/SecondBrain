@@ -1,6 +1,7 @@
 """Provider failures keep useful diagnostics without retaining private text."""
 
 import asyncio
+import json
 import logging
 import traceback
 from contextlib import suppress
@@ -125,6 +126,136 @@ async def test_retry_recovers_and_keeps_structured_response(
     assert await provider.tool_chat([{"role": "user", "content": "Hello"}], []) == expected
     assert attempts == 2
     assert all(client.is_closed for client in clients)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["success", "http", "json", "cancel"])
+async def test_real_httpcore_debug_logs_are_bounded_per_provider_task(
+    provider: OpenRouterClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    outcome: str,
+) -> None:
+    """Exercise the default HTTPX transport, including its HTTPcore child loggers."""
+    started, release = asyncio.Event(), asyncio.Event()
+    handlers: set[asyncio.Task[Any]] = set()
+    attempts = 0
+    real_client = httpx.AsyncClient
+    clients: list[httpx.AsyncClient] = []
+
+    def local_client(**kwargs: Any) -> httpx.AsyncClient:
+        client = real_client(**kwargs)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(httpx, "AsyncClient", local_client)
+
+    async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        nonlocal attempts
+        handler = asyncio.current_task()
+        assert handler is not None
+        handlers.add(handler)
+        try:
+            headers = await reader.readuntil(b"\r\n\r\n")
+            for header in headers.split(b"\r\n")[1:]:
+                if header.lower().startswith(b"content-length:"):
+                    await reader.readexactly(int(header.split(b":", 1)[1]))
+            path = headers.split(b" ", 2)[1]
+            status, reason, body = 200, b"OK", b"healthy"
+            private_header = b""
+            if path == b"/control" or path.endswith(b"/chat/completions"):
+                reason = PRIVATE.encode()
+                private_header = b"X-Synthetic-Private: " + PRIVATE.encode() + b"\r\n"
+                if path.endswith(b"/chat/completions"):
+                    attempts += 1
+                    started.set()
+                    await release.wait()
+                    if outcome == "http":
+                        status, body = 503, PRIVATE.encode()
+                    elif outcome == "json":
+                        body = PRIVATE.encode()
+                    else:
+                        body = json.dumps({"choices": [{"message": {"content": "Hello"}}]}).encode()
+            writer.write(
+                b"HTTP/1.1 " + str(status).encode() + b" " + reason + b"\r\n"
+                + private_header + b"Content-Length: " + str(len(body)).encode()
+                + b"\r\nConnection: close\r\n\r\n" + body
+            )
+            await writer.drain()
+        finally:
+            writer.close()
+            with suppress(ConnectionError):
+                await writer.wait_closed()
+            handlers.discard(handler)
+
+    server = await asyncio.start_server(respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    base = f"http://127.0.0.1:{port}"
+    # Local-only sockets must not inherit an operator's external proxy settings.
+    for name in (
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setattr(module, "_BASE_URL", base + "/api/v1")
+    task: asyncio.Task[dict[str, Any]] | None = None
+
+    async def invoke_then_log() -> dict[str, Any]:
+        try:
+            return await provider.tool_chat([{"role": "user", "content": "Hi"}], [])
+        finally:
+            # This is the provider task itself after success, failure or caught
+            # cancellation, so it proves ContextVar restoration there too.
+            async with httpx.AsyncClient() as after:
+                await after.get(base + "/after")
+
+    try:
+        with caplog.at_level(logging.DEBUG):
+            async with httpx.AsyncClient() as ordinary:
+                # Prove that the real transport's DEBUG records expose the peer
+                # marker outside the bounded provider context.
+                await ordinary.get(base + "/control")
+                assert any(
+                    record.name.startswith("httpcore.") and PRIVATE in record.getMessage()
+                    for record in caplog.records
+                )
+                caplog.clear()
+                task = asyncio.create_task(invoke_then_log())
+                await asyncio.wait_for(started.wait(), 3)
+                await ordinary.get(base + "/health")
+                assert base + "/health" in caplog.text
+                assert any(record.name == "httpcore.http11" for record in caplog.records)
+                caplog.clear()
+                if outcome == "cancel":
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await asyncio.wait_for(task, 3)
+                    release.set()
+                elif outcome == "success":
+                    release.set()
+                    assert (await asyncio.wait_for(task, 3))["content"] == "Hello"
+                else:
+                    release.set()
+                    with pytest.raises(OpenRouterError) as caught:
+                        await asyncio.wait_for(task, 3)
+                    assert PRIVATE not in "".join(traceback.format_exception(caught.value))
+                    assert "OpenRouter attempt 4 failed" in caplog.text
+            assert PRIVATE not in caplog.text
+            assert base + "/after" in caplog.text
+            # The subsequent request in the provider task must also retain its
+            # low-level transport logs, separately from the concurrent control.
+            assert any(record.name == "httpcore.http11" for record in caplog.records)
+            assert attempts == (1 if outcome in {"success", "cancel"} else 4)
+            assert all(client.is_closed for client in clients)
+    finally:
+        release.set()
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        server.close()
+        await server.wait_closed()
+        if handlers:
+            await asyncio.gather(*handlers, return_exceptions=True)
 
 
 @pytest.mark.asyncio
