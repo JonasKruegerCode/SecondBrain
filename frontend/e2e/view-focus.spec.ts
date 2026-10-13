@@ -305,6 +305,25 @@ test("Back during a pending same-page visit restores its completed reading point
     await completed;
     await expect(page.locator("article > h1")).toHaveText("Same-page reading");
     await expectReadingPoint(page, 900);
+    // The abandoned entry has no completed reading point yet.
+    await page.goForward();
+    await expectReadingPoint(page, 0);
+    await page.evaluate(() => window.scrollTo(0, 1500));
+    await expectReadingPoint(page, 1500);
+    await followVisibleReadingLink(page);
+    await expect(page.locator("article > h1")).toHaveText("Same-page reading");
+    await expectReadingPoint(page, 0);
+    await page.evaluate(() => window.scrollTo(0, 2400));
+    await expectReadingPoint(page, 2400);
+    // All three entries share a URL, but retain separate reading points.
+    await page.goBack();
+    await expectReadingPoint(page, 1500);
+    await page.goBack();
+    await expectReadingPoint(page, 900);
+    await page.goForward();
+    await expectReadingPoint(page, 1500);
+    await page.goForward();
+    await expectReadingPoint(page, 2400);
   } finally {
     release?.();
     if (pattern) await page.unroute(pattern);

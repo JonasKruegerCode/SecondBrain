@@ -741,7 +741,7 @@ window.addEventListener("popstate", event => {
     focusFragment();
     if (!location.hash) {
       const point = readingPoints.get(activeEntry.id);
-      if (point) window.scrollTo(point.x, point.y);
+      window.scrollTo(point?.x || 0, point?.y || 0);
     }
     return;
   }
