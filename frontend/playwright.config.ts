@@ -12,6 +12,9 @@ export default defineConfig({
   reporter: [["dot"], ["./e2e/save-body-reporter.ts"]],
   use: {
     browserName,
+    // WebKit's reading profile needs observable held API requests. Worker-
+    // controlled requests can bypass routing; Chromium retains normal workers.
+    serviceWorkers: browserName === "webkit" ? "block" : "allow",
     baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5173",
     viewport: { width: 1440, height: 1000 },
     screenshot: "off",
