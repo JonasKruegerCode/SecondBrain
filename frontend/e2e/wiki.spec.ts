@@ -871,8 +871,15 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
 }
 
 test("a stalled save body times out after successful headers and replays the real receipt", async ({ page, request }, testInfo) => {
+  const started = process.hrtime.bigint();
+  const checkpoint = (phase: string) => console.info("[save-body-phase] " + JSON.stringify({
+    phase, elapsed_ms: Number((process.hrtime.bigint() - started) / 1_000_000n),
+  }));
+  checkpoint("test entered after fixture setup");
   const fixture = await create(request, "# Save body fixture\nBefore.");
+  checkpoint("fixture page created");
   const proxy = await pwaUpdateProxy();
+  checkpoint("owned proxy listening");
   let gate: ReturnType<typeof proxy.holdNextSave> | undefined;
   let phase = "opening the proxied article";
   try {
@@ -886,6 +893,7 @@ test("a stalled save body times out after successful headers and replays the rea
     const headers = page.waitForResponse(response => response.request().method() === "POST" &&
       response.url().endsWith(`/api/wiki/pages/${fixture.id}`));
     phase = "waiting for the committed save to reach the body gate";
+    checkpoint(phase);
     await page.getByRole("button", { name: "Save changes" }).click();
     let arrived = false;
     void gate.arrived.then(() => { arrived = true; });
@@ -893,32 +901,41 @@ test("a stalled save body times out after successful headers and replays the rea
       await expect.poll(() => arrived, { message: "The real save never reached the body-stall gate", timeout: 10_000 }).toBeTruthy();
     });
     phase = "waiting for successful headers before the held response body";
+    checkpoint(phase);
     expect((await headers).status()).toBe(200); // Browser received real successful headers, not the body.
     const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(saved.markdown).toBe(draft);
     phase = "advancing the body deadline and waiting for the recoverable error";
+    checkpoint(phase);
     await page.clock.fastForward(30_001);
+    checkpoint("browser clock advanced");
     await expect(page.locator(".notice")).toContainText("save response timed out");
     await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
     await expect(page.getByRole("textbox", { name: /Markdown/ })).toBeEnabled();
     gate.release();
     phase = "replaying the identical real save receipt";
+    checkpoint(phase);
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.locator(".notice")).toContainText("Saved locally");
     const recovered = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(recovered.revision).toBe(saved.revision);
     const history = await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json();
     expect(history.history).toHaveLength(2);
+    checkpoint("save and receipt assertions completed");
   } finally {
     // These synthetic checkpoints stay in browser.log when the runner can only
     // report a whole-test timeout, including a stall during proxy teardown.
     console.info(`[save-body] status=${testInfo.status}; last phase=${phase}; entering cleanup`);
+    checkpoint("entering cleanup; status is provisional until runner teardown ends");
     gate?.release();
     await test.step("Close the browser and owned body-stall proxy", async () => {
       await page.close();
+      checkpoint("owned page closed");
       await proxy.close();
+      checkpoint("owned proxy closed");
     });
     console.info("[save-body] cleanup completed");
+    checkpoint("test body returning; request and context fixtures still belong to runner");
   }
 });
 

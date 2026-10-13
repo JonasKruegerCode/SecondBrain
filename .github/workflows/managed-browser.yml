@@ -44,6 +44,13 @@ jobs:
         working-directory: backend
         run: poetry run python ../scripts/run-wiki-acceptance.py
 
+      - name: Diagnose bounded save-body repetitions
+        working-directory: backend
+        run: >-
+          poetry run python ../scripts/run-wiki-acceptance.py
+          --browser-grep 'a stalled save body times out after successful headers and replays the real receipt$'
+          --repeat-each 5
+
       - name: Exercise empty first start and real service restart
         working-directory: backend
         run: poetry run python ../scripts/run-wiki-acceptance.py --first-start

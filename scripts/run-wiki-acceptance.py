@@ -95,9 +95,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Check an empty wiki, then restart both services and verify persisted pages",
     )
+    parser.add_argument(
+        "--browser-grep",
+        help="Run only matching browser tests for diagnosis; not a full acceptance run",
+    )
+    parser.add_argument(
+        "--repeat-each",
+        type=int,
+        default=1,
+        help="Repeat each selected test for bounded intermittent-failure diagnosis",
+    )
     args = parser.parse_args(argv)
     if args.startup_timeout <= 0:
         parser.error("--startup-timeout must be positive")
+    if args.repeat_each < 1:
+        parser.error("--repeat-each must be positive")
+    if args.first_start and (args.browser_grep or args.repeat_each != 1):
+        parser.error("first-start phases cannot be filtered or repeated")
 
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     artifact_dir = root / ".demo" / "acceptance" / run_id
@@ -140,6 +154,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     phases = ("create", "restart") if args.first_start else ("demo",)
     browser_command = ["npm", "run", "test:browser", "--", *suites]
+    if args.browser_grep:
+        browser_command.extend(["--grep", args.browser_grep])
+    if args.repeat_each != 1:
+        browser_command.extend(["--repeat-each", str(args.repeat_each)])
+    if args.browser_grep or args.repeat_each != 1:
+        browser_command.extend(["--output", str(artifact_dir / "browser-diagnostic")])
     if args.first_start:
         command.append("--empty")
         env.update(
@@ -237,6 +257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "git_head": _git_head(root),
         "suite": f"frontend/{suites[0]}",
         "suites": [f"frontend/{suite}" for suite in suites],
+        "test_selection": {"grep": args.browser_grep, "repeat_each": args.repeat_each},
         "fixture": "empty-first-start" if args.first_start else "fictional-template",
         "services": [
             "http://127.0.0.1:8000/api/wiki/health",
