@@ -10,15 +10,18 @@ import json
 import os
 import secrets
 import signal
+import socket
 import ssl
 import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 from uuid import uuid4
 
@@ -529,6 +532,139 @@ class Run:
             all(after[key] == frontend[key] for key in ("id", "started_at", "restart_count")),
         )
 
+    def exercise_chat_proxy(
+        self, compose: list[str], temp: Path, config: dict[str, Any], config_path: Path
+    ) -> None:
+        """Swap only the owned backend's provider; exercise both real nginx hops."""
+        original_command = config["services"]["backend"].get("command")
+        fixture = (ROOT / "scripts/fixtures/proxy-chat.py").read_text()
+        config["services"]["backend"]["command"] = ["python", "-c", fixture]
+        config_path.write_text(json.dumps(config))
+        base = self.port(compose, "edge", 443)
+        certificate = temp / "fixture-cert.pem"
+        tls = ssl.create_default_context(cafile=certificate)
+        self.client = build_opener(ProxyHandler({}), HTTPSHandler(context=tls))
+        basic = "Basic " + base64.b64encode(b"fixture:fixture-password").decode()
+        auth = {"Authorization": basic}
+        control = base + "/api/wiki/__acceptance/chat-control"
+        connection: ssl.SSLSocket | None = None
+
+        def wait_state(field: str, key: str) -> dict[str, Any]:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                state = self.data(control, headers=auth)
+                if key in state[field]:
+                    return state
+                time.sleep(0.1)
+            raise RuntimeError(f"synthetic provider did not report {field}: {key}")
+
+        def chat(key: str) -> tuple[bytes, Any]:
+            return self.http(
+                base + "/api/wiki/chat",
+                body={"messages": [{"role": "user", "content": key}]},
+                headers={**auth, "Origin": base},
+            )
+
+        try:
+            self.command([*compose, "up", "-d", "--wait", "--no-deps", "--force-recreate", "backend"])
+            self.backend_health(compose)
+            # The control route exists only in this fixture; wait for Docker DNS
+            # caches to reach its replacement, not a stale healthy backend.
+            deadline = time.monotonic() + 15
+            while True:
+                try:
+                    self.data(control, headers=auth)
+                    break
+                except (OSError, URLError, RuntimeError):
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("synthetic chat backend readiness timed out") from None
+                    time.sleep(0.5)
+            self.http(control, expected=401)
+            self.steps.append("proxy-chat-control-authenticated")
+            address = urlsplit(base)
+            raw = socket.create_connection((address.hostname, address.port), timeout=5)
+            try:
+                connection = tls.wrap_socket(raw, server_hostname=address.hostname)
+            except BaseException:
+                raw.close()
+                raise
+            payload = json.dumps(
+                {"messages": [{"role": "user", "content": "proxy-cancel"}]}
+            ).encode()
+            connection.sendall(
+                (
+                    f"POST /api/wiki/chat HTTP/1.1\r\nHost: {address.netloc}\r\n"
+                    f"Authorization: {basic}\r\nOrigin: {base}\r\n"
+                    f"Content-Type: application/json\r\nContent-Length: {len(payload)}\r\n\r\n"
+                ).encode() + payload
+            )
+            wait_state("started", "proxy-cancel")
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                survivor = pool.submit(chat, "proxy-survivor")
+                wait_state("started", "proxy-survivor")
+                connection.shutdown(socket.SHUT_RDWR)
+                connection.close()
+                connection = None
+                state = wait_state("cancelled", "proxy-cancel")
+                wait_state("finished", "proxy-cancel")
+                self.check(
+                    "proxy-chat-disconnect-isolated",
+                    "proxy-survivor" not in state["cancelled"]
+                    and "proxy-survivor" not in state["finished"]
+                    and not survivor.done(),
+                )
+                self.data(control, body={"release": "proxy-survivor"}, headers=auth)
+                content, headers = survivor.result(timeout=5)
+                self.check(
+                    "proxy-chat-survivor-200-no-store",
+                    "proxy-survivor" in json.loads(content)["answer"]
+                    and headers.get("Cache-Control") == "no-store",
+                )
+                retry = pool.submit(chat, "proxy-retry")
+                wait_state("started", "proxy-retry")
+                self.data(control, body={"release": "proxy-retry"}, headers=auth)
+                content, headers = retry.result(timeout=5)
+                self.check(
+                    "proxy-chat-retry-200-no-store",
+                    "proxy-retry" in json.loads(content)["answer"]
+                    and headers.get("Cache-Control") == "no-store",
+                )
+                state = self.data(control, headers=auth)
+                self.check(
+                    "proxy-chat-all-invocations-finished",
+                    set(state["finished"]) == {"proxy-cancel", "proxy-survivor", "proxy-retry"}
+                    and state["cancelled"] == ["proxy-cancel"],
+                )
+        finally:
+            failed = sys.exc_info()[0] is not None
+            if connection is not None:
+                connection.close()
+            if original_command is None:
+                config["services"]["backend"].pop("command", None)
+            else:
+                config["services"]["backend"]["command"] = original_command
+            config_path.write_text(json.dumps(config))
+            try:
+                self.command([*compose, "up", "-d", "--wait", "--no-deps", "--force-recreate", "backend"])
+                self.backend_health(compose)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                if not failed:
+                    raise
+            finally:
+                self.client = build_opener(ProxyHandler({}))
+        frontend = self.port(compose, "frontend", 80)
+        self.wait(frontend + "/api/wiki/health")
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                self.http(frontend + "/api/wiki/__acceptance/chat-control", expected=404)
+                break
+            except (OSError, URLError, RuntimeError):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("production backend retained the fixture control") from None
+                time.sleep(0.5)
+        self.steps.append("proxy-chat-production-command-restored")
+
     def exercise_proxy(self, compose: list[str], temp: Path) -> None:
         base = self.port(compose, "edge", 443)
         certificate = temp / "fixture-cert.pem"
@@ -892,6 +1028,8 @@ def main() -> int:
                     )
                     run.check("authenticated-built-browser", browser["status"] == "passed")
                     result["browser_proxy_gates"] = browser["gates"]
+                run.exercise_chat_proxy(compose, temp, isolated, original_path)
+                result["synthetic_proxy_chat_disconnect"] = True
                 page = run.data(base + "/api/wiki/pages/stack-fixture")
                 run.command([*compose, *seed], expected=1)
                 run.check(

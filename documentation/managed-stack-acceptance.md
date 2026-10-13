@@ -36,6 +36,17 @@ delivery settings are disabled for this rehearsal. It makes no OpenRouter
 calls and needs no external service credentials. Run it only with the included
 synthetic fixture: service logs are retained as acceptance evidence.
 
+The runner also temporarily starts the built backend with a held synthetic
+chat provider, using the real API, Uvicorn and both nginx layers. A verified TLS
+client sends an authenticated POST, waits until the provider is running, then
+closes its socket. The affected invocation must cancel while a parallel request
+stays pending and can finish with 200/no-store. A new retry must also succeed.
+The original backend command is restored, its test-only control route must
+disappear, and the existing vault continues through backup/restore checks.
+The fixture has no external model calls or provider credentials. This proves
+disconnect propagation in the disposable topology; it does not prove production
+proxy settings, real model quality, or remote generation/billing cancellation.
+
 ## Evidence and CI
 
 The runner returns a nonzero exit status when a required gate fails. Each run
