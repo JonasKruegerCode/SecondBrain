@@ -99,6 +99,18 @@ def test_first_start_rejects_a_different_browser_profile_before_startup() -> Non
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize("args", [
+    ["--webkit-workers"],
+    ["--webkit-workers", "--browser-engine", "webkit", "--browser-grep", "PWA"],
+    ["--webkit-workers", "--browser-engine", "webkit", "--repeat-each", "2"],
+])
+def test_worker_profile_rejects_wrong_engine_or_partial_selection(args: list[str]) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    with pytest.raises(SystemExit) as error:
+        main(args)
+    assert error.value.code == 2
+
+
 def test_openrouter_acceptance_keeps_only_structural_evidence() -> None:
     values = openrouter_acceptance_runner()
     validate = cast(Callable[..., dict[str, Any]], values["_validate_turn"])

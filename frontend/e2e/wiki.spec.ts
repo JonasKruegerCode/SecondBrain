@@ -4,6 +4,17 @@ import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
 import { checkTallOverview } from "./galaxy-window";
 
+// The separate WebKit worker slice uses these actual lifecycle tests. Reading
+// tests in other files retain their routing-compatible worker-blocked profile.
+test.use({ serviceWorkers: "allow" });
+test.beforeEach(async ({ browser, serviceWorkers }, info) => {
+  if (info.title.startsWith("PWA")) {
+    console.info("[pwa-worker-browser] " + JSON.stringify({
+      engine: browser.browserType().name(), service_workers: serviceWorkers,
+    }));
+  }
+});
+
 test.describe("galaxy touch navigation", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -356,7 +367,7 @@ async function pwaUpdateProxy() {
         body = Buffer.from(
           body
             .toString()
-            .replace("secondbrain-pwa-2026-10-10-1", `pwa-browser-test-${release}`),
+            + `\n/* Synthetic update-probe release ${release}. */\n`,
         );
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("Content-Type", "application/javascript");
@@ -1868,6 +1879,7 @@ test("PWA metadata registers an online-only worker without private caches", asyn
   page,
   request,
   context,
+  browser,
 }) => {
   await page.addInitScript(() => {
     const key = "pwa-first-install-documents";
@@ -1899,11 +1911,13 @@ test("PWA metadata registers an online-only worker without private caches", asyn
     ]),
   );
 
-  const session = await context.newCDPSession(page);
-  const appManifest = await session.send("Page.getAppManifest");
-  expect(appManifest.errors).toEqual([]);
-  const installability = await session.send("Page.getInstallabilityErrors");
-  expect(installability.installabilityErrors).toEqual([]);
+  if (browser.browserType().name() === "chromium") {
+    const session = await context.newCDPSession(page);
+    const appManifest = await session.send("Page.getAppManifest");
+    expect(appManifest.errors).toEqual([]);
+    const installability = await session.send("Page.getInstallabilityErrors");
+    expect(installability.installabilityErrors).toEqual([]);
+  }
   const worker = await page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     await new Promise<void>(resolve => {
@@ -1915,12 +1929,15 @@ test("PWA metadata registers an online-only worker without private caches", asyn
     return {
       scope: registration.scope,
       script: registration.active?.scriptURL,
+      controlled: Boolean(navigator.serviceWorker.controller),
       caches: await caches.keys(),
     };
   });
   expect(worker.scope).toBe("http://127.0.0.1:5173/");
   expect(worker.script).toMatch(/\/service-worker\.js$/);
   expect(worker.caches).toEqual([]);
+  expect(worker.controlled).toBe(true);
+  console.info("[pwa-worker-ready] " + JSON.stringify(worker));
   expect(await page.evaluate(() => sessionStorage.getItem("pwa-first-install-documents"))).toBe("1");
 
   const serviceWorker = await (await request.get("/service-worker.js")).text();
@@ -1936,7 +1953,7 @@ test("PWA metadata registers an online-only worker without private caches", asyn
   await expect(page.locator(".pwa-notice")).toBeHidden();
 });
 
-test("PWA offers and applies a waiting worker update", async ({ page }) => {
+test("PWA offers and applies a waiting worker update", async ({ page, context }, info) => {
   const proxy = await pwaUpdateProxy();
   try {
     await page.goto(`${proxy.origin}/?overview=1`);
@@ -1948,6 +1965,8 @@ test("PWA offers and applies a waiting worker update", async ({ page }) => {
     });
     const update = page.locator('.pwa-notice[data-kind="update"]');
     await expect(update).toContainText("new version");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: info.outputPath("worker-update-ready-390.png") });
     await Promise.all([
       page.waitForEvent("load"),
       update.getByRole("button", { name: "Update now" }).click(),
@@ -1956,6 +1975,9 @@ test("PWA offers and applies a waiting worker update", async ({ page }) => {
     await expect(page.locator(".pwa-notice")).toBeHidden();
     expect(await page.evaluate(() => caches.keys())).toEqual([]);
   } finally {
+    // The context owns worker connections too; page closure alone can leave
+    // the local proxy waiting until fixture teardown after the test timeout.
+    await context.close();
     await proxy.close();
   }
 });
@@ -2321,8 +2343,7 @@ for (const finish of ["save", "discard"] as const) {
       expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBeUndefined();
       await expect(page.locator('.pwa-notice[data-kind="update"]')).toBeHidden();
     } finally {
-      await other.close();
-      await page.close();
+      await context.close();
       await proxy.close();
     }
   });

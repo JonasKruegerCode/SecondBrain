@@ -112,6 +112,25 @@ worker updates, native cache/BFCache behavior or PWA installation. The full
 Chromium profile keeps service workers enabled. See Playwright's guidance on
 [missing network events](https://playwright.dev/docs/network#missing-network-events-and-service-workers).
 
+The separate worker lifecycle slice keeps service workers enabled:
+
+```sh
+"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers
+```
+
+It selects four existing cases: online-first registration and no private caches,
+an offered waiting-worker update, and editor-draft protection while another tab
+updates, followed by save or discard and deliberate reload. The update probe
+serves the actual app/API through an owned loopback proxy and changes only a
+synthetic comment in the worker bytes to trigger a new version. Browser contexts
+close before the proxy, including its worker connections. Its worker-enabled
+logs, effective selection, structural profile and images are separate from the
+reading profile. Chromium retains CDP manifest/installability diagnostics;
+WebKit has no CDP path and instead checks browser metadata, actual worker
+registration/control, CacheStorage and online/offline behavior. These controlled
+Linux browser updates do not establish native Safari/Home Screen installation,
+physical iOS lifecycle or production HTTPS/auth operation.
+
 Use the fictional atlas for shared screenshots or review. The automated browser
 rehearsal checks the unavailable-provider path; it does not stand in for this
 human tour or real answer-quality inspection. Record the tested Git head,

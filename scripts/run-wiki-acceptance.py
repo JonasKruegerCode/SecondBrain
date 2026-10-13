@@ -106,6 +106,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Chromium full suite or WebKit reading/navigation compatibility slice",
     )
     parser.add_argument(
+        "--webkit-workers",
+        action="store_true",
+        help="Separate WebKit worker/update slice with service workers enabled",
+    )
+    parser.add_argument(
         "--repeat-each",
         type=int,
         default=1,
@@ -120,6 +125,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("first-start phases cannot be filtered or repeated")
     if args.first_start and args.browser_engine != "chromium":
         parser.error("first-start phases require the Chromium acceptance profile")
+    if args.webkit_workers and (
+        args.browser_engine != "webkit" or args.first_start
+        or args.browser_grep or args.repeat_each != 1
+    ):
+        parser.error("--webkit-workers requires unfiltered WebKit worker acceptance")
 
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     artifact_dir = root / ".demo" / "acceptance" / run_id
@@ -168,14 +178,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
         ]
+    worker_filter = (
+        "(PWA metadata registers an online-only worker without private caches|"
+        "PWA offers and applies a waiting worker update|"
+        "PWA preserves a dirty tab when another tab updates, then permits (save|discard) and reload)$"
+        if args.webkit_workers else None
+    )
+    if args.webkit_workers:
+        suites = ["e2e/wiki.spec.ts"]
     phases = ("create", "restart") if args.first_start else ("demo",)
     browser_command = ["npm", "run", "test:browser", "--", *suites]
     if args.browser_grep:
         browser_command.extend(["--grep", args.browser_grep])
+    if worker_filter:
+        browser_command.extend(["--grep", worker_filter])
     if args.repeat_each != 1:
         browser_command.extend(["--repeat-each", str(args.repeat_each)])
     if args.browser_grep or args.repeat_each != 1 or args.browser_engine != "chromium":
         output_name = "browser-diagnostic" if args.browser_engine == "chromium" else "browser-webkit"
+        if args.webkit_workers:
+            output_name = "browser-webkit-workers"
         browser_command.extend(["--output", str(artifact_dir / output_name)])
     if args.first_start:
         command.append("--empty")
@@ -273,9 +295,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "duration_seconds": round((finished - started).total_seconds(), 3),
         "git_head": _git_head(root),
         "browser_engine": args.browser_engine,
+        "browser_profile": "worker-update" if args.webkit_workers else (
+            "reading-navigation" if args.browser_engine == "webkit" else "full"
+        ),
+        "service_workers": "block" if args.browser_engine == "webkit" and not args.webkit_workers else "allow",
         "suite": f"frontend/{suites[0]}",
         "suites": [f"frontend/{suite}" for suite in suites],
-        "test_selection": {"grep": args.browser_grep, "repeat_each": args.repeat_each},
+        "test_selection": {"grep": worker_filter or args.browser_grep, "repeat_each": args.repeat_each},
         "fixture": "empty-first-start" if args.first_start else "fictional-template",
         "services": [
             "http://127.0.0.1:8000/api/wiki/health",

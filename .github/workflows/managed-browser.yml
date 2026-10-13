@@ -53,6 +53,9 @@ jobs:
       - name: Exercise reading and navigation in WebKit
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit'
 
+      - name: Exercise worker registration and protected updates in WebKit
+        run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers'
+
       # Only synthetic structural evidence and screenshots; never archive a vault.
       - name: Upload browser acceptance evidence
         if: always()
