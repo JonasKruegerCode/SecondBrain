@@ -24,7 +24,9 @@ def _bounded_tool_json(result: dict[str, Any]) -> str:
         return encoded
 
     markdown = result.get("markdown")
-    if isinstance(markdown, str):
+    if isinstance(markdown, str) and len(
+        json.dumps({**result, "markdown": "", "truncated": True}, ensure_ascii=False)
+    ) <= MAX_TOOL_RESULT_CHARS:
         bounded = {**result, "markdown": "", "truncated": True}
         low, high = 0, len(markdown)
         while low <= high:
@@ -178,6 +180,18 @@ class WikiChat:
             tool_calls = reply.get("tool_calls") or []
             if not isinstance(tool_calls, list):
                 raise WikiError("chat_unavailable", "The model returned an invalid tool response.")
+            call_ids: set[str] = set()
+            for call in tool_calls:
+                call_id = call.get("id") if isinstance(call, dict) else None
+                if (
+                    not isinstance(call_id, str)
+                    or not call_id.strip()
+                    or call_id in call_ids
+                ):
+                    raise WikiError(
+                        "chat_unavailable", "The model returned an invalid tool response."
+                    )
+                call_ids.add(call_id)
             if not tool_calls:
                 content = reply.get("content")
                 if not isinstance(content, str) or not content.strip():
@@ -206,12 +220,15 @@ class WikiChat:
                 if calls > MAX_TOOL_CALLS:
                     raise WikiError("chat_limit", "The chat reached its wiki navigation limit.")
                 result = await asyncio.to_thread(self._execute, call, sources, activity)
-                call_id = call.get("id") if isinstance(call, dict) else None
+                tool_content = _bounded_tool_json(result)
+                delivered = json.loads(tool_content)
+                if isinstance(delivered.get("markdown"), str) and delivered["markdown"]:
+                    self._source(delivered, sources, "read")
                 messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": call_id if isinstance(call_id, str) else f"call-{calls}",
-                        "content": _bounded_tool_json(result),
+                        "tool_call_id": call["id"],
+                        "content": tool_content,
                     }
                 )
         raise WikiError("chat_limit", "The chat reached its reasoning-step limit.")
@@ -287,7 +304,6 @@ class WikiChat:
         page = self.store.get_page(page_id)
         if page is None:
             return {"error": "not_found"}
-        self._source(page, sources, "read")
         activity.append(f"Read “{page['title']}”.")
         return {
             "id": page["id"],

@@ -1612,6 +1612,50 @@ test("read-only chat keeps multi-turn context and conversations in this browser"
   await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
 });
 
+for (const scenario of ["long-answer", "many-turns", "multibyte", "escaped-text"] as const) {
+test(`chat bounds follow-up context without changing saved text (${scenario})`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: scenario === "multibyte" || scenario === "escaped-text" ? 390 : 1440, height: 900 });
+  await page.addInitScript(kind => {
+    const text = kind === "multibyte" ? "界".repeat(3500)
+      : kind === "escaped-text" ? "\u0001".repeat(3500) : "Synthetic context. ".repeat(190);
+    const messages = kind === "long-answer"
+      ? [{ role: "user", content: "A synthetic earlier question." },
+         { role: "assistant", content: "Long synthetic reply. ".repeat(300) }]
+      : Array.from({ length: kind === "many-turns" ? 6 : 10 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: text }));
+    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+      id: "synthetic-context", title: "Synthetic context probe", updated: 1, messages,
+    }]));
+  }, scenario);
+  let captured: { role: string; content: string }[] = [];
+  await page.route("**/api/wiki/chat", async route => {
+    const body = route.request().postData()!;
+    captured = JSON.parse(body).messages;
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(25000);
+    expect(captured.length).toBeLessThanOrEqual(12);
+    expect(captured.every(message => message.content.length <= 4000)).toBeTruthy();
+    expect(captured.reduce((sum, message) => sum + message.content.length, 0)).toBeLessThanOrEqual(20000);
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+      answer: "Synthetic bounded follow-up answer.", sources: [], activity: [],
+    }) });
+  });
+  await page.goto("/chat");
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].messages);
+  await page.getByLabel("Message").fill("Keep this exact newest synthetic question.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic bounded follow-up answer.");
+  expect(captured.at(-1)).toEqual({ role: "user", content: "Keep this exact newest synthetic question." });
+  expect(captured[0].role).toBe("user");
+  await expect(page.locator(".chat-context-notice")).toContainText("saved messages are unchanged");
+  const after = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].messages);
+  expect(after.slice(0, before.length)).toEqual(before);
+  await page.locator(".chat-context-notice").scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: testInfo.outputPath(`chat-context-${scenario}.png`) });
+  await page.reload();
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic bounded follow-up answer.");
+});
+}
+
 test("chat preserves independent tab conversations and does not resurrect a deleted one", async ({ page, context }) => {
   const other = await context.newPage();
   for (const tab of [page, other]) {

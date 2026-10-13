@@ -147,6 +147,60 @@ def test_chat_keeps_truncated_page_tool_result_valid_json(tmp_path: Path) -> Non
     assert result["truncated"] is True
     assert result["markdown"].startswith("# Archive")
     assert len(result["markdown"]) < len(markdown)
+    assert response.json()["sources"] == [{"id": "archive", "title": "Archive", "evidence": "read"}]
+
+
+def test_chat_bounds_oversized_page_metadata_without_citing_it(tmp_path: Path) -> None:
+    provider = ScriptedProvider(
+        [
+            {"tool_calls": [call("read_page", '{"page_id":"archive"}', "r1")]},
+            {"content": "The page could not fit in context."},
+        ]
+    )
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        assert client.post(
+            "/api/wiki/pages/archive",
+            json={
+                "markdown": "# " + "T" * 9_000 + "\nEvidence.",
+                "base_revision": None,
+                "request_id": "seed-oversized-title",
+            },
+        ).status_code == 200
+        response = client.post(
+            "/api/wiki/chat", json={"messages": [{"role": "user", "content": "Read it"}]}
+        )
+
+    assert response.status_code == 200
+    content = provider.requests[-1][-1]["content"]
+    assert len(content) <= MAX_TOOL_RESULT_CHARS
+    assert json.loads(content)["error"] == "tool_result_too_large"
+    assert response.json()["sources"] == []
+
+
+@pytest.mark.parametrize("bad_id", [None, "", " ", 42, "duplicate"])
+def test_chat_rejects_invalid_call_ids_before_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad_id: Any
+) -> None:
+    first = call("read_page", '{"page_id":"archive"}', "duplicate")
+    second = call("read_page", '{"page_id":"archive"}', "placeholder")
+    if bad_id is None:
+        second.pop("id")
+    else:
+        second["id"] = bad_id
+    provider = ScriptedProvider([{"tool_calls": [first, second]}])
+    app = configured_app(tmp_path, provider)
+
+    def unexpected_read(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Malformed tool batch must be rejected before any reads")
+
+    monkeypatch.setattr(WikiChat, "_execute", unexpected_read)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/wiki/chat", json={"messages": [{"role": "user", "content": "Read it"}]}
+        )
+    assert response.status_code == 503
+    assert response.json()["error"] == "chat_unavailable"
+    assert len(provider.requests) == 1
 
 
 def test_chat_returns_clean_reasoning_limit_error(tmp_path: Path) -> None:

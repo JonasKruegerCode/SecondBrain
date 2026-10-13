@@ -1,4 +1,5 @@
 import "./chat.css";
+import { chatContext } from "./chat-context";
 
 type Source = { id: string; title: string; evidence: "read" };
 type Message = {
@@ -166,6 +167,7 @@ export function renderChat(main: Element, api: Api): () => void {
   let busy = false;
   let error = "";
   let conversationNotice = "";
+  let contextNotice = "";
   let alive = true;
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
@@ -195,7 +197,10 @@ export function renderChat(main: Element, api: Api): () => void {
       .sort((a, b) => b.deleted - a.deleted)
       .slice(0, MAX_TOMBSTONES);
     conversations = [...merged.values()].sort((a, b) => b.updated - a.updated);
-    if (deleted.has(activeId)) conversationNotice = "This conversation was deleted in another tab.";
+    if (deleted.has(activeId)) {
+      conversationNotice = "This conversation was deleted in another tab.";
+      contextNotice = "";
+    }
     if (!conversations.length) {
       const replacement = freshConversation();
       conversations = [replacement];
@@ -232,6 +237,7 @@ export function renderChat(main: Element, api: Api): () => void {
         </div>
         ${retryNotice ? `<div class="chat-error" role="alert"><span>${esc(retryNotice)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
         ${conversationNotice ? `<div class="chat-storage-notice chat-conversation-notice" role="status">${esc(conversationNotice)}</div>` : ""}
+        ${contextNotice ? `<div class="chat-storage-notice chat-context-notice" role="status">${esc(contextNotice)}</div>` : ""}
         ${storageUnavailable ? `<div class="chat-storage-notice" role="status">Browser storage is unavailable. New messages stay only in this tab until it is reloaded; previously saved conversations may remain after deletion.</div>` : ""}
         <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy ? "disabled" : ""}></textarea><button class="primary" ${busy ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
       </div>
@@ -241,6 +247,7 @@ export function renderChat(main: Element, api: Api): () => void {
         activeId = button.dataset.conversation!;
         error = "";
         conversationNotice = "";
+        contextNotice = "";
         persist(); // Keep the selected conversation when leaving or reloading Chat.
         render(false);
       };
@@ -252,6 +259,7 @@ export function renderChat(main: Element, api: Api): () => void {
       dirtyIds.add(next.id);
       error = "";
       conversationNotice = "";
+      contextNotice = "";
       persist();
       render(true);
     };
@@ -264,6 +272,7 @@ export function renderChat(main: Element, api: Api): () => void {
       activeId = conversations[0].id;
       error = "";
       conversationNotice = "";
+      contextNotice = "";
       persist();
       render(false);
     };
@@ -309,14 +318,14 @@ export function renderChat(main: Element, api: Api): () => void {
       return;
     }
     const requestId = conversation.id;
+    const { messages, limited } = chatContext(conversation.messages);
+    contextNotice = limited
+      ? "Only recent conversation text and shortened excerpts were sent for this reply. Your saved messages are unchanged."
+      : "";
     busy = true;
     error = "";
     render(false);
     try {
-      const messages = conversation.messages
-        .filter(message => message.role === "user" || message.role === "assistant")
-        .slice(-12)
-        .map(({ role, content }) => ({ role, content }));
       const result = (await api("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
