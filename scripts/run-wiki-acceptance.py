@@ -100,6 +100,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Run only matching browser tests for diagnosis; not a full acceptance run",
     )
     parser.add_argument(
+        "--browser-engine",
+        choices=("chromium", "webkit"),
+        default="chromium",
+        help="Chromium full suite or WebKit reading/navigation compatibility slice",
+    )
+    parser.add_argument(
         "--repeat-each",
         type=int,
         default=1,
@@ -112,6 +118,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--repeat-each must be positive")
     if args.first_start and (args.browser_grep or args.repeat_each != 1):
         parser.error("first-start phases cannot be filtered or repeated")
+    if args.first_start and args.browser_engine != "chromium":
+        parser.error("first-start phases require the Chromium acceptance profile")
 
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     artifact_dir = root / ".demo" / "acceptance" / run_id
@@ -134,6 +142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     env = {**os.environ}
     env.pop("OPENROUTER_API_KEY", None)
+    env["PLAYWRIGHT_BROWSER_ENGINE"] = args.browser_engine
     command = [
         sys.executable,
         str(root / "scripts" / "run-wiki-demo.py"),
@@ -152,14 +161,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/demo-rehearsal.spec.ts",
         ]
     )
+    if args.browser_engine == "webkit":
+        suites = [
+            "e2e/skip-link.spec.ts",
+            "e2e/article-focus.spec.ts",
+            "e2e/view-focus.spec.ts",
+            "e2e/demo-rehearsal.spec.ts",
+        ]
     phases = ("create", "restart") if args.first_start else ("demo",)
     browser_command = ["npm", "run", "test:browser", "--", *suites]
     if args.browser_grep:
         browser_command.extend(["--grep", args.browser_grep])
     if args.repeat_each != 1:
         browser_command.extend(["--repeat-each", str(args.repeat_each)])
-    if args.browser_grep or args.repeat_each != 1:
-        browser_command.extend(["--output", str(artifact_dir / "browser-diagnostic")])
+    if args.browser_grep or args.repeat_each != 1 or args.browser_engine != "chromium":
+        output_name = "browser-diagnostic" if args.browser_engine == "chromium" else "browser-webkit"
+        browser_command.extend(["--output", str(artifact_dir / output_name)])
     if args.first_start:
         command.append("--empty")
         env.update(
@@ -255,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "finished_at": finished.isoformat(),
         "duration_seconds": round((finished - started).total_seconds(), 3),
         "git_head": _git_head(root),
+        "browser_engine": args.browser_engine,
         "suite": f"frontend/{suites[0]}",
         "suites": [f"frontend/{suite}" for suite in suites],
         "test_selection": {"grep": args.browser_grep, "repeat_each": args.repeat_each},

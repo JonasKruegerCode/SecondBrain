@@ -92,6 +92,13 @@ def test_acceptance_stops_if_supervised_services_exit() -> None:
         wait("http://127.0.0.1:8000/health", process, timeout=1)
 
 
+def test_first_start_rejects_a_different_browser_profile_before_startup() -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    with pytest.raises(SystemExit) as error:
+        main(["--first-start", "--browser-engine", "webkit"])
+    assert error.value.code == 2
+
+
 def test_openrouter_acceptance_keeps_only_structural_evidence() -> None:
     values = openrouter_acceptance_runner()
     validate = cast(Callable[..., dict[str, Any]], values["_validate_turn"])

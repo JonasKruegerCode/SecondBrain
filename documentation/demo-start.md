@@ -89,6 +89,21 @@ regression suite.
 
 ## Manual presentation rehearsal
 
+The browser CI also runs the reading/navigation compatibility slice in WebKit
+against a separately started disposable API/Vite instance. With installed
+Playwright WebKit dependencies, run it explicitly from the repository root:
+
+```sh
+"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit
+```
+
+It selects article/view focus, skip links and the fictional demo route, preserving
+Chromium screenshots in a separate output directory. Structural evidence names
+the engine and selected suites. This Linux Playwright WebKit build is not branded
+Safari, macOS or a physical iPhone/PWA installation; full Chromium, first-start,
+import and container acceptance remain separate gates. See
+[Playwright's browser scope](https://playwright.dev/docs/browsers#webkit).
+
 Use the fictional atlas for shared screenshots or review. The automated browser
 rehearsal checks the unavailable-provider path; it does not stand in for this
 human tour or real answer-quality inspection. Record the tested Git head,

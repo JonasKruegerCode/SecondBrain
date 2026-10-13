@@ -39,7 +39,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
 
       - name: Exercise the real disposable wiki and browser
         run: make acceptance PYTHON="$WIKI_PYTHON"
@@ -49,6 +49,9 @@ jobs:
 
       - name: Exercise local Git import and preserved browser edits
         run: make acceptance-import PYTHON="$WIKI_PYTHON"
+
+      - name: Exercise reading and navigation in WebKit
+        run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit'
 
       # Only synthetic structural evidence and screenshots; never archive a vault.
       - name: Upload browser acceptance evidence
