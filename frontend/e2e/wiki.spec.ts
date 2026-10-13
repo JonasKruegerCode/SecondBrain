@@ -1505,6 +1505,89 @@ test("large synthetic graph opens a usable list without constructing SVG", async
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Scale page 250");
 });
 
+for (const width of [1440, 390]) {
+  test(`stopping a chat reply aborts transport and retains a retryable question (${width})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    let release!: () => void;
+    let reached!: () => void;
+    let finished!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const held = new Promise<void>(resolve => { reached = resolve; });
+    const delivered = new Promise<void>(resolve => { finished = resolve; });
+    let calls = 0;
+    const question = "Synthetic cancellation question.";
+    const lateAnswer = "Synthetic answer from the stopped request.";
+    await page.route("**/api/wiki/chat", async route => {
+      if (++calls === 1) {
+        reached();
+        await gate;
+        await route.fulfill({ json: { answer: lateAnswer, sources: [], activity: [] } });
+        finished();
+      } else await route.fulfill({ json: { answer: "Synthetic retry answer.", sources: [], activity: [] } });
+    });
+    try {
+      await page.goto("/chat");
+      await page.getByLabel("Message").fill(question);
+      await page.getByRole("button", { name: "Send" }).click();
+      await held;
+      const stop = page.getByRole("button", { name: "Stop reply", exact: true });
+      await stop.scrollIntoViewIfNeeded();
+      await expect(stop).toBeVisible();
+      expect((await stop.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      await page.screenshot({ path: testInfo.outputPath(`chat-stop-${width}.png`) });
+      await stop.focus();
+      const aborted = page.waitForEvent("requestfailed", request => new URL(request.url()).pathname === "/api/wiki/chat");
+      await page.keyboard.press("Enter");
+      await aborted;
+      await expect(page.locator(".chat-error")).toContainText("Reply stopped. Your question is still here");
+      await expect(page.locator(".chat-thinking")).toHaveCount(0);
+      await expect(page.getByLabel("Message")).toBeEnabled();
+      await expect(page.getByLabel("Message")).toBeFocused();
+      release();
+      await delivered;
+      await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+      await expect(page.locator(".chat-message.user p")).toHaveText(question);
+      expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).not.toContain(lateAnswer);
+      await page.getByRole("button", { name: "Retry", exact: true }).click();
+      await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic retry answer.");
+      await expect(page.locator(".chat-message.user")).toHaveCount(1);
+      await page.reload();
+      await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic retry answer.");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    } finally { release(); }
+  });
+}
+
+test("leaving chat aborts an unfinished reply and does not revive it on return", async ({ page }) => {
+  let reached!: () => void;
+  let release!: () => void;
+  let finished!: () => void;
+  const held = new Promise<void>(resolve => { reached = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const delivered = new Promise<void>(resolve => { finished = resolve; });
+  await page.route("**/api/wiki/chat", async route => {
+    reached();
+    await gate;
+    await route.fulfill({ json: { answer: "Synthetic obsolete answer.", sources: [], activity: [] } });
+    finished();
+  });
+  try {
+    await page.goto("/chat");
+    await page.getByLabel("Message").fill("Synthetic navigation question.");
+    await page.getByRole("button", { name: "Send" }).click();
+    await held;
+    const aborted = page.waitForEvent("requestfailed", request => new URL(request.url()).pathname === "/api/wiki/chat");
+    await page.getByRole("link", { name: "Home", exact: true }).click();
+    await aborted;
+    release();
+    await delivered;
+    await page.getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(page.locator(".chat-message.user")).toContainText("Synthetic navigation question.");
+    await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
+  } finally { release(); }
+});
+
 test("demo tour preserves an unanswered real chat question across reload and navigation", async ({ page, request }, testInfo) => {
   // Use the actual unconfigured API in the isolated demo, without a scripted answer.
   const before = await (await request.get("/api/wiki/graph")).json();

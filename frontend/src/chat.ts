@@ -175,6 +175,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   const dirtyIds = new Set(tabDirtyIds);
   const deletedIds = new Map<string, number>();
   let busy = false;
+  let requestController: AbortController | undefined;
   let error = "";
   let conversationNotice = "";
   let contextNotice = "";
@@ -245,7 +246,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         <div class="chat-heading"><div><div class="eyebrow">READ-ONLY WIKI CHAT</div><h1 id="chat-title">Ask, then follow the evidence.</h1><p>The assistant searches and reads this wiki. It cannot change pages, and conversations stay in this browser.</p></div><span class="chat-boundary">No write tools</span></div>
         <div class="chat-messages" role="log" aria-live="polite">
           ${conversation.messages.length ? conversation.messages.map(message => `<article class="chat-message ${message.role}"><div class="chat-role">${message.role === "user" ? "You" : "Wiki assistant"}</div><p>${esc(message.content)}</p>${message.activity?.length ? `<details><summary>${message.activity.length} wiki action${message.activity.length === 1 ? "" : "s"}</summary><ul>${message.activity.map(item => `<li>${esc(item)}</li>`).join("")}</ul></details>` : ""}${message.sources?.length ? `<div class="chat-sources"><span>Sources</span>${message.sources.map(source => `<a href="${pageUrl(source.id)}">${esc(source.title)} <small>${esc(source.evidence)}</small></a>`).join("")}</div>` : ""}</article>`).join("") : `<div class="chat-empty"><span>✳</span><h2>Start with a real question.</h2><p>Try asking where a project stands, then ask a follow-up about one source.</p></div>`}
-          ${busy ? `<div class="chat-thinking"><i></i>Searching and reading…</div>` : ""}
+          ${busy ? `<div class="chat-thinking"><i></i>Searching and reading… <button type="button" data-action="stop">Stop reply</button></div>` : ""}
         </div>
         ${retryNotice ? `<div class="chat-error" role="alert"><span>${esc(retryNotice)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
         ${conversationNotice ? `<div class="chat-storage-notice chat-conversation-notice" role="status">${esc(conversationNotice)}</div>` : ""}
@@ -314,6 +315,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     };
     const retry = main.querySelector<HTMLButtonElement>('[data-action="retry"]');
     if (retry) retry.onclick = () => void requestAnswer();
+    const stop = main.querySelector<HTMLButtonElement>('[data-action="stop"]');
+    if (stop) stop.onclick = () => requestController?.abort();
     if (!busy && focusComposer)
       main.querySelector<HTMLTextAreaElement>("#chat-input")?.focus({ preventScroll: true });
     main.querySelector(".chat-messages")?.scrollTo({ top: 1_000_000 });
@@ -332,6 +335,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       return;
     }
     const requestId = conversation.id;
+    const controller = new AbortController();
+    requestController = controller;
     const { messages, limited } = chatContext(conversation.messages);
     contextNotice = limited
       ? "Only recent conversation text and shortened excerpts were sent for this reply. Your saved messages are unchanged."
@@ -344,8 +349,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages }),
+        signal: controller.signal,
       })) as ChatResponse;
-      if (!alive || activeId !== requestId) return;
+      if (!alive || activeId !== requestId || controller.signal.aborted) return;
       conversation.messages.push({
         role: "assistant",
         content: result.answer,
@@ -361,8 +367,10 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         persist();
         return;
       }
-      error = (cause as Error).message + " Your question is still here; retry when ready.";
+      error = (controller.signal.aborted ? "Reply stopped." : (cause as Error).message)
+        + " Your question is still here; retry when ready.";
     } finally {
+      if (requestController === controller) requestController = undefined;
       if (alive) {
         busy = false;
         render(true);
@@ -373,6 +381,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   render(false);
   return () => {
     alive = false;
+    requestController?.abort();
     stateChanged();
   };
 }

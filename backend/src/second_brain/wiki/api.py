@@ -186,7 +186,28 @@ def create_app(
                 ) from exc
         try:
             async with asyncio.timeout(55):
-                return JSONResponse(await chat.answer(body.get("messages")))
+                # The POST body is consumed: only this request's disconnect watcher
+                # reads receive while its independent answer task runs.
+                async def disconnected() -> None:
+                    while (await request.receive())["type"] != "http.disconnect":
+                        pass
+
+                answer_task = asyncio.create_task(chat.answer(body.get("messages")))
+                disconnect_task = asyncio.create_task(disconnected())
+                try:
+                    done, _ = await asyncio.wait(
+                        (answer_task, disconnect_task), return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if disconnect_task in done:
+                        disconnect_task.result()
+                        # There is no client left to receive an answer. Cleanup
+                        # cancels this invocation, never the shared chat/provider.
+                        return Response(status_code=499)
+                    return JSONResponse(answer_task.result())
+                finally:
+                    answer_task.cancel()
+                    disconnect_task.cancel()
+                    await asyncio.gather(answer_task, disconnect_task, return_exceptions=True)
         except TimeoutError as exc:
             raise WikiError("chat_unavailable", "Wiki chat timed out. Try again.") from exc
         except WikiError:

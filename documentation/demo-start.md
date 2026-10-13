@@ -79,6 +79,11 @@ OPENROUTER_API_KEY=... PYTHONPATH=backend/src \
 Then ask a question about the atlas and a follow-up. The model can only call the
 bounded search, page-read, and graph-neighbor tools. The browser keeps and can
 delete conversation history locally; the backend stores no chat transcript.
+While a reply is pending, **Stop reply** cancels the browser request and keeps
+the saved question available for Retry. Leaving Chat also aborts its unfinished
+request. The server cancels that invocation when it observes the disconnect;
+this cannot interrupt an already running synchronous read or guarantee that a
+remote provider stops generation or billing immediately.
 This is a paid external call, distinct from the deterministic demo and browser
 regression suite.
 

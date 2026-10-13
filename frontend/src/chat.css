@@ -34,6 +34,7 @@
 .chat-sources small { color: var(--muted-surface-text); margin-left: 4px; }
 .chat-thinking { color: #61766c; font-size: 12px; display: flex; gap: 9px; align-items: center; }
 .chat-thinking i { width: 7px; height: 7px; background: #5a9581; border-radius: 50%; animation: chat-pulse 1s infinite alternate; }
+.chat-thinking button { background: #e4eee7; color: #315e51; border-radius: 8px; padding: 8px 12px; min-height: 44px; min-width: 44px; margin-left: auto; }
 @keyframes chat-pulse { to { opacity: .25; transform: scale(.75); } }
 .chat-error { margin: 0 34px 15px; padding: 12px 14px; background: #fff1ed; color: #885a50; border-radius: 9px; display: flex; justify-content: space-between; align-items: center; gap: 15px; font-size: 12px; }
 .chat-error button { background: transparent; color: inherit; font-weight: 700; text-decoration: underline; min-height: 44px; min-width: 44px; padding: 8px 10px; flex-shrink: 0; }
