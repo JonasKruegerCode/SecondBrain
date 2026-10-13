@@ -191,6 +191,12 @@ answers and cited pages through the manual tour before closing that gate.
 Client counts do not establish HTTP delivery, internal retry counts or billing.
 Hosted index, deployment and device behavior remain separate.
 
+For direct agent maintenance, use the separate nine-page
+[editorial rehearsal](editorial-rehearsal.md). Its dated controlled result covers
+source-based corrections, knowledge-preserving consolidation, meaningful links
+and real MCP conflict/retry/restart behavior. It is author-aware and establishes
+neither a comparative quality score nor real-provider answer quality.
+
 ## Evidence snapshot
 
 Verified published implementation baseline `fc136028244134112d0dbb29acf6576bf9740b92`
