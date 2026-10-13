@@ -1616,6 +1616,7 @@ for (const scenario of ["long-answer", "many-turns", "multibyte", "escaped-text"
 test(`chat bounds follow-up context without changing saved text (${scenario})`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: scenario === "multibyte" || scenario === "escaped-text" ? 390 : 1440, height: 900 });
   await page.addInitScript(kind => {
+    if (localStorage.getItem("secondbrain.chat.conversations.v1")) return;
     const text = kind === "multibyte" ? "界".repeat(3500)
       : kind === "escaped-text" ? "\u0001".repeat(3500) : "Synthetic context. ".repeat(190);
     const messages = kind === "long-answer"
