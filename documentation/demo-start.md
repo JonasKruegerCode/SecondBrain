@@ -97,6 +97,11 @@ viewport/browser, provider enabled or unavailable, and any failed step:
 1. Start the documented demo, open Home, follow **Mira Quill** to the archive
    method, and use its field-notebook link. The route should read naturally,
    with clear introductions and a useful path back to Home.
+   On a longer article, follow an in-text link and use browser Back/Forward:
+   the reading point should return for that visit. Fragment links still take
+   precedence; choosing another focus or scrolling during a pending read must
+   not be overridden. Positions stay in bounded tab memory, without page data,
+   and are discarded on full reload; native document restoration is separate.
 2. Search for `tide`, open the tide clock, then use History. Edit only the
    synthetic page, save, reload, and verify that both content and history reflect
    the save. A local save is distinct from optional index/remote delivery.

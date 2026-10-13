@@ -133,6 +133,185 @@ async function activate(page: Page, name: string) {
   await page.keyboard.press("Enter");
 }
 
+function readingPage(title: string, destination?: string) {
+  return `# ${title}\n\n` + Array.from({ length: 100 }, (_, index) =>
+    `Synthetic reading paragraph ${index + 1}. A quiet notebook contains observations of clouds, stones, and the changing afternoon light. ` +
+    (destination ? `[Continue reading](/wiki/${destination})` : "The next observation waits further down the page.")
+  ).join("\n\n");
+}
+
+async function deleteReadingPages(request: APIRequestContext, ids: string[]) {
+  for (const id of ids.reverse()) {
+    const latest = await request.get(`/api/wiki/pages/${id}`);
+    if (latest.ok()) expect((await request.delete(`/api/wiki/pages/${id}`, { data: {
+      base_revision: (await latest.json()).revision, request_id: randomUUID(),
+    }})).ok()).toBeTruthy();
+  }
+}
+
+async function followVisibleReadingLink(page: Page) {
+  const links = page.locator('article a').filter({ hasText: "Continue reading" });
+  const index = await links.evaluateAll(elements => elements.findIndex(element => {
+    const box = element.getBoundingClientRect();
+    return box.top > 40 && box.bottom < window.innerHeight - 40;
+  }));
+  expect(index).toBeGreaterThanOrEqual(0);
+  // Use a link already inside the viewport so activation does not move the
+  // source reading point to an offscreen header or distant paragraph.
+  await links.nth(index).click();
+}
+
+async function expectReadingPoint(page: Page, point: number) {
+  await expect.poll(async () => Math.abs(await page.evaluate(() => scrollY) - point)).toBeLessThanOrEqual(2);
+}
+
+for (const width of [390, 1440]) {
+  test(`ordinary history restores each reading point (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    const owned: string[] = [];
+    try {
+      const target = await create(request, readingPage("Reading target"));
+      owned.push(target.id);
+      const source = await create(request, readingPage("Reading source", target.id));
+      owned.push(source.id);
+      await page.goto(`/wiki/${source.id}`);
+      await expect(page.locator("article > h1")).toHaveText("Reading source");
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await expectReadingPoint(page, 900);
+      await followVisibleReadingLink(page);
+      await expect(page.locator("article > h1")).toHaveText("Reading target");
+      await page.evaluate(() => window.scrollTo(0, 1500));
+      await expectReadingPoint(page, 1500);
+      await page.goBack();
+      await expect(page.locator("article > h1")).toHaveText("Reading source");
+      await expectReadingPoint(page, 900);
+      await page.screenshot({ path: info.outputPath(`history-reading-${width}.png`) });
+      await page.goForward();
+      await expect(page.locator("article > h1")).toHaveText("Reading target");
+      await expectReadingPoint(page, 1500);
+      // Revisiting the routes after changing the reading points must use the
+      // latest entry snapshots rather than an old route-level scroll value.
+      await page.goBack();
+      await expect(page.locator("article > h1")).toHaveText("Reading source");
+      await expectReadingPoint(page, 900);
+      await page.evaluate(() => window.scrollTo(0, 1900));
+      await followVisibleReadingLink(page);
+      await expect(page.locator("article > h1")).toHaveText("Reading target");
+      await page.evaluate(() => window.scrollTo(0, 2400));
+      await page.goBack();
+      await expect(page.locator("article > h1")).toHaveText("Reading source");
+      await expectReadingPoint(page, 1900);
+      await page.goForward();
+      await expect(page.locator("article > h1")).toHaveText("Reading target");
+      await expectReadingPoint(page, 2400);
+    } finally { await deleteReadingPages(request, owned); }
+  });
+
+  test(`delayed history preserves deliberate header focus and scroll (${width})`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const owned: string[] = [];
+    let release: (() => void) | undefined;
+    let pattern: string | undefined;
+    try {
+      const target = await create(request, readingPage("Delayed reading target"));
+      owned.push(target.id);
+      const source = await create(request, readingPage("Delayed reading source", target.id));
+      owned.push(source.id);
+      await page.goto(`/wiki/${source.id}`);
+      await expect(page.locator("article > h1")).toHaveText("Delayed reading source");
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await expectReadingPoint(page, 900);
+      await followVisibleReadingLink(page);
+      await expect(page.locator("article > h1")).toHaveText("Delayed reading target");
+      await page.evaluate(() => window.scrollTo(0, 1500));
+      let received!: () => void;
+      let delivered!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const held = new Promise<void>(resolve => { received = resolve; });
+      const completed = new Promise<void>(resolve => { delivered = resolve; });
+      pattern = `**/api/wiki/pages/${source.id}`;
+      await page.route(pattern, async route => {
+        const response = await route.fetch();
+        received();
+        await gate;
+        await route.fulfill({ response });
+        delivered();
+      });
+      const back = page.goBack();
+      await held;
+      await back;
+      const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
+      await search.focus();
+      const chosenPoint = await page.evaluate(() => scrollY);
+      release!();
+      await completed;
+      await expect(page.locator("article > h1")).toHaveText("Delayed reading source");
+      await expect(search).toBeFocused();
+      await expectReadingPoint(page, chosenPoint);
+    } finally {
+      release?.();
+      if (pattern) await page.unroute(pattern);
+      await deleteReadingPages(request, owned);
+    }
+  });
+}
+
+test("Back during a pending same-page visit restores its completed reading point", async ({ page, request }) => {
+  const owned: string[] = [];
+  let release: (() => void) | undefined;
+  let pattern: string | undefined;
+  try {
+    const source = await create(request, readingPage("Same-page reading"));
+    owned.push(source.id);
+    const updated = await request.post(`/api/wiki/pages/${source.id}`, { data: {
+      markdown: readingPage("Same-page reading", source.id),
+      base_revision: source.revision, request_id: randomUUID(),
+    }});
+    expect(updated.ok()).toBeTruthy();
+    await page.goto(`/wiki/${source.id}`);
+    await expect(page.locator("article > h1")).toHaveText("Same-page reading");
+    await page.evaluate(() => window.scrollTo(0, 900));
+    await expectReadingPoint(page, 900);
+    let received!: () => void;
+    let delivered!: () => void;
+    let freshDelivered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const held = new Promise<void>(resolve => { received = resolve; });
+    const completed = new Promise<void>(resolve => { delivered = resolve; });
+    const freshCompleted = new Promise<void>(resolve => { freshDelivered = resolve; });
+    let first = true;
+    pattern = `**/api/wiki/pages/${source.id}`;
+    await page.route(pattern, async route => {
+      const holdThisRead = first;
+      first = false;
+      const response = await route.fetch();
+      if (holdThisRead) {
+        received();
+        await gate;
+        await route.fulfill({ response });
+        delivered();
+      } else {
+        await route.fulfill({ response });
+        freshDelivered();
+      }
+    });
+    await followVisibleReadingLink(page);
+    await held;
+    await page.goBack();
+    await freshCompleted;
+    await expect(page.locator("article > h1")).toHaveText("Same-page reading");
+    await expectReadingPoint(page, 900);
+    release!();
+    await completed;
+    await expect(page.locator("article > h1")).toHaveText("Same-page reading");
+    await expectReadingPoint(page, 900);
+  } finally {
+    release?.();
+    if (pattern) await page.unroute(pattern);
+    await deleteReadingPages(request, owned);
+  }
+});
+
 test("resolution choices, missing links and real 404s have keyboard destinations", async ({ page, request }) => {
   const owned: string[] = [];
   const add = async (markdown: string) => {

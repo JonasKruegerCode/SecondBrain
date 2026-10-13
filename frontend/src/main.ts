@@ -26,6 +26,25 @@ const navigationEntry = (index: number): NavigationEntry => ({ session: navigati
 let activeEntry = navigationEntry(0);
 let restoringHistory = false;
 let historyRestoreTimer: number | undefined;
+type ReadingPoint = { x: number; y: number };
+const readingPoints = new Map<string, ReadingPoint>();
+let viewComplete = false;
+let readingInterrupted = false;
+function rememberReadingPoint() {
+  if (!viewComplete || restoringHistory) return;
+  readingPoints.delete(activeEntry.id);
+  readingPoints.set(activeEntry.id, { x: scrollX, y: scrollY });
+  // Reading positions belong to visits, not URLs; keep this tab's memory bounded.
+  if (readingPoints.size > 100) readingPoints.delete(readingPoints.keys().next().value!);
+}
+window.addEventListener("scroll", rememberReadingPoint, { passive: true });
+const interruptReading = () => { if (!viewComplete) readingInterrupted = true; };
+window.addEventListener("wheel", interruptReading, { passive: true });
+window.addEventListener("touchmove", interruptReading, { passive: true });
+window.addEventListener("pointerdown", interruptReading, { passive: true });
+window.addEventListener("keydown", event => {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) interruptReading();
+});
 let page: Page | null = null,
   draft = "",
   editing = false,
@@ -217,6 +236,8 @@ function navigate(path: string) {
     !confirm("Leave this page? Unsaved changes will be lost.")
   )
     return;
+  rememberReadingPoint();
+  history.scrollRestoration = "manual";
   activeEntry = navigationEntry(activeEntry.index + 1);
   history.pushState(navigationState(), "", path);
   activeUrl = location.pathname + location.search + location.hash;
@@ -241,6 +262,8 @@ app.addEventListener("click", (e) => {
       if (restoringHistory) return;
       const path = location.pathname + location.search + href;
       if (new URL(path, location.origin).href !== location.href) {
+        rememberReadingPoint();
+        history.scrollRestoration = "manual";
         activeEntry = navigationEntry(activeEntry.index + 1);
         history.pushState(navigationState(), "", path);
         activeUrl = location.pathname + location.search + location.hash;
@@ -354,8 +377,10 @@ function cards(pages: Page[], fragment = "") {
     )
     .join("");
 }
-async function route(focusView = false, reuseShell = false) {
+async function route(focusView = false, reuseShell = false, readingPoint?: ReadingPoint) {
   const run = ++generation;
+  viewComplete = false;
+  if (!reuseShell) readingInterrupted = false;
   cleanupView?.();
   cleanupView = undefined;
   page = null;
@@ -378,9 +403,11 @@ async function route(focusView = false, reuseShell = false) {
     // old focus. Never steal a focus explicitly chosen during an async read.
     if (focusView && !location.hash && document.activeElement === document.body) {
       heading?.focus({ preventScroll: true });
-      window.scrollTo(0, 0);
+      if (!readingInterrupted) window.scrollTo(readingPoint?.x || 0, readingPoint?.y || 0);
     }
     focusFragment();
+    viewComplete = true;
+    rememberReadingPoint();
     viewReady(title);
   };
   try {
@@ -405,7 +432,7 @@ async function route(focusView = false, reuseShell = false) {
       if (result.status === "resolved") {
         const path = url(result.candidates[0].id) + (result.fragment ? `#${encodeURIComponent(result.fragment)}` : "");
         replaceAppUrl(path);
-        void route(focusView, true);
+        void route(focusView, true, readingPoint);
       } else {
         main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
         complete(result.status === "ambiguous" ? "Choose a page" : "Missing page");
@@ -469,7 +496,7 @@ async function route(focusView = false, reuseShell = false) {
       !new URLSearchParams(location.search).has("overview")
     ) {
       replaceAppUrl(url(preferred));
-      void route(focusView, true);
+      void route(focusView, true, readingPoint);
       return;
     }
     main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
@@ -690,6 +717,7 @@ async function save() {
   }
 }
 window.addEventListener("popstate", event => {
+  history.scrollRestoration = "manual";
   const entry = readNavigationEntry(event.state);
   const targetUrl = location.pathname + location.search + location.hash;
   if (restoringHistory) {
@@ -706,7 +734,15 @@ window.addEventListener("popstate", event => {
       activeEntry = entry;
       replaceAppUrl(targetUrl);
     } else resetHistoryTracking(targetUrl);
+    if (!viewComplete) {
+      void route(true, false, readingPoints.get(activeEntry.id));
+      return;
+    }
     focusFragment();
+    if (!location.hash) {
+      const point = readingPoints.get(activeEntry.id);
+      if (point) window.scrollTo(point.x, point.y);
+    }
     return;
   }
   if (
@@ -721,7 +757,7 @@ window.addEventListener("popstate", event => {
   if (entry) activeEntry = entry;
   else resetHistoryTracking(targetUrl);
   activeUrl = location.pathname + location.search + location.hash;
-  void route(true);
+  void route(true, false, readingPoints.get(activeEntry.id));
 });
 window.addEventListener("hashchange", () => {
   const targetUrl = location.pathname + location.search + location.hash;
@@ -733,7 +769,7 @@ window.addEventListener("beforeunload", (e) => {
   if (!canReloadApp()) {
     e.preventDefault();
     e.returnValue = "";
-  }
+  } else history.scrollRestoration = "auto"; // Return control for full document navigation.
 });
 replaceAppUrl(activeUrl);
 startPwa(canReloadApp);
