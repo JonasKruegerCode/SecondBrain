@@ -8,6 +8,8 @@ import logging
 from typing import Any
 
 import httpx
+from opentelemetry.instrumentation.utils import suppress_http_instrumentation
+from opentelemetry.trace import Status, StatusCode
 
 from second_brain.core.config import settings
 from second_brain.core.telemetry import get_tracer
@@ -72,8 +74,8 @@ class OpenRouterClient(LLMClient):
         raw = await self._post_with_retry(payload)
         try:
             return json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise OpenRouterError(f"Invalid JSON from LLM: {raw[:200]}") from exc
+        except json.JSONDecodeError:
+            raise OpenRouterError("OpenRouter returned invalid model JSON.") from None
 
     async def tool_chat(
         self,
@@ -109,33 +111,58 @@ class OpenRouterClient(LLMClient):
             raise OpenRouterError("OpenRouter returned no text response.") from exc
 
     async def _post_json_with_retry(self, payload: dict[str, Any]) -> dict[str, Any]:
-        with tracer.start_as_current_span("openrouter.post_with_retry") as root_span:
+        with tracer.start_as_current_span(
+            "openrouter.post_with_retry", record_exception=False, set_status_on_exception=False
+        ) as root_span:
             root_span.set_attribute("model", str(payload.get("model", "")))
-            last_exc: Exception | None = None
             for attempt, delay in enumerate((*_RETRY_DELAYS, None), start=1):
-                with tracer.start_as_current_span("openrouter.attempt") as span:
+                with tracer.start_as_current_span(
+                    "openrouter.attempt", record_exception=False, set_status_on_exception=False
+                ) as span:
                     span.set_attribute("attempt", attempt)
                     try:
-                        async with httpx.AsyncClient(timeout=60.0) as client:
-                            with tracer.start_as_current_span("openrouter.http_request") as rs:
-                                resp = await client.post(
-                                    f"{_BASE_URL}/chat/completions",
-                                    headers=self._headers,
-                                    json=payload,
-                                )
-                                rs.set_attribute("http.status_code", resp.status_code)
-                        with tracer.start_as_current_span("openrouter.parse_response"):
+                        # Automatic HTTPX spans may retain raw transport exceptions.
+                        # Keep our bounded status/timing spans instead.
+                        with suppress_http_instrumentation():
+                            async with httpx.AsyncClient(timeout=60.0) as client:
+                                with tracer.start_as_current_span(
+                                    "openrouter.http_request",
+                                    record_exception=False,
+                                    set_status_on_exception=False,
+                                ) as rs:
+                                    resp = await client.post(
+                                        f"{_BASE_URL}/chat/completions",
+                                        headers=self._headers,
+                                        json=payload,
+                                    )
+                                    rs.set_attribute("http.status_code", resp.status_code)
+                        with tracer.start_as_current_span(
+                            "openrouter.parse_response",
+                            record_exception=False,
+                            set_status_on_exception=False,
+                        ):
                             resp.raise_for_status()
                             data = resp.json()
                             if not isinstance(data, dict):
                                 raise OpenRouterError("OpenRouter returned an invalid response.")
                         return data
                     except Exception as exc:
-                        last_exc = exc
-                        span.record_exception(exc)
-                        logger.warning("OpenRouter attempt %d failed: %s", attempt, exc)
+                        error_type = type(exc).__name__
+                        status = (
+                            exc.response.status_code
+                            if isinstance(exc, httpx.HTTPStatusError)
+                            else 0
+                        )
+                        span.set_attribute("error.type", error_type)
+                        span.set_attribute("http.status_code", status)
+                        span.set_status(Status(StatusCode.ERROR))
+                        logger.warning(
+                            "OpenRouter attempt %d failed (%s, HTTP status %d)",
+                            attempt, error_type, status,
+                        )
                 if delay is not None:
                     with tracer.start_as_current_span("openrouter.retry_backoff") as span:
                         span.set_attribute("delay_seconds", delay)
                         await asyncio.sleep(delay)
-            raise OpenRouterError(f"All {len(_RETRY_DELAYS) + 1} attempts failed.") from last_exc
+            root_span.set_status(Status(StatusCode.ERROR))
+            raise OpenRouterError(f"All {len(_RETRY_DELAYS) + 1} attempts failed.") from None

@@ -180,10 +180,10 @@ def create_app(
                 from second_brain.llm.providers.openrouter.client import OpenRouterClient
 
                 chat = WikiChat(store, indexes, OpenRouterClient())
-            except Exception as exc:
+            except Exception:
                 raise WikiError(
                     "chat_unavailable", "Wiki chat is not configured on this server."
-                ) from exc
+                ) from None
         try:
             async with asyncio.timeout(55):
                 # The POST body is consumed: only this request's disconnect watcher
@@ -212,10 +212,10 @@ def create_app(
             raise WikiError("chat_unavailable", "Wiki chat timed out. Try again.") from exc
         except WikiError:
             raise
-        except Exception as exc:
+        except Exception:
             raise WikiError(
                 "chat_unavailable", "The model provider is temporarily unavailable."
-            ) from exc
+            ) from None
 
     async def wiki_error(request: Request, exc: Exception) -> Response:
         assert isinstance(exc, WikiError)

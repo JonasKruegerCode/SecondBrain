@@ -35,6 +35,13 @@ read. Browser-local conversations are bounded and deletable; each write merges
 the current store, and bounded deletion tombstones prevent a stale tab from
 losing or resurrecting independent conversations.
 
+OpenRouter failure diagnostics retain attempt number, exception class and HTTP
+status, without raw exception messages, response excerpts or chained provider
+tracebacks. Automatic HTTPX tracing is suppressed around these requests; bounded
+client spans still expose timing and status. Synthetic transport regressions
+exercise HTTP/transport/JSON failures, successful retry and cancellation during
+request/backoff. They do not establish real-provider delivery or billing behavior.
+
 ## User and operator paths
 
 - First start explicitly chooses an empty wiki, the fictional template or a
