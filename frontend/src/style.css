@@ -311,6 +311,8 @@ main {
   gap: 17px;
 }
 .card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   border: 1px solid #ffffff;
   background: #ffffffa8;
   border-radius: 12px;

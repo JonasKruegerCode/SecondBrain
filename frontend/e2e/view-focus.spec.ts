@@ -379,6 +379,19 @@ test("delayed search reload restores after real result cards arrive", async ({ p
     await completed;
     await expect(page.locator("#results .card")).toHaveCount(16);
     await expectReadingPoint(page, 900);
+    const geometry = await page.evaluate(() => ({
+      width: innerWidth, documentWidth: document.documentElement.scrollWidth,
+      cards: [...document.querySelectorAll<HTMLElement>("#results .card")].map(card => ({
+        right: card.getBoundingClientRect().right,
+        titleWidth: card.querySelector<HTMLElement>("h3")!.clientWidth,
+        titleScrollWidth: card.querySelector<HTMLElement>("h3")!.scrollWidth,
+      })),
+    }));
+    expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.width);
+    for (const card of geometry.cards) {
+      expect(card.right).toBeLessThanOrEqual(geometry.width);
+      expect(card.titleScrollWidth).toBeLessThanOrEqual(card.titleWidth);
+    }
     await page.screenshot({ path: info.outputPath("reload-search-390.png") });
   } finally {
     release?.();
