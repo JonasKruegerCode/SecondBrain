@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./reading-test";
 
 // A single rehearsal of the public fictional atlas against the managed API.
 // The demo deliberately has no model provider: its real 503 is the chat outcome.

@@ -103,6 +103,12 @@ the engine and selected suites. This Linux Playwright WebKit build is not brande
 Safari, macOS or a physical iPhone/PWA installation; full Chromium, first-start,
 import and container acceptance remain separate gates. See
 [Playwright's browser scope](https://playwright.dev/docs/browsers#webkit).
+The WebKit reading fixture arms pass-through request interception before its
+first document. Later delayed-read handlers still fetch and deliver actual API
+payloads; no responses or user interactions are replaced. This avoids toggling
+interception after hydration, a boundary that timed out in the first WebKit run.
+Structural logs identify the launched engine and held-read stages. The app's
+service worker remains enabled; this is not a service-worker/PWA installation gate.
 
 Use the fictional atlas for shared screenshots or review. The automated browser
 rehearsal checks the unavailable-provider path; it does not stand in for this

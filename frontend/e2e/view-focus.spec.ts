@@ -1,4 +1,5 @@
-import { test, expect, APIRequestContext, Page } from "@playwright/test";
+import { expect, APIRequestContext, Page } from "@playwright/test";
+import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
 
 for (const width of [390, 1440]) {

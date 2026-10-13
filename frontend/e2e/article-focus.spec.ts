@@ -1,4 +1,5 @@
-import { test, expect, Page, TestInfo } from "@playwright/test";
+import { expect, Page, TestInfo } from "@playwright/test";
+import { test } from "./reading-test";
 
 async function arrival(page: Page, title: string, info: TestInfo, width: number, step: string) {
   const heading = page.locator("article > h1");
@@ -49,7 +50,9 @@ async function holdRead(page: Page, pattern: string) {
   const gate = new Promise<void>(resolve => { release = resolve; });
   const held = new Promise<void>(resolve => { received = resolve; });
   await page.route(pattern, async route => {
+    console.info("[held-article-read] handler entered");
     const response = await route.fetch();
+    console.info("[held-article-read] actual response fetched");
     received();
     await gate;
     await route.fulfill({ response });

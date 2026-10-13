@@ -1,4 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
+import { expect, Page } from "@playwright/test";
+import { test } from "./reading-test";
 
 // Use the actual public demo and rendered browser geometry. Playwright's
 // toBeVisible alone does not distinguish offscreen links from viewport content.
