@@ -41,6 +41,9 @@ tracebacks. Automatic HTTPX tracing is suppressed around these requests; bounded
 client spans still expose timing and status. Synthetic transport regressions
 exercise HTTP/transport/JSON failures, successful retry and cancellation during
 request/backoff. They do not establish real-provider delivery or billing behavior.
+HTTPX request logs are suppressed only in the provider task's context because
+their INFO messages include server-controlled reason phrases. Concurrent ordinary
+requests retain their logs; this is not a global logging-level change.
 
 ## User and operator paths
 

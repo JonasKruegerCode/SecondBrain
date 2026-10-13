@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -21,6 +24,26 @@ tracer = get_tracer(__name__)
 
 _BASE_URL = "https://openrouter.ai/api/v1"
 _RETRY_DELAYS = (1.0, 3.0, 9.0)
+_PROVIDER_REQUEST: ContextVar[bool] = ContextVar("openrouter_request", default=False)
+
+
+class _ProviderLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # HTTPX INFO includes the server-controlled reason phrase. Keep the
+        # bounded client diagnostics while leaving other concurrent traffic alone.
+        return not _PROVIDER_REQUEST.get()
+
+
+logging.getLogger("httpx").addFilter(_ProviderLogFilter())
+
+
+@contextmanager
+def _bounded_httpx_logs() -> Iterator[None]:
+    token = _PROVIDER_REQUEST.set(True)
+    try:
+        yield
+    finally:
+        _PROVIDER_REQUEST.reset(token)
 
 
 class OpenRouterError(LLMError):
@@ -123,7 +146,7 @@ class OpenRouterClient(LLMClient):
                     try:
                         # Automatic HTTPX spans may retain raw transport exceptions.
                         # Keep our bounded status/timing spans instead.
-                        with suppress_http_instrumentation():
+                        with suppress_http_instrumentation(), _bounded_httpx_logs():
                             async with httpx.AsyncClient(timeout=60.0) as client:
                                 with tracer.start_as_current_span(
                                     "openrouter.http_request",

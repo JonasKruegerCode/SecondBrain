@@ -87,7 +87,7 @@ async def test_failures_redact_logs_traces_and_exception_chain(
         assert any(span.name == "POST" for span in exporter.get_finished_spans())
         exporter.clear()
         attempts = 0
-        with caplog.at_level(logging.WARNING), pytest.raises(OpenRouterError) as caught:
+        with caplog.at_level(logging.INFO), pytest.raises(OpenRouterError) as caught:
             await provider.tool_chat([{"role": "user", "content": PRIVATE}], [])
         rendered = "".join(traceback.format_exception(caught.value))
         spans = exporter.get_finished_spans()
@@ -184,3 +184,46 @@ async def test_cancellation_closes_request_without_another_retry(
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_httpx_log_suppression_does_not_mute_concurrent_requests(
+    provider: OpenRouterClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def response(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "openrouter.ai":
+            started.set()
+            await release.wait()
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "Hello"}}]},
+                extensions={"reason_phrase": PRIVATE.encode()},
+            )
+        return httpx.Response(200)
+
+    clients = install_transport(monkeypatch, response)
+    with caplog.at_level(logging.INFO):
+        task = asyncio.create_task(provider.tool_chat([{"role": "user", "content": "Hi"}], []))
+        try:
+            await asyncio.wait_for(started.wait(), 2)
+            async with httpx.AsyncClient() as ordinary:
+                await ordinary.get("https://ordinary.invalid/health")
+            release.set()
+            assert (await asyncio.wait_for(task, 2))["content"] == "Hello"
+            # The same task's context is restored after the provider returns.
+            assert (await provider.tool_chat([{"role": "user", "content": "Hi"}], []))[
+                "content"
+            ] == "Hello"
+            async with httpx.AsyncClient() as after:
+                await after.get("https://ordinary.invalid/after")
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    assert PRIVATE not in caplog.text
+    assert "ordinary.invalid/health" in caplog.text
+    assert "ordinary.invalid/after" in caplog.text
+    assert all(client.is_closed for client in clients)
