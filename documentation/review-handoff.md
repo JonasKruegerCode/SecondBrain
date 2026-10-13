@@ -129,10 +129,14 @@ selects a bounded diagnostic run against the same real services. Its structural
 record includes the filter and repetition count; a filtered pass is not full
 acceptance. First-start phases reject these options. The save-body test records
 monotonic phase timings and runner fixture/hook timings, including final status.
-Its earlier 30-second timeout remains unexplained: a provisional `passed` inside
-test cleanup does not prove subsequent request/context teardown completed. Five
-isolated repetitions on `6394004` passed (0.552–0.603 seconds per test), with
-1–3 ms request and 4–6 ms context teardown. This non-reproduction is not a fix.
+The 30-second timeout reproduced with timing on `8f3b0d3`: assertions completed
+in under a second, but closing the owned proxy waited about 29.4 seconds after
+page closure. It completed only as the runner closed the context after timeout.
+The test now closes its whole owned browser context before the proxy, preserving
+the real held-body/save/receipt checks and the existing deadlines. A provisional
+`passed` inside cleanup does not prove runner completion. Five earlier isolated
+passes on `6394004` did not establish a fix; use the current revision's actual
+normal and bounded-diagnostic results to assess the corrected cleanup order.
 The normal suite includes focused history checks against actual Git-backed REST
 responses: keyboard loading, pending-read deduplication, refreshed agent edits,
 transport failure/retry and late success/failure after article navigation.

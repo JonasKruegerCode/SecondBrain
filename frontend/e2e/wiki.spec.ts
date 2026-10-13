@@ -928,9 +928,11 @@ test("a stalled save body times out after successful headers and replays the rea
     console.info(`[save-body] status=${testInfo.status}; last phase=${phase}; entering cleanup`);
     checkpoint("entering cleanup; status is provisional until runner teardown ends");
     gate?.release();
-    await test.step("Close the browser and owned body-stall proxy", async () => {
-      await page.close();
-      checkpoint("owned page closed");
+    await test.step("Close the browser context before its owned body-stall proxy", async () => {
+      // Page closure leaves context-owned workers/connections alive. Close the
+      // whole owned context before waiting for the proxy's active connections.
+      await page.context().close();
+      checkpoint("owned browser context closed");
       await proxy.close();
       checkpoint("owned proxy closed");
     });
