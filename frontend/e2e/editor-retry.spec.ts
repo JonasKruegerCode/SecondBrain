@@ -285,6 +285,11 @@ test(`a long scrolled draft retains selection and chosen focus before ${finish}`
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(editor).toHaveCount(0);
       expect(payloads).toHaveLength(1);
+      await page.screenshot({ path: testInfo.outputPath("long-draft-after-cancel.png"), fullPage: true });
+      // Cancel closes the draft, not a write already committed by the server.
+      // Read the current article on this visit, without requiring a reload.
+      await expect(page.locator(".prose")).toContainText(correction.trim());
+      await expect(page.locator(".revision")).toContainText(saved.revision.slice(0, 8));
     }
     const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(stored.markdown).toBe(draft);
