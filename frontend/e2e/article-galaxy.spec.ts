@@ -88,9 +88,14 @@ test("missing and genuinely deleted contextual targets show an honest overview",
     await explore.click();
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic contextual page");
     await expect(page.locator(".galaxy-evidence")).toContainText("Field notebook");
+    await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article ↗", exact: true }).click();
+    await expect(page.locator("article > h1")).toHaveText("Synthetic contextual page");
     const deleted = await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: revision, request_id: randomUUID() } });
     expect(deleted.ok()).toBe(true);
     revision = null;
+    // History must discard the deleted selection even if its old core survives.
+    await page.goBack();
+    await missingOverview();
     // Refresh must read the actual new snapshot, not the old selected node.
     await page.getByRole("link", { name: "Refresh snapshot" }).click();
     await expect(page).toHaveURL(new RegExp(`/galaxy\\?page=${id}$`));
