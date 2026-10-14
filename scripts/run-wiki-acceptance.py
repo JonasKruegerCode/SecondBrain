@@ -233,6 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
+            "e2e/article-galaxy.spec.ts",
             "e2e/editor-retry.spec.ts",
         ]
     )
@@ -244,6 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
+            "e2e/article-galaxy.spec.ts",
             "e2e/editor-retry.spec.ts",
         ]
     worker_filter = (

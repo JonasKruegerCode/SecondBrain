@@ -414,6 +414,14 @@ form input {
   gap: 10px;
   align-items: center;
 }
+.article-connections {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 12px;
+}
 .subtle {
   background: transparent;
   padding: 12px 15px;
@@ -644,7 +652,12 @@ textarea {
   article h1 {
     font-size: 30px;
   }
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
   .toolbar > div {
+    flex-wrap: wrap;
     gap: 0;
   }
   .toolbar .subtle {

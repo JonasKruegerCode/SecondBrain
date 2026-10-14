@@ -6,6 +6,31 @@ test.skip(
   "Run against a generated scale vault with PLAYWRIGHT_SCALE=1.",
 );
 
+test("contextual large-vault entry selects its real cluster without enabling the map", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/wiki/scale-0319");
+  const explore = page.getByRole("link", { name: "Explore connections", exact: true });
+  await expect(explore).toHaveAttribute("href", "/galaxy?page=scale-0319");
+  await explore.click();
+  await expect(page).toHaveURL(/\/galaxy\?page=scale-0319$/);
+  await expect(page.locator(".galaxy-scale-note")).toContainText("Large snapshot");
+  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
+  await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", "scale-0319");
+  await expect(page.locator(".galaxy-breadcrumb")).toContainText("Synthetic constellation 8");
+  await expect(page.locator(".galaxy-evidence")).toContainText("Declared relation");
+  await page.getByRole("button", { name: "Map view", exact: true }).click();
+  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  await page.getByRole("link", { name: "Open article", exact: true }).click();
+  await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
+  await page.goBack();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
+  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  await page.reload();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
+  await expect(page.locator(".galaxy-stage")).toBeHidden();
+});
+
 test("large real vault has a compact stable map and usable mutation path", async ({
   page,
   request,

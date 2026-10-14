@@ -390,6 +390,23 @@ and its matching CI runs rather than treating these counts as current.
 
 ## Known release gates
 
+### Article-to-galaxy entry
+
+Read-mode articles provide an **Explore connections** link to
+`/galaxy?page=<encoded-page-id>`. The fresh graph resolves the exact stable ID
+and its existing constellation; no title inference or invented relation is
+added. Large snapshots still open in list mode. The global Galaxy link remains
+an overview. A missing/deleted target gets an explicit snapshot notice without
+echoing untrusted URL input. An existing visit restores its exploration on
+Back/Forward; a new snapshot refresh or full reload resolves the URL's page
+again. This state is still
+bounded, in-memory and not a graph copy or persisted exploration archive.
+
+`article-galaxy.spec.ts` joins both real-service Chromium and WebKit reading
+profiles; the existing synthetic320 suite covers contextual entry with list
+mode. These are automated browser checks, not physical-device or manual demo
+acceptance. The release gates below remain open.
+
 - real OpenRouter multi-turn result and answer-quality inspection
 - hosted Neo4j, Qdrant and embedding-provider integration and retention under load
 - production authenticated reverse-proxy/HTTPS operation and off-host restore;
