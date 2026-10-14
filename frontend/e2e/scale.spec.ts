@@ -21,7 +21,7 @@ test("contextual large-vault entry selects its real cluster without enabling the
   await expect(page.locator(".galaxy-evidence")).toContainText("Declared relation");
   await page.getByRole("button", { name: "Map view", exact: true }).click();
   await expect(page.locator(".galaxy-star")).toHaveCount(40);
-  await page.getByRole("link", { name: "Open article", exact: true }).click();
+  await page.getByRole("link", { name: "Open article ↗", exact: true }).click();
   await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
   await page.goBack();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");

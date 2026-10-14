@@ -24,13 +24,15 @@ for (const width of [390, 1440]) {
     const explore = page.getByRole("link", { name: "Explore connections", exact: true });
     await expect(explore).toHaveAttribute("href", contextualURL);
     await expect(primary(page).getByRole("link", { name: "Galaxy", exact: true })).toHaveAttribute("href", "/galaxy");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`article-connections-toolbar-${width}.png`), fullPage: true });
     await explore.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`${contextualURL.replace("?", "\\?")}$`));
     await selectedNotebook(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`article-galaxy-${width}.png`), fullPage: true });
-    await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article", exact: true }).click();
+    await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article ↗", exact: true }).click();
     await expect(page).toHaveURL(/\/wiki\/field-notebook$/);
     await page.goBack();
     await selectedNotebook(page);
@@ -59,7 +61,7 @@ for (const width of [390, 1440]) {
   });
 }
 
-test("missing and genuinely deleted contextual targets show an honest overview", async ({ page, request }) => {
+test("missing and genuinely deleted contextual targets show an honest overview", async ({ page, request }, info) => {
   const id = `article-galaxy-${randomUUID()}`;
   let revision: string | null = null;
   const missing = `${id}-missing-<script>synthetic</script>`;
@@ -73,6 +75,7 @@ test("missing and genuinely deleted contextual targets show an honest overview",
   try {
     await page.goto(`/galaxy?page=${encodeURIComponent(missing)}`);
     await missingOverview();
+    await page.screenshot({ path: info.outputPath("galaxy-missing-entry.png"), fullPage: true });
     const created = await request.post(`/api/wiki/pages/${id}`, { data: {
       markdown: "# Synthetic contextual page\n\nA public test note linked to [[field-notebook]].",
       base_revision: null, request_id: randomUUID(),
@@ -92,6 +95,7 @@ test("missing and genuinely deleted contextual targets show an honest overview",
     await page.getByRole("link", { name: "Refresh snapshot" }).click();
     await expect(page).toHaveURL(new RegExp(`/galaxy\\?page=${id}$`));
     await missingOverview();
+    await page.screenshot({ path: info.outputPath("galaxy-deleted-entry.png"), fullPage: true });
     await page.goto(`/galaxy?page=${encodeURIComponent(id)}`);
     await missingOverview();
   } finally {
