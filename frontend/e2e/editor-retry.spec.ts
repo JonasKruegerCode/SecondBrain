@@ -13,7 +13,7 @@ async function create(request: APIRequestContext, markdown: string) {
   return { id, ...(await response.json()) };
 }
 
-for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored", "keyboard-restored"] as const) {
+for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored", "keyboard-restored", "pre-save-restored"] as const) {
 test(`a timed-out save preserves its ${retryMode} draft without another publication`, async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Save timeout fixture\nBefore.");
   const payloads: { request_id: string; base_revision: string; markdown: string }[] = [];
@@ -35,11 +35,20 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     await route.fulfill({ response }).catch(() => {}); // The client may already have aborted.
   });
     await page.getByRole("button", { name: "Edit page" }).click();
-    const draft = "# Save timeout fixture\nA synthetic saved change.";
+    const initialDraft = "# Save timeout fixture\nA synthetic saved change.";
+    const suffix = " Keyboard edit before saving.";
+    const draft = retryMode === "pre-save-restored" ? initialDraft + suffix : initialDraft;
     const editor = page.getByRole("textbox", { name: /Markdown/ });
-    await editor.fill(draft);
+    await editor.fill(initialDraft);
+    const originalEditor = await editor.elementHandle();
+    if (retryMode === "pre-save-restored") {
+      await editor.press("ControlOrMeta+End");
+      await editor.pressSequentially(suffix);
+      await editor.evaluate((e: HTMLTextAreaElement) => e.setSelectionRange(2, 8, "backward"));
+    }
     await page.getByRole("button", { name: "Save changes" }).click();
     await published;
+    const pendingSameEditor = await editor.evaluate((e, original) => e === original, originalEditor);
     const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(saved.markdown).toBe(draft);
     await page.clock.fastForward(30_001);
@@ -52,6 +61,19 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: testInfo.outputPath("save-timeout-mobile.png"), fullPage: true });
     release();
+    if (retryMode === "pre-save-restored") {
+      const selection = await editor.evaluate((e: HTMLTextAreaElement) => [e.selectionStart, e.selectionEnd, e.selectionDirection]);
+      const sameEditor = await editor.evaluate((e, original) => e === original, originalEditor);
+      await editor.press("ControlOrMeta+z");
+      const undone = await editor.inputValue();
+      expect({ pendingSameEditor, sameEditor, selection, undone }).toEqual({
+        pendingSameEditor: true, sameEditor: true, selection: [2, 8, "backward"], undone: initialDraft,
+      });
+      await editor.press("ControlOrMeta+Shift+z");
+      await expect(editor).toHaveValue(draft);
+      expect(payloads).toHaveLength(1);
+      await page.screenshot({ path: testInfo.outputPath("save-preexisting-undo-mobile.png"), fullPage: true });
+    }
     if (retryMode === "edited") await editor.fill("# Save timeout fixture\nA further unsaved change.");
     if (retryMode === "restored") {
       await editor.fill("# Save timeout fixture\nA temporary correction.");
@@ -59,7 +81,7 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     }
     if (retryMode === "keyboard-restored") {
       // Exercise the engine's textarea undo stack, not a programmatic fill.
-      // The timeout rerenders the editor; these edits belong to that new node.
+      // These edits are made after timeout; pre-save-restored covers older edits.
       const suffix = " Temporary keyboard correction.";
       await editor.press("ControlOrMeta+End");
       await editor.pressSequentially(suffix);
