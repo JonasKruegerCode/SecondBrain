@@ -244,6 +244,9 @@ test(`a long scrolled draft retains selection and chosen focus before ${finish}`
     const chosen = finish === "retry" ? page.locator(".page-history summary") : page.getByRole("button", { name: "Set as start page" });
     await chosen.click();
     await expect(chosen).toBeFocused();
+    // Only the Save acknowledgement is held. Finish the independent history
+    // read before advancing every client request deadline with the test clock.
+    if (finish === "retry") await expect(page.locator(".page-history .history-list li")).toHaveCount(2);
     const pending = await editor.evaluate((e: HTMLTextAreaElement) => ({
       top: e.scrollTop, selection: [e.selectionStart, e.selectionEnd, e.selectionDirection],
     }));
