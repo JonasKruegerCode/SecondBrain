@@ -124,6 +124,25 @@ SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"
 make check
 ```
 
+The backend suite also includes a native mixed-transport regression. To run just
+that boundary from the repository root:
+
+```sh
+"$WIKI_PYTHON" -m pytest backend/tests/test_wiki_transport_processes.py
+```
+
+It starts separate authenticated REST and Streamable HTTP MCP Uvicorn processes
+on owned dynamic loopback sockets with one synthetic Git authority. Synchronized
+client submissions check competing same-base writes, identical request receipts
+and refusal of a reused ID with changed content. After a later edit and restart
+of both services, replay through each transport returns the original receipt
+without adding a commit or reverting current content; reads/history agree. The
+fixture disables delivery/index/model providers, stops and reaps its owned
+processes, and never uses a personal vault. Client synchronization does not force
+a particular server-side CAS interleaving; this complements the lower-level
+publication-race tests. It is not browser, proxy, provider or crash-durability
+acceptance.
+
 With a local Docker Engine and Compose v2, `make acceptance-stack` builds and
 exercises disposable managed containers, the nginx boundary, shared REST/MCP
 writes, restart persistence and independent-volume backup/restore. See the
