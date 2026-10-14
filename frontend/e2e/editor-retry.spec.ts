@@ -13,6 +13,106 @@ async function create(request: APIRequestContext, markdown: string) {
   return { id, ...(await response.json()) };
 }
 
+test("cancel after a real deletion shows the missing page on the same visit", async ({ page, request }, info) => {
+  const fixture = await create(request, "# Deleted editor fixture\nAn independently invented old article.");
+  let deleted = false, writes = 0;
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/wiki/${fixture.id}`);
+    await page.getByRole("button", { name: "Edit page" }).click();
+    await page.getByRole("textbox", { name: /Markdown/ }).fill("# Deleted editor fixture\nA discarded local draft.");
+    expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+      base_revision: fixture.revision, request_id: randomUUID(),
+    } })).ok()).toBeTruthy();
+    deleted = true;
+    const visit = await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }));
+    await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+      if (route.request().method() !== "GET") writes++;
+      await route.continue();
+    });
+    const read = page.waitForResponse(r => r.url().endsWith(`/api/wiki/pages/${fixture.id}`) && r.request().method() === "GET");
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect((await read).status()).toBe(404);
+    const heading = page.getByRole("heading", { name: "This page is missing." });
+    await expect(heading).toBeVisible();
+    await expect(heading).toBeFocused();
+    await expect(page.locator(".prose,#editor,#edit,#retry-workspace")).toHaveCount(0);
+    expect(await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }))).toEqual(visit);
+    expect(writes).toBe(0);
+    expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
+    await page.screenshot({ path: info.outputPath("cancel-deleted-mobile.png"), fullPage: true });
+    await page.getByRole("link", { name: "Back to home", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+    expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
+  } finally {
+    if (!deleted) {
+      const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+      expect(current.ok()).toBeTruthy();
+      expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+        base_revision: (await current.json()).revision, request_id: randomUUID(),
+      } })).ok()).toBeTruthy();
+    }
+  }
+});
+
+for (const chosenHeader of [false, true]) {
+test(`cancel retains a section URL and ${chosenHeader ? "chosen header" : "section"} focus`, async ({ page, request }, info) => {
+  const initial = "# Section editor fixture\n\nA synthetic introduction.\n\n## Current section\n\nThe original section.";
+  const fixture = await create(request, initial);
+  let release!: () => void, entered!: () => void, drained!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reading = new Promise<void>(resolve => { entered = resolve; });
+  const released = new Promise<void>(resolve => { drained = resolve; });
+  let holding = false, writes = 0;
+  try {
+    await page.setViewportSize(chosenHeader ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
+    await page.goto(`/wiki/${fixture.id}#section-1`);
+    await expect(page.locator("#section-1")).toBeFocused();
+    await page.getByRole("button", { name: "Edit page" }).click();
+    await page.getByRole("textbox", { name: /Markdown/ }).fill(initial + "\nA discarded local draft.");
+    const markdown = initial.replace("The original section.", "The current independently invented section update.");
+    const response = await request.post(`/api/wiki/pages/${fixture.id}`, { data: {
+      markdown, base_revision: fixture.revision, request_id: randomUUID(),
+    } });
+    expect(response.ok()).toBeTruthy();
+    const saved = await response.json();
+    const visit = await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }));
+    await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+      if (route.request().method() !== "GET") { writes++; await route.continue(); return; }
+      holding = true;
+      try {
+        const current = await route.fetch();
+        expect(current.ok()).toBeTruthy();
+        entered(); await gate; await route.fulfill({ response: current });
+      } finally { drained(); }
+    }, { times: 1 });
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await reading;
+    const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
+    if (chosenHeader) await search.focus();
+    release(); await released;
+    await expect(page.locator(".prose")).toContainText("The current independently invented section update.");
+    await expect(page.locator(".revision")).toContainText(saved.revision.slice(0, 8));
+    await expect(chosenHeader ? search : page.locator("#section-1")).toBeFocused();
+    expect(await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }))).toEqual(visit);
+    expect(writes).toBe(0);
+    expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+    await page.screenshot({ path: info.outputPath(`cancel-section-${chosenHeader ? "header" : "fragment"}.png`), fullPage: true });
+    await page.getByRole("button", { name: "Edit page" }).click();
+    await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(markdown);
+  } finally {
+    release(); if (holding) await released;
+    const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+    expect(current.ok()).toBeTruthy();
+    expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+      base_revision: (await current.json()).revision, request_id: randomUUID(),
+    } })).ok()).toBeTruthy();
+  }
+});
+}
+
 for (const outcome of ["refresh", "read-error", "navigate"] as const) {
 test(`cancel after a real conflict handles ${outcome} without restoring a stale article`, async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Cancel refresh fixture\nAn older article.");
