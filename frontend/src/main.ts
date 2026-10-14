@@ -699,7 +699,10 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
       notice = "Your browser could not remember this preference.";
       noticeError = true;
     }
-    renderPage("start");
+    // Saving or setting a preference must not replace an active editor and
+    // destroy the browser's native selection/undo history.
+    if (editing) updateEditorState();
+    else renderPage("start");
   });
   main.querySelector("#edit")!.addEventListener("click", () => {
     if (saving) return;
@@ -764,6 +767,28 @@ async function refreshDelivery(run: number, token: number, attempt = 0) {
     if (el) el.textContent = deliveryNotice;
   }
 }
+function updateEditorState(restoreSaveFocus = false) {
+  const main = app.querySelector("main")!;
+  const editor = main.querySelector<HTMLTextAreaElement>("#editor");
+  const button = main.querySelector<HTMLButtonElement>("#save");
+  if (!editor || !button) return;
+  // Keep the same textarea and never assign its value: text/selection alone
+  // cannot reconstruct native undo history. Read-only keeps it selectable.
+  editor.readOnly = saving;
+  button.disabled = saving;
+  button.textContent = saving ? "Saving…" : "Save changes →";
+  main.querySelector<HTMLButtonElement>("#edit")!.disabled = saving;
+  const message = main.querySelector<HTMLElement>(".notice")!;
+  message.textContent = notice;
+  message.classList.toggle("error", noticeError);
+  main.querySelector<HTMLElement>(".delivery-notice")!.textContent = deliveryNotice;
+  // A disabled Save button can leave focus on the document body. Return it
+  // to the draft, but don't steal focus if the user chose another control.
+  if (restoreSaveFocus && (document.activeElement === button || document.activeElement === document.body)) {
+    editor.focus({ preventScroll: true });
+  }
+  renderPwaState();
+}
 async function save() {
   if (!page || saving) return;
   const previousAttempt = saveAttempt;
@@ -777,7 +802,7 @@ async function save() {
   saving = true;
   notice = "";
   noticeError = false;
-  renderPage();
+  updateEditorState();
   try {
     const result = await api("/pages/" + encodeURIComponent(page.id), {
       method: "POST",
@@ -805,7 +830,8 @@ async function save() {
         : (e as Error).message + " Your draft is preserved. Try saving again.";
   } finally {
     saving = false;
-    renderPage(editing ? "editor" : "heading");
+    if (editing) updateEditorState(true);
+    else renderPage("heading");
   }
 }
 window.addEventListener("popstate", event => {

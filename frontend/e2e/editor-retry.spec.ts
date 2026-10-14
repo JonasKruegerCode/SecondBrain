@@ -48,6 +48,14 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     }
     await page.getByRole("button", { name: "Save changes" }).click();
     await published;
+    if (retryMode === "pre-save-restored") {
+      await expect(editor).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+      await editor.press("Backspace");
+      await expect(editor).toHaveValue(draft); // A pending save cannot alter its draft.
+      await page.getByRole("button", { name: "Set as start page" }).click();
+    }
     const pendingSameEditor = await editor.evaluate((e, original) => e === original, originalEditor);
     const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(saved.markdown).toBe(draft);
@@ -56,7 +64,7 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     await expect(page.locator(".notice")).toHaveClass(/error/);
     await expect(editor).toHaveValue(draft);
     await expect(editor).toBeEnabled();
-    await expect(editor).toBeFocused();
+    if (retryMode !== "pre-save-restored") await expect(editor).toBeFocused();
     await page.screenshot({ path: testInfo.outputPath("save-timeout-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: testInfo.outputPath("save-timeout-mobile.png"), fullPage: true });
@@ -64,10 +72,11 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     if (retryMode === "pre-save-restored") {
       const selection = await editor.evaluate((e: HTMLTextAreaElement) => [e.selectionStart, e.selectionEnd, e.selectionDirection]);
       const sameEditor = await editor.evaluate((e, original) => e === original, originalEditor);
+      const chosenFocusRetained = await page.getByRole("button", { name: "Set as start page" }).evaluate(e => document.activeElement === e);
       await editor.press("ControlOrMeta+z");
       const undone = await editor.inputValue();
-      expect({ pendingSameEditor, sameEditor, selection, undone }).toEqual({
-        pendingSameEditor: true, sameEditor: true, selection: [2, 8, "backward"], undone: initialDraft,
+      expect({ pendingSameEditor, sameEditor, chosenFocusRetained, selection, undone }).toEqual({
+        pendingSameEditor: true, sameEditor: true, chosenFocusRetained: true, selection: [2, 8, "backward"], undone: initialDraft,
       });
       await editor.press("ControlOrMeta+Shift+z");
       await expect(editor).toHaveValue(draft);
@@ -138,3 +147,48 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
 });
 }
 
+test("a real conflict retains the editor selection and pre-save undo history", async ({ page, request }, testInfo) => {
+  const initialDraft = "# Conflict undo fixture\nOriginal text.";
+  const fixture = await create(request, initialDraft);
+  try {
+    await page.goto(`/wiki/${fixture.id}`);
+    await page.getByRole("button", { name: "Edit page" }).click();
+    const editor = page.getByRole("textbox", { name: /Markdown/ });
+    const originalEditor = await editor.elementHandle();
+    const suffix = " A keyboard correction.";
+    await editor.press("ControlOrMeta+End");
+    await editor.pressSequentially(suffix);
+    const draft = initialDraft + suffix;
+    await expect(editor).toHaveValue(draft);
+    await editor.evaluate((e: HTMLTextAreaElement) => e.setSelectionRange(3, 10, "backward"));
+    await page.getByRole("button", { name: "Set as start page" }).click();
+    const foreignMarkdown = "# Conflict undo fixture\nA newer agent edit.";
+    const foreign = await request.post(`/api/wiki/pages/${fixture.id}`, {
+      data: { markdown: foreignMarkdown, base_revision: fixture.revision, request_id: randomUUID() },
+    });
+    expect(foreign.ok()).toBeTruthy();
+    const foreignSave = await foreign.json();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".notice")).toContainText("Conflict");
+    await expect(editor).toHaveValue(draft);
+    await expect(editor).toBeFocused();
+    expect(await editor.evaluate((e, original) => e === original, originalEditor)).toBe(true);
+    expect(await editor.evaluate((e: HTMLTextAreaElement) => [e.selectionStart, e.selectionEnd, e.selectionDirection])).toEqual([3, 10, "backward"]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: testInfo.outputPath("save-conflict-selection-mobile.png"), fullPage: true });
+    await editor.press("ControlOrMeta+z");
+    await expect(editor).toHaveValue(initialDraft);
+    await editor.press("ControlOrMeta+Shift+z");
+    await expect(editor).toHaveValue(draft);
+    const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(stored.markdown).toBe(foreignMarkdown);
+    expect(stored.revision).toBe(foreignSave.revision);
+    expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+  } finally {
+    const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+    expect(current.ok()).toBeTruthy();
+    expect((await request.delete(`/api/wiki/pages/${fixture.id}`, {
+      data: { base_revision: (await current.json()).revision, request_id: randomUUID() },
+    })).ok()).toBeTruthy();
+  }
+});
