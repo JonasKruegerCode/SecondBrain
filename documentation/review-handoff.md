@@ -194,6 +194,10 @@ API/history readback verifies that distinction before and after reload.
 Three real-conflict cases also check current content before re-editing, an
 unavailable refresh with same-visit retry, and a late read after navigation.
 They preserve deliberately chosen header focus and verify no additional write.
+Cancel after a real deletion shows the missing-page view without recreating the
+article. Section URLs retain their fragment and visit; delayed reads preserve
+chosen header focus. A newer native fragment starts a newer read, and a header
+choice during that read still takes precedence over automatic section focus.
 These desktop/narrow cases are not arbitrary-size performance benchmarks.
 They inspect real request payloads, receipts and Git history, then remove only
 their owned UUID page using its current revision; no save response is fabricated.

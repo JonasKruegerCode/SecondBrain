@@ -42,7 +42,7 @@ test("cancel after a real deletion shows the missing page on the same visit", as
     expect(writes).toBe(0);
     expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
     await page.screenshot({ path: info.outputPath("cancel-deleted-mobile.png"), fullPage: true });
-    await page.getByRole("link", { name: "Back to home", exact: true }).click();
+    await page.getByRole("link", { name: "Back to home →", exact: true }).click();
     await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
     expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
   } finally {
@@ -56,15 +56,17 @@ test("cancel after a real deletion shows the missing page on the same visit", as
   }
 });
 
-for (const chosenHeader of [false, true]) {
-test(`cancel retains a section URL and ${chosenHeader ? "chosen header" : "section"} focus`, async ({ page, request }, info) => {
-  const initial = "# Section editor fixture\n\nA synthetic introduction.\n\n## Current section\n\nThe original section.";
+for (const intent of ["section", "header", "new-fragment", "new-fragment-then-header"] as const) {
+test(`cancel retains a section URL and ${intent} focus`, async ({ page, request }, info) => {
+  const chosenHeader = intent === "header" || intent === "new-fragment-then-header";
+  const initial = "# Section editor fixture\n\nA synthetic introduction.\n\n## Current section\n\nThe original section.\n\n## Another section\n\nA second fictional observation.";
   const fixture = await create(request, initial);
-  let release!: () => void, entered!: () => void, drained!: () => void;
+  let release!: () => void, entered!: () => void, secondEntered!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const reading = new Promise<void>(resolve => { entered = resolve; });
-  const released = new Promise<void>(resolve => { drained = resolve; });
-  let holding = false, writes = 0;
+  const secondReading = new Promise<void>(resolve => { secondEntered = resolve; });
+  const drains: Promise<void>[] = [];
+  let reads = 0, writes = 0;
   try {
     await page.setViewportSize(chosenHeader ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
     await page.goto(`/wiki/${fixture.id}#section-1`);
@@ -77,33 +79,50 @@ test(`cancel retains a section URL and ${chosenHeader ? "chosen header" : "secti
     } });
     expect(response.ok()).toBeTruthy();
     const saved = await response.json();
-    const visit = await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }));
+    let visit = await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }));
     await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
       if (route.request().method() !== "GET") { writes++; await route.continue(); return; }
-      holding = true;
+      const readNumber = ++reads;
+      let drained!: () => void;
+      drains.push(new Promise<void>(resolve => { drained = resolve; }));
       try {
         const current = await route.fetch();
         expect(current.ok()).toBeTruthy();
-        entered(); await gate; await route.fulfill({ response: current });
+        if (readNumber === 1) entered(); else secondEntered();
+        await gate; await route.fulfill({ response: current });
       } finally { drained(); }
-    }, { times: 1 });
+    });
     page.once("dialog", dialog => dialog.accept());
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await reading;
     const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
-    if (chosenHeader) await search.focus();
-    release(); await released;
+    if (intent !== "section") await search.focus();
+    if (intent.startsWith("new-fragment")) {
+      await page.evaluate(() => new Promise<void>(resolve => {
+        window.addEventListener("hashchange", () => resolve(), { once: true });
+        location.hash = "section-2";
+      }));
+      await secondReading;
+      visit = await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }));
+      if (chosenHeader) {
+        // A later actual focus change takes precedence over the pending anchor.
+        await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Home", exact: true }).focus();
+        await search.focus();
+      }
+    }
+    release(); await Promise.all(drains);
     await expect(page.locator(".prose")).toContainText("The current independently invented section update.");
     await expect(page.locator(".revision")).toContainText(saved.revision.slice(0, 8));
-    await expect(chosenHeader ? search : page.locator("#section-1")).toBeFocused();
+    await expect(chosenHeader ? search : page.locator(intent === "new-fragment" ? "#section-2" : "#section-1")).toBeFocused();
     expect(await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }))).toEqual(visit);
     expect(writes).toBe(0);
+    expect(reads).toBe(intent.startsWith("new-fragment") ? 2 : 1);
     expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
-    await page.screenshot({ path: info.outputPath(`cancel-section-${chosenHeader ? "header" : "fragment"}.png`), fullPage: true });
+    await page.screenshot({ path: info.outputPath(`cancel-section-${intent}.png`), fullPage: true });
     await page.getByRole("button", { name: "Edit page" }).click();
     await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(markdown);
   } finally {
-    release(); if (holding) await released;
+    release(); await Promise.all(drains);
     const current = await request.get(`/api/wiki/pages/${fixture.id}`);
     expect(current.ok()).toBeTruthy();
     expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {

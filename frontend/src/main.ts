@@ -449,7 +449,9 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     }
     if (ready && (focusView || readingPoint) && !location.hash && untouchedFocus && !readingInterrupted)
       window.scrollTo(readingPoint?.x || 0, readingPoint?.y || 0);
-    focusFragment();
+    // Automatic arrival must not override a focus chosen while loading.
+    // Explicit fragment navigation has its own handlers below.
+    if (untouchedFocus) focusFragment();
     // A usable search form already owns fragment/input navigation, while its
     // pending results are not yet tall enough to restore a reading position.
     viewComplete = true;
