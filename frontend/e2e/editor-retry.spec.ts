@@ -16,14 +16,15 @@ async function create(request: APIRequestContext, markdown: string) {
 for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored"] as const) {
 test(`a timed-out save preserves its ${retryMode} draft without another publication`, async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Save timeout fixture\nBefore.");
-  await page.goto(`/wiki/${fixture.id}`);
-  await page.clock.install();
   const payloads: { request_id: string; base_revision: string; markdown: string }[] = [];
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let captured!: () => void;
   const published = new Promise<void>(resolve => { captured = resolve; });
-  await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+  try {
+    await page.goto(`/wiki/${fixture.id}`);
+    await page.clock.install();
+    await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
     if (route.request().method() !== "POST") { await route.continue(); return; }
     payloads.push(route.request().postDataJSON());
     if (payloads.length > 1) { await route.continue(); return; }
@@ -33,7 +34,6 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     await gate;
     await route.fulfill({ response }).catch(() => {}); // The client may already have aborted.
   });
-  try {
     await page.getByRole("button", { name: "Edit page" }).click();
     const draft = "# Save timeout fixture\nA synthetic saved change.";
     const editor = page.getByRole("textbox", { name: /Markdown/ });
@@ -85,7 +85,17 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     expect(retry.markdown).toBe(draft);
     if (retryMode !== "edited") await expect(page.locator(".prose")).toContainText("A synthetic saved change.");
     if (retryMode.endsWith("restored")) await page.screenshot({ path: testInfo.outputPath("save-restored-receipt-mobile.png"), fullPage: true });
-  } finally { release(); }
+  } finally {
+    release();
+    // This shared file can run before the pristine demo graph. Remove only
+    // this test's owned page, using its current revision after any real save.
+    const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+    expect(current.ok(), "owned editor retry fixture is readable for cleanup").toBeTruthy();
+    const cleanup = await request.delete(`/api/wiki/pages/${fixture.id}`, {
+      data: { base_revision: (await current.json()).revision, request_id: randomUUID() },
+    });
+    expect(cleanup.ok(), "owned editor retry fixture cleanup").toBeTruthy();
+  }
 });
 }
 
