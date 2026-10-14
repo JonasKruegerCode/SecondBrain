@@ -37,6 +37,40 @@ def legacy_source(path: Path) -> tuple[Path, str]:
     return path, git(path, "rev-parse", "HEAD").decode().strip()
 
 
+@pytest.mark.parametrize("operation", ["import", "audit"])
+def test_source_reads_preserve_index_after_timestamp_only_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    source, source_revision = legacy_source(tmp_path / "legacy")
+    store = WikiStore(tmp_path / "managed")
+    imported = None
+    if operation == "audit":
+        imported = import_vault(
+            store, source, prefix="1_knowledge/wiki", base_revision=None, request_id="initial"
+        )
+    page = source / "1_knowledge" / "wiki" / "sky.md"
+    content = page.read_bytes()
+    stat = page.stat()
+    os.utime(page, ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000))
+    index = source / ".git" / "index"
+    before = index.read_bytes()
+    # The source reader must refuse optional writes even when the caller enables them.
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+    if imported is None:
+        result = import_vault(
+            store, source, prefix="1_knowledge/wiki", base_revision=None, request_id="initial"
+        )
+        assert result["publication"] == "imported"
+    else:
+        result = audit_import(
+            store, source, prefix="1_knowledge/wiki", revision=imported["revision"]
+        )
+        assert result["status"] == "verified"
+    assert index.read_bytes() == before
+    assert page.read_bytes() == content
+    assert git(source, "rev-parse", "HEAD").decode().strip() == source_revision
+
+
 def test_audit_proves_bytes_ids_paths_and_retained_history(tmp_path: Path) -> None:
     source, source_revision = legacy_source(tmp_path / "legacy")
     source_head_before = git(source, "rev-parse", "HEAD")

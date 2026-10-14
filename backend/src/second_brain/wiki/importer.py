@@ -28,6 +28,9 @@ def _source_git(source: Path, *args: str, check: bool = True) -> bytes:
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_NO_LAZY_FETCH": "1",
             "GIT_LITERAL_PATHSPECS": "1",
+            # Even a read-only status check may refresh the on-disk index.
+            # Source repositories are never ours to update, including stat caches.
+            "GIT_OPTIONAL_LOCKS": "0",
         },
         check=False,
     )

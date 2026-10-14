@@ -14,6 +14,11 @@ The complete input is validated before publication. Unsafe page IDs, symbolic-li
 
 The source and target directories must be separate and must not contain one another. Use a dedicated managed target, not a `.wiki.git` directory placed inside the source repository.
 
+Source Git commands disable optional locks, so checking cleanliness does not
+refresh the source's on-disk index when only file timestamps have changed.
+Uncommitted content changes are still refused. Import and audit preserve the
+source index as well as its committed content and configuration.
+
 ## Initial import from the CLI
 
 From the repository root, activate the backend Python environment or set `PYTHONPATH=backend/src`. Choose a reviewed source and a new managed target:
