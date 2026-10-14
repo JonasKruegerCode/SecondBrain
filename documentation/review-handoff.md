@@ -28,6 +28,15 @@ store and retrying the exact request must recover one publication and its
 receipt, without an extra history entry. This covers process loss at those
 boundaries; it does not emulate power loss or interrupt Git's ref transaction.
 
+The demo launcher defers SIGINT/SIGTERM during child creation, registration and
+process-receipt publication, then stops before launching another child. Twelve
+native supervision cases run its actual main with real ephemeral socket
+children: both signals at either child/receipt boundary, repeated stop signals
+during cleanup and controlled receipt-write errors. They check closed sockets,
+reaped direct children and accurate receipts. Only the service commands are
+substituted; this is a process-boundary fixture, not another API/browser pass.
+SIGKILL in the creation/receipt gap remains outside this guarantee.
+
 Neo4j, Qdrant/embeddings and remote Git are recoverable derived services. Their
 generation or delivery receipts remain separate from the Markdown publication
 receipt, so a pending or failed provider cannot be reported as current. The wiki

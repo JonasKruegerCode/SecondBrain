@@ -129,50 +129,64 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.with_openrouter:
         env["OPENROUTER_API_KEY"] = ""
     children: list[subprocess.Popen[bytes]] = []
+    launching = False
+    cleaning = False
+    stop_requested = False
 
     def stop(signum: int, frame: object) -> None:
-        raise KeyboardInterrupt
+        nonlocal stop_requested
+        if stop_requested:
+            return
+        stop_requested = True
+        # Popen can already have created a separate session before returning.
+        # Register it and publish its receipt before honoring a catchable stop.
+        # Do not mask signals: that mask would be inherited by the new child.
+        if not launching and not cleaning:
+            raise KeyboardInterrupt
+
+    def launch(command: Sequence[str], cwd: Path, *, complete: bool) -> None:
+        nonlocal launching
+        launching = True
+        try:
+            child = subprocess.Popen(command, cwd=cwd, env=env, start_new_session=True)
+            children.append(child)
+            _record_processes(args.process_state, children, complete=complete)
+        finally:
+            launching = False
+        if stop_requested:
+            raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
     exit_code = 0
     try:
         _record_processes(args.process_state, children, complete=False)
-        children.append(
-            subprocess.Popen(
-                [
-                    sys.executable,
-                    "-m",
-                    "uvicorn",
-                    "second_brain.wiki.api:app_factory",
-                    "--factory",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    "8000",
-                ],
-                cwd=root,
-                env=env,
-                start_new_session=True,
-            )
+        launch(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "second_brain.wiki.api:app_factory",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ],
+            cwd=root, complete=False,
         )
-        _record_processes(args.process_state, children, complete=False)
-        children.append(
-            subprocess.Popen(
-                [
-                    "npm",
-                    "run",
-                    "dev",
-                    "--",
-                    "--host",
-                    "127.0.0.1",
-                    "--strictPort",
-                ],
-                cwd=root / "frontend",
-                env=env,
-                start_new_session=True,
-            )
+        launch(
+            [
+                "npm",
+                "run",
+                "dev",
+                "--",
+                "--host",
+                "127.0.0.1",
+                "--strictPort",
+            ],
+            cwd=root / "frontend", complete=True,
         )
-        _record_processes(args.process_state, children, complete=True)
         print(
             f"Managed wiki demo: http://127.0.0.1:5173 — vault {vault} — "
             "Ctrl+C stops both processes.",
@@ -183,6 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        cleaning = True
         try:
             _stop_children(children)
         except RuntimeError as exc:

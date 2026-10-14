@@ -53,7 +53,14 @@ still writes evidence with `service_cleanup_ok=false`. A complete receipt must
 identify the expected supervisor and exactly two valid groups. Process receipts
 are removed after success and are never included in CI artifact uploads.
 
-Forced death between creating a child and recording its group remains an
+During each child launch, Ctrl+C/SIGINT and SIGTERM are deferred until the child
+is in the cleanup list and its process receipt is published. The stop is then
+honored before another service can start; repeated stop signals do not interrupt
+cleanup. This does not block signals in the child. A failed receipt write still
+stops the children already tracked in memory and reports an error.
+
+SIGKILL or equivalent uncatchable death between creating a child and recording
+its group remains an
 unconfirmed shutdown: an incomplete/missing receipt cannot guarantee that every
 child stopped. Keep the failed evidence and resolve the owned processes before
 starting another run on the same ports. This is process supervision, not a
