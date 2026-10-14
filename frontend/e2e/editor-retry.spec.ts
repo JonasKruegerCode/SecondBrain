@@ -13,7 +13,7 @@ async function create(request: APIRequestContext, markdown: string) {
   return { id, ...(await response.json()) };
 }
 
-for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored"] as const) {
+for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored", "keyboard-restored"] as const) {
 test(`a timed-out save preserves its ${retryMode} draft without another publication`, async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Save timeout fixture\nBefore.");
   const payloads: { request_id: string; base_revision: string; markdown: string }[] = [];
@@ -55,7 +55,24 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     if (retryMode === "edited") await editor.fill("# Save timeout fixture\nA further unsaved change.");
     if (retryMode === "restored") {
       await editor.fill("# Save timeout fixture\nA temporary correction.");
-      await editor.fill(draft); // Same submitted bytes after ordinary input/undo.
+      await editor.fill(draft); // Restore the same submitted bytes through input.
+    }
+    if (retryMode === "keyboard-restored") {
+      // Exercise the engine's textarea undo stack, not a programmatic fill.
+      // The timeout rerenders the editor; these edits belong to that new node.
+      const suffix = " Temporary keyboard correction.";
+      await editor.press("ControlOrMeta+End");
+      await editor.pressSequentially(suffix);
+      await expect(editor).toHaveValue(draft + suffix);
+      await editor.press("ControlOrMeta+z");
+      await expect(editor).toHaveValue(draft);
+      await editor.press("ControlOrMeta+Shift+z");
+      await expect(editor).toHaveValue(draft + suffix);
+      await editor.press("ControlOrMeta+z");
+      await expect(editor).toHaveValue(draft);
+      await expect(editor).toBeFocused();
+      expect(payloads).toHaveLength(1); // Undo/redo alone never publishes.
+      await page.screenshot({ path: testInfo.outputPath("save-keyboard-undo-mobile.png"), fullPage: true });
     }
     if (retryMode === "rejected-then-restored") {
       const correction = "# Save timeout fixture\nA rejected correction.";

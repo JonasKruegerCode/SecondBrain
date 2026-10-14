@@ -172,11 +172,16 @@ transport failure/retry and late success/failure after article navigation.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
 The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
-profile and the WebKit reading/navigation profile. Its four cases withhold an
+profile and the WebKit reading/navigation profile. Its five cases withhold an
 actual successful save response and advance the client clock: unchanged retry,
 a different draft's real conflict, restored content, and restoration after a
-rejected intermediate edit. They inspect real request payloads, receipts and Git
-history; no save response is fabricated. WebKit keeps service workers blocked
+rejected intermediate edit, plus keyboard input → undo → redo → undo before
+receipt replay. The keyboard case uses the engine's textarea editing commands
+after the timeout has recreated the editor; it does not prove undo history
+survives a save render, physical keyboard input or mobile virtual keyboards.
+They inspect real request payloads, receipts and Git history, then remove only
+their owned UUID page using its current revision; no save response is fabricated.
+WebKit keeps service workers blocked
 for observable held routes, while the separate worker gate keeps them enabled.
 For a focused check, add
 `--browser-engine webkit --browser-grep 'a timed-out save preserves'`
