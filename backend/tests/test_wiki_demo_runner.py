@@ -270,6 +270,110 @@ def test_worker_profile_rejects_wrong_engine_or_partial_selection(args: list[str
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize("extra", [
+    ["--first-start"],
+    ["--browser-engine", "webkit"],
+    ["--webkit-workers"],
+    ["--webkit-first-install-diagnostic"],
+    ["--browser-grep", "scale"],
+    ["--browser-grep", ""],
+    ["--repeat-each", "2"],
+])
+def test_scale_rejects_mixed_or_partial_profiles_before_startup(
+    extra: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    monkeypatch.setitem(main.__globals__, "__file__", str(tmp_path / "scripts" / "run.py"))
+    processes = MagicMock()
+    monkeypatch.setitem(main.__globals__, "subprocess", processes)
+    with pytest.raises(SystemExit) as error:
+        main(["--scale", *extra])
+    assert error.value.code == 2
+    processes.Popen.assert_not_called()
+    processes.run.assert_not_called()
+    assert not (tmp_path / ".demo").exists()
+
+
+@pytest.mark.parametrize("browser_exit, keep", [(0, False), (0, True), (7, False)])
+def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
+    browser_exit: int, keep: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-key-must-not-reach-services")
+    supervisor = MagicMock(pid=4321)
+
+    def start(command: list[str], **kwargs: Any) -> Any:
+        vault = Path(command[command.index("--vault") + 1])
+        assert not vault.exists()
+        vault.mkdir()
+        (vault / "owned-fixture").touch()
+        Path(command[command.index("--process-state") + 1]).write_text("owned record")
+        return supervisor
+
+    def run(command: list[str], **kwargs: Any) -> Any:
+        return MagicMock(
+            returncode=0 if command[0] == "git" else browser_exit,
+            stdout="synthetic-head",
+        )
+
+    processes = MagicMock()
+    processes.Popen.side_effect = start
+    processes.run.side_effect = run
+    processes.TimeoutExpired = subprocess.TimeoutExpired
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    readiness = MagicMock()
+    cleanup = MagicMock()
+    monkeypatch.setitem(namespace, "_wait_for_http", readiness)
+    monkeypatch.setitem(namespace, "_stop_process_group", cleanup)
+    assert main(["--scale", *(["--keep-vault"] if keep else [])]) == (
+        0 if browser_exit == 0 else 1
+    )
+
+    results = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
+    assert len(results) == 1
+    artifact_dir = results[0].parent
+    processes.Popen.assert_called_once()
+    assert processes.Popen.call_args.args[0] == [
+        sys.executable, str(tmp_path / "scripts" / "run-wiki-demo.py"),
+        "--vault", str(artifact_dir / "vault"), "--scale-pages", "320",
+        "--process-state", str(artifact_dir / "processes-scale.json"),
+    ]
+    assert processes.Popen.call_args.kwargs["start_new_session"] is True
+    browser_calls = [call for call in processes.run.call_args_list if call.args[0][0] != "git"]
+    assert len(browser_calls) == 1
+    assert browser_calls[0].args[0] == [
+        "npm", "run", "test:browser", "--", "e2e/scale.spec.ts",
+        "--output", str(artifact_dir / "browser-scale"),
+    ]
+    assert browser_calls[0].kwargs["cwd"] == tmp_path / "frontend"
+    for call in [processes.Popen.call_args, browser_calls[0]]:
+        assert call.kwargs["env"]["PLAYWRIGHT_SCALE"] == "1"
+        assert call.kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == "chromium"
+        assert call.kwargs["env"]["PLAYWRIGHT_FIRST_START_PHASE"] == "scale"
+        assert "OPENROUTER_API_KEY" not in call.kwargs["env"]
+    assert readiness.call_count == 2
+    cleanup.assert_called_once_with(supervisor, artifact_dir / "processes-scale.json")
+    evidence = json.loads(results[0].read_text())
+    assert evidence["status"] == ("passed" if browser_exit == 0 else "failed")
+    assert evidence["browser_profile"] == "scale"
+    assert evidence["fixture"] == "synthetic-scale-320"
+    assert evidence["suites"] == ["frontend/e2e/scale.spec.ts"]
+    assert evidence["test_selection"] == {"grep": None, "repeat_each": 1}
+    assert evidence["browser_phases"] == [
+        {"phase": "scale", "exit_code": browser_exit, "supervisor_pid": 4321},
+    ]
+    assert evidence["service_restarts"] == 0
+    assert evidence["service_cleanup_ok"] is True
+    retained = keep or browser_exit != 0
+    assert evidence["vault_retained"] is retained
+    assert evidence["process_records_retained"] is retained
+    assert evidence["phase_inputs_retained"] is False
+    assert (artifact_dir / "vault" / "owned-fixture").exists() is retained
+    assert (artifact_dir / "processes-scale.json").exists() is retained
+
+
 @pytest.mark.parametrize("engine, profile, service_workers, suites", [
     ("chromium", "full", "allow", [
         "e2e/wiki.spec.ts", "e2e/history.spec.ts",

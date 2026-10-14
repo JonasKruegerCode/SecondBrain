@@ -46,6 +46,14 @@ for (const width of [390, 1440]) {
       await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
       await page.getByRole("button", { name: "Zoom in", exact: true }).click();
       const map = page.locator(".galaxy-stage svg");
+      await page.locator(".galaxy-stage").scrollIntoViewIfNeeded();
+      const stage = (await page.locator(".galaxy-stage").boundingBox())!;
+      const unpanned = await map.getAttribute("viewBox");
+      await page.mouse.move(stage.x + 12, stage.y + stage.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(stage.x + 62, stage.y + stage.height / 2 + 25, { steps: 5 });
+      await page.mouse.up();
+      await expect(map).not.toHaveAttribute("viewBox", unpanned!);
       const viewBox = await map.getAttribute("viewBox");
       if (list) await page.getByRole("button", { name: "List view", exact: true }).click();
       await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article" }).click();
@@ -58,6 +66,32 @@ for (const width of [390, 1440]) {
       if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
       else await expect(map).toHaveAttribute("viewBox", viewBox!);
       await page.screenshot({ path: testInfo.outputPath(`galaxy-return-${width}-${list ? "list" : "map"}.png`), fullPage: true });
+      if (!list) {
+        const sidebar = page.locator(".galaxy-sidebar-content");
+        await sidebar.evaluate(element => { element.scrollTop = 180; });
+        const offset = await sidebar.evaluate(element => element.scrollTop);
+        expect(offset).toBeGreaterThan(0);
+        await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Search", exact: true }).click();
+        await expect(page).toHaveURL(/\/search$/);
+        await page.goBack();
+        await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
+        await expect.poll(() => sidebar.evaluate(element => element.scrollTop)).toBe(offset);
+        await expect(map).toHaveAttribute("viewBox", viewBox!);
+        await page.screenshot({ path: testInfo.outputPath(`galaxy-offset-return-${width}-viewport.png`) });
+      }
+      const find = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
+      await find.fill("tide");
+      const matches = await page.locator(".galaxy-page").count();
+      expect(matches).toBeGreaterThan(0);
+      await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Search", exact: true }).click();
+      await expect(page).toHaveURL(/\/search$/);
+      await page.goBack();
+      await expect(find).toHaveValue("tide");
+      await expect(page.locator(".galaxy-page")).toHaveCount(matches);
+      if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
+      else await expect(map).toHaveAttribute("viewBox", viewBox!);
+      await find.fill("");
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
       // Refresh creates an adjacent visit with the same URL. Back/Forward must
       // still distinguish its overview from the preceding selected-page view.
       await page.getByRole("link", { name: "Refresh snapshot" }).click();

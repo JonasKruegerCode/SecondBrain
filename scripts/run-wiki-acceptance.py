@@ -134,6 +134,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Check an empty wiki, then restart both services and verify persisted pages",
     )
     parser.add_argument(
+        "--scale",
+        action="store_true",
+        help="Run the bounded Chromium scale suite with a fresh synthetic 320-page vault",
+    )
+    parser.add_argument(
         "--browser-grep",
         help="Run only matching browser tests for diagnosis; not a full acceptance run",
     )
@@ -164,6 +169,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--startup-timeout must be positive")
     if args.repeat_each < 1:
         parser.error("--repeat-each must be positive")
+    if args.scale and (
+        args.first_start or args.browser_engine != "chromium"
+        or args.webkit_workers or args.webkit_first_install_diagnostic
+        or args.browser_grep is not None or args.repeat_each != 1
+    ):
+        parser.error("--scale requires its unfiltered, unrepeated Chromium acceptance profile")
     if args.first_start and (args.browser_grep or args.repeat_each != 1):
         parser.error("first-start phases cannot be filtered or repeated")
     if args.first_start and args.browser_engine != "chromium":
@@ -209,6 +220,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--vault",
         str(vault),
     ]
+    if args.scale:
+        command.extend(["--scale-pages", "320"])
+        env["PLAYWRIGHT_SCALE"] = "1"
     suites = (
         ["e2e/first-start.spec.ts"]
         if args.first_start
@@ -222,6 +236,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/editor-retry.spec.ts",
         ]
     )
+    if args.scale:
+        suites = ["e2e/scale.spec.ts"]
     if args.browser_engine == "webkit":
         suites = [
             "e2e/skip-link.spec.ts",
@@ -233,7 +249,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     worker_filter = (
         "(PWA metadata registers an online-only worker without private caches|"
         "PWA offers and applies a waiting worker update|"
-        "PWA preserves a dirty tab when another tab updates, then permits (save|discard) and reload)$"
+        "PWA preserves a dirty tab when another tab updates, "
+        "then permits (save|discard) and reload)$"
         if args.webkit_workers else None
     )
     if args.webkit_first_install_diagnostic:
@@ -241,8 +258,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         worker_filter = "PWA metadata registers an online-only worker without private caches$"
     if args.webkit_workers or args.webkit_first_install_diagnostic:
         suites = ["e2e/wiki.spec.ts"]
-    phases = ("create", "restart") if args.first_start else ("demo",)
+    phases = ("create", "restart") if args.first_start else (
+        ("scale",) if args.scale else ("demo",)
+    )
     browser_command = ["npm", "run", "test:browser", "--", *suites]
+    if args.scale:
+        browser_command.extend(["--output", str(artifact_dir / "browser-scale")])
     if args.browser_grep:
         browser_command.extend(["--grep", args.browser_grep])
     if worker_filter:
@@ -250,7 +271,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.repeat_each != 1:
         browser_command.extend(["--repeat-each", str(args.repeat_each)])
     if args.browser_grep or args.repeat_each != 1 or args.browser_engine != "chromium":
-        output_name = "browser-diagnostic" if args.browser_engine == "chromium" else "browser-webkit"
+        output_name = (
+            "browser-diagnostic" if args.browser_engine == "chromium" else "browser-webkit"
+        )
         if args.webkit_workers:
             output_name = "browser-webkit-workers"
         if args.webkit_first_install_diagnostic:
@@ -360,9 +383,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "duration_seconds": round((finished - started).total_seconds(), 3),
         "git_head": _git_head(root),
         "browser_engine": args.browser_engine,
-        "browser_profile": "first-install-diagnostic" if args.webkit_first_install_diagnostic else (
-            "worker-update" if args.webkit_workers else (
-                "reading-navigation" if args.browser_engine == "webkit" else "full"
+        "browser_profile": "scale" if args.scale else (
+            "first-install-diagnostic" if args.webkit_first_install_diagnostic else (
+                "worker-update" if args.webkit_workers else (
+                    "reading-navigation" if args.browser_engine == "webkit" else "full"
+                )
             )
         ),
         "service_workers": "block" if (
@@ -371,8 +396,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         ) else "allow",
         "suite": f"frontend/{suites[0]}",
         "suites": [f"frontend/{suite}" for suite in suites],
-        "test_selection": {"grep": worker_filter or args.browser_grep, "repeat_each": args.repeat_each},
-        "fixture": "empty-first-start" if args.first_start else "fictional-template",
+        "test_selection": {
+            "grep": worker_filter or args.browser_grep, "repeat_each": args.repeat_each,
+        },
+        "fixture": "synthetic-scale-320" if args.scale else (
+            "empty-first-start" if args.first_start else "fictional-template"
+        ),
         "services": [
             "http://127.0.0.1:8000/api/wiki/health",
             "http://127.0.0.1:5173/",

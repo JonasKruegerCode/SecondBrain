@@ -9,7 +9,7 @@ test.skip(
 test("large real vault has a compact stable map and usable mutation path", async ({
   page,
   request,
-}) => {
+}, testInfo) => {
   const started = Date.now();
   const response = await request.get("/api/wiki/graph");
   expect(response.ok()).toBeTruthy();
@@ -40,7 +40,7 @@ test("large real vault has a compact stable map and usable mutation path", async
       element.getAttribute("transform"),
     ])),
   );
-  await page.screenshot({ path: "../.demo/scale-map-overview.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("scale-map-overview.png"), fullPage: true });
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect.poll(() => page.locator(".galaxy-neighborhood text:not(.galaxy-count)").evaluateAll(elements => {
@@ -51,7 +51,7 @@ test("large real vault has a compact stable map and usable mutation path", async
         return parseFloat(getComputedStyle(label).fontSize) * label.getScreenCTM()!.a >= 13.99 && box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom;
       });
     })).toBe(true);
-    await page.screenshot({ path: `../.demo/scale-map-overview-${width}.png`, fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath(`scale-map-overview-${width}.png`), fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
 
@@ -63,7 +63,7 @@ test("large real vault has a compact stable map and usable mutation path", async
   expect(await page.locator(".galaxy-sidebar-content").evaluate(element => element.scrollTop), "new constellation heading must not retain the scrolled overview offset").toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.evaluate(() => scrollTo(0, 0));
-  await page.screenshot({ path: "../.demo/scale-map-cluster.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("scale-map-cluster.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   const targets = () => page.locator(".galaxy-star").evaluateAll(elements => elements.map(element => {
     const star = element as SVGGraphicsElement;
@@ -85,7 +85,7 @@ test("large real vault has a compact stable map and usable mutation path", async
   for (let step = 0; step < 3; step++) await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await checkTargets();
   await page.getByRole("button", { name: "Reset", exact: true }).click();
-  await page.screenshot({ path: "../.demo/scale-map-focused-mobile.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("scale-map-focused-mobile.png"), fullPage: true });
   for (const point of (await targets()).slice(0, 2)) {
     await page.locator(`.galaxy-star[data-node="${point.id}"]`).click();
     await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", point.id);
@@ -106,6 +106,29 @@ test("large real vault has a compact stable map and usable mutation path", async
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await expect(page.getByRole("link", { name: "Open article" })).toBeVisible();
+  await page.getByRole("link", { name: "Open article" }).click();
+  await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
+  await page.goBack();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
+  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("scale-history-list-390.png"), fullPage: true });
+  await page.getByRole("button", { name: "Map view", exact: true }).click();
+  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const selectedView = await page.locator(".galaxy-stage svg").getAttribute("viewBox");
+  await page.getByRole("link", { name: "Open article" }).click();
+  await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
+  await page.goBack();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
+  await expect(page.locator(".galaxy-stage")).toBeVisible();
+  await expect(page.locator(".galaxy-stage svg")).toHaveAttribute("viewBox", selectedView!);
+  await page.screenshot({ path: testInfo.outputPath("scale-history-map-390.png"), fullPage: true });
+  await page.getByRole("link", { name: "Refresh snapshot" }).click();
+  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+  await page.goBack();
+  await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
+  await expect(page.locator(".galaxy-stage svg")).toHaveAttribute("viewBox", selectedView!);
 
   const id = `scale-live-${randomUUID()}`;
   const created = await request.post(`/api/wiki/pages/${id}`, {
@@ -135,7 +158,7 @@ test("large real vault has a compact stable map and usable mutation path", async
   )).toEqual(corePositions);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => scrollTo(0, 0));
-  await page.screenshot({ path: "../.demo/scale-map-mobile.png", fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("scale-map-mobile.png"), fullPage: true });
   await search.fill(id);
   await expect(page.locator(".galaxy-page")).toHaveCount(1);
   await page.locator(".galaxy-page").click();

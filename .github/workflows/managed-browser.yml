@@ -55,6 +55,9 @@ jobs:
       - name: Exercise local Git import and preserved browser edits
         run: make acceptance-import PYTHON="$WIKI_PYTHON"
 
+      - name: Exercise the real synthetic320 graph and browser history
+        run: make acceptance-scale PYTHON="$WIKI_PYTHON"
+
       - name: Exercise reading and navigation in WebKit
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit'
 

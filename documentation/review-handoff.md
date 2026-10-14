@@ -177,6 +177,13 @@ inputs and are never uploaded; successful runs remove them and the vault.
 The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
 `.demo/acceptance/`. It clears inherited OpenRouter access.
+`make acceptance-scale PYTHON="$WIKI_PYTHON"` runs the existing scale suite
+against a fresh owned 320-page synthetic Git vault. The fixed `--scale` profile
+rejects other profiles, filters and repeats; its structural record identifies
+the scale fixture and cleanup, and screenshots stay under that run's
+`browser-scale` output. Browser CI runs this bounded graph/mutation/history gate
+separately from the fictional-atlas suite. It is a local-browser fixture check,
+not a production load or physical-device guarantee.
 For a concrete intermittent failure, `--browser-grep PATTERN --repeat-each N`
 selects a bounded diagnostic run against the same real services. Its structural
 record includes the filter and repetition count; a filtered pass is not full
