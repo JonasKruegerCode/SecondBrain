@@ -198,6 +198,15 @@ Cancel after a real deletion shows the missing-page view without recreating the
 article. Section URLs retain their fragment and visit; delayed reads preserve
 chosen header focus. A newer native fragment starts a newer read, and a header
 choice during that read still takes precedence over automatic section focus.
+Those section cases pair actual viewport captures with full-page images and
+record the unfocused Skip link's viewport geometry before and after capture.
+An offscreen fixed element can appear in a full-page image; that image alone
+does not establish visibility over the article in the current viewport.
+Paired real graph reads at 390/1440 pixels also check a text-only edit with
+unchanged title/topology: curated core/world positions and directed bridge
+evidence remain equal while the actual snapshot revision advances. SVG world
+coordinates and viewport fitting are recorded separately; this bounded check
+does not establish stability after added/deleted links, groups or pages.
 These desktop/narrow cases are not arbitrary-size performance benchmarks.
 They inspect real request payloads, receipts and Git history, then remove only
 their owned UUID page using its current revision; no save response is fabricated.

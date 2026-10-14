@@ -2559,3 +2559,70 @@ test("PWA blocks update during an unchanged save until the real response arrives
     await proxy.close();
   }
 });
+
+
+for (const width of [390, 1440]) {
+  test(`galaxy curated world layout survives an unrelated real text edit (${width})`, async ({ page, request }, testInfo) => {
+    const title = `Synthetic stability ${randomUUID()}`;
+    const fixture = await create(request, `# ${title}\nUnrelated synthetic text before editing.`);
+    try {
+      await page.setViewportSize({ width, height: 1000 });
+      const capture = async (phase: string) => {
+        const responsePromise = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph") && response.request().method() === "GET");
+        await page.goto("/galaxy");
+        const browserResponse = await responsePromise;
+        expect(browserResponse.ok()).toBeTruthy();
+        const graph = await browserResponse.json();
+        const apiResponse = await request.get("/api/wiki/graph");
+        expect(apiResponse.ok()).toBeTruthy();
+        expect(await apiResponse.json()).toEqual(graph);
+        const curated = graph.nodes.filter((node: { galaxy?: { group: string } }) => node.galaxy?.group);
+        expect(curated.length).toBeGreaterThan(0);
+        const ids = curated.map((node: { id: string }) => node.id).sort();
+        await expect(page.locator(".galaxy-star").first()).toBeVisible();
+        const measurements = await page.locator(".galaxy-stage svg").evaluate((element, curatedIds) => {
+          const svg = element as SVGSVGElement;
+          const rect = svg.getBoundingClientRect(), matrix = svg.getScreenCTM()!;
+          return {
+            world: [...svg.querySelectorAll<SVGGElement>(".galaxy-star")]
+              .filter(star => curatedIds.includes(star.dataset.node!))
+              .map(star => ({ id: star.dataset.node!, core: star.classList.contains("is-core"), transform: star.getAttribute("transform") }))
+              .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+            bridges: [...svg.querySelectorAll(".galaxy-aggregate-link")].map(link => ({
+              title: link.querySelector("title")!.textContent,
+              coordinates: ["x1", "y1", "x2", "y2"].map(name => Number(link.querySelector("line")!.getAttribute(name))),
+            })).sort((a, b) => a.title!.localeCompare(b.title!)),
+            viewport: { viewBox: svg.getAttribute("viewBox"), width: rect.width, height: rect.height, matrix: [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f] },
+          };
+        }, ids);
+        expect(measurements.world.map(star => star.id)).toEqual(ids);
+        expect(measurements.world.some(star => star.core)).toBeTruthy();
+        for (const star of measurements.world) expect(star.transform).toMatch(/^translate\(/);
+        for (const bridge of measurements.bridges) expect(bridge.coordinates.every(Number.isFinite)).toBeTruthy();
+        expect(measurements.bridges.length).toBeGreaterThan(0);
+        await page.screenshot({ path: testInfo.outputPath(`galaxy-stability-${width}-${phase}.png`), fullPage: true });
+        const snapshot = { graph, measurements };
+        console.log(`Galaxy stability ${width} ${phase}: ${JSON.stringify(measurements)}`);
+        await testInfo.attach(`galaxy-stability-${width}-${phase}.json`, { body: JSON.stringify(snapshot, null, 2), contentType: "application/json" });
+        return snapshot;
+      };
+      const before = await capture("before");
+      const saved = await update(request, fixture.id, `# ${title}\nUnrelated synthetic text after a small edit.`, fixture.revision);
+      expect(saved.revision).not.toBe(fixture.revision);
+      const after = await capture("after");
+      expect(after.graph.revision).not.toBe(before.graph.revision);
+      // Equal API metadata and directed relations prove membership inputs stayed
+      // fixed. SVG translations are world coordinates; screen fitting is separate.
+      expect(after.graph.nodes).toEqual(before.graph.nodes);
+      expect(after.graph.edges).toEqual(before.graph.edges);
+      expect(after.measurements.world).toEqual(before.measurements.world);
+      expect(after.measurements.bridges).toEqual(before.measurements.bridges);
+    } finally {
+      const fresh = await request.get(`/api/wiki/pages/${fixture.id}`);
+      expect(fresh.ok()).toBeTruthy();
+      const current = await fresh.json();
+      const removed = await request.delete(`/api/wiki/pages/${fixture.id}`, { data: { base_revision: current.revision, request_id: randomUUID() } });
+      expect(removed.ok()).toBeTruthy();
+    }
+  });
+}

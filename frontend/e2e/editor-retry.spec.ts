@@ -118,7 +118,21 @@ test(`cancel retains a section URL and ${intent} focus`, async ({ page, request 
     expect(writes).toBe(0);
     expect(reads).toBe(intent.startsWith("new-fragment") ? 2 : 1);
     expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+    const skipGeometry = () => page.locator(".skip-link").evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, scrollY,
+        focused: document.activeElement === element,
+        transform: getComputedStyle(element).transform };
+    });
+    const beforeCapture = await skipGeometry();
+    expect(beforeCapture.focused).toBe(false);
+    expect(beforeCapture.bottom).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: info.outputPath(`cancel-section-${intent}-viewport.png`) });
     await page.screenshot({ path: info.outputPath(`cancel-section-${intent}.png`), fullPage: true });
+    const afterCapture = await skipGeometry();
+    expect(afterCapture).toEqual(beforeCapture);
+    await expect(chosenHeader ? search : page.locator(intent === "new-fragment" ? "#section-2" : "#section-1")).toBeFocused();
+    console.log(`[cancel-viewport] ${JSON.stringify({ intent, beforeCapture, afterCapture })}`);
     await page.getByRole("button", { name: "Edit page" }).click();
     await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(markdown);
   } finally {
