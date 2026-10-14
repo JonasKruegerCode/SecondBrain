@@ -22,6 +22,12 @@ one candidate snapshot, then publishes that snapshot with a compare-and-swap ref
 update. REST, the browser and direct managed MCP all use the same `WikiStore`;
 there is no second loose-file writer.
 
+The store regression also terminates an owned child process at controlled
+boundaries immediately before and after the real Git ref update. Reopening the
+store and retrying the exact request must recover one publication and its
+receipt, without an extra history entry. This covers process loss at those
+boundaries; it does not emulate power loss or interrupt Git's ref transaction.
+
 Neo4j, Qdrant/embeddings and remote Git are recoverable derived services. Their
 generation or delivery receipts remain separate from the Markdown publication
 receipt, so a pending or failed provider cannot be reported as current. The wiki

@@ -1,4 +1,7 @@
+import hashlib
+import json
 import multiprocessing
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -151,6 +154,101 @@ def test_unpublished_commit_not_visible_and_lost_reply_is_recoverable(
     )
     assert retry["publication"] == "saved"
     assert len(restarted.history("harbor")) == 2
+
+
+def _pause_at_publication(path: str, base: str, boundary: str, pipe: Any, release: Any) -> None:
+    store = WikiStore(path)
+    child_temp = Path(path) / "child-temp"
+    child_temp.mkdir()
+    tempfile.tempdir = str(child_temp)
+    original_git = store._git
+
+    def paused_git(*args: str, **kwargs: Any) -> bytes:
+        if args[0] != "update-ref":
+            return original_git(*args, **kwargs)
+        if boundary == "after":
+            result = original_git(*args, **kwargs)
+        pipe.send((boundary, args[2]))
+        if not release.wait(30):
+            raise RuntimeError("Parent did not kill the paused writer")
+        return original_git(*args, **kwargs) if boundary == "before" else result
+
+    store._git = paused_git  # type: ignore[method-assign]
+    try:
+        store.save_page("harbor", "# Harbor\nSynthetic survey.", base, "death-request")
+    finally:
+        pipe.close()
+
+
+@pytest.mark.parametrize("boundary", ["before", "after"])
+def test_process_death_at_ref_publication_is_recoverable(tmp_path: Path, boundary: str) -> None:
+    store = WikiStore(tmp_path)
+    created = store.save_page("harbor", "# Harbor\nSynthetic original.", None, "create")
+    initial_head = store._head()
+    initial_page = store.get_page("harbor")
+    initial_history = store.history("harbor")
+    context = multiprocessing.get_context("spawn")
+    reader, writer = context.Pipe(duplex=False)
+    release = context.Event()
+    process = context.Process(
+        target=_pause_at_publication,
+        args=(str(tmp_path), created["revision"], boundary, writer, release),
+    )
+    try:
+        process.start()
+        writer.close()
+        assert reader.poll(15), "Writer did not reach the publication boundary"
+        marker, candidate_head = reader.recv()
+        assert marker == boundary
+        assert process.is_alive()
+        process.kill()
+        process.join(15)
+        assert not process.is_alive()
+        assert process.exitcode is not None and process.exitcode < 0
+
+        restarted = WikiStore(tmp_path)
+        if boundary == "before":
+            assert restarted._head() == initial_head
+            assert restarted.get_page("harbor") == initial_page
+            assert restarted.history("harbor") == initial_history
+        else:
+            assert restarted._head() == candidate_head
+            assert (restarted.get_page("harbor") or {})["markdown"] == (
+                "# Harbor\nSynthetic survey."
+            )
+            assert len(restarted.history("harbor")) == len(initial_history) + 1
+
+        request_hash = hashlib.sha256(b"death-request").hexdigest()
+        receipt_blob = restarted._blob(candidate_head, f"requests/{request_hash}.json")
+        assert receipt_blob is not None
+        expected_response = json.loads(receipt_blob)["result"]
+        reply = restarted.save_page(
+            "harbor", "# Harbor\nSynthetic survey.", created["revision"], "death-request"
+        )
+        assert reply == expected_response
+        if boundary == "after":
+            assert restarted._head() == candidate_head
+        assert len(restarted.history("harbor")) == len(initial_history) + 1
+        published_head = restarted._head()
+        published_page = restarted.get_page("harbor")
+        published_history = restarted.history("harbor")
+        assert WikiStore(tmp_path).save_page(
+            "harbor", "# Harbor\nSynthetic survey.", created["revision"], "death-request"
+        ) == reply
+        assert restarted._head() == published_head
+        assert restarted.get_page("harbor") == published_page
+        assert restarted.history("harbor") == published_history
+    finally:
+        try:
+            if process.pid is not None:
+                if process.is_alive():
+                    process.kill()
+                process.join(15)
+                assert not process.is_alive(), "Owned writer failed to terminate"
+                process.close()
+        finally:
+            reader.close()
+            writer.close()
 
 
 @pytest.mark.parametrize("page_id", ["../escape", "/absolute", "a/b", "..", "a\nheader"])
