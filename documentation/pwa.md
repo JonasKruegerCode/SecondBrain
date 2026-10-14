@@ -64,18 +64,23 @@ create a waiting worker. Bump its `RELEASE` value for each deployment that needs
 the in-app update notice. Normal browser navigation still receives the current
 uncached HTML independently.
 
+The [Compose install/update procedure](install-update.md) connects this manual
+release step with version selection, content backup and service recovery. Its
+image/source choice does not by itself prove that an open browser took the update.
+
 ## Reproducible checks and limits
 
 Run the isolated demo and browser suite:
 
 ```sh
-make demo PYTHON=backend/.venv/bin/python
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
 # in another terminal
 cd frontend
 npm run test:browser
 ```
 
-`make acceptance PYTHON=backend/.venv/bin/python` supervises both services and
+`SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"` supervises both services and
 runs the same browser suite in one command. The **Managed wiki browser acceptance**
 CI workflow runs it on pull requests with a fresh synthetic vault and retains
 only the structural result, browser report and synthetic update screenshots for
@@ -114,7 +119,7 @@ For a specific intermittent first-install failure, use the isolated diagnostic
 profile, after installing the same backend/browser dependencies as acceptance:
 
 ```sh
-"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit \
+SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit \
   --webkit-first-install-diagnostic --repeat-each 20
 ```
 

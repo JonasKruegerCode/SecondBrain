@@ -9,6 +9,11 @@ concerns; derived indexes are rebuilt against the restored content revision.
 
 ## Create a backup
 
+The commands below address a host directory. For the named volume used by
+`docker-compose.wiki.yml`, use the [container backup and independent-volume
+recovery procedure](install-update.md); the host does not automatically have an
+equivalent `/managed-vault` directory.
+
 Run all commands from the repository root. Prepare the locked backend and select
 Poetry's actual Python rather than assuming an activated shell or `.venv` path:
 

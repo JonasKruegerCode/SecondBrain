@@ -87,6 +87,10 @@ auto-seeds template content. Verify the actual revision and runtime with the
 disposable rehearsal below; success there does not accept a private-vault restore
 or production proxy configuration.
 
+For a lasting instance, follow the [install/update procedure](install-update.md)
+to keep the same Compose project and volume, archive container content, and
+apply/recover a reviewed application version.
+
 For a disposable synthetic container rehearsal, use `make acceptance-stack`;
 the [stack guide](managed-stack-acceptance.md) covers its separate project,
 dynamic loopback ports, restart and independent-volume restore checks.

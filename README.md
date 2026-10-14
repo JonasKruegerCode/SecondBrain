@@ -185,9 +185,15 @@ the public-facing services with a local override:
 ```yaml
 services:
   frontend:
-    networks: [default, proxy-network]
+    networks:
+      default: {}
+      proxy-network:
+        aliases: [secondbrain-wiki-web]
   mcp:
-    networks: [default, proxy-network]
+    networks:
+      default: {}
+      proxy-network:
+        aliases: [secondbrain-wiki-mcp]
 
 networks:
   proxy-network:
@@ -195,8 +201,10 @@ networks:
     name: proxy-network
 ```
 
-Route the wiki host to `frontend:80` and the MCP host to `mcp:3001`. Keep the
-existing proxy password on the wiki host, configure HTTPS, and add the exact MCP
+Route the wiki host to `secondbrain-wiki-web:80` and the MCP host to
+`secondbrain-wiki-mcp:3001`. Choose unique aliases for each installation on the
+shared proxy network; generic service names can collide with other projects.
+Keep the existing proxy password on the wiki host, configure HTTPS, and add the exact MCP
 host/origin to `.env.wiki`; do not expose either upstream directly.
 
 Disposable image build/start, HTTPS/auth, restart and independent-volume recovery
@@ -204,6 +212,8 @@ have separate [CI acceptance](documentation/managed-stack-acceptance.md). Inspec
 the reviewed revision's actual run; this does not accept your production proxy,
 private credentials, migration or off-host recovery.
 Use [backup and restore](documentation/backup-restore.md) before migration.
+For a stable project/volume identity, container backup, reviewed image/source
+selection and controlled recovery, follow the [install/update procedure](documentation/install-update.md).
 
 ## Managed MCP tools
 
