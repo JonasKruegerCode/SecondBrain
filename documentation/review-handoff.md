@@ -206,7 +206,14 @@ Paired real graph reads at 390/1440 pixels also check a text-only edit with
 unchanged title/topology: curated core/world positions and directed bridge
 evidence remain equal while the actual snapshot revision advances. SVG world
 coordinates and viewport fitting are recorded separately; this bounded check
-does not establish stability after added/deleted links, groups or pages.
+does not establish stability after arbitrary added/deleted links, groups or pages.
+A separate directed-link mutation checks two existing fixture groups with retained
+anchors at 390/1440 pixels: a real save adds exactly one leaf-to-leaf link to an existing bridge,
+the UI refresh reads the current graph, core world positions and unrelated bridges
+stay unchanged, and the evidence panel retains the actual source/target direction.
+World positions and viewport fitting are recorded separately. Ordinary stars may
+reorder with their degree rank; this bounded check does not promise fixed positions
+for every star or topology-derived group. File attachments preserve both snapshots.
 These desktop/narrow cases are not arbitrary-size performance benchmarks.
 They inspect real request payloads, receipts and Git history, then remove only
 their owned UUID page using its current revision; no save response is fabricated.

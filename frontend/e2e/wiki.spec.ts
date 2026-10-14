@@ -2576,6 +2576,113 @@ test("PWA blocks update during an unchanged save until the real response arrives
 
 
 for (const width of [390, 1440]) {
+  test(`galaxy refresh keeps anchored cores and updates a real directed bridge (${width})`, async ({ page, request }, testInfo) => {
+    const group = randomUUID();
+    const labels = [`Link Alpha ${group}`, `Link Beta ${group}`];
+    const fixtures: Awaited<ReturnType<typeof create>>[] = [];
+    try {
+      for (const title of ["Alpha core", "Alpha leaf", "Beta core", "Beta leaf"]) {
+        fixtures.push(await create(request, `# ${title}\nSynthetic link mutation fixture.`));
+      }
+      const [a, al, b, bl] = fixtures;
+      const markdown = [
+        `---\ngalaxy_group: link-alpha-${group}\ngalaxy_label: ${labels[0]}\ngalaxy_anchor: true\n---\n# Alpha core\n[[${al.id}]] [[${b.id}]]`,
+        `---\ngalaxy_group: link-alpha-${group}\n---\n# Alpha leaf\nSynthetic original text.`,
+        `---\ngalaxy_group: link-beta-${group}\ngalaxy_label: ${labels[1]}\ngalaxy_anchor: true\n---\n# Beta core\n[[${bl.id}]]`,
+        `---\ngalaxy_group: link-beta-${group}\n---\n# Beta leaf\nSynthetic original text.`,
+      ];
+      for (let i = 0; i < fixtures.length; i++) await update(request, fixtures[i].id, markdown[i], fixtures[i].revision);
+      await page.setViewportSize({ width, height: 1000 });
+      const capture = async (phase: string) => {
+        const responsePromise = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph") && response.request().method() === "GET");
+        if (phase === "before") await page.goto("/galaxy");
+        else await page.getByRole("link", { name: "Refresh snapshot" }).click();
+        const response = await responsePromise;
+        expect(response.ok()).toBeTruthy();
+        const graph = await response.json();
+        const direct = await request.get("/api/wiki/graph");
+        expect(direct.ok()).toBeTruthy();
+        expect(await direct.json()).toEqual(graph);
+        await expect(page.locator(".galaxy-revision")).toContainText(graph.revision.slice(0, 8));
+        await expect(page.locator(`.galaxy-star[data-node="${a.id}"]`)).toBeVisible();
+        const measurements = await page.locator(".galaxy-stage svg").evaluate(element => {
+          const svg = element as SVGSVGElement, matrix = svg.getScreenCTM()!, rect = svg.getBoundingClientRect();
+          return {
+            world: [...svg.querySelectorAll<SVGGElement>(".galaxy-star")].map(star => ({
+              id: star.dataset.node!, core: star.classList.contains("is-core"), transform: star.getAttribute("transform"),
+            })).sort((a, b) => a.id.localeCompare(b.id)),
+            bridges: [...svg.querySelectorAll(".galaxy-aggregate-link")].map(link => ({
+              title: link.querySelector("title")!.textContent,
+              coordinates: ["x1", "y1", "x2", "y2"].map(name => Number(link.querySelector("line")!.getAttribute(name))),
+            })).sort((a, b) => a.title!.localeCompare(b.title!)),
+            viewport: { viewBox: svg.getAttribute("viewBox"), width: rect.width, height: rect.height,
+              matrix: [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f] },
+          };
+        });
+        const snapshot = { graph, measurements };
+        const evidencePath = testInfo.outputPath(`galaxy-link-mutation-${width}-${phase}.json`);
+        await writeFile(evidencePath, JSON.stringify(snapshot, null, 2));
+        await testInfo.attach(`galaxy-link-mutation-${width}-${phase}`, { path: evidencePath, contentType: "application/json" });
+        await page.screenshot({ path: testInfo.outputPath(`galaxy-link-mutation-${width}-${phase}.png`), fullPage: true });
+        return snapshot;
+      };
+      const before = await capture("before");
+      const bridgeTitle = page.locator(".galaxy-aggregate-link title").filter({ hasText: labels[0] });
+      const originalTitle = `1 explicit link between ${labels[0]} and ${labels[1]}`;
+      expect(before.measurements.bridges.filter(bridge => bridge.title === originalTitle)).toHaveLength(1);
+      const fresh = await request.get(`/api/wiki/pages/${al.id}`);
+      expect(fresh.ok()).toBeTruthy();
+      const current = await fresh.json();
+      await update(request, al.id, `${markdown[1]}\n\n[[${bl.id}]]`, current.revision);
+      // The map is a named snapshot until the user refreshes it.
+      await expect(bridgeTitle).toHaveText(originalTitle);
+      const after = await capture("after");
+      expect(after.graph.revision).not.toBe(before.graph.revision);
+      expect(after.graph.nodes).toEqual(before.graph.nodes);
+      const edgeKey = (edge: { source: string; target: string; type: string; rel?: string }) => JSON.stringify(edge);
+      const beforeEdges = new Set(before.graph.edges.map(edgeKey));
+      const afterEdges = new Set(after.graph.edges.map(edgeKey));
+      expect([...beforeEdges].filter(edge => !afterEdges.has(edge))).toEqual([]);
+      const added = after.graph.edges.filter((edge: { source: string; target: string; type: string; rel?: string }) => !beforeEdges.has(edgeKey(edge)));
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatchObject({ source: al.id, target: bl.id });
+      expect(after.measurements.world.filter(star => star.core)).toEqual(before.measurements.world.filter(star => star.core));
+      expect(after.measurements.world.map(({ id, core }) => ({ id, core }))).toEqual(before.measurements.world.map(({ id, core }) => ({ id, core })));
+      const bridge = after.measurements.bridges.filter(item => item.title!.includes(labels[0]));
+      expect(bridge).toHaveLength(1);
+      expect(bridge[0].title).toBe(`2 explicit links between ${labels[0]} and ${labels[1]}`);
+      expect(bridge[0].coordinates.every(Number.isFinite)).toBeTruthy();
+      const endpoints = [a.id, b.id].map(id => after.measurements.world.find(star => star.id === id)!.transform!
+        .slice(10, -1).split(" ").map(Number));
+      expect([bridge[0].coordinates.slice(0, 2), bridge[0].coordinates.slice(2)]).toEqual(endpoints);
+      expect(after.measurements.bridges.filter(item => !item.title!.includes(labels[0])))
+        .toEqual(before.measurements.bridges.filter(item => !item.title!.includes(labels[0])));
+      await page.locator(`.galaxy-star[data-node="${al.id}"]`).focus();
+      await page.keyboard.press("Enter");
+      const evidence = page.locator(".galaxy-evidence li").filter({ hasText: "Beta leaf" });
+      await expect(evidence).toHaveCount(1);
+      await expect(evidence).toContainText("across neighborhoods");
+      expect(await evidence.locator("div a[data-open]").evaluateAll(links => links.map(link => link.getAttribute("data-open"))))
+        .toEqual([al.id, bl.id]);
+      await page.screenshot({ path: testInfo.outputPath(`galaxy-link-mutation-${width}-evidence.png`), fullPage: true });
+      await page.getByRole("button", { name: "List view", exact: true }).click();
+      await expect(page.locator(".galaxy-stage")).toBeHidden();
+      await page.locator(".galaxy-selected-heading .galaxy-article").click();
+      await expect(page).toHaveURL(new RegExp(`/wiki/${al.id}$`));
+      await expect(page.locator("article h1")).toHaveText("Alpha leaf");
+    } finally {
+      for (const fixture of [...fixtures].reverse()) {
+        const fresh = await request.get(`/api/wiki/pages/${fixture.id}`);
+        expect(fresh.ok()).toBeTruthy();
+        expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+          base_revision: (await fresh.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`galaxy curated world layout survives an unrelated real text edit (${width})`, async ({ page, request }, testInfo) => {
     const title = `Synthetic stability ${randomUUID()}`;
     const fixture = await create(request, `# ${title}\nUnrelated synthetic text before editing.`);
