@@ -74,7 +74,12 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   leaving the article cannot replace the next article's history.
 - Save conflicts preserve the local draft and require a fresh read plus deliberate
   reconciliation. Lost acknowledgements are retried with the same request ID and
-  payload.
+  payload, including an edit followed by restoring the exact submitted draft,
+  or a newer edit rejected with a conflict before that restoration.
+  Retry identity belongs to the submitted page/revision/content, so a
+  different payload remains a distinct attempt and cannot silently overwrite
+  a concurrent revision. One unresolved attempt is retained in this view's memory;
+  a definitive conflict does not replace an earlier lost-ack receipt.
 - Backup/restore includes Git history, durable local ledgers and demo metadata.
   Content-only export is separate and is not a full operational backup.
 - Remote Git delivery requires reviewed local and remote heads. It never performs

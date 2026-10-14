@@ -829,7 +829,7 @@ test("editor saves Markdown and reads current delivery status", async ({
   await expect(page.locator(".prose")).toContainText("After the edit.");
 });
 
-for (const retryMode of ["unchanged", "edited"] as const) {
+for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored"] as const) {
 test(`a timed-out save preserves its ${retryMode} draft without another publication`, async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Save timeout fixture\nBefore.");
   await page.goto(`/wiki/${fixture.id}`);
@@ -869,11 +869,25 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     await page.screenshot({ path: testInfo.outputPath("save-timeout-mobile.png"), fullPage: true });
     release();
     if (retryMode === "edited") await editor.fill("# Save timeout fixture\nA further unsaved change.");
+    if (retryMode === "restored") {
+      await editor.fill("# Save timeout fixture\nA temporary correction.");
+      await editor.fill(draft); // Same submitted bytes after ordinary input/undo.
+    }
+    if (retryMode === "rejected-then-restored") {
+      const correction = "# Save timeout fixture\nA rejected correction.";
+      await editor.fill(correction);
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.locator(".notice")).toContainText("Conflict");
+      await expect(editor).toHaveValue(correction);
+      expect(payloads).toHaveLength(2);
+      expect(payloads[1].request_id).not.toBe(payloads[0].request_id);
+      await editor.fill(draft);
+    }
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator(".notice")).toContainText(retryMode === "unchanged" ? "Saved locally" : "Conflict");
-    if (retryMode === "unchanged") await expect(page.locator(".notice")).not.toHaveClass(/error/);
-    expect(payloads).toHaveLength(2);
-    if (retryMode === "unchanged") expect(payloads[1]).toEqual(payloads[0]);
+    await expect(page.locator(".notice")).toContainText(retryMode !== "edited" ? "Saved locally" : "Conflict");
+    if (retryMode !== "edited") await expect(page.locator(".notice")).not.toHaveClass(/error/);
+    expect(payloads).toHaveLength(retryMode === "rejected-then-restored" ? 3 : 2);
+    if (retryMode !== "edited") expect(payloads.at(-1)).toEqual(payloads[0]);
     else {
       expect(payloads[1].request_id).not.toBe(payloads[0].request_id);
       expect(payloads[1].base_revision).toBe(payloads[0].base_revision);
@@ -885,7 +899,8 @@ test(`a timed-out save preserves its ${retryMode} draft without another publicat
     const history = await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json();
     expect(history.history).toHaveLength(2); // Creation plus the one actual edit.
     expect(retry.markdown).toBe(draft);
-    if (retryMode === "unchanged") await expect(page.locator(".prose")).toContainText("A synthetic saved change.");
+    if (retryMode !== "edited") await expect(page.locator(".prose")).toContainText("A synthetic saved change.");
+    if (retryMode.endsWith("restored")) await page.screenshot({ path: testInfo.outputPath("save-restored-receipt-mobile.png"), fullPage: true });
   } finally { release(); }
 });
 }

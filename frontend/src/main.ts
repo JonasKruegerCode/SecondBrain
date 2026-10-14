@@ -83,13 +83,13 @@ let page: Page | null = null,
   draft = "",
   editing = false,
   saving = false,
-  requestId = "",
   notice = "",
   noticeError = false,
   deliveryNotice = "",
   generation = 0,
   deliveryGeneration = 0,
   activeUrl = location.pathname + location.search + location.hash;
+let saveAttempt: { pageId: string; markdown: string; base_revision: string; request_id: string } | null = null;
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -421,6 +421,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
   cleanupView = undefined;
   page = null;
   editing = false;
+  saveAttempt = null;
   notice = "";
   noticeError = false;
   deliveryNotice = "";
@@ -709,9 +710,9 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
     )
       return;
     editing = !editing;
+    saveAttempt = null;
     if (editing) {
       draft = page!.markdown || "";
-      requestId = crypto.randomUUID();
     }
     notice = "";
     noticeError = false;
@@ -720,7 +721,6 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   if (editing) {
     main.querySelector("textarea")!.addEventListener("input", (e) => {
       draft = (e.target as HTMLTextAreaElement).value;
-      requestId = crypto.randomUUID();
       renderPwaState();
     });
     main.querySelector("#save")!.addEventListener("click", () => void save());
@@ -766,6 +766,14 @@ async function refreshDelivery(run: number, token: number, attempt = 0) {
 }
 async function save() {
   if (!page || saving) return;
+  const previousAttempt = saveAttempt;
+  // An edit followed by undo must still recover a lost acknowledgement. Bind
+  // the retry identity to the submitted payload, rather than each input event.
+  if (!saveAttempt || saveAttempt.pageId !== page.id ||
+    saveAttempt.markdown !== draft || saveAttempt.base_revision !== page.revision) {
+    saveAttempt = { pageId: page.id, markdown: draft, base_revision: page.revision, request_id: crypto.randomUUID() };
+  }
+  const attempt = saveAttempt;
   saving = true;
   notice = "";
   noticeError = false;
@@ -775,17 +783,21 @@ async function save() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        markdown: draft,
-        base_revision: page.revision,
-        request_id: requestId,
+        markdown: attempt.markdown,
+        base_revision: attempt.base_revision,
+        request_id: attempt.request_id,
       }),
     });
     page = result;
     editing = false;
+    saveAttempt = null;
     notice = `Saved locally · revision ${String(result.revision).slice(0, 8)}.`;
     deliveryNotice = "Checking workspace indexing and remote delivery…";
     void refreshDelivery(generation, ++deliveryGeneration);
   } catch (e) {
+    // A rejected newer edit did not publish. Keep an earlier lost-ack receipt
+    // recoverable if the user restores that submitted draft after the conflict.
+    if ((e as any).status === 409) saveAttempt = previousAttempt;
     noticeError = true;
     notice =
       (e as any).status === 409
