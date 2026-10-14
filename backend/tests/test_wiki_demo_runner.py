@@ -337,7 +337,7 @@ def test_first_install_diagnostic_command_evidence_and_cleanup(
     results = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
     assert len(results) == 1
     artifact_dir = results[0].parent
-    grep = "^PWA metadata registers an online-only worker without private caches$"
+    grep = "PWA metadata registers an online-only worker without private caches$"
     expected_command = [
         "npm", "run", "test:browser", "--", "e2e/wiki.spec.ts", "--grep", grep,
     ]

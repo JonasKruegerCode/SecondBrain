@@ -235,7 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.webkit_workers else None
     )
     if args.webkit_first_install_diagnostic:
-        worker_filter = "^PWA metadata registers an online-only worker without private caches$"
+        # Playwright prefixes its grep title with the file/project name.
+        worker_filter = "PWA metadata registers an online-only worker without private caches$"
     if args.webkit_workers or args.webkit_first_install_diagnostic:
         suites = ["e2e/wiki.spec.ts"]
     phases = ("create", "restart") if args.first_start else ("demo",)
