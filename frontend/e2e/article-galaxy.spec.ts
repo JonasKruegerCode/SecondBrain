@@ -1,5 +1,6 @@
 import { test, expect, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import type { Graph } from "../src/galaxy";
 
 const contextualURL = "/galaxy?page=field-notebook";
 const primary = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -111,3 +112,135 @@ test("missing and genuinely deleted contextual targets show an honest overview",
     }
   }
 });
+
+for (const width of [390, 1440]) {
+  test(`contextual Galaxy resolves a renamed and regrouped stable page ID (${width})`, async ({ page, context, request }, info) => {
+    const id = `article-galaxy-mutation-${randomUUID()}`;
+    const targetURL = `/galaxy?page=${id}`;
+    const originalTitle = "Synthetic archive observation";
+    const updatedTitle = "Synthetic shore observation";
+    const markdown = (title: string, group: string, label: string, link: string) =>
+      `---\ngalaxy_group: ${group}\ngalaxy_label: ${label}\n---\n# ${title}\n\nAn invented regression note linked to [[${link}]].`;
+    const readGraph = async (): Promise<Graph> => {
+      const response = await request.get("/api/wiki/graph");
+      expect(response.ok()).toBe(true);
+      return response.json();
+    };
+    const baseline = await readGraph();
+    // Exact existing demo-vault salt-marsh frontmatter, verified against REST too.
+    const shore = { group: "shore-observation", label: "Shore observations" };
+    expect(baseline.nodes.find(node => node.id === "salt-marsh")?.galaxy).toMatchObject(shore);
+    let owned = false;
+    let editorPage: Page | undefined;
+    const selected = async (title: string, label: string, neighbor: string) => {
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title);
+      await expect(page.locator(".galaxy-selected-heading code")).toHaveText(id);
+      await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id);
+      await expect(page.locator(".galaxy-breadcrumb")).toContainText(label);
+      await expect(page.locator(".galaxy-evidence")).toContainText("Explicit wikilink");
+      await expect(page.locator(`.galaxy-evidence a[data-open='${neighbor}']`)).toHaveCount(1);
+    };
+    try {
+      const created = await request.post(`/api/wiki/pages/${id}`, { data: {
+        markdown: markdown(originalTitle, "archive-practice", "Archive practice", "field-notebook"),
+        base_revision: null, request_id: randomUUID(),
+      } });
+      expect(created.ok()).toBe(true);
+      owned = true;
+      const originalGraph = await readGraph();
+      expect(originalGraph.nodes.find(node => node.id === id)).toEqual({
+        id, title: originalTitle, galaxy: { group: "archive-practice", label: "Archive practice" },
+      });
+      expect(originalGraph.edges.filter(edge => edge.source === id || edge.target === id)).toEqual([
+        { source: id, target: "field-notebook", type: "wikilink" },
+      ]);
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(targetURL);
+      await selected(originalTitle, "Archive practice", "field-notebook");
+      await expect(page.locator(".galaxy-revision")).toContainText(originalGraph.revision!.slice(0, 8));
+      await page.getByText("How this map is arranged", { exact: true }).click();
+      await expect(page.locator(".galaxy-method")).toContainText("This map stays at the shown revision until you refresh it.");
+      const originalDisplay = {
+        revision: await page.locator(".galaxy-revision").textContent(),
+        title: await page.locator(".galaxy-selected-heading h2").textContent(),
+        cluster: await page.locator(".galaxy-breadcrumb").textContent(),
+        evidence: await page.locator(".galaxy-evidence").textContent(),
+      };
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`galaxy-mutation-original-${width}.png`), fullPage: true });
+
+      editorPage = await context.newPage();
+      await editorPage.setViewportSize({ width, height: 844 });
+      await editorPage.goto(`/wiki/${id}`);
+      await editorPage.getByRole("button", { name: "Edit page" }).click();
+      const updatedMarkdown = markdown(updatedTitle, shore.group, shore.label, "salt-marsh");
+      await editorPage.getByRole("textbox", { name: /Markdown/ }).fill(updatedMarkdown);
+      const savedResponse = editorPage.waitForResponse(response =>
+        response.url().endsWith(`/api/wiki/pages/${id}`) && response.request().method() === "POST");
+      await editorPage.getByRole("button", { name: "Save changes" }).click();
+      expect((await savedResponse).ok()).toBe(true);
+      await expect(editorPage.locator("article > h1")).toHaveText(updatedTitle);
+      await expect(editorPage.getByRole("textbox", { name: /Markdown/ })).toHaveCount(0);
+      const actual = await request.get(`/api/wiki/pages/${id}`);
+      expect(actual.ok()).toBe(true);
+      const saved = await actual.json();
+      expect(saved).toMatchObject({ id, title: updatedTitle, markdown: updatedMarkdown, galaxy: shore });
+      const freshGraph = await readGraph();
+      expect(freshGraph.revision).not.toBe(originalGraph.revision);
+      expect(freshGraph.nodes.find(node => node.id === id)).toEqual({ id, title: updatedTitle, galaxy: shore });
+      expect(freshGraph.edges.filter(edge => edge.source === id || edge.target === id)).toEqual([
+        { source: id, target: "salt-marsh", type: "wikilink" },
+      ]);
+      await selected(originalTitle, "Archive practice", "field-notebook");
+      expect({
+        revision: await page.locator(".galaxy-revision").textContent(),
+        title: await page.locator(".galaxy-selected-heading h2").textContent(),
+        cluster: await page.locator(".galaxy-breadcrumb").textContent(),
+        evidence: await page.locator(".galaxy-evidence").textContent(),
+      }).toEqual(originalDisplay);
+
+      await primary(page).getByRole("link", { name: "Search", exact: true }).click();
+      await expect(page).toHaveURL(/\/search$/);
+      const reread = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph"));
+      await page.goBack();
+      expect((await reread).ok()).toBe(true);
+      await expect(page).toHaveURL(new RegExp(`/galaxy\\?page=${id}$`));
+      await selected(updatedTitle, shore.label, "salt-marsh");
+      await expect(page.locator(".galaxy-evidence a[data-open='field-notebook']")).toHaveCount(0);
+      await expect(page.locator(".galaxy-revision")).toContainText(freshGraph.revision!.slice(0, 8));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`galaxy-mutation-updated-${width}.png`), fullPage: true });
+      await page.getByRole("link", { name: "Refresh snapshot" }).click();
+      await expect(page).toHaveURL(new RegExp(`/galaxy\\?page=${id}$`));
+      await selected(updatedTitle, shore.label, "salt-marsh");
+      await page.reload();
+      await selected(updatedTitle, shore.label, "salt-marsh");
+      await page.goto(targetURL);
+      await selected(updatedTitle, shore.label, "salt-marsh");
+      await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article ↗", exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/wiki/${id}$`));
+      await expect(page.locator("article > h1")).toHaveText(updatedTitle);
+      await page.getByRole("button", { name: "Edit page" }).click();
+      await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(updatedMarkdown);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText(updatedTitle);
+      const explore = page.getByRole("link", { name: "Explore connections", exact: true });
+      await expect(explore).toHaveAttribute("href", targetURL);
+      await explore.click();
+      await selected(updatedTitle, shore.label, "salt-marsh");
+    } finally {
+      await editorPage?.close();
+      if (owned) {
+        const latest = await request.get(`/api/wiki/pages/${id}`);
+        expect(latest.ok(), `read owned page ${id} for cleanup`).toBe(true);
+        const cleanup = await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await latest.json()).revision, request_id: randomUUID(),
+        } });
+        expect(cleanup.ok(), `cleanup owned page ${id}`).toBe(true);
+        const restored = await readGraph();
+        expect(restored.nodes).toEqual(baseline.nodes);
+        expect(restored.edges).toEqual(baseline.edges);
+      }
+    }
+  });
+}
