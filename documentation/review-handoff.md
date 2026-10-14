@@ -37,6 +37,16 @@ reaped direct children and accurate receipts. Only the service commands are
 substituted; this is a process-boundary fixture, not another API/browser pass.
 SIGKILL in the creation/receipt gap remains outside this guarantee.
 
+Four separate native hard-loss cases kill the real supervisor after its complete
+receipt or before either Popen returns, then call the actual acceptance cleanup.
+Recorded sockets close; the unrecorded child stays live until independent
+test-owner cleanup. The actual acceptance failure path writes failed evidence
+and retains the vault, controlled phase inputs and process records. No browser
+is launched in that fixture. Linux adopts and reaps only ledger-owned orphans
+inside a restored process-local subreaper scope; other POSIX systems check
+socket closure. These cases validate the explicit failure contract and do not
+extend the launcher's SIGKILL recovery guarantee.
+
 Neo4j, Qdrant/embeddings and remote Git are recoverable derived services. Their
 generation or delivery receipts remain separate from the Markdown publication
 receipt, so a pending or failed provider cannot be reported as current. The wiki

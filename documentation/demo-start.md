@@ -66,6 +66,12 @@ child stopped. Keep the failed evidence and resolve the owned processes before
 starting another run on the same ports. This is process supervision, not a
 power-loss or operating-system crash guarantee.
 
+Native loss fixtures exercise this boundary with real SIGKILL and socket
+children: a complete receipt lets cleanup stop both recorded groups; an
+unfinished receipt cannot identify the newest child. Both runs remain failed
+and retain their inputs. A separate test-owner ledger cleans the otherwise
+unrecorded fixture child; it is not a recovery mechanism in the demo launcher.
+
 ## Run the disposable acceptance rehearsal
 
 The normal automated demo path can be exercised without coordinating two
