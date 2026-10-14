@@ -215,9 +215,11 @@ def test_graph_does_not_treat_code_examples_as_links(tmp_path: Path) -> None:
     assert store.graph()["missing_targets"] == [{"source": "home", "target": "real"}]
 
 
+@pytest.mark.parametrize("read", ["graph", "resolve-links"])
 def test_batch_read_remains_on_one_snapshot_during_concurrent_write(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    read: str,
 ) -> None:
     store = WikiStore(tmp_path)
     home = store.save_page("home", "# Home\r\n\n[[old]]\n", None, "initial")
@@ -230,10 +232,29 @@ def test_batch_read_remains_on_one_snapshot_during_concurrent_write(
         nonlocal intercepted
         if args[0] == "cat-file" and not intercepted:
             intercepted = True
-            competitor.save_page("home", "# Home\n[[new]]\n", home["revision"], "changed")
+            competitor.save_page("home", "# Updated Home\n[[new]]\n", home["revision"], "changed")
         return original_git(*args, **kwargs)
 
     monkeypatch.setattr(store, "_git", raced_git)
+    if read == "resolve-links":
+        def unexpected_graph(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            pytest.fail("Article link resolution must not derive graph edges")
+
+        monkeypatch.setattr(store, "_graph", unexpected_graph)
+        resolved = store.resolve_links(["Home", "Updated Home", "#Local"], "home")
+        assert intercepted
+        assert resolved["revision"] == before
+        assert resolved["resolutions"][0]["candidates"] == [{"id": "home", "title": "Home"}]
+        assert resolved["resolutions"][1]["status"] == "missing"
+        assert resolved["resolutions"][2]["fragment"] == "Local"
+        assert resolved["resolutions"][2]["candidates"] == [{"id": "home", "title": "Home"}]
+        updated = store.resolve_links(["Home", "Updated Home"])
+        assert updated["revision"] == competitor._head() != before
+        assert updated["resolutions"][0]["status"] == "missing"
+        assert updated["resolutions"][1]["candidates"] == [
+            {"id": "home", "title": "Updated Home"}
+        ]
+        return
     graph = store.graph()
     assert intercepted
     assert graph["revision"] == before

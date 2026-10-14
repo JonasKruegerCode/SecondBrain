@@ -376,8 +376,8 @@ class WikiStore:
 
     def resolve_links(self, targets: list[str], source: str = "") -> dict[str, Any]:
         """Resolve a bounded article batch against one immutable content snapshot."""
-        snapshot = self.snapshot()
-        pages = {p["id"]: p for p in snapshot["pages"]}
+        head = self._head()
+        pages = {p["id"]: p for p in self._pages(head)}
         titles: dict[str, set[str]] = {}
         for page in pages.values():
             titles.setdefault(page["title"].casefold(), set()).add(page["id"])
@@ -395,7 +395,7 @@ class WikiStore:
                     "candidates": [{"id": key, "title": pages[key]["title"]} for key in candidates],
                 }
             )
-        return {"revision": snapshot["revision"], "resolutions": resolutions}
+        return {"revision": head or None, "resolutions": resolutions}
 
     def snapshot(self) -> dict[str, Any]:
         """Capture content and its derived graph at one immutable Git commit."""

@@ -248,6 +248,20 @@ the graph resolver and returns its content revision. Article links are hydrated
 in small batches; their resolution route remains available on request failure.
 A late response for an abandoned article cannot replace the current edit target.
 
+Link resolution reads the same immutable Git page snapshot without deriving
+unused graph edges. A local synthetic320 comparison (320 pages, 648 links,
+eight resolution targets, nine sequential samples per variant) measured a
+store median of 47.144 ms before and 36.112 ms after this change. Real loopback
+REST requests with `Connection: close` measured repeated-request medians of
+47.643 and 39.763 ms; keep-alive requests measured 87.958 and 77.945 ms.
+Each REST variant used one first request and eight repeated requests. The same
+Git revision returned identical 1,089 response bytes and `no-store`; the vault
+snapshot remained unchanged. This small development observation does not
+establish cold OS cache, a percentile/SLA, hosted network, browser rendering,
+mobile-device or provider performance. A concurrency regression verifies that
+a title changed by another writer during the blob read cannot mix revisions,
+and that the next resolution sees the new title without a process restart.
+
 Articles offer a compact, expandable **Linked from** panel. Its read endpoint
 `GET /api/wiki/pages/{id}/backlinks?limit=20` uses the same immutable Markdown
 snapshot and resolver as the graph, without requiring a graph provider. The limit
