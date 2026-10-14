@@ -1,5 +1,6 @@
 import { test, expect, APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
 import { checkTallOverview } from "./galaxy-window";
@@ -2194,7 +2195,11 @@ test("galaxy keyboard return restores its originating page and constellation", a
 for (const width of [1440, 390]) {
   test(`galaxy overview bundles real bridges and retains directional evidence (${width})`, async ({ page, request }, testInfo) => {
     const group = randomUUID();
-    const pages = await Promise.all(["Alpha core", "Alpha leaf", "Beta core", "Beta leaf"].map(title => create(request, `# ${title}\nSynthetic bridge fixture.`)));
+    const pages: Awaited<ReturnType<typeof create>>[] = [];
+    try {
+    for (const title of ["Alpha core", "Alpha leaf", "Beta core", "Beta leaf"]) {
+      pages.push(await create(request, `# ${title}\nSynthetic bridge fixture.`));
+    }
     const [a, al, b, bl] = pages;
     const markdown = [
       `---\ngalaxy_group: alpha-${group}\ngalaxy_label: Bridge Alpha ${group}\ngalaxy_anchor: true\n---\n# Alpha core\n[[${al.id}]] [[${b.id}]] [[${bl.id}]]`,
@@ -2220,6 +2225,15 @@ for (const width of [1440, 390]) {
     await page.locator(".galaxy-selected-heading .galaxy-article").click();
     await expect(page).toHaveURL(new RegExp(`/wiki/${a.id}$`));
     await expect(page.locator("article h1")).toHaveText("Alpha core");
+    } finally {
+      for (const fixture of [...pages].reverse()) {
+        const fresh = await request.get(`/api/wiki/pages/${fixture.id}`);
+        expect(fresh.ok()).toBeTruthy();
+        expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+          base_revision: (await fresh.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+      }
+    }
   });
 }
 
@@ -2603,7 +2617,9 @@ for (const width of [390, 1440]) {
         await page.screenshot({ path: testInfo.outputPath(`galaxy-stability-${width}-${phase}.png`), fullPage: true });
         const snapshot = { graph, measurements };
         console.log(`Galaxy stability ${width} ${phase}: ${JSON.stringify(measurements)}`);
-        await testInfo.attach(`galaxy-stability-${width}-${phase}.json`, { body: JSON.stringify(snapshot, null, 2), contentType: "application/json" });
+        const evidencePath = testInfo.outputPath(`galaxy-stability-${width}-${phase}.json`);
+        await writeFile(evidencePath, JSON.stringify(snapshot, null, 2));
+        await testInfo.attach(`galaxy-stability-${width}-${phase}`, { path: evidencePath, contentType: "application/json" });
         return snapshot;
       };
       const before = await capture("before");
