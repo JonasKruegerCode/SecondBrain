@@ -4,6 +4,67 @@ import type { Graph } from "../src/galaxy";
 
 const contextualURL = "/galaxy?page=field-notebook";
 const primary = (page: Page) => page.getByRole("navigation", { name: "Primary" });
+
+for (const width of [390, 1440]) {
+  test(`contextual Galaxy retry retains its visit and reads current content (${width})`, async ({ page, request }, info) => {
+    const id = `galaxy-retry-${randomUUID()}`;
+    let owned = false, failedReads = 0;
+    const pattern = "**/api/wiki/graph";
+    try {
+      const created = await request.post(`/api/wiki/pages/${id}`, { data: {
+        markdown: "---\ngalaxy_group: archive-practice\n---\n# Synthetic retry origin\n\nLinked to [[field-notebook]].",
+        base_revision: null, request_id: randomUUID(),
+      } });
+      expect(created.ok()).toBe(true);
+      owned = true;
+      const original = await created.json();
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/wiki/${id}`);
+      await expect(page.locator("article > h1")).toHaveText("Synthetic retry origin");
+      // Only inject a transport failure. The retry must read the real service.
+      await page.route(pattern, async route => { failedReads++; await route.abort("failed"); }, { times: 1 });
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Couldn’t open the workspace.", exact: true })).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/galaxy\\?page=${id}$`));
+      expect(failedReads).toBe(1);
+      const visit = await page.evaluate(() => ({ length: history.length, entry: history.state["secondbrain.navigation"] }));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`galaxy-context-unavailable-${width}.png`), fullPage: true });
+      const updated = await request.post(`/api/wiki/pages/${id}`, { data: {
+        markdown: "---\ngalaxy_group: shore-observation\n---\n# Synthetic retry recovered\n\nLinked to [[salt-marsh]].",
+        base_revision: original.revision, request_id: randomUUID(),
+      } });
+      expect(updated.ok()).toBe(true);
+      await page.unroute(pattern);
+      const graphRead = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph"));
+      await page.getByRole("button", { name: "Try again" }).click();
+      const response = await graphRead;
+      expect(response.ok()).toBe(true);
+      const graph = await response.json() as Graph;
+      expect(graph.nodes.find(node => node.id === id)?.title).toBe("Synthetic retry recovered");
+      await expect(page).toHaveURL(new RegExp(`/galaxy\\?page=${id}$`));
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic retry recovered");
+      await expect(page.locator(".galaxy-breadcrumb")).toContainText("Shore observations");
+      await expect(page.locator(".galaxy-evidence a[data-open='salt-marsh']")).toHaveCount(1);
+      await expect(page.locator(".galaxy-evidence a[data-open='field-notebook']")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+      expect(await page.evaluate(() => ({ length: history.length, entry: history.state["secondbrain.navigation"] }))).toEqual(visit);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`galaxy-context-recovered-${width}.png`), fullPage: true });
+    } finally {
+      await page.unroute(pattern);
+      if (owned) {
+        const latest = await request.get(`/api/wiki/pages/${id}`);
+        expect(latest.ok()).toBe(true);
+        const removed = await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await latest.json()).revision, request_id: randomUUID(),
+        } });
+        expect(removed.ok()).toBe(true);
+      }
+    }
+  });
+}
+
 async function selectedNotebook(page: Page) {
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
   await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", "field-notebook");

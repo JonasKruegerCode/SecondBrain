@@ -412,6 +412,11 @@ to its new title, real constellation and evidence. Cleanup checks restored graph
 nodes/edges. These are automated browser checks, not physical-device or manual
 demo acceptance.
 
+The same profiles inject one contextual graph-read transport failure and then
+retry against the actual service. An intervening owned-page mutation checks
+that recovery retains the URL/history visit while resolving current content;
+no successful response is fabricated.
+
 ## Known release gates
 
 - real OpenRouter multi-turn result and answer-quality inspection
