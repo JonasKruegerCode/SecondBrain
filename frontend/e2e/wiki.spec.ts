@@ -3,15 +3,24 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
 import { checkTallOverview } from "./galaxy-window";
+import { traceFirstInstall, readFirstInstallTrace } from "./pwa-install-trace";
 
 // The separate WebKit worker slice uses these actual lifecycle tests. Reading
 // tests in other files retain their routing-compatible worker-blocked profile.
 test.use({ serviceWorkers: "allow" });
-test.beforeEach(async ({ browser, serviceWorkers }, info) => {
+test.beforeEach(async ({ browser, serviceWorkers, page }, info) => {
+  if (info.title === "PWA metadata registers an online-only worker without private caches") {
+    await traceFirstInstall(page);
+  }
   if (info.title.startsWith("PWA")) {
     console.info("[pwa-worker-browser] " + JSON.stringify({
       engine: browser.browserType().name(), service_workers: serviceWorkers,
     }));
+  }
+});
+test.afterEach(async ({ page }, info) => {
+  if (info.title === "PWA metadata registers an online-only worker without private caches") {
+    console.info("[pwa-first-install-trace] " + JSON.stringify(await readFirstInstallTrace(page)));
   }
 });
 
@@ -1975,6 +1984,8 @@ test("PWA metadata registers an online-only worker without private caches", asyn
     "wiki and chat need a connection",
   );
   await context.setOffline(false);
+  console.info("[pwa-first-install-before-online-assert] " +
+    JSON.stringify(await readFirstInstallTrace(page, "before-online-assert")));
   await expect(page.locator(".pwa-notice")).toBeHidden();
 });
 

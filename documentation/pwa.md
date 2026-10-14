@@ -97,6 +97,19 @@ with an unsent message or pending reply, and storage recovery/deletion after
 article navigation. The worker transitions and reloads are real browser actions;
 chat replies and full-storage errors in these cases are explicitly scripted.
 
+The synthetic first-install case also records a bounded lifecycle trace in its
+browser log, including on assertion failure. Worker identities distinguish
+generations with the same script URL; each event records controller, installing,
+waiting and active slots, candidate identity comparisons, the document counter
+and notice state. Read-only snapshots immediately before the online-notice
+assertion and after the test help distinguish a real waiting update from a stale
+first-install notice or a later reload. No page/chat text or arbitrary storage is
+recorded. The observer returns the original registration promise, adds no
+lifecycle waits and treats diagnostic storage failures as best-effort. It still
+adds observation overhead, so a passing traced run does not rule out an
+intermittent timing failure. Keep the original hidden-notice assertion; a retry
+pass alone is not a diagnosed or corrected lifecycle defect.
+
 These checks are browser emulation, not a physical Android/iOS installation.
 Homescreen creation, standalone launch, OS icon rendering and a production HTTPS
 upgrade still require real-device/deployed verification before release signoff.
