@@ -42,7 +42,8 @@ def _source_git(source: Path, *args: str, check: bool = True) -> bytes:
 def _source_snapshot(source: Path, prefix: str) -> tuple[str, dict[str, bytes], dict[str, str]]:
     if not source.is_dir() or source.is_symlink() or not (source / ".git").exists():
         raise WikiError("invalid_import", "Choose a local Git working repository.")
-    root = _source_git(source, "rev-parse", "--show-toplevel").decode().strip()
+    # Git appends one LF; whitespace within the filesystem path is significant.
+    root = os.fsdecode(_source_git(source, "rev-parse", "--show-toplevel").removesuffix(b"\n"))
     if Path(root).resolve() != source.resolve():
         raise WikiError("invalid_import", "The source must be the repository root.")
     if (

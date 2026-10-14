@@ -14,6 +14,10 @@ The complete input is validated before publication. Unsafe page IDs, symbolic-li
 
 The source and target directories must be separate and must not contain one another. Use a dedicated managed target, not a `.wiki.git` directory placed inside the source repository.
 
+The source must be the repository root, including for a linked Git worktree.
+Repository directory names retain their exact filesystem characters, including
+Unicode and trailing whitespace; quote such paths when invoking the CLI.
+
 Source Git commands disable optional locks, so checking cleanliness does not
 refresh the source's on-disk index when only file timestamps have changed.
 Uncommitted content changes are still refused. Import and audit preserve the

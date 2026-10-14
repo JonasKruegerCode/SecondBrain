@@ -71,6 +71,62 @@ def test_source_reads_preserve_index_after_timestamp_only_change(
     assert git(source, "rev-parse", "HEAD").decode().strip() == source_revision
 
 
+@pytest.mark.parametrize("operation", ["import", "audit"])
+@pytest.mark.parametrize("name", ["archive ", "archive\t", "archive\n", "Küstenarchiv"])
+def test_source_root_preserves_path_characters(
+    tmp_path: Path, operation: str, name: str
+) -> None:
+    source, source_revision = legacy_source(tmp_path / "legacy")
+    store = WikiStore(tmp_path / "managed")
+    imported = None
+    if operation == "audit":
+        imported = import_vault(
+            store, source, prefix="1_knowledge/wiki", base_revision=None, request_id="initial"
+        )
+    source = source.rename(tmp_path / name)
+    index = (source / ".git" / "index").read_bytes()
+    if imported is None:
+        result = import_vault(
+            store, source, prefix="1_knowledge/wiki", base_revision=None, request_id="initial"
+        )
+        assert result["publication"] == "imported"
+        assert result["source_revision"] == source_revision
+        page = store.get_page("home")
+        assert page is not None
+        assert page["markdown"].encode() == (
+            source / "1_knowledge" / "wiki" / "home.md"
+        ).read_bytes()
+    else:
+        result = audit_import(
+            store, source, prefix="1_knowledge/wiki", revision=imported["revision"]
+        )
+        assert result["status"] == "verified"
+        assert result["source_revision"] == source_revision
+    assert (source / ".git" / "index").read_bytes() == index
+    assert git(source, "rev-parse", "HEAD").decode().strip() == source_revision
+
+
+def test_linked_worktree_with_trailing_space_imports_and_audits(tmp_path: Path) -> None:
+    original, source_revision = legacy_source(tmp_path / "legacy")
+    source = tmp_path / "worktree "
+    git(original, "worktree", "add", "--quiet", "-b", "synthetic-import", str(source))
+    assert (source / ".git").is_file()
+    index_path = Path(
+        os.fsdecode(git(source, "rev-parse", "--git-path", "index").removesuffix(b"\n"))
+    )
+    index = index_path.read_bytes()
+    store = WikiStore(tmp_path / "managed")
+    imported = import_vault(
+        store, source, prefix="1_knowledge/wiki", base_revision=None, request_id="worktree"
+    )
+    result = audit_import(
+        store, source, prefix="1_knowledge/wiki", revision=imported["revision"]
+    )
+    assert result["status"] == "verified"
+    assert result["source_revision"] == source_revision
+    assert index_path.read_bytes() == index
+
+
 def test_audit_proves_bytes_ids_paths_and_retained_history(tmp_path: Path) -> None:
     source, source_revision = legacy_source(tmp_path / "legacy")
     source_head_before = git(source, "rev-parse", "HEAD")
