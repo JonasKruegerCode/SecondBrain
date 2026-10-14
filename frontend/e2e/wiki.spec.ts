@@ -1182,7 +1182,11 @@ test("blocked traversal preserves history while a real save acknowledgement is p
     await page.evaluate(() => history.forward());
     await expect(page).toHaveURL(new RegExp(`/wiki/${middle.id}$`));
     expect(await page.evaluate(() => history.length)).toBe(length);
-    await expect(page.getByRole("textbox", { name: /Markdown/ })).toBeDisabled();
+    const pendingEditor = page.getByRole("textbox", { name: /Markdown/ });
+    await expect(pendingEditor).not.toBeEditable();
+    await pendingEditor.press("ControlOrMeta+End");
+    await pendingEditor.press("x");
+    await expect(pendingEditor).toHaveValue("# Save history middle\nSaved synthetic content.");
     await page.screenshot({ path: testInfo.outputPath("history-pending-save-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: testInfo.outputPath("history-pending-save-mobile.png"), fullPage: true });
