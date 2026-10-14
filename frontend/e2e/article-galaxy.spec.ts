@@ -6,6 +6,141 @@ const contextualURL = "/galaxy?page=field-notebook";
 const primary = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 
 for (const width of [390, 1440]) {
+  test(`late contextual graph cannot replace a newer article neighborhood (${width})`, async ({ page }, info) => {
+    const pattern = "**/api/wiki/graph";
+    let release!: () => void;
+    let received!: () => void;
+    let delivered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const held = new Promise<void>(resolve => { received = resolve; });
+    const completed = new Promise<void>(resolve => { delivered = resolve; });
+    // Observe the application's actual JSON consumption, rather than treating
+    // route.fulfill or a delay as proof that the stale continuation has run.
+    await page.addInitScript(() => {
+      const original = window.fetch.bind(window);
+      let graphRead = 0;
+      const consumed: number[] = [];
+      Object.assign(window, { __consumedGalaxyReads: consumed });
+      window.fetch = async (...args: Parameters<typeof fetch>) => {
+        const input = args[0];
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const read = new URL(url, location.href).pathname === "/api/wiki/graph" ? ++graphRead : 0;
+        const response = await original(...args);
+        if (read) {
+          const json = response.json.bind(response);
+          response.json = async () => {
+            const body = await json();
+            consumed.push(read);
+            return body;
+          };
+        }
+        return response;
+      };
+    });
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/wiki/field-notebook");
+    await expect(page.locator("article > h1")).toHaveText("Field notebook");
+    await page.route(pattern, async route => {
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      received();
+      await gate;
+      await route.fulfill({ response });
+      delivered();
+    }, { times: 1 });
+    try {
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await held;
+      await expect(page).toHaveURL(/\/galaxy\?page=field-notebook$/);
+      // Leave the pending view through real SPA links and real search results.
+      await primary(page).getByRole("link", { name: "Search", exact: true }).click();
+      await page.getByRole("textbox", { name: "Search pages" }).fill("Salt marsh");
+      await page.getByRole("button", { name: "Search →", exact: true }).click();
+      await page.locator("#results a.card[href='/wiki/salt-marsh']").click();
+      await expect(page.locator("article > h1")).toHaveText("Salt marsh listening station");
+      const nextRead = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph"));
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      expect((await nextRead).ok()).toBe(true);
+      await expect(page).toHaveURL(/\/galaxy\?page=salt-marsh$/);
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Salt marsh listening station");
+      await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", "salt-marsh");
+      await expect(page.locator(".galaxy-breadcrumb")).toContainText("Shore observations");
+      await expect(page.locator(".galaxy-evidence")).toContainText("Explicit wikilink");
+      await expect(page.locator(".galaxy-evidence a").first()).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`galaxy-late-selected-${width}.png`), fullPage: true });
+      const search = primary(page).getByRole("link", { name: "Search", exact: true });
+      await search.focus();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const snapshot = async () => ({
+        title: await page.locator(".galaxy-selected-heading h2").textContent(),
+        cluster: await page.locator(".galaxy-breadcrumb").textContent(),
+        evidence: await page.locator(".galaxy-evidence").innerHTML(),
+        context: await page.locator(".galaxy-selected-heading .galaxy-article").getAttribute("data-open"),
+        reading: await page.evaluate(() => ({
+          url: location.href, length: history.length, entry: history.state["secondbrain.navigation"],
+          title: document.title, x: scrollX, y: scrollY,
+        })),
+      });
+      const current = await snapshot();
+      // Store a deliberate exploration state on B's visit. A stale renderer can
+      // corrupt global cleanup ownership even when its old main is detached.
+      await page.getByRole("button", { name: "All constellations" }).click();
+      const localQuery = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
+      await localQuery.fill("salt");
+      await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+      await search.focus();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const explored = {
+        sidebar: await page.locator(".galaxy-sidebar-content").innerHTML(),
+        cluster: await page.locator(".galaxy-breadcrumb").textContent(),
+        reading: await page.evaluate(() => ({
+          url: location.href, length: history.length, entry: history.state["secondbrain.navigation"],
+          title: document.title, x: scrollX, y: scrollY,
+        })),
+      };
+      expect(explored.reading.url).toBe(current.reading.url);
+      expect(explored.reading.entry).toEqual(current.reading.entry);
+      release();
+      await completed;
+      await page.waitForFunction(() =>
+        (window as unknown as { __consumedGalaxyReads: number[] }).__consumedGalaxyReads.includes(1));
+      // The JSON observer runs before api/render continuations; animation frames
+      // drain those microtasks and any scheduled focus/reading restoration.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      expect(await page.evaluate(() =>
+        (window as unknown as { __consumedGalaxyReads: number[] }).__consumedGalaxyReads)).toEqual([2, 1]);
+      await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+      await expect(localQuery).toHaveValue("salt");
+      expect({
+        sidebar: await page.locator(".galaxy-sidebar-content").innerHTML(),
+        cluster: await page.locator(".galaxy-breadcrumb").textContent(),
+        reading: await page.evaluate(() => ({
+          url: location.href, length: history.length, entry: history.state["secondbrain.navigation"],
+          title: document.title, x: scrollX, y: scrollY,
+        })),
+      }).toEqual(explored);
+      await expect(search).toBeFocused();
+      await search.click();
+      await expect(page).toHaveURL(/\/search$/);
+      const restoredRead = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph"));
+      await page.goBack();
+      expect((await restoredRead).ok()).toBe(true);
+      await expect(page).toHaveURL(/\/galaxy\?page=salt-marsh$/);
+      await expect(localQuery).toHaveValue("salt");
+      await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+      expect(await page.locator(".galaxy-sidebar-content").innerHTML()).toBe(explored.sidebar);
+      expect(await page.locator(".galaxy-breadcrumb").textContent()).toBe(explored.cluster);
+      expect(await page.evaluate(() => history.state["secondbrain.navigation"])).toEqual(explored.reading.entry);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: info.outputPath(`galaxy-late-restored-${width}.png`), fullPage: true });
+    } finally {
+      release();
+      await page.unroute(pattern);
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`contextual Galaxy retry retains its visit and reads current content (${width})`, async ({ page, request }, info) => {
     const id = `galaxy-retry-${randomUUID()}`;
     let owned = false, failedReads = 0;

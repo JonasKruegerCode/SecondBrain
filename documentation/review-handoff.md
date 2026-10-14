@@ -417,6 +417,13 @@ retry against the actual service. An intervening owned-page mutation checks
 that recovery retains the URL/history visit while resolving current content;
 no successful response is fabricated.
 
+A further 390/1440px regression holds an actual fetched graph response while
+the user follows Search to another article and opens its connections. Releasing
+the abandoned response must retain the current context, deliberate exploration,
+history visit, focus and reading position. Search/Back then verifies that the
+current visit still owns its exploration cleanup. The gate delays delivery only;
+both graph payloads come from the content service.
+
 ## Known release gates
 
 - real OpenRouter multi-turn result and answer-quality inspection
