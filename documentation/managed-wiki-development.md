@@ -17,7 +17,7 @@ Python executable; an in-project `backend/.venv` is not required:
 (cd backend && poetry sync --no-interaction)
 (cd frontend && npm ci)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-make demo PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
 ```
 
 Open <http://127.0.0.1:5173>. The demo uses `.demo/vault`, separate from the legacy
@@ -26,7 +26,7 @@ The first launch explicitly seeds a fictional atlas; later launches retain all
 edits. To start empty in another directory:
 
 ```sh
-PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-demo.py \
+SECOND_BRAIN_WIKI_API_KEY= PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-demo.py \
   --vault .demo/empty-vault --empty
 ```
 
@@ -309,7 +309,7 @@ their individual links. The browser contract also confirms that core positions s
 stable after a real page mutation. This is useful evidence for the checked fixture,
 not production-scale or final galaxy acceptance.
 
-Run the reproducible scale path with `make demo-scale PYTHON="$WIKI_PYTHON"`,
+Run the reproducible scale path with `SECOND_BRAIN_WIKI_API_KEY= make demo-scale PYTHON="$WIKI_PYTHON"`,
 using the Poetry executable selected in the startup recipe above.
 Then, in another terminal, run
 `cd frontend && PLAYWRIGHT_SCALE=1 npm run test:browser -- e2e/scale.spec.ts`.

@@ -34,7 +34,7 @@ publication revision; `current_revision` separately shows any later content.
 For deliberate later replacements, use the [guarded importer](wiki-import.md)
 with a reviewed whole-wiki base revision.
 
-Rehearse this path with `make acceptance-import PYTHON="$WIKI_PYTHON"`
+Rehearse this path with `SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"`
 from the repository root after installing the locked dependencies and Playwright
 Chromium. The isolated runner uses only synthetic local Git repositories: an
 empty source and the public twelve-page atlas with original source history.
@@ -47,18 +47,32 @@ owned sources, vaults and browser phase inputs; CI publishes only structural
 results, browser logs and synthetic screenshots. Remote authentication, private
 vault migration, real models and physical-device installation remain separate.
 
-Start the chosen profile, for example:
+After installing the frontend dependencies, start the chosen profile with the
+same supervised loopback launcher used by the demo. For the template destination
+above:
 
 ```sh
-SECOND_BRAIN_WIKI_VAULT="$PWD/.demo/example" \
-  "$WIKI_PYTHON" -m uvicorn second_brain.wiki.api:app_factory --factory \
-  --host 127.0.0.1 --port 8000
+SECOND_BRAIN_WIKI_API_KEY= PYTHONPATH=backend/src \
+  "$WIKI_PYTHON" scripts/run-wiki-demo.py --vault .demo/example --empty
 ```
 
-Run the frontend from a second terminal with `cd frontend && npm run dev` after
-installing its dependencies. For the one-command isolated development tour, use
-[`make demo`](managed-wiki-development.md). Setup itself neither starts a server
-nor configures production services, remotes, or secrets.
+Substitute `.demo/empty` or `.demo/imported` for the other destinations. Here
+`--empty` means do not seed a template; it does not clear existing pages. The
+launcher starts API on 8000 and Vite on 5173 with strict port selection, disables
+inherited graph/vector/remote-Git targets and clears OpenRouter access. Ctrl+C
+stops both services. The explicit empty API-key assignment makes this local
+preview usable without an inherited API Bearer key; the browser does not send
+one. This is not a command for an externally exposed or production instance.
+For configured providers, authentication and deployment, use the corresponding
+operator guides instead of these isolated-preview settings.
+
+Restart with this launcher to retain later edits. Repeating template setup
+verifies the original template and refuses edited content; an interrupted seed
+needs explicit `--resume` with the same template. Use a normal shell without Git
+directory/object/index overrides when setting up the vault; Git's environment
+and global configuration are not sanitized by the launcher. For the default
+fictional tour, use [`make demo`](managed-wiki-development.md). Setup itself
+neither starts services nor configures production services, remotes, or secrets.
 
 For the isolated container preview, copy `.env.wiki.example` to the ignored
 `.env.wiki`, set a real MCP secret, and run:

@@ -117,10 +117,10 @@ repository root (the subshells keep the terminal there):
 (cd backend && poetry sync --no-interaction)
 (cd frontend && npm ci && npx playwright install --with-deps chromium)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-make demo PYTHON="$WIKI_PYTHON"
-make acceptance PYTHON="$WIKI_PYTHON"
-make acceptance-first-start PYTHON="$WIKI_PYTHON"
-make acceptance-import PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make acceptance-first-start PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"
 make check
 ```
 
@@ -251,7 +251,7 @@ not uploaded. This gate does not establish a private or remote Git migration.
 
 For the opt-in tall-map probe, create an isolated vault with
 `"$WIKI_PYTHON" -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,
-start `"$WIKI_PYTHON" scripts/run-wiki-demo.py --vault .demo/tall-vault`, then run
+start `SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-demo.py --vault .demo/tall-vault`, then run
 `PLAYWRIGHT_TALL=1 npm run test:browser -- e2e/tall.spec.ts` from `frontend`.
 Use the selected Poetry Python from the setup above and export
 `PYTHONPATH="$PWD/backend/src"` from the repository root before the Python

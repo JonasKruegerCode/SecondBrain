@@ -40,7 +40,7 @@ git switch secondbrain-2.0
 (cd backend && poetry sync --no-interaction)
 (cd frontend && npm ci)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-make demo PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
 ```
 
 Open <http://127.0.0.1:5173>. The command creates or reopens an isolated
@@ -48,11 +48,11 @@ Open <http://127.0.0.1:5173>. The command creates or reopens an isolated
 the real API and frontend. It requires no remote Git, database, embedding model
 or LLM key and never seeds an existing nonempty vault.
 
-The default demo disables external model calls. To test paid OpenRouter chat
-deliberately:
+The default demo disables external model calls. Stop the running demo with Ctrl+C
+before restarting it with deliberate paid OpenRouter access on the same ports:
 
 ```sh
-OPENROUTER_API_KEY=... PYTHONPATH=backend/src "$WIKI_PYTHON" \
+SECOND_BRAIN_WIKI_API_KEY= OPENROUTER_API_KEY=... PYTHONPATH=backend/src "$WIKI_PYTHON" \
   scripts/run-wiki-demo.py --with-openrouter
 ```
 
@@ -66,17 +66,17 @@ vault and the real local API/frontend:
 
 ```sh
 (cd frontend && npx playwright install --with-deps chromium)
-make acceptance PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"
 ```
 
-This waits for both services, runs all six normal browser suites, stops them even
+This waits for both services, runs the normal Chromium browser suites, stops them even
 on failure, and writes ignored logs plus a small JSON evidence record under
 `.demo/acceptance/`. It disables external model calls and never targets an
 existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
 checks remain separate release gates.
 
 To check the empty first-start path and persistence across an actual API/frontend
-restart, run `make acceptance-first-start PYTHON="$WIKI_PYTHON"`.
+restart, run `SECOND_BRAIN_WIKI_API_KEY= make acceptance-first-start PYTHON="$WIKI_PYTHON"`.
 It starts with zero pages, creates only fictional test content, exercises the
 editor/navigation/graph, stops both services and starts them again on the same
 owned vault. The second browser phase checks the saved start page, exact content
@@ -85,7 +85,7 @@ outage evidence. Success removes the temporary vault and browser-state files;
 CI uploads only structural results, browser logs and synthetic screenshots.
 
 For explicit local Git import, run
-`make acceptance-import PYTHON="$WIKI_PYTHON"`. It prepares an empty
+`SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"`. It prepares an empty
 repository and the public atlas with two original commits, imports both through
 the setup CLI, and checks real article links, search, history and galaxy views.
 A browser edit and saved start page must survive an identical import retry and

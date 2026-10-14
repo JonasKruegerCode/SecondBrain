@@ -14,7 +14,7 @@ Python executable and start both services with the isolated launcher:
 (cd backend && poetry sync --no-interaction)
 (cd frontend && npm ci)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-make demo PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
 ```
 
 Open <http://127.0.0.1:5173>. The launcher uses the separate `.demo/vault`,
@@ -23,6 +23,20 @@ your later demo edits. It never seeds an existing nonempty wiki implicitly.
 For a new empty destination, explicit template choice or Git import, use the
 [first-start profiles](first-start.md). Stop the launcher before starting another
 profile on the same ports.
+
+The empty API-key assignment is an explicit choice for this loopback-only
+preview: a Bearer key inherited from another installation would make the browser
+receive 401 responses, because this frontend uses same-origin proxy authentication
+rather than sending an API Bearer key. It does not change another deployment's
+proxy password or settings. Use a normal shell without Git directory/object/index
+overrides when creating this local vault; the launcher does not sanitize Git's
+own environment or global configuration.
+
+Restart with the same launcher command to reopen your edited `.demo/vault`.
+Do not rerun template setup as a restart command: it verifies the original
+template and refuses later edits. For an interrupted seed, stop the services and
+explicitly resume with the same template using the [first-start procedure](first-start.md).
+An existing `.wiki.git` alone does not prove that an interrupted template finished.
 
 The combined launcher treats both services as long-running peers. If either API
 or frontend exits unexpectedly, it stops the other service and returns a nonzero
@@ -53,7 +67,7 @@ terminals:
 ```sh
 (cd frontend && npx playwright install --with-deps chromium)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-make acceptance PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"
 ```
 
 The acceptance runner creates a new vault below `.demo/acceptance/`, starts the
@@ -83,11 +97,12 @@ The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importi
 
 The Chat tab is present but the default demo deliberately clears an inherited
 provider key, so opening the fictional wiki never creates external model cost.
-To run the same demo with real server-side OpenRouter calls, explicitly provide
-the key and opt in:
+To run the same demo with real server-side OpenRouter calls, stop the current
+launcher with Ctrl+C first, then explicitly provide the key and opt in when
+restarting on the same ports:
 
 ```bash
-OPENROUTER_API_KEY=... PYTHONPATH=backend/src \
+SECOND_BRAIN_WIKI_API_KEY= OPENROUTER_API_KEY=... PYTHONPATH=backend/src \
   "$WIKI_PYTHON" scripts/run-wiki-demo.py --with-openrouter
 ```
 
@@ -102,14 +117,14 @@ remote provider stops generation or billing immediately.
 This is a paid external call, distinct from the deterministic demo and browser
 regression suite.
 
-## Manual presentation rehearsal
+## WebKit compatibility and worker checks
 
 The browser CI also runs the reading/navigation compatibility slice in WebKit
 against a separately started disposable API/Vite instance. With installed
 Playwright WebKit dependencies, run it explicitly from the repository root:
 
 ```sh
-"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit
+SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit
 ```
 
 It selects article/view focus, skip links and the fictional demo route, preserving
@@ -130,7 +145,7 @@ Chromium profile keeps service workers enabled. See Playwright's guidance on
 The separate worker lifecycle slice keeps service workers enabled:
 
 ```sh
-"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers
+SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers
 ```
 
 It selects four existing cases: online-first registration and no private caches,
@@ -146,6 +161,12 @@ registration/control, CacheStorage and online/offline behavior. These controlled
 Linux browser updates do not establish native Safari/Home Screen installation,
 physical iOS lifecycle or production HTTPS/auth operation.
 
+## Manual presentation rehearsal
+
+Start with [Run locally](#run-locally), then follow the steps below in an actual
+browser. Choose explicitly whether the [paid provider](#take-a-short-tour) is
+enabled before beginning; the normal demo has no model access.
+
 Use the fictional atlas for shared screenshots or review. The automated browser
 rehearsal checks the unavailable-provider path; it does not stand in for this
 human tour or real answer-quality inspection. Record the tested Git head,
@@ -154,14 +175,13 @@ viewport/browser, provider enabled or unavailable, and any failed step:
 1. Start the documented demo, open Home, follow **Mira Quill** to the archive
    method, and use its field-notebook link. The route should read naturally,
    with clear introductions and a useful path back to Home.
+   On Mira Quill, choose **Set as start page** and confirm that **Home** now
+   opens that article. Use the page overview to return to the atlas when needed.
    On a longer article, follow an in-text link and use browser Back/Forward:
    the reading point should return for that visit, including after reloading the
    destination and then using Back/Forward. Fragment links still take precedence;
    choosing another focus or scrolling during a pending read must not be
-   overridden. A bounded, tab-scoped session cache retains at most 100 random
-   visit IDs and their x/y coordinates across full reloads. It contains no URLs
-   or page content; unavailable or invalid storage starts a fresh navigation
-   session without restoring old coordinates.
+   overridden.
 2. Search for `tide`, open the tide clock, then use History. Edit only the
    synthetic page, save, reload, and verify that both content and history reflect
    the save. A local save is distinct from optional index/remote delivery.
@@ -176,7 +196,7 @@ viewport/browser, provider enabled or unavailable, and any failed step:
    record the unavailable state and leave real-model acceptance open.
 5. Reload the conversation, confirm its locally retained turns, then delete it
    and verify its removal. Stop and restart the demo; reopen the edited article
-   and saved Home choice. Demo edits persist, while conversation deletion remains
+   and confirm that Home still opens Mira Quill. Demo edits persist, while conversation deletion remains
    a browser-local action.
 
 Use the separate real-provider gate below for structural tool/read-only checks.
@@ -184,6 +204,9 @@ Human answer inspection and physical Android/iOS installation still need their
 own evidence; viewport emulation establishes neither. The reading-position
 regressions use real API reads and disposable synthetic pages in Chromium at
 390- and 1440-pixel widths; they do not establish physical-device behavior.
+The reading-position cache is tab-scoped and bounded to 100 random visit IDs
+with x/y coordinates; it stores no URLs or page content. Unavailable or invalid
+session storage starts a fresh navigation session without restoring old positions.
 
 For a repeatable real-provider release gate instead of a manual chat, run:
 
@@ -223,7 +246,7 @@ The polished atlas stays deliberately small. For an opt-in real-service scale
 check, create a fresh generated 320-page vault and start the same API/frontend:
 
 ```sh
-make demo-scale PYTHON="$WIKI_PYTHON"
+SECOND_BRAIN_WIKI_API_KEY= make demo-scale PYTHON="$WIKI_PYTHON"
 ```
 
 In a second terminal, run its separate browser contract:
