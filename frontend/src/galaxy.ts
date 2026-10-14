@@ -10,6 +10,16 @@ export interface Graph {
 }
 type Cluster = { id: number; core: string; members: string[]; isolated: boolean; curated: boolean; label?: string };
 type Point = { x: number; y: number };
+export interface GalaxyViewState {
+  selectedNode: string | null;
+  clusterCore: string | null;
+  query: string;
+  listOnly: boolean;
+  scale: number;
+  panX: number;
+  panY: number;
+  sidebarScroll: number;
+}
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const compareId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const colors = ["#81e1d3", "#c5a5fa", "#f5c887", "#90baf8", "#f0a8c1", "#b8d787"];
@@ -21,7 +31,8 @@ const colors = ["#81e1d3", "#c5a5fa", "#f5c887", "#90baf8", "#f0a8c1", "#b8d787"
  * their original direction and relation in the evidence panel. Grouping is a
  * navigation aid, not a claim of semantic similarity or causality.
  */
-export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: string) => void): () => void {
+export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: string) => void,
+  options: { initialState?: GalaxyViewState; onLeave?: (state: GalaxyViewState) => void } = {}): () => void {
   const nodes = [...graph.nodes].sort((a, b) => compareId(a.id, b.id));
   const byId = new Map(nodes.map(n => [n.id, n]));
   const edges = graph.edges.filter(e => byId.has(e.source) && byId.has(e.target));
@@ -101,6 +112,21 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const largeGraph = nodes.length > 250 || edges.length > 800;
   let selectedCluster: number | null = null, selectedNode: string | null = null, query = "", listOnly = largeGraph;
   let scale = 1, panX = 0, panY = 0, height = 600;
+  const previous = options.initialState;
+  if (previous) {
+    // Resolve stable page IDs against the freshly read graph. A deleted page
+    // must not restore an invalid selection or an obsolete cluster index.
+    if (previous.selectedNode && byId.has(previous.selectedNode)) {
+      selectedNode = previous.selectedNode;
+      selectedCluster = membership.get(selectedNode)!;
+    } else if (previous.clusterCore && byId.has(previous.clusterCore)) {
+      selectedCluster = membership.get(previous.clusterCore)!;
+    }
+    query = previous.query;
+    listOnly = previous.listOnly;
+    scale = Math.max(.75, Math.min(selectedCluster === null ? 2.5 : 4, previous.scale));
+    panX = previous.panX; panY = previous.panY;
+  }
   const uid = `galaxy-${Math.random().toString(36).slice(2, 9)}`;
   const name = (id: string) => byId.get(id)?.title || id;
   const clusterName = (cluster: Cluster) => cluster.label || name(cluster.core);
@@ -435,6 +461,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   stage.addEventListener("pointerdown", pointerdown); stage.addEventListener("pointermove", pointermove);
   stage.addEventListener("pointerup", pointerup); stage.addEventListener("pointercancel", pointerup);
   render();
+  root.querySelector<HTMLInputElement>("input")!.value = query;
+  sidebar.scrollTop = previous?.sidebarScroll || 0;
   const resize = new ResizeObserver(() => {
     if (selectedCluster === null && !listOnly && columnsForWidth() !== overviewColumns) {
       const focused = document.activeElement?.closest<SVGElement>(".galaxy-star")?.dataset.node;
@@ -444,6 +472,11 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   });
   resize.observe(stage);
   return () => {
+    options.onLeave?.({
+      selectedNode,
+      clusterCore: selectedCluster === null ? null : clusters[selectedCluster].core,
+      query, listOnly, scale, panX, panY, sidebarScroll: sidebar.scrollTop,
+    });
     resize.disconnect();
     root.removeEventListener("click", click); root.removeEventListener("keydown", keydown); root.removeEventListener("focusin", focusin);
     root.querySelector("input")?.removeEventListener("input", input);

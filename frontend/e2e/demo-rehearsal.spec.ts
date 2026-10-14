@@ -1,5 +1,83 @@
 import { expect } from "@playwright/test";
 import { test } from "./reading-test";
+import { randomUUID } from "node:crypto";
+
+test("galaxy return rereads the graph after its selected page is deleted", async ({ page, request }) => {
+  const id = `galaxy-return-${randomUUID()}`;
+  const created = await request.post(`/api/wiki/pages/${id}`, { data: {
+    markdown: "# Temporary return star\nA synthetic isolated page.",
+    base_revision: null, request_id: randomUUID(),
+  } });
+  expect(created.ok()).toBe(true);
+  const receipt = await created.json();
+  try {
+    await page.goto("/galaxy");
+    await page.getByRole("searchbox", { name: "Find a page in this snapshot" }).fill(id);
+    await page.locator(`.galaxy-page[data-node="${id}"]`).click();
+    await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article" }).click();
+    await expect(page.locator("article h1")).toHaveText("Temporary return star");
+    const removed = await request.delete(`/api/wiki/pages/${id}`, { data: {
+      base_revision: receipt.revision, request_id: randomUUID(),
+    } });
+    expect(removed.ok()).toBe(true);
+    await page.goBack();
+    await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+    await expect(page.locator(`.galaxy-page[data-node="${id}"]`)).toHaveCount(0);
+    await expect(page.locator(".galaxy-cluster").filter({ hasText: "Archive practice" })).toBeVisible();
+    await expect(page.locator(".galaxy")).toBeVisible();
+  } finally {
+    const current = await request.get(`/api/wiki/pages/${id}`);
+    if (current.ok()) {
+      const cleanup = await request.delete(`/api/wiki/pages/${id}`, { data: {
+        base_revision: (await current.json()).revision, request_id: randomUUID(),
+      } });
+      expect(cleanup.ok()).toBe(true);
+    } else expect(current.status()).toBe(404);
+  }
+});
+
+for (const width of [390, 1440]) {
+  test(`galaxy article round trip restores its visit (${width})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 844 });
+    for (const list of [false, true]) {
+      await page.goto("/galaxy");
+      await page.locator(".galaxy-cluster").filter({ hasText: "Archive practice" }).click();
+      await page.locator('.galaxy-page[data-node="field-notebook"]').click();
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
+      await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+      const map = page.locator(".galaxy-stage svg");
+      const viewBox = await map.getAttribute("viewBox");
+      if (list) await page.getByRole("button", { name: "List view", exact: true }).click();
+      await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article" }).click();
+      await expect(page).toHaveURL(/\/wiki\/field-notebook$/);
+      await expect(page.locator("article h1")).toHaveText("Field notebook");
+      await page.goBack();
+      await expect(page).toHaveURL(/\/galaxy$/);
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
+      await expect(page.locator(".galaxy-breadcrumb")).toContainText("Archive practice");
+      if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
+      else await expect(map).toHaveAttribute("viewBox", viewBox!);
+      await page.screenshot({ path: testInfo.outputPath(`galaxy-return-${width}-${list ? "list" : "map"}.png`), fullPage: true });
+      // Refresh creates an adjacent visit with the same URL. Back/Forward must
+      // still distinguish its overview from the preceding selected-page view.
+      await page.getByRole("link", { name: "Refresh snapshot" }).click();
+      await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+      await page.goBack();
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
+      if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
+      else await expect(map).toHaveAttribute("viewBox", viewBox!);
+      await page.goForward();
+      await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+      // A fresh explicit visit still opens the overview instead of reusing the
+      // last Galaxy state merely because its URL matches a previous entry.
+      await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Home", exact: true }).click();
+      await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Galaxy", exact: true }).click();
+      await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
+      await expect(page.locator(".galaxy-cluster").filter({ hasText: "Archive practice" })).toBeVisible();
+      await expect(page.locator(".galaxy-stage")).toBeVisible();
+    }
+  });
+}
 
 // A single rehearsal of the public fictional atlas against the managed API.
 // The demo deliberately has no model provider: its real 503 is the chat outcome.

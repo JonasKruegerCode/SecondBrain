@@ -1,6 +1,6 @@
 import { marked } from "marked";
 import "./style.css";
-import { renderGalaxy, Graph } from "./galaxy";
+import { renderGalaxy, Graph, GalaxyViewState } from "./galaxy";
 import { chatReloadBlocker, renderChat } from "./chat";
 import { applyUpdate, installApp, observePwa, PwaState, startPwa } from "./pwa";
 type HistoryEntry = { commit: string; date: string; message: string };
@@ -28,6 +28,7 @@ let restoringHistory = false;
 let historyRestoreTimer: number | undefined;
 type ReadingPoint = { x: number; y: number };
 const readingPoints = new Map<string, ReadingPoint>();
+const galaxyViews = new Map<string, GalaxyViewState>();
 const readingStorageKey = "secondbrain.reading-points";
 let readingStorageTimer: number | undefined;
 let viewComplete = false;
@@ -468,7 +469,17 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     if (location.pathname === "/galaxy") {
       const graph: Graph = await api("/graph");
       if (run !== generation) return;
-      cleanupView = renderGalaxy(main, graph);
+      // Keep view state with this visit even when navigation changes activeEntry
+      // before the outgoing view's cleanup runs. This state stays in memory.
+      const entryId = activeEntry.id;
+      cleanupView = renderGalaxy(main, graph, undefined, {
+        initialState: galaxyViews.get(entryId),
+        onLeave: (state: GalaxyViewState) => {
+          galaxyViews.delete(entryId);
+          galaxyViews.set(entryId, state);
+          if (galaxyViews.size > 100) galaxyViews.delete(galaxyViews.keys().next().value!);
+        },
+      });
       complete("Galaxy");
       return;
     }
@@ -861,12 +872,16 @@ window.addEventListener("popstate", event => {
   }
   const previous = new URL(activeUrl, location.origin);
   if (previous.pathname === location.pathname && previous.search === location.search) {
+    // Refresh can create adjacent Galaxy visits with the same URL. Resolve
+    // their visit state before replacing activeEntry; fragment-only handling
+    // remains enough when the visit itself has not changed.
+    const galaxyVisitChanged = location.pathname === "/galaxy" && !!entry && entry.id !== activeEntry.id;
     // Unknown native entries cannot safely imply a new relative position.
     if (entry && (entry.id !== activeEntry.id || targetUrl === activeUrl)) {
       activeEntry = entry;
       replaceAppUrl(targetUrl);
     } else resetHistoryTracking(targetUrl);
-    if (!viewComplete) {
+    if (!viewComplete || galaxyVisitChanged) {
       void route(true, false, readingPoints.get(activeEntry.id));
       return;
     }

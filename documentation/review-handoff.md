@@ -56,6 +56,11 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- Browser Back/Forward returns to the preceding Galaxy visit's selected page,
+  constellation, query, map/list choice, zoom, pan and sidebar offset. These
+  bounded visit states stay only in tab memory; the graph is fetched again and
+  deleted page IDs cannot restore a stale selection. Explicit new visits and
+  refresh open the overview. Reload does not persist Galaxy exploration state.
 - A continuous fictional-atlas browser rehearsal follows Home -> article ->
   wikilink -> real search -> constellation/star/link evidence -> article ->
   Chat. With the demo's unconfigured provider it verifies the actual unavailable
