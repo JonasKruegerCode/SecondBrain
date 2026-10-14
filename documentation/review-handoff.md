@@ -183,6 +183,12 @@ saving and failure, read-only while saving; status and preferences update in
 place. A failure returns focus from Save to the draft without overriding another
 control chosen meanwhile. Success closes the editor. These browser editing
 commands do not establish physical keyboard input or mobile virtual keyboards.
+Two longer synthetic drafts additionally check internal textarea scroll,
+backward selection and deliberately chosen History/toolbar focus across timeout,
+then native undo/redo and either receipt replay or dismissed/accepted Cancel.
+Cancel closes the local editing view; it cannot roll back a save already
+published on the server. API/history readback and reload verify that distinction.
+These desktop/narrow cases are not arbitrary-size performance benchmarks.
 They inspect real request payloads, receipts and Git history, then remove only
 their owned UUID page using its current revision; no save response is fabricated.
 WebKit keeps service workers blocked

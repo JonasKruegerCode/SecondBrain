@@ -192,3 +192,111 @@ test("a real conflict retains the editor selection and pre-save undo history", a
     })).ok()).toBeTruthy();
   }
 });
+
+for (const finish of ["retry", "cancel"] as const) {
+test(`a long scrolled draft retains selection and chosen focus before ${finish}`, async ({ page, request }, testInfo) => {
+  const initial = "# Long editor fixture\n\n## Working notes\n\n" + Array.from({ length: 180 }, (_, i) =>
+    `Line ${String(i).padStart(3, "0")}: An independently invented observation for a fictional notebook. These notes are synthetic and contain no personal information.`
+  ).join("\n");
+  const fixture = await create(request, initial);
+  let release!: () => void, captured!: () => void, drained!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const published = new Promise<void>(resolve => { captured = resolve; });
+  const released = new Promise<void>(resolve => { drained = resolve; });
+  let holding = false;
+  const payloads: { markdown: string; base_revision: string; request_id: string }[] = [];
+  try {
+    await page.setViewportSize(finish === "retry" ? { width: 1440, height: 1000 } : { width: 390, height: 844 });
+    await page.goto(`/wiki/${fixture.id}`);
+    await page.clock.install();
+    await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+      if (route.request().method() !== "POST") { await route.continue(); return; }
+      payloads.push(route.request().postDataJSON());
+      if (payloads.length > 1) { await route.continue(); return; }
+      holding = true;
+      try {
+        const response = await route.fetch();
+        expect(response.ok()).toBeTruthy();
+        captured();
+        await gate;
+        await route.fulfill({ response }).catch(() => {});
+      } finally { drained(); }
+    });
+    await page.getByRole("button", { name: "Edit page" }).click();
+    const editor = page.getByRole("textbox", { name: /Markdown/ });
+    const originalEditor = await editor.elementHandle();
+    const offset = initial.indexOf("Line 090:") + "Line 090: ".length;
+    const correction = "A keyboard correction. ";
+    await editor.evaluate((e: HTMLTextAreaElement, offset) => e.setSelectionRange(offset, offset), offset);
+    await editor.pressSequentially(correction);
+    const draft = initial.slice(0, offset) + correction + initial.slice(offset);
+    await expect(editor).toHaveValue(draft);
+    await editor.evaluate((e: HTMLTextAreaElement, offset) => {
+      e.setSelectionRange(offset + 2, offset + 10, "backward");
+      e.scrollTop = Math.max(0, e.scrollTop - 2 * parseFloat(getComputedStyle(e).lineHeight));
+    }, offset);
+    const before = await editor.evaluate((e: HTMLTextAreaElement) => ({
+      top: e.scrollTop, height: e.clientHeight, selection: [e.selectionStart, e.selectionEnd, e.selectionDirection],
+    }));
+    expect(before.top).toBeGreaterThan(before.height);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await published;
+    const chosen = finish === "retry" ? page.locator(".page-history summary") : page.getByRole("button", { name: "Set as start page" });
+    await chosen.click();
+    await expect(chosen).toBeFocused();
+    const pending = await editor.evaluate((e: HTMLTextAreaElement) => ({
+      top: e.scrollTop, selection: [e.selectionStart, e.selectionEnd, e.selectionDirection],
+    }));
+    expect(pending.selection).toEqual(before.selection);
+    expect(Math.abs(pending.top - before.top)).toBeLessThanOrEqual(1);
+    await page.clock.fastForward(30_001);
+    await expect(page.locator(".notice")).toContainText("timed out");
+    await expect(chosen).toBeFocused();
+    await expect(editor).toBeEditable();
+    expect(await editor.evaluate((e, original) => e === original, originalEditor)).toBe(true);
+    const after = await editor.evaluate((e: HTMLTextAreaElement) => ({
+      top: e.scrollTop, selection: [e.selectionStart, e.selectionEnd, e.selectionDirection],
+    }));
+    expect(after.selection).toEqual(before.selection);
+    expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`long-draft-${finish}.png`), fullPage: true });
+    release();
+    await released;
+    await editor.press("ControlOrMeta+z");
+    await expect(editor).toHaveValue(initial);
+    await editor.press("ControlOrMeta+Shift+z");
+    await expect(editor).toHaveValue(draft);
+    const saved = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(saved.markdown).toBe(draft);
+    expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+    if (finish === "retry") {
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.locator(".notice")).toContainText("Saved locally");
+      expect(payloads).toHaveLength(2);
+      expect(payloads[1]).toEqual(payloads[0]);
+    } else {
+      page.once("dialog", dialog => dialog.dismiss());
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(editor).toHaveValue(draft);
+      page.once("dialog", dialog => dialog.accept());
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(editor).toHaveCount(0);
+      expect(payloads).toHaveLength(1);
+    }
+    const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(stored.markdown).toBe(draft);
+    expect(stored.revision).toBe(saved.revision);
+    expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+    await page.reload();
+    await expect(page.locator(".prose")).toContainText(correction.trim());
+  } finally {
+    release();
+    if (holding) await released;
+    const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+    expect(current.ok()).toBeTruthy();
+    expect((await request.delete(`/api/wiki/pages/${fixture.id}`, {
+      data: { base_revision: (await current.json()).revision, request_id: randomUUID() },
+    })).ok()).toBeTruthy();
+  }
+});
+}
