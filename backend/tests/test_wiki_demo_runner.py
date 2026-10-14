@@ -270,6 +270,77 @@ def test_worker_profile_rejects_wrong_engine_or_partial_selection(args: list[str
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize("engine, profile, service_workers, suites", [
+    ("chromium", "full", "allow", [
+        "e2e/wiki.spec.ts", "e2e/history.spec.ts",
+        "e2e/skip-link.spec.ts", "e2e/article-focus.spec.ts",
+        "e2e/view-focus.spec.ts", "e2e/demo-rehearsal.spec.ts", "e2e/editor-retry.spec.ts",
+    ]),
+    ("webkit", "reading-navigation", "block", [
+        "e2e/skip-link.spec.ts",
+        "e2e/article-focus.spec.ts", "e2e/view-focus.spec.ts",
+        "e2e/demo-rehearsal.spec.ts", "e2e/editor-retry.spec.ts",
+    ]),
+])
+def test_editor_retry_orchestration_contract_without_launching_a_browser(
+    engine: str, profile: str, service_workers: str, suites: list[str],
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-key-must-not-reach-services")
+    supervisor = MagicMock(pid=4321)
+
+    def start(command: list[str], **kwargs: Any) -> Any:
+        vault = Path(command[command.index("--vault") + 1])
+        vault.mkdir()
+        (vault / "owned-fixture").touch()
+        return supervisor
+
+    processes = MagicMock()
+    processes.Popen.side_effect = start
+    processes.run.return_value = MagicMock(returncode=0, stdout="synthetic-head")
+    processes.TimeoutExpired = subprocess.TimeoutExpired
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    readiness = MagicMock()
+    cleanup = MagicMock()
+    monkeypatch.setitem(namespace, "_wait_for_http", readiness)
+    monkeypatch.setitem(namespace, "_stop_process_group", cleanup)
+    assert main(["--browser-engine", engine]) == 0
+
+    results = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
+    assert len(results) == 1
+    artifact_dir = results[0].parent
+    browser_calls = [call for call in processes.run.call_args_list if call.args[0][0] != "git"]
+    assert len(browser_calls) == 1
+    expected_command = ["npm", "run", "test:browser", "--", *suites]
+    if engine == "webkit":
+        expected_command.extend(["--output", str(artifact_dir / "browser-webkit")])
+    assert browser_calls[0].args[0] == expected_command
+    assert browser_calls[0].args[0].count("e2e/editor-retry.spec.ts") == 1
+    assert browser_calls[0].kwargs["cwd"] == tmp_path / "frontend"
+    assert browser_calls[0].kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == engine
+    assert "OPENROUTER_API_KEY" not in browser_calls[0].kwargs["env"]
+    processes.Popen.assert_called_once()
+    assert processes.Popen.call_args.kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == engine
+    assert "OPENROUTER_API_KEY" not in processes.Popen.call_args.kwargs["env"]
+    assert readiness.call_count == 2
+    cleanup.assert_called_once_with(supervisor, artifact_dir / "processes-demo.json")
+
+    evidence = json.loads(results[0].read_text())
+    assert evidence["browser_engine"] == engine
+    assert evidence["browser_profile"] == profile
+    assert evidence["service_workers"] == service_workers
+    assert evidence["suite"] == f"frontend/{suites[0]}"
+    assert evidence["suites"] == [f"frontend/{suite}" for suite in suites]
+    assert evidence["suites"].count("frontend/e2e/editor-retry.spec.ts") == 1
+    assert evidence["test_selection"] == {"grep": None, "repeat_each": 1}
+    assert evidence["service_cleanup_ok"] is True
+    assert evidence["external_model_calls"] is False
+    assert evidence["vault_retained"] is False
+
+
 @pytest.mark.parametrize("extra", [
     [],
     ["--browser-engine", "chromium"],

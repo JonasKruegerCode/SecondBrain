@@ -219,6 +219,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
+            "e2e/editor-retry.spec.ts",
         ]
     )
     if args.browser_engine == "webkit":
@@ -227,6 +228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
+            "e2e/editor-retry.spec.ts",
         ]
     worker_filter = (
         "(PWA metadata registers an online-only worker without private caches|"

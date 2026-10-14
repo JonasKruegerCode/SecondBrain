@@ -171,6 +171,18 @@ responses: keyboard loading, pending-read deduplication, refreshed agent edits,
 transport failure/retry and late success/failure after article navigation.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
+The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
+profile and the WebKit reading/navigation profile. Its four cases withhold an
+actual successful save response and advance the client clock: unchanged retry,
+a different draft's real conflict, restored content, and restoration after a
+rejected intermediate edit. They inspect real request payloads, receipts and Git
+history; no save response is fabricated. WebKit keeps service workers blocked
+for observable held routes, while the separate worker gate keeps them enabled.
+For a focused check, add
+`--browser-engine webkit --browser-grep 'a timed-out save preserves'`
+to the acceptance runner. A filtered pass is not the entire WebKit
+profile and Linux WebKit does not establish physical Safari/iOS acceptance.
+
 Two skip-link cases compare actual viewport geometry and keyboard behavior at
 390 and 1440 pixels. First Tab reveals the navigation bypass; Enter focuses the
 main content, and the next Tab enters its first control. The same-fragment path
