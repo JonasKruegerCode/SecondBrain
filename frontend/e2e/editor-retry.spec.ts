@@ -13,6 +13,98 @@ async function create(request: APIRequestContext, markdown: string) {
   return { id, ...(await response.json()) };
 }
 
+for (const outcome of ["refresh", "read-error", "navigate"] as const) {
+test(`cancel after a real conflict handles ${outcome} without restoring a stale article`, async ({ page, request }, testInfo) => {
+  const fixture = await create(request, "# Cancel refresh fixture\nAn older article.");
+  let release!: () => void, entered!: () => void, drained!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reading = new Promise<void>(resolve => { entered = resolve; });
+  const released = new Promise<void>(resolve => { drained = resolve; });
+  let holding = false, reads = 0, writes = 0;
+  try {
+    await page.setViewportSize(outcome === "read-error" ? { width: 390, height: 844 } : { width: 1440, height: 1000 });
+    await page.goto(`/wiki/${fixture.id}`);
+    await page.getByRole("button", { name: "Edit page" }).click();
+    await page.getByRole("textbox", { name: /Markdown/ }).fill("# Cancel refresh fixture\nA discarded local draft.");
+    const markdown = "# Cancel refresh fixture\nThe current independently invented agent update.";
+    const response = await request.post(`/api/wiki/pages/${fixture.id}`, {
+      data: { markdown, base_revision: fixture.revision, request_id: randomUUID() },
+    });
+    expect(response.ok()).toBeTruthy();
+    const saved = await response.json();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".notice")).toContainText("Conflict");
+    const visit = await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }));
+    await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+      if (route.request().method() !== "GET") {
+        if (route.request().method() === "POST") writes++;
+        await route.continue(); return;
+      }
+      if (++reads > 1) { await route.continue(); return; }
+      holding = true;
+      try {
+        const current = await route.fetch();
+        expect(current.ok()).toBeTruthy();
+        expect(current.headers()["cache-control"]).toContain("no-store");
+        entered();
+        await gate;
+        if (outcome === "read-error") await route.abort("failed");
+        else await route.fulfill({ response: current });
+      } finally { drained(); }
+    });
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await reading;
+    await expect(page.locator(".prose")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Edit page" })).toHaveCount(0);
+    expect(await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }))).toEqual(visit);
+    const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
+    if (outcome === "navigate") {
+      await search.click();
+      await expect(page.getByRole("textbox", { name: "Search pages", exact: true })).toBeVisible();
+    } else if (outcome === "refresh") await search.focus();
+    const delivered = outcome === "read-error" ? null : page.waitForResponse(r => r.url().endsWith(`/api/wiki/pages/${fixture.id}`) && r.request().method() === "GET");
+    release();
+    await released;
+    if (delivered) await delivered;
+    if (outcome === "navigate") {
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(page).toHaveURL(/\/search$/);
+      await expect(page.getByRole("textbox", { name: "Search pages", exact: true })).toBeVisible();
+      await expect(page.locator("article")).toHaveCount(0);
+    } else {
+      if (outcome === "read-error") {
+        await expect(page.getByRole("heading", { name: "Couldn’t open the workspace." })).toBeVisible();
+        await expect(page.locator(".prose")).toHaveCount(0);
+        await page.screenshot({ path: testInfo.outputPath("cancel-read-error-mobile.png"), fullPage: true });
+        await page.getByRole("button", { name: "Try again" }).click();
+      }
+      await expect(page.locator(".prose")).toContainText("The current independently invented agent update.");
+      await expect(page.locator(".revision")).toContainText(saved.revision.slice(0, 8));
+      if (outcome === "refresh") await expect(search).toBeFocused();
+      else await expect(page.getByRole("button", { name: "Edit page" })).toBeFocused();
+      expect(await page.evaluate(() => ({ url: location.href, state: history.state, length: history.length }))).toEqual(visit);
+      await page.screenshot({ path: testInfo.outputPath(`cancel-${outcome}-current.png`), fullPage: true });
+      await page.getByRole("button", { name: "Edit page" }).click();
+      await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(markdown);
+    }
+    expect(writes).toBe(0);
+    const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+    expect(stored.revision).toBe(saved.revision);
+    expect(stored.markdown).toBe(markdown);
+    expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+  } finally {
+    release();
+    if (holding) await released;
+    const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+    expect(current.ok()).toBeTruthy();
+    expect((await request.delete(`/api/wiki/pages/${fixture.id}`, {
+      data: { base_revision: (await current.json()).revision, request_id: randomUUID() },
+    })).ok()).toBeTruthy();
+  }
+});
+}
+
 for (const retryMode of ["unchanged", "edited", "restored", "rejected-then-restored", "keyboard-restored", "pre-save-restored"] as const) {
 test(`a timed-out save preserves its ${retryMode} draft without another publication`, async ({ page, request }, testInfo) => {
   const fixture = await create(request, "# Save timeout fixture\nBefore.");
@@ -290,6 +382,7 @@ test(`a long scrolled draft retains selection and chosen focus before ${finish}`
       // Read the current article on this visit, without requiring a reload.
       await expect(page.locator(".prose")).toContainText(correction.trim());
       await expect(page.locator(".revision")).toContainText(saved.revision.slice(0, 8));
+      await page.screenshot({ path: testInfo.outputPath("long-draft-after-cancel-current.png"), fullPage: true });
     }
     const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
     expect(stored.markdown).toBe(draft);

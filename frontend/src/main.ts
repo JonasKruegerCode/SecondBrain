@@ -412,7 +412,7 @@ function cards(pages: Page[], fragment = "") {
     .join("");
 }
 async function route(focusView = false, reuseShell = false, readingPoint?: ReadingPoint,
-  startNavigation: { fallbackOnError?: boolean; notice?: string } = {}) {
+  startNavigation: { fallbackOnError?: boolean; notice?: string; articleFocus?: "edit" } = {}) {
   const run = ++generation;
   viewComplete = false;
   readingReady = false;
@@ -439,12 +439,13 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     if (run !== generation) return;
     const heading = main.querySelector<HTMLElement>("h1");
     if (heading) heading.tabIndex = -1;
+    const focusTarget = (startNavigation.articleFocus === "edit" ? main.querySelector<HTMLElement>("#edit") : null) || heading;
     // Announce the new reading destination only when navigation removed the
     // old focus. Never steal a focus explicitly chosen during an async read.
     const untouchedFocus = document.activeElement === document.body || document.activeElement === routeFocusedHeading;
     if (focusView && !location.hash && untouchedFocus) {
-      heading?.focus({ preventScroll: true });
-      routeFocusedHeading = heading;
+      focusTarget?.focus({ preventScroll: true });
+      routeFocusedHeading = focusTarget;
     }
     if (ready && (focusView || readingPoint) && !location.hash && untouchedFocus && !readingInterrupted)
       window.scrollTo(readingPoint?.x || 0, readingPoint?.y || 0);
@@ -583,7 +584,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     if (retry) retry.onclick = () => {
       // Reload this visit, retaining its URL and history position. A later
       // navigation must not revive this failed route through a stale button.
-      if (run === generation) void route(true, false, readingPoint);
+      if (run === generation) void route(true, false, readingPoint, { articleFocus: startNavigation.articleFocus });
     };
     complete(missing ? "Missing page" : "Workspace unavailable");
   }
@@ -712,7 +713,15 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
       !confirm("Discard unsaved changes?")
     )
       return;
-    editing = !editing;
+    if (editing) {
+      // A failed acknowledgement or conflict can leave this snapshot behind
+      // the server. Discard the local draft, then read this same visit afresh.
+      // The shared route handles missing/error/retry and ignores late reads.
+      void route(true, true, undefined, { articleFocus: "edit" });
+      renderPwaState();
+      return;
+    }
+    editing = true;
     saveAttempt = null;
     if (editing) {
       draft = page!.markdown || "";

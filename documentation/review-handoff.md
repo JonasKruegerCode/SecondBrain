@@ -187,7 +187,13 @@ Two longer synthetic drafts additionally check internal textarea scroll,
 backward selection and deliberately chosen History/toolbar focus across timeout,
 then native undo/redo and either receipt replay or dismissed/accepted Cancel.
 Cancel closes the local editing view; it cannot roll back a save already
-published on the server. API/history readback and reload verify that distinction.
+committed despite a lost acknowledgement. Accepted Cancel reads the current
+article on the same visit before offering Edit again; unavailable reads use
+the existing error/retry view instead of presenting the older snapshot.
+API/history readback verifies that distinction before and after reload.
+Three real-conflict cases also check current content before re-editing, an
+unavailable refresh with same-visit retry, and a late read after navigation.
+They preserve deliberately chosen header focus and verify no additional write.
 These desktop/narrow cases are not arbitrary-size performance benchmarks.
 They inspect real request payloads, receipts and Git history, then remove only
 their owned UUID page using its current revision; no save response is fabricated.
