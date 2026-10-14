@@ -77,7 +77,7 @@ test("missing and genuinely deleted contextual targets show an honest overview",
     await missingOverview();
     await page.screenshot({ path: info.outputPath("galaxy-missing-entry.png"), fullPage: true });
     const created = await request.post(`/api/wiki/pages/${id}`, { data: {
-      markdown: "# Synthetic contextual page\n\nA public test note linked to [[field-notebook]].",
+      markdown: "---\ngalaxy_group: archive-practice\ngalaxy_label: Archive practice\n---\n# Synthetic contextual page\n\nA public test note linked to [[field-notebook]].",
       base_revision: null, request_id: randomUUID(),
     } });
     expect(created.ok()).toBe(true);
@@ -87,6 +87,7 @@ test("missing and genuinely deleted contextual targets show an honest overview",
     await expect(explore).toHaveAttribute("href", `/galaxy?page=${encodeURIComponent(id)}`);
     await explore.click();
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic contextual page");
+    await expect(page.locator(".galaxy-breadcrumb")).toContainText("Archive practice");
     await expect(page.locator(".galaxy-evidence")).toContainText("Field notebook");
     await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article ↗", exact: true }).click();
     await expect(page.locator("article > h1")).toHaveText("Synthetic contextual page");
