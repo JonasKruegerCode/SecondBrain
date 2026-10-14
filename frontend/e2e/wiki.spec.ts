@@ -2581,17 +2581,25 @@ for (const width of [390, 1440]) {
     const labels = [`Link Alpha ${group}`, `Link Beta ${group}`];
     const fixtures: Awaited<ReturnType<typeof create>>[] = [];
     try {
-      for (const title of ["Alpha core", "Alpha leaf", "Beta core", "Beta leaf"]) {
+      for (const title of ["Alpha core", "Beta core", "Beta leaf", "Alpha leaf seed 1", "Alpha leaf seed 2", "Alpha leaf seed 3"]) {
         fixtures.push(await create(request, `# ${title}\nSynthetic link mutation fixture.`));
       }
-      const [a, al, b, bl] = fixtures;
-      const markdown = [
-        `---\ngalaxy_group: link-alpha-${group}\ngalaxy_label: ${labels[0]}\ngalaxy_anchor: true\n---\n# Alpha core\n[[${al.id}]] [[${b.id}]]`,
-        `---\ngalaxy_group: link-alpha-${group}\n---\n# Alpha leaf\nSynthetic original text.`,
-        `---\ngalaxy_group: link-beta-${group}\ngalaxy_label: ${labels[1]}\ngalaxy_anchor: true\n---\n# Beta core\n[[${bl.id}]]`,
-        `---\ngalaxy_group: link-beta-${group}\n---\n# Beta leaf\nSynthetic original text.`,
+      const [a, b, bl] = fixtures;
+      // Promote the last tied ordinary star, rather than depending on UUID luck.
+      const leaves = fixtures.slice(3).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      const [first, second, al] = leaves;
+      const leafMarkdown = `---\ngalaxy_group: link-alpha-${group}\n---\n# Alpha leaf\nSynthetic original text.`;
+      const setup = [
+        [a, `---\ngalaxy_group: link-alpha-${group}\ngalaxy_label: ${labels[0]}\ngalaxy_anchor: true\n---\n# Alpha core\n${leaves.map(leaf => `[[${leaf.id}]]`).join(" ")} [[${b.id}]]`],
+        [b, `---\ngalaxy_group: link-beta-${group}\ngalaxy_label: ${labels[1]}\ngalaxy_anchor: true\n---\n# Beta core\n[[${bl.id}]]`],
+        [bl, `---\ngalaxy_group: link-beta-${group}\n---\n# Beta leaf\nSynthetic original text.`],
+        [first, `---\ngalaxy_group: link-alpha-${group}\n---\n# Alpha first\nSynthetic original text.`],
+        [second, `---\ngalaxy_group: link-alpha-${group}\n---\n# Alpha second\nSynthetic original text.`],
+        [al, leafMarkdown],
       ];
-      for (let i = 0; i < fixtures.length; i++) await update(request, fixtures[i].id, markdown[i], fixtures[i].revision);
+      for (const [fixture, markdown] of setup as [Awaited<ReturnType<typeof create>>, string][]) {
+        await update(request, fixture.id, markdown, fixture.revision);
+      }
       await page.setViewportSize({ width, height: 1000 });
       const capture = async (phase: string) => {
         const responsePromise = page.waitForResponse(response => response.url().endsWith("/api/wiki/graph") && response.request().method() === "GET");
@@ -2633,7 +2641,7 @@ for (const width of [390, 1440]) {
       const fresh = await request.get(`/api/wiki/pages/${al.id}`);
       expect(fresh.ok()).toBeTruthy();
       const current = await fresh.json();
-      await update(request, al.id, `${markdown[1]}\n\n[[${bl.id}]]`, current.revision);
+      await update(request, al.id, `${leafMarkdown}\n\n[[${bl.id}]]`, current.revision);
       // The map is a named snapshot until the user refreshes it.
       await expect(bridgeTitle).toHaveText(originalTitle);
       const after = await capture("after");
@@ -2648,6 +2656,18 @@ for (const width of [390, 1440]) {
       expect(added[0]).toMatchObject({ source: al.id, target: bl.id });
       expect(after.measurements.world.filter(star => star.core)).toEqual(before.measurements.world.filter(star => star.core));
       expect(after.measurements.world.map(({ id, core }) => ({ id, core }))).toEqual(before.measurements.world.map(({ id, core }) => ({ id, core })));
+      const sourceIds = leaves.map(leaf => leaf.id);
+      const position = (snapshot: typeof before, id: string) => snapshot.measurements.world.find(star => star.id === id)!.transform;
+      const degree = (snapshot: typeof before, id: string) => new Set(snapshot.graph.edges
+        .filter((edge: { source: string; target: string }) => edge.source === id || edge.target === id)
+        .map((edge: { source: string; target: string }) => edge.source === id ? edge.target : edge.source)).size;
+      for (const leaf of leaves) expect(degree(before, leaf.id)).toBe(1);
+      expect(degree(after, al.id)).toBe(2);
+      expect(position(after, al.id)).toBe(position(before, first.id));
+      expect(position(after, first.id)).toBe(position(before, second.id));
+      expect(position(after, second.id)).toBe(position(before, al.id));
+      expect(after.measurements.world.filter(star => !sourceIds.includes(star.id)))
+        .toEqual(before.measurements.world.filter(star => !sourceIds.includes(star.id)));
       const bridge = after.measurements.bridges.filter(item => item.title!.includes(labels[0]));
       expect(bridge).toHaveLength(1);
       expect(bridge[0].title).toBe(`2 explicit links between ${labels[0]} and ${labels[1]}`);
@@ -2664,7 +2684,27 @@ for (const width of [390, 1440]) {
       await expect(evidence).toContainText("across neighborhoods");
       expect(await evidence.locator("div a[data-open]").evaluateAll(links => links.map(link => link.getAttribute("data-open"))))
         .toEqual([al.id, bl.id]);
+      const selectedArticle = page.locator(".galaxy-selected-heading .galaxy-article");
+      await expect(selectedArticle).toBeFocused();
+      const captureGeometry = () => page.locator(".skip-link").evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, scrollX, scrollY,
+          focused: document.activeElement === element,
+          activePage: document.activeElement?.getAttribute("data-open"),
+          transform: getComputedStyle(element).transform };
+      });
+      const beforeCapture = await captureGeometry();
+      expect(beforeCapture.focused).toBe(false);
+      expect(beforeCapture.bottom).toBeLessThanOrEqual(0);
+      expect(beforeCapture.activePage).toBe(al.id);
+      await page.screenshot({ path: testInfo.outputPath(`galaxy-link-mutation-${width}-evidence-viewport.png`) });
       await page.screenshot({ path: testInfo.outputPath(`galaxy-link-mutation-${width}-evidence.png`), fullPage: true });
+      const afterCapture = await captureGeometry();
+      expect(afterCapture).toEqual(beforeCapture);
+      await expect(selectedArticle).toBeFocused();
+      const geometryPath = testInfo.outputPath(`galaxy-link-mutation-${width}-capture.json`);
+      await writeFile(geometryPath, JSON.stringify({ width, beforeCapture, afterCapture }, null, 2));
+      await testInfo.attach(`galaxy-link-mutation-${width}-capture`, { path: geometryPath, contentType: "application/json" });
       await page.getByRole("button", { name: "List view", exact: true }).click();
       await expect(page.locator(".galaxy-stage")).toBeHidden();
       await page.locator(".galaxy-selected-heading .galaxy-article").click();

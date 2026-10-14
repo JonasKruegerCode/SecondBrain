@@ -214,6 +214,12 @@ stay unchanged, and the evidence panel retains the actual source/target directio
 World positions and viewport fitting are recorded separately. Ordinary stars may
 reorder with their degree rank; this bounded check does not promise fixed positions
 for every star or topology-derived group. File attachments preserve both snapshots.
+The source fixture has three initially tied ordinary stars. Promoting the last
+one with the new link exercises their degree-ranked slot rotation while every
+other star, including the retained unique anchors, stays in place. This expected
+local reorder is distinguished from a global layout jump. Focused evidence views
+also pair viewport/full-page images with before/after Skip-link geometry, page
+scroll and actual article focus; captures must not change that state.
 These desktop/narrow cases are not arbitrary-size performance benchmarks.
 They inspect real request payloads, receipts and Git history, then remove only
 their owned UUID page using its current revision; no save response is fabricated.
