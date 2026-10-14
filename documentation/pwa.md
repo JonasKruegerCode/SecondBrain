@@ -110,6 +110,27 @@ adds observation overhead, so a passing traced run does not rule out an
 intermittent timing failure. Keep the original hidden-notice assertion; a retry
 pass alone is not a diagnosed or corrected lifecycle defect.
 
+For a specific intermittent first-install failure, use the isolated diagnostic
+profile, after installing the same backend/browser dependencies as acceptance:
+
+```sh
+"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit \
+  --webkit-first-install-diagnostic --repeat-each 20
+```
+
+It starts real disposable services and runs only the exact first-install case
+with fresh browser contexts, retaining the original assertion and event trace.
+Repeats are limited to 1–20; the record explicitly identifies
+`first-install-diagnostic`, the exact filter and repeat count. This is not the
+four-case worker/update gate or complete browser acceptance. It refuses mixed
+profiles and arbitrary filters; ordinary acceptance remains unchanged.
+
+In the browser workflow, enable the manual `pwa_first_install_diagnostic` input
+or temporarily label the PR `diagnose-pwa-first-install` before its next run.
+Remove that label after collecting the bounded evidence. The diagnostic is
+opt-in so unrelated commits do not repeatedly run it. Keep failed evidence and
+investigate worker identities/order before proposing a lifecycle correction.
+
 These checks are browser emulation, not a physical Android/iOS installation.
 Homescreen creation, standalone launch, OS icon rendering and a production HTTPS
 upgrade still require real-device/deployed verification before release signoff.

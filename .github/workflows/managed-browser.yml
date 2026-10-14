@@ -4,6 +4,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      pwa_first_install_diagnostic:
+        description: "Run bounded WebKit first-install diagnosis (20 cases; not full acceptance)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -55,6 +60,10 @@ jobs:
 
       - name: Exercise worker registration and protected updates in WebKit
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers'
+
+      - name: Diagnose intermittent WebKit first installation (opt-in)
+        if: inputs.pwa_first_install_diagnostic || contains(github.event.pull_request.labels.*.name, 'diagnose-pwa-first-install')
+        run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-first-install-diagnostic --repeat-each 20'
 
       # Only synthetic structural evidence and screenshots; never archive a vault.
       - name: Upload browser acceptance evidence

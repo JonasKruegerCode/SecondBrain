@@ -149,6 +149,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Separate WebKit worker/update slice with service workers enabled",
     )
     parser.add_argument(
+        "--webkit-first-install-diagnostic",
+        action="store_true",
+        help="Diagnose only WebKit first installation; 1–20 repeats, not full acceptance",
+    )
+    parser.add_argument(
         "--repeat-each",
         type=int,
         default=1,
@@ -168,6 +173,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         or args.browser_grep or args.repeat_each != 1
     ):
         parser.error("--webkit-workers requires unfiltered WebKit worker acceptance")
+    if args.webkit_first_install_diagnostic and (
+        args.browser_engine != "webkit" or args.first_start or args.webkit_workers
+        or args.browser_grep or args.repeat_each > 20
+    ):
+        parser.error("first-install diagnosis requires WebKit, its fixed case and 1–20 repeats")
 
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     artifact_dir = root / ".demo" / "acceptance" / run_id
@@ -224,7 +234,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "PWA preserves a dirty tab when another tab updates, then permits (save|discard) and reload)$"
         if args.webkit_workers else None
     )
-    if args.webkit_workers:
+    if args.webkit_first_install_diagnostic:
+        worker_filter = "^PWA metadata registers an online-only worker without private caches$"
+    if args.webkit_workers or args.webkit_first_install_diagnostic:
         suites = ["e2e/wiki.spec.ts"]
     phases = ("create", "restart") if args.first_start else ("demo",)
     browser_command = ["npm", "run", "test:browser", "--", *suites]
@@ -238,6 +250,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_name = "browser-diagnostic" if args.browser_engine == "chromium" else "browser-webkit"
         if args.webkit_workers:
             output_name = "browser-webkit-workers"
+        if args.webkit_first_install_diagnostic:
+            output_name = "browser-webkit-first-install-diagnostic"
         browser_command.extend(["--output", str(artifact_dir / output_name)])
     if args.first_start:
         command.append("--empty")
@@ -343,10 +357,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "duration_seconds": round((finished - started).total_seconds(), 3),
         "git_head": _git_head(root),
         "browser_engine": args.browser_engine,
-        "browser_profile": "worker-update" if args.webkit_workers else (
-            "reading-navigation" if args.browser_engine == "webkit" else "full"
+        "browser_profile": "first-install-diagnostic" if args.webkit_first_install_diagnostic else (
+            "worker-update" if args.webkit_workers else (
+                "reading-navigation" if args.browser_engine == "webkit" else "full"
+            )
         ),
-        "service_workers": "block" if args.browser_engine == "webkit" and not args.webkit_workers else "allow",
+        "service_workers": "block" if (
+            args.browser_engine == "webkit"
+            and not (args.webkit_workers or args.webkit_first_install_diagnostic)
+        ) else "allow",
         "suite": f"frontend/{suites[0]}",
         "suites": [f"frontend/{suite}" for suite in suites],
         "test_selection": {"grep": worker_filter or args.browser_grep, "repeat_each": args.repeat_each},

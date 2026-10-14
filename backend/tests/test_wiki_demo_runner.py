@@ -270,6 +270,113 @@ def test_worker_profile_rejects_wrong_engine_or_partial_selection(args: list[str
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize("extra", [
+    [],
+    ["--browser-engine", "chromium"],
+    ["--browser-engine", "webkit", "--first-start"],
+    ["--browser-engine", "webkit", "--webkit-workers"],
+    ["--browser-engine", "webkit", "--browser-grep", "PWA"],
+    ["--browser-engine", "webkit", "--repeat-each", "0"],
+    ["--browser-engine", "webkit", "--repeat-each", "21"],
+])
+def test_first_install_diagnostic_rejects_invalid_cli_before_startup(
+    extra: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    processes = MagicMock()
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    with pytest.raises(SystemExit) as error:
+        main(["--webkit-first-install-diagnostic", *extra])
+    assert error.value.code == 2
+    processes.Popen.assert_not_called()
+    processes.run.assert_not_called()
+    assert not (tmp_path / ".demo").exists()
+
+
+@pytest.mark.parametrize("repeat", [None, 20])
+@pytest.mark.parametrize("browser_exit", [0, 7])
+def test_first_install_diagnostic_command_evidence_and_cleanup(
+    repeat: int | None, browser_exit: int, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-key-must-not-reach-services")
+    supervisor = MagicMock(pid=4321)
+
+    def start(command: list[str], **kwargs: Any) -> Any:
+        vault = Path(command[command.index("--vault") + 1])
+        vault.mkdir()
+        (vault / "owned-fixture").touch()
+        state = Path(command[command.index("--process-state") + 1])
+        state.write_text("synthetic owned process record")
+        return supervisor
+
+    def run(command: list[str], **kwargs: Any) -> Any:
+        if command[0] == "git":
+            return MagicMock(returncode=0, stdout="synthetic-head")
+        return MagicMock(returncode=browser_exit)
+
+    processes = MagicMock()
+    processes.Popen.side_effect = start
+    processes.run.side_effect = run
+    processes.TimeoutExpired = subprocess.TimeoutExpired
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    readiness = MagicMock()
+    cleanup = MagicMock()
+    monkeypatch.setitem(namespace, "_wait_for_http", readiness)
+    monkeypatch.setitem(namespace, "_stop_process_group", cleanup)
+    args = ["--browser-engine", "webkit", "--webkit-first-install-diagnostic"]
+    if repeat is not None:
+        args.extend(["--repeat-each", str(repeat)])
+    assert main(args) == (0 if browser_exit == 0 else 1)
+
+    results = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
+    assert len(results) == 1
+    artifact_dir = results[0].parent
+    grep = "^PWA metadata registers an online-only worker without private caches$"
+    expected_command = [
+        "npm", "run", "test:browser", "--", "e2e/wiki.spec.ts", "--grep", grep,
+    ]
+    if repeat is not None:
+        expected_command.extend(["--repeat-each", str(repeat)])
+    expected_command.extend([
+        "--output", str(artifact_dir / "browser-webkit-first-install-diagnostic"),
+    ])
+    browser_calls = [call for call in processes.run.call_args_list if call.args[0][0] != "git"]
+    assert len(browser_calls) == 1
+    assert browser_calls[0].args[0] == expected_command
+    assert browser_calls[0].kwargs["cwd"] == tmp_path / "frontend"
+    assert browser_calls[0].kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == "webkit"
+    assert "OPENROUTER_API_KEY" not in browser_calls[0].kwargs["env"]
+    processes.Popen.assert_called_once()
+    assert "--empty" not in processes.Popen.call_args.args[0]
+    assert "OPENROUTER_API_KEY" not in processes.Popen.call_args.kwargs["env"]
+    assert readiness.call_count == 2
+    cleanup.assert_called_once_with(supervisor, artifact_dir / "processes-demo.json")
+
+    evidence = json.loads(results[0].read_text())
+    assert evidence["status"] == ("passed" if browser_exit == 0 else "failed")
+    assert evidence["browser_engine"] == "webkit"
+    assert evidence["browser_profile"] == "first-install-diagnostic"
+    assert evidence["service_workers"] == "allow"
+    assert evidence["suite"] == "frontend/e2e/wiki.spec.ts"
+    assert evidence["suites"] == ["frontend/e2e/wiki.spec.ts"]
+    assert evidence["test_selection"] == {"grep": grep, "repeat_each": repeat or 1}
+    assert evidence["browser_exit_code"] == browser_exit
+    assert evidence["service_restarts"] == 0
+    assert evidence["service_cleanup_ok"] is True
+    assert evidence["external_model_calls"] is False
+    assert evidence["fixture"] == "fictional-template"
+    assert evidence["vault_retained"] is (browser_exit != 0)
+    assert evidence["process_records_retained"] is (browser_exit != 0)
+    assert (artifact_dir / "vault" / "owned-fixture").exists() is (browser_exit != 0)
+    assert (artifact_dir / "processes-demo.json").exists() is (browser_exit != 0)
+
+
 def test_openrouter_acceptance_keeps_only_structural_evidence() -> None:
     values = openrouter_acceptance_runner()
     validate = cast(Callable[..., dict[str, Any]], values["_validate_turn"])
