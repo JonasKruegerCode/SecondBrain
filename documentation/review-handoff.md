@@ -91,7 +91,11 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 - A continuous fictional-atlas browser rehearsal follows Home -> article ->
   wikilink -> real search -> constellation/star/link evidence -> article ->
   Chat. With the demo's unconfigured provider it verifies the actual unavailable
-  response and local question reload/deletion, never a fabricated answer. This
+  response, retry, local question reload/deletion and conversation-specific unsent
+  drafts at narrow and wide viewports, never a fabricated answer. Drafts stay only
+  in the open Chat view; Retry sends submitted messages and preserves composer
+  text. Switching conversations restores their separate drafts, deletion removes
+  them, and Send clears only the submitted draft. This
   automated path is not the final real-model demo rehearsal.
 - Explicit navigation focuses the destination title for articles, Home, Search,
   Galaxy, Chat, link choices and route errors, so the next Tab continues within

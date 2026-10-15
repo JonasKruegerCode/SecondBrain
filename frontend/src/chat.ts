@@ -174,6 +174,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   // A restored in-tab snapshot must still merge its unsaved messages on recovery.
   const dirtyIds = new Set(tabDirtyIds);
   const deletedIds = new Map<string, number>();
+  // Unsent text belongs to its conversation while this Chat view stays open.
+  // Keep it out of saved transcripts and provider requests until Send.
+  const drafts = new Map<string, string>();
   let busy = false;
   let requestController: AbortController | undefined;
   let error = "";
@@ -181,7 +184,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   let contextNotice = "";
   let alive = true;
   reloadBlocker = () => !alive ? undefined : busy ? "reply"
-    : main.querySelector<HTMLTextAreaElement>("#chat-input")?.value ? "draft" : undefined;
+    : drafts.size ? "draft" : undefined;
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
   const persist = () => {
@@ -226,6 +229,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     conversations = [active, ...conversations.filter(item => item.id !== active.id)]
       .slice(0, MAX_CONVERSATIONS);
     conversations.forEach(item => { item.messages = boundedMessages(item.messages); });
+    for (const id of drafts.keys()) {
+      if (!conversations.some(item => item.id === id)) drafts.delete(id);
+    }
     storageUnavailable = !save(conversations, tombstones, dirtyIds);
     if (!storageUnavailable) {
       dirtyIds.clear();
@@ -239,7 +245,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     main.innerHTML = `<section class="chat-page" aria-labelledby="chat-title">
       <aside class="chat-history" aria-label="Saved conversations">
         <div class="chat-history-heading"><span>CONVERSATIONS</span><button type="button" data-action="new" ${busy ? "disabled" : ""}>New</button></div>
-        <div class="chat-history-list">${conversations.map(item => `<button type="button" data-conversation="${esc(item.id)}" class="${item.id === activeId ? "active" : ""}" ${busy ? "disabled" : ""}><span>${esc(item.title)}</span><small>${item.messages.length} messages</small></button>`).join("")}</div>
+        <div class="chat-history-list">${conversations.map(item => `<button type="button" data-conversation="${esc(item.id)}" class="${item.id === activeId ? "active" : ""}" ${busy ? "disabled" : ""}><span>${esc(item.title)}</span><small>${item.messages.length} message${item.messages.length === 1 ? "" : "s"}</small></button>`).join("")}</div>
         <button type="button" class="chat-delete" data-action="delete" ${conversation.messages.length && !busy ? "" : "disabled"}>Delete conversation</button>
       </aside>
       <div class="chat-workspace">
@@ -290,12 +296,19 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       render(false);
     };
     const form = main.querySelector<HTMLFormElement>(".chat-composer")!;
-    form.querySelector<HTMLTextAreaElement>("textarea")!.oninput = stateChanged;
+    const composer = form.querySelector<HTMLTextAreaElement>("textarea")!;
+    composer.value = drafts.get(activeId) || "";
+    composer.oninput = () => {
+      if (composer.value) drafts.set(activeId, composer.value);
+      else drafts.delete(activeId);
+      stateChanged();
+    };
     form.onsubmit = event => {
       event.preventDefault();
       const input = form.querySelector<HTMLTextAreaElement>("textarea")!;
       const content = input.value.trim();
       if (!content || busy) return;
+      drafts.delete(activeId);
       let item = current();
       const stored = readPersistent();
       if (stored.tombstones.some(deleted => deleted.id === item.id)) {

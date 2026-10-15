@@ -1665,6 +1665,8 @@ test("read-only chat keeps multi-turn context and conversations in this browser"
   await page.getByLabel("Message").fill("Where does the atlas begin?");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".chat-message.assistant")).toContainText("Lantern Bay");
+  await expect(page.getByLabel("Message")).toHaveValue("");
+  await expect(page.locator(".chat-history-list button.active small")).toHaveText("2 messages");
   await expect(page.getByRole("link", { name: /Lantern Bay field atlas/ })).toBeVisible();
 
   await page.getByLabel("Message").fill("What does that connect to?");

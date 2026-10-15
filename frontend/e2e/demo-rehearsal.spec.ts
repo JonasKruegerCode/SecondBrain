@@ -113,13 +113,19 @@ for (const width of [390, 1440]) {
   });
 }
 
-// A single rehearsal of the public fictional atlas against the managed API.
+// Rehearse the public fictional atlas against the managed API at both widths.
 // The demo deliberately has no model provider: its real 503 is the chat outcome.
-test("rehearse a connected atlas journey and preserve an unanswered question", async ({ page }, testInfo) => {
+for (const width of [390, 1440]) {
+test(`rehearse a connected atlas journey and preserve an unanswered question (${width})`, async ({ page }, testInfo) => {
   test.setTimeout(30_000);
+  await page.setViewportSize({ width, height: 900 });
   let chatCalls = 0;
+  const chatBodies: unknown[] = [];
   page.on("request", request => {
-    if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") chatCalls++;
+    if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") {
+      chatCalls++;
+      chatBodies.push(request.postDataJSON());
+    }
   });
 
   await page.goto("/?overview=1");
@@ -159,6 +165,7 @@ test("rehearse a connected atlas journey and preserve an unanswered question", a
   await expect(page).toHaveURL(/\/wiki\/archive-method$/);
 
   await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.locator(".chat-history-list button.active small")).toHaveText("0 messages");
   const question = "How does the archive method distinguish a source from an interpretation?";
   await page.getByLabel("Message", { exact: true }).fill(question);
   const chatResponse = page.waitForResponse(response =>
@@ -170,17 +177,50 @@ test("rehearse a connected atlas journey and preserve an unanswered question", a
   await expect(page.getByRole("alert")).toContainText("not configured");
   await expect(page.locator(".chat-message.user p")).toHaveText(question);
   await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+  await expect(page.locator(".chat-history-list button.active small")).toHaveText("1 message");
+  // A recovery action must neither discard nor send an unsent follow-up.
+  const draft = "Unsent follow-up: </textarea> & source\nKeep this second line.";
+  await page.getByLabel("Message", { exact: true }).fill(draft);
+  await page.locator(".chat-history-list button.active").click();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue(draft);
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
+  await page.getByLabel("Message", { exact: true }).fill("A separate unsent conversation draft.");
+  await page.locator(".chat-history-list button").filter({ hasText: question.slice(0, 54) }).click();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue(draft);
+  const retry = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/wiki/chat" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  expect((await retry).status()).toBe(503);
+  await expect(page.getByRole("alert")).toContainText("not configured");
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue(draft);
+  expect(chatBodies).toEqual([{ messages: [{ role: "user", content: question }] },
+    { messages: [{ role: "user", content: question }] }]);
+  await expect(page.locator(".chat-message.user p")).toHaveText(question);
+  await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1")))
+    .not.toContain("Unsent follow-up");
+  await page.locator(".chat-history-list button").filter({ hasText: "New conversation" }).click();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue("A separate unsent conversation draft.");
+  await page.locator(".chat-history-list button").filter({ hasText: question.slice(0, 54) }).click();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue(draft);
+  const retryTarget = (await page.getByRole("button", { name: "Retry", exact: true }).boundingBox())!;
+  expect(retryTarget.height).toBeGreaterThanOrEqual(44);
+  expect(retryTarget.width).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.screenshot({ path: testInfo.outputPath("rehearsal-provider-unconfigured.png"), fullPage: true });
-
+  // Unsent drafts are view-local; a deliberate reload restores submitted text only.
   await page.reload();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
   await expect(page.locator(".chat-message.user p")).toHaveText(question);
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-  expect(chatCalls).toBe(1);
+  expect(chatCalls).toBe(2);
   await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
   await expect(page.locator(".chat-message")).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
   await expect(page.locator(".chat-history-list")).not.toContainText(question.slice(0, 54));
   await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
-  expect(chatCalls).toBe(1);
+  expect(chatCalls).toBe(2);
 });
+}
