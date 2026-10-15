@@ -175,9 +175,23 @@ function markdown(s: string) {
   function clean(n: Node): Node {
     if (n.nodeType === 3) return document.createTextNode(n.textContent || "");
     const el = n as HTMLElement;
+    // GFM task markers carry content, but never become editable form controls.
+    // Rebuild only the inert checkbox shape emitted by Markdown; retain no
+    // source attributes such as handlers, names, values or form associations.
+    if (el.tagName === "INPUT" && el.getAttribute("type")?.toLowerCase() === "checkbox" && el.hasAttribute("disabled")) {
+      const marker = document.createElement("input");
+      marker.type = "checkbox";
+      marker.disabled = true;
+      marker.checked = el.hasAttribute("checked");
+      return marker;
+    }
     if (!allow.has(el.tagName))
       return document.createTextNode(el.textContent || "");
     const out = document.createElement(el.tagName.toLowerCase());
+    if (el.tagName === "OL") {
+      const start = el.getAttribute("start");
+      if (start !== null && /^-?\d+$/.test(start)) out.setAttribute("start", start);
+    }
     if (el.tagName === "A") {
       const href = el.getAttribute("href") || "";
       if (/^\/(wiki\/|resolve\?)/.test(href) || /^#/.test(href) || /^https?:\/\//.test(href)) {

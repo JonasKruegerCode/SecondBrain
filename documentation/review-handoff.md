@@ -81,6 +81,10 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- Article lists retain Markdown meaning: continued numbered lists keep their
+  starting number (including zero), and task markers keep checked/unchecked
+  state as disabled native checkboxes. Other form inputs remain stripped;
+  no task toggle writes to the wiki. Raw editor Markdown remains authoritative.
 - With forced contrast colors, the galaxy SVG uses the active system palette
   for labels, stars and links; current navigation and selected controls retain
   visible outlines. The normal wiki/space palettes remain unchanged. The real

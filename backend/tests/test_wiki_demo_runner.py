@@ -381,6 +381,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/view-focus.spec.ts", "e2e/demo-rehearsal.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/editor-retry.spec.ts",
         "e2e/resolve-identity.spec.ts",
+        "e2e/markdown-lists.spec.ts",
         "e2e/forced-colors.spec.ts",
     ]),
     ("webkit", "reading-navigation", "block", [
@@ -389,6 +390,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/article-focus.spec.ts", "e2e/view-focus.spec.ts",
         "e2e/demo-rehearsal.spec.ts", "e2e/article-galaxy.spec.ts", "e2e/editor-retry.spec.ts",
         "e2e/resolve-identity.spec.ts",
+        "e2e/markdown-lists.spec.ts",
     ]),
 ])
 def test_editor_retry_orchestration_contract_without_launching_a_browser(
