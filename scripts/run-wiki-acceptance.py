@@ -242,6 +242,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.browser_engine == "webkit":
         suites = [
             "e2e/skip-link.spec.ts",
+            "e2e/history.spec.ts",
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",

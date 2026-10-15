@@ -383,6 +383,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
     ]),
     ("webkit", "reading-navigation", "block", [
         "e2e/skip-link.spec.ts",
+        "e2e/history.spec.ts",
         "e2e/article-focus.spec.ts", "e2e/view-focus.spec.ts",
         "e2e/demo-rehearsal.spec.ts", "e2e/article-galaxy.spec.ts", "e2e/editor-retry.spec.ts",
     ]),

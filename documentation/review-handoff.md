@@ -227,6 +227,7 @@ normal and bounded-diagnostic results to assess the corrected cleanup order.
 The normal suite includes focused history checks against actual Git-backed REST
 responses: keyboard loading, pending-read deduplication, refreshed agent edits,
 transport failure/retry and late success/failure after article navigation.
+The history module is selected once in both Chromium and WebKit reading profiles.
 Four same-article cases also hold an actual Git history reply through editor
 entry, then release success or a scripted transport failure during editing or
 after a real UI save. They compare the current commit list with REST history,
