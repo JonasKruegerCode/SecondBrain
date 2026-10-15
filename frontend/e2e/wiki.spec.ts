@@ -358,10 +358,19 @@ function contrastRatio(foreground: string, background: string) {
 
 async function pwaUpdateProxy() {
   let release = 1;
+  let failWorker = false;
+  let failedWorkerRequests = 0;
   let saveGate: { reached: () => void; resume: Promise<void>; body: boolean } | undefined;
   const server = createServer(async (request, response) => {
     try {
       const path = request.url || "/";
+      if (path.startsWith("/service-worker.js") && failWorker) {
+        failWorker = false;
+        failedWorkerRequests++;
+        response.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+        response.end("Synthetic worker script temporarily unavailable.");
+        return;
+      }
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const upstream = await fetch(`http://127.0.0.1:5173${path}`, {
@@ -414,6 +423,8 @@ async function pwaUpdateProxy() {
   return {
     origin: `http://127.0.0.1:${address.port}`,
     bump: () => release++,
+    failNextWorkerUpdate: () => { failWorker = true; },
+    failedWorkerRequests: () => failedWorkerRequests,
     holdNextSave: (body = false) => {
       let reached!: () => void;
       let resume!: () => void;
@@ -1939,11 +1950,12 @@ test("PWA metadata registers an online-only worker without private caches", asyn
 
 for (const width of [390, 1440]) {
   test(`PWA background update failures remain recoverable (${width})`, async ({ page, context }, info) => {
+    const proxy = await pwaUpdateProxy();
     const pageErrors: string[] = [];
     page.on("pageerror", error => pageErrors.push(error.name));
     await page.setViewportSize({ width, height: 844 });
     try {
-      await page.goto("/?overview=1");
+      await page.goto(`${proxy.origin}/?overview=1`);
       await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
       await page.evaluate(async () => {
         const registration = await navigator.serviceWorker.ready;
@@ -1978,11 +1990,12 @@ for (const width of [390, 1440]) {
           document.dispatchEvent(new Event("visibilitychange"));
         }, stage);
       };
-      await context.setOffline(true);
-      await expect(page.locator('.pwa-notice[data-kind="offline"]')).toBeVisible();
-      await trigger("offline");
+      // A real HTTP 503 from the local server makes the native worker update
+      // reject deterministically; offline emulation alone did not establish it.
+      proxy.failNextWorkerUpdate();
+      await trigger("failed-fetch");
       await page.waitForFunction(() => (window as unknown as { pwaUpdateProbe: { outcomes: { stage: string; status: string }[] } })
-        .pwaUpdateProbe.outcomes.some(x => x.stage === "offline" && x.status === "rejected"));
+        .pwaUpdateProbe.outcomes.some(x => x.stage === "failed-fetch" && x.status === "rejected"));
       // Let native rejection notification pass a task boundary before checking
       // the app-owned promise, without awaiting or catching it in this test.
       await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
@@ -1992,9 +2005,12 @@ for (const width of [390, 1440]) {
         } }).pwaUpdateProbe;
         return { calls, outcomes, unhandled };
       });
-      console.info(`[pwa-update-offline] ${JSON.stringify({ width, ...offline, pageErrors, syntheticVisibility: true })}`);
+      expect(proxy.failedWorkerRequests()).toBe(1);
+      console.info(`[pwa-update-failure] ${JSON.stringify({ width, ...offline, pageErrors, syntheticVisibility: true, scriptedWorker503: 1 })}`);
       expect.soft(offline.unhandled, "Native background update failure must be handled").toEqual([]);
       expect.soft(pageErrors, "Native background update failure must not reach pageerror").toEqual([]);
+      await context.setOffline(true);
+      await expect(page.locator('.pwa-notice[data-kind="offline"]')).toBeVisible();
       await page.screenshot({ path: info.outputPath(`pwa-update-offline-${width}.png`) });
       await context.setOffline(false);
       await expect(page.locator('.pwa-notice[data-kind="offline"]')).toHaveCount(0);
@@ -2005,14 +2021,17 @@ for (const width of [390, 1440]) {
       await page.getByRole("textbox", { name: "Search pages", exact: true }).fill("night sky");
       await page.getByRole("textbox", { name: "Search pages", exact: true }).press("Enter");
       await expect(page.locator("#results")).toContainText("Night sky survey");
+      expect(await page.evaluate(() => (window as unknown as { pwaUpdateProbe: { unhandled: string[] } }).pwaUpdateProbe.unhandled)).toEqual(offline.unhandled);
+      expect(pageErrors.length).toBe(offline.unhandled.length);
       await page.screenshot({ path: info.outputPath(`pwa-update-recovered-${width}.png`) });
       console.info(`[pwa-update-recovered] ${JSON.stringify({ width, nativeUpdateFulfilled: true, realSearch: true })}`);
     } finally {
-      await context.setOffline(false);
+      await context.setOffline(false).catch(() => {});
       if (!page.isClosed()) {
-        await page.evaluate(() => (window as unknown as { pwaUpdateProbe?: { restore: () => void } }).pwaUpdateProbe?.restore());
+        await page.evaluate(() => (window as unknown as { pwaUpdateProbe?: { restore: () => void } }).pwaUpdateProbe?.restore()).catch(() => {});
         await page.close();
       }
+      await proxy.close();
       console.info(`[pwa-update-cleanup] ${JSON.stringify({ width, pageClosed: page.isClosed() })}`);
     }
   });
