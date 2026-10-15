@@ -188,6 +188,8 @@ function markdown(s: string) {
     if (!allow.has(el.tagName))
       return document.createTextNode(el.textContent || "");
     const out = document.createElement(el.tagName.toLowerCase());
+    // Some engines do not put scrollable code blocks in the native Tab order.
+    if (el.tagName === "PRE") out.tabIndex = 0;
     if (el.tagName === "OL") {
       const start = el.getAttribute("start");
       if (start !== null && /^-?\d+$/.test(start)) out.setAttribute("start", start);

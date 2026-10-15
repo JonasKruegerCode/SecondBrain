@@ -87,6 +87,10 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   no task toggle writes to the wiki. Raw editor Markdown remains authoritative.
   Long unbroken article titles wrap inside the reading surface instead of
   widening the document; the same narrow/desktop regression checks this.
+- Preformatted code has an explicit Tab stop and visible focus, so keyboard
+  readers can scroll long lines horizontally and continue to the next link.
+  The native regression also preserves literal script/wikilink syntax and
+  whitespace through reload/editor reads; it performs no wiki write.
 - With forced contrast colors, the galaxy SVG uses the active system palette
   for labels, stars and links; current navigation and selected controls retain
   visible outlines. The normal wiki/space palettes remain unchanged. The real

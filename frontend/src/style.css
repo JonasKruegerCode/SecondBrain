@@ -521,7 +521,8 @@ article h1 {
   overscroll-behavior-x: contain;
   border-radius: 4px;
 }
-.prose .table-scroll:focus-visible {
+.prose .table-scroll:focus-visible,
+.prose pre:focus-visible {
   outline: 2px solid #47877b;
   outline-offset: 3px;
 }
