@@ -91,6 +91,12 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   readers can scroll long lines horizontally and continue to the next link.
   The native regression also preserves literal script/wikilink syntax and
   whitespace through reload/editor reads; it performs no wiki write.
+- Article image acceptance loads a synthetic 2400-by-600 SVG through the real
+  server at narrow and wide viewports. It checks proportional containment,
+  lazy loading, alternative text, real missing-resource failure and unchanged
+  editor/reload Markdown. Rejected sources and source event/style/size
+  attributes stay inert. This is same-origin browser evidence, not an external
+  image-host, production proxy or screen-reader acceptance.
 - With forced contrast colors, the galaxy SVG uses the active system palette
   for labels, stars and links; current navigation and selected controls retain
   visible outlines. The normal wiki/space palettes remain unchanged. The real
