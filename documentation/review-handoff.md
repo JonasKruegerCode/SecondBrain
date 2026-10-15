@@ -108,6 +108,11 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 - Search normalizes submitted queries while retaining the current URL fragment;
   direct fragment destinations, reload and history remain usable. Later form
   submissions keep their input focus, including a new or empty query.
+  A stable polite status region reports loading, result count, no matches and
+  retryable errors for the submitted query, independently of the next input
+  draft. Older replies cannot replace that status. Result cards stay outside
+  the live region; focus is not moved to announce a response. Browser DOM/ARIA
+  checks do not substitute for a physical screen-reader session.
 - Reopening local Git history reads current commits, including newer agent saves.
   Reopening during a pending read shares that request; late history replies after
   leaving the article cannot replace the next article's history.

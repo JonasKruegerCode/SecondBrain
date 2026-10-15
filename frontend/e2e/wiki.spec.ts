@@ -734,6 +734,8 @@ for (const older of ["failure", "success"] as const) {
       await page.waitForFunction(count => (window as any).__settledSearchBodies === count, older === "success" ? 3 : 2);
       await expect(page.locator("#results .card h3")).toHaveText(older === "success" ? "Updated search fixture" : "Current search fixture");
       await expect(page.locator("#results .error")).toHaveCount(0);
+      await expect(page.locator("#search-status")).toHaveText(`1 result for “${older === "success" ? firstTerm : secondTerm}”.`);
+      await expect(page.locator("#results")).toHaveAttribute("aria-busy", "false");
       await expect(page).toHaveURL(new RegExp(`/search\\?q=${older === "success" ? firstTerm : secondTerm}$`));
       if (older === "failure") {
         let unavailable = true;

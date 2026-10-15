@@ -706,6 +706,95 @@ test("resolved links retain header focus chosen during the real resolution read"
   }
 });
 
+for (const width of [390, 1440]) {
+  test(`search reports submitted outcomes without taking draft focus (${width})`, async ({ page, request }, info) => {
+    const term = `status${randomUUID().replace(/-/g, "")}`;
+    const missing = `absent${randomUUID().replace(/-/g, "")}`;
+    const fixtures: { id: string; revision: string }[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let received!: () => void;
+    const held = new Promise<void>(resolve => { received = resolve; });
+    const pattern = `**/api/wiki/search?q=${term}`;
+    await page.setViewportSize({ width, height: 844 });
+    try {
+      for (const title of ["Harbor observations", "Garden observations"])
+        fixtures.push(await create(request, `# ${title}\n\n${term}`));
+      await page.route(pattern, async route => {
+        const response = await route.fetch(); // Hold the actual indexed search.
+        expect((await response.json()).results).toHaveLength(2);
+        received();
+        await gate;
+        await route.fulfill({ response });
+      }, { times: 1 });
+      await page.goto("/search");
+      const input = page.getByRole("textbox", { name: "Search pages" });
+      const status = page.locator("#search-status");
+      const results = page.locator("#results");
+      await expect(status).toHaveAttribute("role", "status");
+      await expect(status).toHaveAttribute("aria-live", "polite");
+      await expect(status).toHaveAttribute("aria-atomic", "true");
+      await expect(status).toBeEmpty();
+      await input.fill(term);
+      await page.keyboard.press("Enter");
+      await held;
+      await expect(status).toHaveText(`Searching for “${term}”…`);
+      await expect(results).toHaveAttribute("aria-busy", "true");
+      await input.fill("Unsubmitted garden query");
+      await expect(input).toBeFocused();
+      // Its identity survives every update; result cards are outside the live node.
+      await status.evaluate(node => { (window as any).__searchStatus = node; });
+      release();
+      await expect(status).toHaveText(`2 results for “${term}”.`);
+      await expect(results).toHaveAttribute("aria-busy", "false");
+      await expect(input).toBeFocused();
+      await expect(input).toHaveValue("Unsubmitted garden query");
+      await expect(page).toHaveURL(new RegExp(`/search\\?q=${term}$`));
+      await expect(results.locator(".card")).toHaveCount(2);
+      await expect(status.locator("a")).toHaveCount(0);
+      expect(await status.evaluate(node => node === (window as any).__searchStatus)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`search-status-results-${width}.png`) });
+
+      await input.fill(missing);
+      await page.keyboard.press("Enter");
+      await expect(status).toHaveText(`No pages found for “${missing}”. Try another word or phrase.`);
+      await expect(results.locator(".card")).toHaveCount(0);
+      await expect(results).toHaveAttribute("aria-busy", "false");
+      await expect(input).toBeFocused();
+
+      await page.route(pattern, route => route.fulfill({ status: 503,
+        json: { message: "Synthetic search unavailable." },
+      }), { times: 1 }); // Explicit UI failure injection, not a real outage.
+      await input.fill(term);
+      await page.keyboard.press("Enter");
+      await expect(status).toHaveText(`Search failed for “${term}”. Synthetic search unavailable. Submit your search to try again.`);
+      await expect(results).toHaveAttribute("aria-busy", "false");
+      await expect(input).toBeFocused();
+      await page.screenshot({ path: info.outputPath(`search-status-error-${width}.png`) });
+      await page.keyboard.press("Enter");
+      await expect(status).toHaveText(`2 results for “${term}”.`);
+      await expect(results).toHaveAttribute("aria-busy", "false");
+      await expect(input).toBeFocused();
+      expect(await status.evaluate(node => node === (window as any).__searchStatus)).toBe(true);
+      const result = results.getByRole("link", { name: /Open Garden observations/ });
+      await result.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator("article > h1")).toHaveText("Garden observations");
+      await expect(page.locator("article > h1")).toBeFocused();
+      await expect(status).toHaveCount(0);
+      console.log(`[search-status] ${JSON.stringify({ width, mountedStatus: true, submittedCount: 2,
+        empty: true, scriptedError: true, realRetry: true, draftFocusPreserved: true })}`);
+    } finally {
+      release();
+      await page.unroute(pattern);
+      for (const fixture of fixtures)
+        expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+          base_revision: fixture.revision, request_id: randomUUID(),
+        }})).ok()).toBeTruthy();
+    }
+  });
+}
+
 test("direct views retain the skip-link and cross-route main fragments take precedence", async ({ page, request }) => {
   for (const path of ["/?overview=1", "/search", "/galaxy", "/chat"]) {
     await page.goto(path);

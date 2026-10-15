@@ -506,8 +506,11 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
       return;
     }
     if (location.pathname === "/search") {
-      main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW YOUR CURIOSITY</div><h1>Find a thought.</h1><p>Search your pages, pick up a thread, and keep going.</p></section><form><span>⌕</span><input aria-label="Search pages" placeholder="Search your knowledge…" value="${esc(new URLSearchParams(location.search).get("q") || "")}"><button class="primary">Search →</button></form><div id="results"><p class="quiet">A name, an idea, a phrase. Start anywhere.</p></div>`;
+      main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW YOUR CURIOSITY</div><h1>Find a thought.</h1><p>Search your pages, pick up a thread, and keep going.</p></section><form><span>⌕</span><input aria-label="Search pages" placeholder="Search your knowledge…" value="${esc(new URLSearchParams(location.search).get("q") || "")}"><button class="primary">Search →</button></form><p id="search-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><div id="results" aria-busy="false"><p class="quiet">A name, an idea, a phrase. Start anywhere.</p></div>`;
       const input = main.querySelector("input")!;
+      // Keep one mounted live region outside the cards: announce the submitted
+      // query's outcome without moving focus or reading every result aloud.
+      const searchStatus = main.querySelector("#search-status")!;
       let searchGeneration = 0;
       const search = async () => {
         const searchRun = ++searchGeneration;
@@ -518,14 +521,23 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
         // Use the current fragment, never a route-start value or a late reply.
         replaceAppUrl((q ? "/search?q=" + encodeURIComponent(q) : "/search") + location.hash);
         const results = main.querySelector("#results")!;
+        const scope = q ? `for “${q}”` : "in your wiki";
+        results.setAttribute("aria-busy", "true");
+        searchStatus.textContent = `Searching ${scope}…`;
         results.innerHTML = '<p class="quiet">Searching…</p>';
         try {
           const data = await api("/search?q=" + encodeURIComponent(q));
           if (!current()) return;
           results.innerHTML = `<div class="section-heading"><h2>${data.results.length} ${data.results.length === 1 ? "result" : "results"}</h2></div><div class="grid">${data.results.length ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
+          results.setAttribute("aria-busy", "false");
+          searchStatus.textContent = data.results.length
+            ? `${data.results.length} ${data.results.length === 1 ? "result" : "results"} ${scope}.`
+            : `No pages found ${scope}. Try another word or phrase.`;
         } catch (e) {
           if (!current()) return;
           results.innerHTML = `<p class="error">${esc((e as Error).message)}</p>`;
+          results.setAttribute("aria-busy", "false");
+          searchStatus.textContent = `Search failed ${scope}. ${(e as Error).message} Submit your search to try again.`;
         } finally {
           // Search results determine document height. Restore only once the
           // actual initial payload has rendered, never against the loading view.
