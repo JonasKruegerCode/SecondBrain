@@ -254,6 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     worker_filter = (
         "(PWA metadata registers an online-only worker without private caches|"
         "PWA offers and applies a waiting worker update|"
+        "PWA background update failures remain recoverable [(](390|1440)[)]|"
         "PWA preserves a dirty tab when another tab updates, "
         "then permits (save|discard) and reload)$"
         if args.webkit_workers else None

@@ -1937,6 +1937,87 @@ test("PWA metadata registers an online-only worker without private caches", asyn
   await expect(page.locator(".pwa-notice")).toBeHidden();
 });
 
+for (const width of [390, 1440]) {
+  test(`PWA background update failures remain recoverable (${width})`, async ({ page, context }, info) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.name));
+    await page.setViewportSize({ width, height: 844 });
+    try {
+      await page.goto("/?overview=1");
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        const nativeUpdate = ServiceWorkerRegistration.prototype.update;
+        const probe = { armed: "", calls: [] as string[],
+          outcomes: [] as { stage: string; status: string; name?: string }[], unhandled: [] as string[],
+          restore: () => { ServiceWorkerRegistration.prototype.update = nativeUpdate; } };
+        (window as unknown as { pwaUpdateProbe: typeof probe }).pwaUpdateProbe = probe;
+        window.addEventListener("unhandledrejection", event => probe.unhandled.push(event.reason?.name || typeof event.reason));
+        ServiceWorkerRegistration.prototype.update = function () {
+          if (!probe.armed || this.scope !== registration.scope) return nativeUpdate.call(this);
+          const stage = probe.armed;
+          probe.armed = "";
+          probe.calls.push(stage);
+          // Observe the native operation and return its forwarding promise to
+          // the app. A detached rethrowing branch would invent an extra error.
+          return nativeUpdate.call(this).then(value => {
+            probe.outcomes.push({ stage, status: "fulfilled" });
+            return value;
+          }, reason => {
+            probe.outcomes.push({ stage, status: "rejected", name: reason?.name || typeof reason });
+            throw reason;
+          });
+        };
+      });
+      const trigger = async (stage: string) => {
+        expect(await page.evaluate(() => document.visibilityState)).toBe("visible");
+        await page.evaluate(stage => {
+          const probe = (window as unknown as { pwaUpdateProbe: { armed: string } }).pwaUpdateProbe;
+          probe.armed = stage;
+          // Synthetic visibility event; actual browser registration.update().
+          document.dispatchEvent(new Event("visibilitychange"));
+        }, stage);
+      };
+      await context.setOffline(true);
+      await expect(page.locator('.pwa-notice[data-kind="offline"]')).toBeVisible();
+      await trigger("offline");
+      await page.waitForFunction(() => (window as unknown as { pwaUpdateProbe: { outcomes: { stage: string; status: string }[] } })
+        .pwaUpdateProbe.outcomes.some(x => x.stage === "offline" && x.status === "rejected"));
+      // Let native rejection notification pass a task boundary before checking
+      // the app-owned promise, without awaiting or catching it in this test.
+      await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 100)));
+      const offline = await page.evaluate(() => {
+        const { calls, outcomes, unhandled } = (window as unknown as { pwaUpdateProbe: {
+          calls: string[]; outcomes: { stage: string; status: string; name?: string }[]; unhandled: string[];
+        } }).pwaUpdateProbe;
+        return { calls, outcomes, unhandled };
+      });
+      console.info(`[pwa-update-offline] ${JSON.stringify({ width, ...offline, pageErrors, syntheticVisibility: true })}`);
+      expect.soft(offline.unhandled, "Native background update failure must be handled").toEqual([]);
+      expect.soft(pageErrors, "Native background update failure must not reach pageerror").toEqual([]);
+      await page.screenshot({ path: info.outputPath(`pwa-update-offline-${width}.png`) });
+      await context.setOffline(false);
+      await expect(page.locator('.pwa-notice[data-kind="offline"]')).toHaveCount(0);
+      await trigger("online");
+      await page.waitForFunction(() => (window as unknown as { pwaUpdateProbe: { outcomes: { stage: string; status: string }[] } })
+        .pwaUpdateProbe.outcomes.some(x => x.stage === "online" && x.status === "fulfilled"));
+      await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true }).click();
+      await page.getByRole("textbox", { name: "Search pages", exact: true }).fill("night sky");
+      await page.getByRole("textbox", { name: "Search pages", exact: true }).press("Enter");
+      await expect(page.locator("#results")).toContainText("Night sky survey");
+      await page.screenshot({ path: info.outputPath(`pwa-update-recovered-${width}.png`) });
+      console.info(`[pwa-update-recovered] ${JSON.stringify({ width, nativeUpdateFulfilled: true, realSearch: true })}`);
+    } finally {
+      await context.setOffline(false);
+      if (!page.isClosed()) {
+        await page.evaluate(() => (window as unknown as { pwaUpdateProbe?: { restore: () => void } }).pwaUpdateProbe?.restore());
+        await page.close();
+      }
+      console.info(`[pwa-update-cleanup] ${JSON.stringify({ width, pageClosed: page.isClosed() })}`);
+    }
+  });
+}
+
 test("PWA offers and applies a waiting worker update", async ({ page, context }, info) => {
   const proxy = await pwaUpdateProxy();
   try {
