@@ -188,8 +188,10 @@ viewport/browser, provider enabled or unavailable, and any failed step:
 1. Start the documented demo, open Home, follow **Mira Quill** to the archive
    method, and use its field-notebook link. The route should read naturally,
    with clear introductions and a useful path back to Home.
-   On Mira Quill, choose **Set as start page** and confirm that **Home** now
-   opens that article. Use the page overview to return to the atlas when needed.
+   On Mira Quill, choose **Set as start page**, then open
+   <http://127.0.0.1:5173/> in the same browser profile and confirm that it opens
+   that article. The **Home** navigation link and **All pages** intentionally
+   open the overview; use it to return to the atlas when needed.
    On a longer article, follow an in-text link and use browser Back/Forward:
    the reading point should return for that visit, including after reloading the
    destination and then using Back/Forward. Fragment links still take precedence;
@@ -209,8 +211,9 @@ viewport/browser, provider enabled or unavailable, and any failed step:
    record the unavailable state and leave real-model acceptance open.
 5. Reload the conversation, confirm its locally retained turns, then delete it
    and verify its removal. Stop and restart the demo; reopen the edited article
-   and confirm that Home still opens Mira Quill. Demo edits persist, while conversation deletion remains
-   a browser-local action.
+   and confirm that opening <http://127.0.0.1:5173/> in the same browser profile
+   still opens Mira Quill. Demo edits persist in the vault; the saved start-page
+   choice and conversation deletion remain browser-local actions.
 
 Use the separate real-provider gate below for structural tool/read-only checks.
 Human answer inspection and physical Android/iOS installation still need their
