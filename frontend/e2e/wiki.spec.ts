@@ -2355,6 +2355,7 @@ for (const finish of ["clear", "send", "stop"] as const) {
     let releaseReply!: () => void;
     let reachedReply!: () => void;
     let deliveredReply!: () => void;
+    let draftConversation: string | null = null;
     const pendingReply = new Promise<void>(resolve => { releaseReply = resolve; });
     const replyArrived = new Promise<void>(resolve => { reachedReply = resolve; });
     const replyDelivered = new Promise<void>(resolve => { deliveredReply = resolve; });
@@ -2377,7 +2378,11 @@ for (const finish of ["clear", "send", "stop"] as const) {
       if (finish === "clear") {
         await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
         await input.fill(question);
+        draftConversation = await page.locator(".chat-history-list button.active").getAttribute("data-conversation");
+        await page.getByRole("button", { name: "New", exact: true }).click();
+        await expect(input).toHaveValue("");
       }
+      // An empty active composer must not hide another conversation's unsent draft.
       await expect(notice).toContainText("Send or clear your message");
       await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
       await page.evaluate(() => {
@@ -2401,7 +2406,7 @@ for (const finish of ["clear", "send", "stop"] as const) {
         other.getByRole("button", { name: "Update now" }).click(),
       ]);
       await page.waitForFunction(() => (window as any).__pwaChatControllerChanges === 1);
-      if (finish === "clear") await expect(input).toHaveValue(question);
+      if (finish === "clear") await expect(input).toHaveValue("");
       else {
         await expect(page.locator(".chat-message.user")).toContainText(question);
         await expect(page.locator(".chat-thinking")).toBeVisible();
@@ -2425,6 +2430,9 @@ for (const finish of ["clear", "send", "stop"] as const) {
         expect(stored).toContain(question);
         expect(stored).not.toContain(answer);
       } else {
+        await page.locator(`[data-conversation="${draftConversation}"]`).click();
+        await expect(input).toHaveValue(question);
+        await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
         await input.fill("");
       }
       await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
