@@ -886,6 +886,75 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [390, 1440]) {
+  test(`article reload retains a newer history choice (${width})`, async ({ page, request }, info) => {
+    const fixture = await create(request, "# History during reload\n\nAn invented reading destination.");
+    let release!: () => void, received!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const held = new Promise<void>(resolve => { received = resolve; });
+    try {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/wiki/${fixture.id}`);
+      const backlinks = page.locator(".page-backlinks");
+      await backlinks.locator("summary").click();
+      const refresh = backlinks.getByRole("button", { name: "Refresh links", exact: true });
+      await expect(refresh).toBeVisible();
+      const update = await request.post(`/api/wiki/pages/${fixture.id}`, { data: {
+        markdown: "# History during reload\n\nA newer invented reading destination.",
+        base_revision: fixture.revision, request_id: randomUUID(),
+      }});
+      expect(update.ok()).toBe(true);
+      const expected = await request.get(`/api/wiki/pages/${fixture.id}/history`);
+      expect(expected.ok()).toBe(true);
+      const entries: { commit: string }[] = (await expected.json()).history;
+      expect(entries.length).toBe(2);
+      await refresh.focus();
+      await page.keyboard.press("Enter");
+      const reload = backlinks.getByRole("button", { name: "Reload article", exact: true });
+      await expect(reload).toBeVisible();
+      await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true);
+        received();
+        await gate;
+        await route.fulfill({ response });
+      }, { times: 1 });
+      const visit = await page.evaluate(() => ({ url: location.href, length: history.length, entry: history.state }));
+      await reload.focus();
+      await page.keyboard.press("Enter");
+      await held;
+      const historyPanel = page.locator(".page-history");
+      const summary = historyPanel.locator("summary");
+      await summary.focus();
+      await page.keyboard.press("Enter");
+      await expect(summary).toBeFocused();
+      await expect(historyPanel).toHaveJSProperty("open", true);
+      await expect(historyPanel.locator(".history-list li")).toHaveCount(entries.length);
+      release();
+      await expect(page.locator(".prose")).toContainText("A newer invented reading destination.");
+      const proof = await summary.evaluate(node => ({ focused: node === document.activeElement,
+        open: (node.parentElement as HTMLDetailsElement).open, bodyFocused: document.activeElement === document.body }));
+      console.log(`[reload-history-focus] ${JSON.stringify({ width, ...proof, actualReload: true })}`);
+      expect.soft(proof.focused, "Reload must retain the newer history summary focus").toBe(true);
+      expect.soft(proof.open, "Reload must retain the chosen open history").toBe(true);
+      expect.soft(proof.bodyFocused, "Reload must not strand focus on body").toBe(false);
+      expect(await page.evaluate(() => ({ url: location.href, length: history.length, entry: history.state }))).toEqual(visit);
+      if (proof.open) {
+        await expect(historyPanel.locator(".history-list li")).toHaveCount(entries.length);
+        for (const entry of entries)
+          await expect(historyPanel.locator(`code[title="${entry.commit}"]`)).toHaveCount(1);
+      }
+      await page.screenshot({ path: info.outputPath(`reload-history-focus-${width}.png`) });
+      await page.close();
+    } finally {
+      release();
+      await deleteReadingPages(request, [fixture.id]);
+      expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
+      console.log(`[reload-history-cleanup] ${JSON.stringify({ width, deleted: true, pageClosed: page.isClosed() })}`);
+    }
+  });
+}
+
 test("direct views retain the skip-link and cross-route main fragments take precedence", async ({ page, request }) => {
   for (const path of ["/?overview=1", "/search", "/galaxy", "/chat"]) {
     await page.goto(path);
