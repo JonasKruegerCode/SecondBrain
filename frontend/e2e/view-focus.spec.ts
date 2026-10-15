@@ -798,6 +798,94 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [390, 1440]) {
+  test(`backlink replies respect newer header focus (${width})`, async ({ page, request }, info) => {
+    const fixture = await create(request, "# Backlink focus observation\n\nAn invented reading destination.");
+    const releases: (() => void)[] = [];
+    const heldRead = async (pattern: string, fail = false) => {
+      let release!: () => void, received!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const held = new Promise<void>(resolve => { received = resolve; });
+      releases.push(release);
+      await page.route(pattern, async route => {
+        const response = await route.fetch();
+        expect(response.ok()).toBe(true); // Actual service snapshot, even for injected failure.
+        received();
+        await gate;
+        if (fail) await route.fulfill({ status: 503, json: { message: "Synthetic backlink read unavailable." } });
+        else await route.fulfill({ response });
+      }, { times: 1 });
+      return { held, release };
+    };
+    try {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/wiki/${fixture.id}`);
+      const panel = page.locator(".page-backlinks");
+      await panel.locator("summary").click();
+      const refresh = panel.getByRole("button", { name: "Refresh links", exact: true });
+      await expect(refresh).toBeVisible();
+      const header = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
+      const visit = await page.evaluate(() => ({ url: location.href, length: history.length, entry: history.state }));
+      const proof: { phase: string; headerFocused: boolean }[] = [];
+      const preservesHeader = async (phase: string) => {
+        const headerFocused = await header.evaluate(node => node === document.activeElement);
+        proof.push({ phase, headerFocused });
+        expect.soft(headerFocused, `${phase} must retain deliberate header focus`).toBe(true);
+        expect(await page.evaluate(() => ({ url: location.href, length: history.length, entry: history.state }))).toEqual(visit);
+      };
+      for (const phase of ["refresh", "read-error", "revision-mismatch"] as const) {
+        if (phase === "revision-mismatch") {
+          const update = await request.post(`/api/wiki/pages/${fixture.id}`, { data: {
+            markdown: "# Backlink focus observation\n\nA newer invented reading destination.",
+            base_revision: fixture.revision, request_id: randomUUID(),
+          }});
+          expect(update.ok()).toBe(true);
+        }
+        const hold = await heldRead(`**/api/wiki/pages/${fixture.id}/backlinks`, phase === "read-error");
+        await refresh.focus();
+        await page.keyboard.press("Enter");
+        await hold.held;
+        await header.focus();
+        await expect(header).toBeFocused();
+        hold.release();
+        await expect(panel).toContainText(phase === "refresh" ? "No other pages link here yet." :
+          phase === "read-error" ? "Couldn’t load incoming links." : "This article has changed.");
+        await preservesHeader(phase);
+        if (phase === "refresh") await page.screenshot({ path: info.outputPath(`backlink-refresh-focus-${width}.png`) });
+        if (phase === "read-error") {
+          await panel.getByRole("button", { name: "Try again", exact: true }).focus();
+          await page.keyboard.press("Enter");
+          await expect(refresh).toBeVisible();
+          await expect(refresh).toBeFocused(); // Uninterrupted retry still restores its control.
+        }
+      }
+      const reload = panel.getByRole("button", { name: "Reload article", exact: true });
+      for (const fail of [true, false]) {
+        const hold = await heldRead(`**/api/wiki/pages/${fixture.id}`, fail);
+        await reload.focus();
+        await page.keyboard.press("Enter");
+        await hold.held;
+        await header.focus();
+        await expect(header).toBeFocused();
+        hold.release();
+        if (fail) {
+          await expect(panel).toContainText("Couldn’t reload this article.");
+          await expect(reload).toBeEnabled();
+        } else await expect(page.locator(".prose")).toContainText("A newer invented reading destination.");
+        await preservesHeader(fail ? "reload-error" : "reload-success");
+      }
+      await page.screenshot({ path: info.outputPath(`backlink-reload-focus-${width}.png`) });
+      console.log(`[backlink-focus] ${JSON.stringify({ width, proof, scriptedFailures: 2, actualReload: true })}`);
+      await page.close();
+    } finally {
+      for (const release of releases) release();
+      await deleteReadingPages(request, [fixture.id]);
+      expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
+      console.log(`[backlink-focus-cleanup] ${JSON.stringify({ width, deleted: true, pageClosed: page.isClosed() })}`);
+    }
+  });
+}
+
 test("direct views retain the skip-link and cross-route main fragments take precedence", async ({ page, request }) => {
   for (const path of ["/?overview=1", "/search", "/galaxy", "/chat"]) {
     await page.goto(path);
