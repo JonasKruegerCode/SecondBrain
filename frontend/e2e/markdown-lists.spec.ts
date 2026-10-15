@@ -7,8 +7,9 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     const id = `markdown-lists-${randomUUID()}`;
     const endpoint = `/api/wiki/pages/${encodeURIComponent(id)}`;
+    const title = `Synthetic Markdown lists ${"UnbrokenIdentifier".repeat(10)}`;
     const markdown = [
-      "# Synthetic Markdown lists", "",
+      `# ${title}`, "",
       "- [x] Synthetic completed task", "- [ ] Synthetic pending task", "",
       "## Continued steps", "", "4. Synthetic fourth step", "5. Synthetic fifth step", "",
       "## Zero-based steps", "", "0. Synthetic zero step", "1. Synthetic next step", "",
@@ -28,6 +29,7 @@ for (const width of [1440, 390]) {
       const assertReading = async () => {
         const prose = page.locator(".prose");
         await expect(prose).toBeVisible();
+        await expect(page.locator("article > h1")).toHaveText(title);
         const completed = prose.locator("li").filter({ hasText: "Synthetic completed task" }).getByRole("checkbox");
         const pending = prose.locator("li").filter({ hasText: "Synthetic pending task" }).getByRole("checkbox");
         await expect(completed).toBeChecked();
