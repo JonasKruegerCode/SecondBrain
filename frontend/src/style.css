@@ -727,3 +727,7 @@ textarea {
 .backlinks-content a { display: inline-block; min-height: 44px; padding: 12px 0; color: #285f55; overflow-wrap: anywhere; }
 .backlinks-content small { display: block; color: #536d68; }
 .backlinks-context { color: #536d68; font-size: 11px; }
+
+.delivery-status { margin: 0 0 24px; }
+.delivery-status button { min-height: 44px; font-size: 12px; padding: 10px 12px; }
+.delivery-status .delivery-notice { margin-bottom: 4px; }

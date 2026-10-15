@@ -606,7 +606,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
 function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   if (!page) return;
   const main = app.querySelector("main")!;
-  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${noticeError ? "error" : ""}" role="status">${esc(notice)}</p><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${noticeError ? "error" : ""}" role="status">${esc(notice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<div class="delivery-status"><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p><button id="check-delivery" class="subtle" type="button">Check sync status</button></div><details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
   if (!editing) {
     const connections = document.createElement("a");
     connections.className = "article-connections";
@@ -685,6 +685,19 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
       if (panel.open && !loaded) void load();
     });
   }
+  const checkDelivery = main.querySelector<HTMLButtonElement>("#check-delivery")!;
+  checkDelivery.addEventListener("click", async () => {
+    const run = generation, token = ++deliveryGeneration;
+    const restoreFocus = document.activeElement === checkDelivery;
+    checkDelivery.disabled = true;
+    checkDelivery.textContent = "Checking…";
+    await refreshDelivery(run, token);
+    if (checkDelivery.isConnected && run === generation && token === deliveryGeneration) {
+      checkDelivery.disabled = false;
+      checkDelivery.textContent = "Check sync status";
+      if (restoreFocus && document.activeElement === document.body) checkDelivery.focus({ preventScroll: true });
+    }
+  });
   const historyPanel = main.querySelector<HTMLDetailsElement>(".page-history")!;
   const historyPageId = page.id;
   let historyLoading = false;

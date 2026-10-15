@@ -229,6 +229,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else [
             "e2e/wiki.spec.ts",
             "e2e/history.spec.ts",
+            "e2e/delivery-recovery.spec.ts",
             "e2e/skip-link.spec.ts",
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
@@ -243,6 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         suites = [
             "e2e/skip-link.spec.ts",
             "e2e/history.spec.ts",
+            "e2e/delivery-recovery.spec.ts",
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
             "e2e/demo-rehearsal.spec.ts",

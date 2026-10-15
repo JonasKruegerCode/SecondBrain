@@ -240,6 +240,16 @@ must leave its revision, commit list, focus and visit intact. Paired viewport an
 full-page images distinguish offscreen skip-link geometry from capture effects.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
+The delivery recovery suite owns a separate loopback API, forwarding proxy,
+temporary vault and local bare Git target. It saves real Markdown while its Git
+target is renamed out of reach, runs actual delivery to observe an error, then
+restores the target and runs delivery again without another content commit.
+The article's read-only **Check sync status** action exposes the recovered cached
+acknowledgement. Both browser profiles exercise desktop and narrow paths; local
+reads, history, lexical search and explicit links remain available throughout.
+The fixture disables inherited hosted providers and uses no fabricated status
+responses. It is not a hosted Git, SSH, index-provider or production acceptance.
+
 The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
 profile and the WebKit reading/navigation profile. Its six timeout cases withhold an
 actual successful save response and advance the client clock: unchanged retry,
