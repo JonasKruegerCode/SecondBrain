@@ -9,6 +9,7 @@ async function create(request: APIRequestContext, title: string, owned: Owned[])
   expect(response.ok()).toBe(true);
   const item = { id, revision: (await response.json()).revision as string }; owned.push(item); return item;
 }
+
 async function revise(request: APIRequestContext, item: Owned, title: string) {
   const response = await request.post(`/api/wiki/pages/${item.id}`, { data: { markdown: `# ${title}\nSecond synthetic revision.`, base_revision: item.revision, request_id: randomUUID() } });
   expect(response.ok()).toBe(true); item.revision = (await response.json()).revision;
@@ -220,6 +221,91 @@ for (const outcome of ["real success", "scripted transport failure"] as const) {
         gate.resolve();
         // A save may commit before a later assertion fails. Clean only this test's
         // owned page using its actual current revision, never a guessed receipt.
+        for (const item of owned) {
+          const response = await request.get(`/api/wiki/pages/${item.id}`);
+          expect(response.ok()).toBe(true); item.revision = (await response.json()).revision;
+        }
+        await cleanup(request, owned);
+      }
+    });
+  }
+}
+
+for (const outcome of ["real success", "scripted transport failure"] as const) {
+  for (const width of [390, 1440]) {
+    test(`cancel after an agent revision ignores late history ${outcome} (${width})`, async ({ page, request }, info) => {
+      const owned: Owned[] = [], gate = latch(), fetched = latch(), finished = latch();
+      let calls = 0, browserWrites = 0;
+      try {
+        await page.setViewportSize({ width, height: 844 });
+        const item = await create(request, "Synthetic cancel history", owned);
+        const original = await history(request, item.id);
+        expect(original).toHaveLength(1);
+        await observe(page);
+        await page.route(`**/api/wiki/pages/${item.id}/history`, async route => {
+          const call = ++calls, response = await route.fetch();
+          expect(response.ok()).toBe(true);
+          if (call === 1) {
+            expect((await response.json()).history).toEqual(original);
+            fetched.resolve(); await gate.promise;
+            if (outcome === "real success") await route.fulfill({ response });
+            else await route.abort("failed");
+            finished.resolve();
+          } else await route.fulfill({ response });
+        });
+        await page.goto(`/wiki/${item.id}`);
+        const visit = await page.evaluate(() => ({ url: location.href, state: window.history.state, length: window.history.length }));
+        await toggle(page, true); await fetched.promise;
+        await page.getByRole("button", { name: "Edit page" }).click();
+        await page.getByRole("textbox", { name: /Markdown/ }).fill("# Synthetic discarded draft\nThis text must never be committed.");
+        // This independent writer really commits while the browser holds its draft.
+        await revise(request, item, "Synthetic current agent article");
+        const current = await history(request, item.id);
+        expect(current).toHaveLength(2);
+        expect(current[0].commit).not.toBe(original[0].commit);
+        expect(current.slice(1)).toEqual(original);
+        await page.route(`**/api/wiki/pages/${item.id}`, async route => {
+          if (route.request().method() !== "GET") browserWrites++;
+          await route.continue();
+        });
+        const reread = page.waitForResponse(response => response.url().endsWith(`/api/wiki/pages/${item.id}`) && response.request().method() === "GET");
+        page.once("dialog", dialog => dialog.accept());
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        const response = await reread;
+        expect(response.ok()).toBe(true);
+        const actual = await response.json();
+        expect(actual).toMatchObject({ revision: item.revision, markdown: "# Synthetic current agent article\nSecond synthetic revision." });
+        await expect(page.locator("article h1")).toHaveText("Synthetic current agent article");
+        await expect(page.locator("#edit")).toBeFocused();
+        await expect(page.locator("#editor")).toHaveCount(0);
+        await expect(page.locator(".prose")).toHaveText("Second synthetic revision.");
+        await expect(page.locator(".notice")).toBeEmpty();
+        await toggle(page, true);
+        await settled(page, item.id, "historyBodies");
+        await matches(page, current);
+        gate.resolve(); await finished.promise;
+        await settled(page, item.id, outcome === "real success" ? "historyBodies" : "historyFailures", outcome === "real success" ? 2 : 1);
+        await matches(page, current);
+        await expect(page.locator(".page-history summary")).toBeFocused();
+        await expect(page.locator("article h1")).toHaveText("Synthetic current agent article");
+        await expect(page.locator(".revision")).toContainText(item.revision.slice(0, 8));
+        await expect(page.locator(".prose")).toHaveText("Second synthetic revision.");
+        await expect(page.locator(".notice")).toBeEmpty();
+        expect(await page.evaluate(() => ({ url: location.href, state: window.history.state, length: window.history.length }))).toEqual(visit);
+        expect(calls).toBe(2); expect(browserWrites).toBe(0);
+        expect(await history(request, item.id)).toEqual(current);
+        const readback = await request.get(`/api/wiki/pages/${item.id}`);
+        expect(readback.ok()).toBe(true); expect(await readback.json()).toMatchObject(actual);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+        expect((await page.locator(".page-history summary").boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        const skip = page.locator(".skip-link");
+        const geometry = await skip.evaluate(element => ({ bottom: element.getBoundingClientRect().bottom, focused: element === document.activeElement }));
+        expect(geometry.focused).toBe(false); expect(geometry.bottom).toBeLessThanOrEqual(0);
+        const label = `cancel-agent-${outcome.replace(/ /g, "-")}-${width}`;
+        await page.screenshot({ path: info.outputPath(`${label}-viewport.png`) });
+        await page.screenshot({ path: info.outputPath(`${label}-full.png`), fullPage: true });
+      } finally {
+        gate.resolve();
         for (const item of owned) {
           const response = await request.get(`/api/wiki/pages/${item.id}`);
           expect(response.ok()).toBe(true); item.revision = (await response.json()).revision;

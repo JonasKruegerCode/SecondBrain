@@ -233,6 +233,11 @@ entry, then release success or a scripted transport failure during editing or
 after a real UI save. They compare the current commit list with REST history,
 check editor identity/selection or saved-article focus, and retain the same visit
 at desktop and narrow widths. Successful history payloads are never fabricated.
+Four Cancel cases perform the whole interaction at 390px or 1440px: an independent
+REST writer commits while a draft and old history reply are held. Cancel must
+reread the current article without a browser write; late history success/failure
+must leave its revision, commit list, focus and visit intact. Paired viewport and
+full-page images distinguish offscreen skip-link geometry from capture effects.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
 The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
