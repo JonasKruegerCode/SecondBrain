@@ -381,6 +381,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/view-focus.spec.ts", "e2e/demo-rehearsal.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/editor-retry.spec.ts",
         "e2e/resolve-identity.spec.ts",
+        "e2e/forced-colors.spec.ts",
     ]),
     ("webkit", "reading-navigation", "block", [
         "e2e/skip-link.spec.ts",
@@ -735,3 +736,4 @@ def test_openrouter_failure_evidence_records_only_observed_progress(
     )
     assert "sensitive" not in (tmp_path / "result.json").read_text()
     assert "real forecast" not in (tmp_path / "result.json").read_text()
+

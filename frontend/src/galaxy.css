@@ -17,3 +17,34 @@
 .galaxy .galaxy-return, .galaxy .galaxy-refresh { color: #285f55; border-color: #aec7c0; }
 @media (max-width: 650px) { .galaxy-controls button { min-height: 44px; min-width: 36px; } .galaxy-mapbar { flex-wrap: wrap; } }
 @media (max-width: 680px) { .galaxy-breadcrumb span { flex-basis: 100%; max-width: 100%; } }
+
+/* SVG paint is not automatically remapped with the surrounding HTML canvas. */
+@media (forced-colors: active) {
+  .galaxy-neighborhood ellipse { fill: none; stroke: GrayText; stroke-opacity: 1; }
+  .galaxy-neighborhood text, .galaxy-neighborhood .galaxy-count,
+  .galaxy-shelf { fill: CanvasText; }
+  .galaxy-edge, .galaxy-edge.is-bridge { stroke: CanvasText; stroke-opacity: 1; }
+  .galaxy-edge.is-active { stroke: Highlight; }
+  .galaxy-edge.is-active { stroke-opacity: 1; }
+  .galaxy-star .galaxy-glow { fill: none; stroke: none; }
+  .galaxy-star .galaxy-dot { fill: CanvasText; stroke: Canvas; stroke-opacity: 1; }
+  .galaxy-star text, .galaxy-star.is-core text, .galaxy-bridge-count {
+    fill: CanvasText;
+    stroke: Canvas;
+  }
+  .galaxy-star.is-dimmed { opacity: 1; }
+  .galaxy-star.is-dimmed .galaxy-dot, .galaxy-star.is-dimmed text { fill: GrayText; }
+  .galaxy-star.is-selected .galaxy-dot { fill: Highlight; stroke: Canvas; }
+  .galaxy-star.is-selected .galaxy-glow,
+  .galaxy-star:focus-visible .galaxy-glow {
+    fill: none;
+    stroke: Highlight;
+    stroke-opacity: 1;
+    stroke-width: 2;
+  }
+  .galaxy .galaxy-page[aria-pressed=true],
+  .galaxy .galaxy-controls button[aria-pressed=true] {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+}

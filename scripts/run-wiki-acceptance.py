@@ -237,6 +237,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/article-galaxy.spec.ts",
             "e2e/editor-retry.spec.ts",
             "e2e/resolve-identity.spec.ts",
+            "e2e/forced-colors.spec.ts",
         ]
     )
     if args.scale:

@@ -138,6 +138,10 @@ nav a.active {
   background: #e1eae0;
   color: #244c42;
 }
+@media (forced-colors: active) {
+  header nav a.active { outline: 2px solid LinkText; outline-offset: -2px; }
+  header nav a.active:focus-visible { outline: 3px solid Highlight; outline-offset: 4px; }
+}
 .workspace {
   font-size: 12px;
   color: var(--muted-text);

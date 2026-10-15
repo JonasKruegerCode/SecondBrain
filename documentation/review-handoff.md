@@ -81,6 +81,13 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- With forced contrast colors, the galaxy SVG uses the active system palette
+  for labels, stars and links; current navigation and selected controls retain
+  visible outlines. The normal wiki/space palettes remain unchanged. The real
+  Chromium regression checks light/dark contrast media at 390/1440px, keyboard
+  selection/article entry, no overflow and an unchanged graph snapshot. This is
+  browser media emulation, not a physical Windows contrast-theme or screen-reader
+  acceptance; WebKit is not claimed to support this emulation profile.
 - Browser Back/Forward returns to the preceding Galaxy visit's selected page,
   constellation, query, map/list choice, zoom, pan and sidebar offset. These
   bounded visit states stay only in tab memory; the graph is fetched again and
