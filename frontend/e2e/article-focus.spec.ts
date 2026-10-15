@@ -18,7 +18,7 @@ async function arrival(page: Page, title: string, info: TestInfo, width: number,
 }
 
 for (const width of [390, 1440]) {
-  test(`keyboard article arrivals retain a useful reading destination (${width})`, async ({ page }, info) => {
+  test(`keyboard article arrivals retain a useful reading destination (${width})`, async ({ page, context }, info) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/?overview=1");
     const open = page.getByRole("link", { name: /Open Lantern Bay field atlas/ });
@@ -33,12 +33,26 @@ for (const width of [390, 1440]) {
     expect(fragment).toBe("#section-1");
     await contentsLink.scrollIntoViewIfNeeded();
     const source = await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }));
+    await page.evaluate(() => {
+      window.addEventListener("click", event => {
+        (window as any).__tocActivation = { button: event.button, ctrl: event.ctrlKey,
+          meta: event.metaKey, prevented: event.defaultPrevented, trusted: event.isTrusted };
+      }, { once: true });
+    });
+    // A browser-created tab need not retain an opener/popup association.
     const [opened] = await Promise.all([
-      page.waitForEvent("popup"),
+      context.waitForEvent("page", { timeout: 8000 }),
       contentsLink.click({ modifiers: ["ControlOrMeta"] }),
-    ]);
+    ]).catch(async error => {
+      console.log(`[toc-tab-diagnostic] ${JSON.stringify({ width, pages: context.pages().length,
+        activation: await page.evaluate(() => (window as any).__tocActivation), sourceUrl: page.url() })}`);
+      throw error;
+    });
     try {
+      await opened.bringToFront();
       await opened.setViewportSize({ width, height: 844 });
+      expect(await page.evaluate(() => (window as any).__tocActivation))
+        .toMatchObject({ button: 0, prevented: false, trusted: true });
       await expect(opened).toHaveURL(source.url + fragment);
       await expect(opened.locator("article > h1")).toHaveText("Lantern Bay field atlas");
       await expect(opened.locator(fragment!)).toBeFocused();
