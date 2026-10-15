@@ -238,6 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/editor-retry.spec.ts",
             "e2e/resolve-identity.spec.ts",
             "e2e/markdown-lists.spec.ts",
+            "e2e/code-reading.spec.ts",
             "e2e/forced-colors.spec.ts",
         ]
     )
@@ -255,6 +256,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/editor-retry.spec.ts",
             "e2e/resolve-identity.spec.ts",
             "e2e/markdown-lists.spec.ts",
+            "e2e/code-reading.spec.ts",
         ]
     worker_filter = (
         "(PWA metadata registers an online-only worker without private caches|"
