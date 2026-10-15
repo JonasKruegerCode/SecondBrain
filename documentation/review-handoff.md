@@ -102,6 +102,11 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   the view. Chat arrival leaves the composer unfocused. Fresh document loads retain the skip-link path;
   fragments take precedence. A header/main focus deliberately chosen while a
   read is pending is preserved, including internal saved-start/link redirects.
+- An article reload from incoming-link revision mismatch retains the history
+  panel's latest open state and a deliberately chosen history summary focus.
+  The panel is recreated and fetches current history through its normal listener;
+  detached old replies remain ignored. This does not promise focus preservation
+  for every possible node inside replaced article content.
 - Article contents links retain the browser's modified-click behavior. Ctrl/Cmd
   opens the section URL in another tab; the original article stays in place.
   Ordinary click/Enter focuses and scrolls its section within the current visit.

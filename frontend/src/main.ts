@@ -620,7 +620,8 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     complete(missing ? "Missing page" : "Workspace unavailable");
   }
 }
-function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
+function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
+  historyState?: { open: boolean; focused: boolean }) {
   if (!page) return;
   const main = app.querySelector("main")!;
   main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${noticeError ? "error" : ""}" role="status">${esc(notice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<div class="delivery-status"><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p><button id="check-delivery" class="subtle" type="button">Check sync status</button></div><details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
@@ -681,9 +682,12 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
               const latest: Page = await api(`/pages/${encodeURIComponent(targetId)}`);
               if (!panel.isConnected || page?.id !== targetId || page.revision !== targetRevision) return;
               page = latest;
-              // Decide before replacing main, while deliberate shell focus is
-              // still distinguishable from the disabled button's lost focus.
-              renderPage(canRestoreReloadFocus() ? "heading" : undefined);
+              // Snapshot the user's latest history choice before replacing its
+              // DOM. Recreate it so its existing listener reads fresh history.
+              renderPage(canRestoreReloadFocus() ? "heading" : undefined, {
+                open: historyPanel.open,
+                focused: document.activeElement === historyPanel.querySelector("summary"),
+              });
               viewReady(latest.title);
             } catch {
               if (!panel.isConnected) return;
@@ -805,6 +809,10 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
   if (focusTarget && !(focusTarget === "editor" && saving)) {
     main.querySelector<HTMLElement>(targets[focusTarget])?.focus();
   }
+  // The listener is attached before opening, so the recreated panel fetches
+  // current history instead of retaining a detached request or stale content.
+  if (historyState?.open) historyPanel.open = true;
+  if (historyState?.focused) historyPanel.querySelector("summary")?.focus({ preventScroll: true });
   renderPwaState();
 }
 async function refreshDelivery(run: number, token: number, attempt = 0) {
