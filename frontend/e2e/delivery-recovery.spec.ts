@@ -5,7 +5,7 @@ import { startDeliveryFixture } from "./delivery-fixture";
 // Real isolated API + local Git transport behind an owned forwarding proxy.
 // No status JSON is mocked, and no external provider or user vault is used.
 for (const width of [390, 1440]) {
-  test(`an independently changed Git target stays blocked across local saves (${width})`, async ({ page, request }, info) => {
+  test(`an independently changed Git target stays blocked until reviewed reconciliation (${width})`, async ({ page, request }, info) => {
     const fixture = await startDeliveryFixture();
     let passed = false, browserWrites = 0;
     let proof: Record<string, unknown> = {};
@@ -59,10 +59,10 @@ for (const width of [390, 1440]) {
         expect((await get("/graph")).edges).toEqual(expect.arrayContaining([expect.objectContaining({ source: "delivery-page", target: "linked-page" })]));
         expect(browserWrites).toBe(writes);
       };
-      const recheck = async () => {
+      const recheck = async (state = "conflict — needs attention") => {
         const check = page.getByRole("button", { name: "Check sync status", exact: true });
         await check.focus(); await page.keyboard.press("Enter");
-        await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: conflict — needs attention");
+        await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: " + state);
         await expect(check).toBeEnabled(); await expect(check).toBeFocused();
         expect((await check.boundingBox())!.height).toBeGreaterThanOrEqual(44);
       };
@@ -77,11 +77,52 @@ for (const width of [390, 1440]) {
       await recheck(); await assertBlocked(secondMarkdown, second.revision, secondHead, 2);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await page.screenshot({ path: info.outputPath(`delivery-conflict-${width}.png`), fullPage: true });
-      proof = { width, initial_head: initialHead, first_head: firstHead, saved_head: secondHead, acknowledged_remote: remoteBefore, independent_remote: externalHead, state: "conflict", browser_writes: browserWrites, extra_content_commits: 0, remote_unchanged: true, external_model_calls: false };
+      // This is an explicit scripted operator review of both actual snapshots,
+      // not an automatic merge/reconciliation feature in the product.
+      const reviewedLocal = await get("/pages/delivery-page");
+      const reviewedRemote = await fixture.remoteMarkdown();
+      expect(reviewedLocal.markdown).toBe(secondMarkdown);
+      expect(reviewedRemote).toBe(remoteMarkdown);
+      const mergedMarkdown = reviewedLocal.markdown + "\n\n" + reviewedRemote.split("\n\n")[1].trim();
+      const merged = await save(mergedMarkdown), mergedHead = await fixture.head();
+      expect(mergedHead).not.toBe(secondHead);
+      await assertBlocked(mergedMarkdown, merged.revision, mergedHead, 3);
+      // Let Save's own status read finish while the target is still blocked.
+      await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: conflict — needs attention");
+      const staleLocal = await fixture.reconcileReviewedHeads(secondHead, externalHead);
+      expect(staleLocal).toMatchObject({ exitCode: 1, body: { error: "revision_conflict" } });
+      await assertBlocked(mergedMarkdown, merged.revision, mergedHead, 3);
+      const staleRemote = await fixture.reconcileReviewedHeads(mergedHead, remoteBefore);
+      expect(staleRemote).toMatchObject({ exitCode: 1, body: { error: "remote_conflict" } });
+      await assertBlocked(mergedMarkdown, merged.revision, mergedHead, 3);
+      const historyBeforeReview = await get("/pages/delivery-page/history");
+      const reconciled = await fixture.reconcileReviewedHeads(mergedHead, externalHead);
+      expect(reconciled).toMatchObject({ exitCode: 0, body: { remote: { state: "pending", last_published_content_revision: initialHead, last_verified_remote_revision: externalHead } } });
+      expect((await get("/delivery-status")).remote.state).toBe("pending");
+      expect(await fixture.head()).toBe(mergedHead);
+      expect(await fixture.remoteHead()).toBe(externalHead);
+      expect(await fixture.remoteMarkdown()).toBe(remoteMarkdown);
+      expect(await get("/pages/delivery-page/history")).toEqual(historyBeforeReview);
+      const recovered = await fixture.deliver(), publishedRemote = await fixture.remoteHead();
+      expect(recovered.remote).toMatchObject({ state: "current", last_published_content_revision: mergedHead, last_verified_remote_revision: publishedRemote });
+      expect(publishedRemote).not.toBe(externalHead);
+      expect(await fixture.remoteParent()).toBe(externalHead);
+      expect(await fixture.remoteMarkdown()).toBe(mergedMarkdown);
+      expect(await get("/pages/delivery-page")).toMatchObject({ markdown: mergedMarkdown, revision: merged.revision });
+      expect(await fixture.head()).toBe(mergedHead);
+      expect(await get("/pages/delivery-page/history")).toEqual(historyBeforeReview);
+      await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: conflict — needs attention");
+      await recheck("current (cached acknowledgement)");
+      expect(browserWrites).toBe(3);
+      expect(await fixture.head()).toBe(mergedHead);
+      expect(await get("/pages/delivery-page/history")).toEqual(historyBeforeReview);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      await page.screenshot({ path: info.outputPath(`delivery-reconciled-${width}.png`), fullPage: true });
+      proof = { width, initial_head: initialHead, first_head: firstHead, saved_head: mergedHead, acknowledged_remote: remoteBefore, independent_remote: externalHead, published_remote: publishedRemote, state_before_review: "conflict", reconciled: reconciled.body.remote.state, recovered: recovered.remote.state, stale_local: staleLocal.body.error, stale_remote: staleRemote.body.error, blocked_browser_writes: 2, browser_writes: browserWrites, extra_content_commits: 0, external_model_calls: false };
       passed = true;
     } finally {
       await fixture.close({ retain: !passed });
-      console.info("[git-conflict-fixture] " + JSON.stringify({ ...proof, passed, cleanup_ok: true, inputs_retained: !passed }));
+      console.info("[git-reconcile-fixture] " + JSON.stringify({ ...proof, passed, cleanup_ok: true, inputs_retained: !passed }));
     }
   });
 

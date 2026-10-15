@@ -45,6 +45,19 @@ export async function startDeliveryFixture() {
     const result = await run(python, ["-m", "second_brain.wiki.delivery_runtime", "--once"]);
     return JSON.parse(result.stdout);
   };
+  const reconcileReviewedHeads = async (managedHead: string, remoteHead: string) => {
+    if (![managedHead, remoteHead].every(head => /^[a-f0-9]{40}$/.test(head))) throw new Error("Explicit reviewed fixture heads are required");
+    try {
+      const result = await run(python, ["-m", "second_brain.wiki.delivery_runtime", "--reconcile", "--base-revision", managedHead, "--expected-remote-revision", remoteHead]);
+      return { exitCode: 0, body: JSON.parse(result.stdout) as Record<string, any> };
+    } catch (error) {
+      const failed = error as { code?: string | number; stdout?: string };
+      if (failed.code !== 1 || typeof failed.stdout !== "string") throw error;
+      const body = JSON.parse(failed.stdout) as Record<string, any>;
+      if (typeof body.error !== "string") throw error;
+      return { exitCode: 1, body };
+    }
+  };
   const close = async ({ retain = false }: { retain?: boolean } = {}) => {
     let cleanupError: unknown;
     try {
@@ -140,8 +153,9 @@ export async function startDeliveryFixture() {
     if (!address || typeof address === "string") throw new Error("Missing proxy address");
     return {
       origin: `http://127.0.0.1:${address.port}`, vault, remote, env,
-      deliver, head: () => gitHead(join(vault, ".wiki.git")),
+      deliver, reconcileReviewedHeads, head: () => gitHead(join(vault, ".wiki.git")),
       remoteHead: () => gitHead(interrupted ? parked : remote),
+      remoteParent: async () => (await run("git", ["--git-dir", interrupted ? parked : remote, "rev-parse", "refs/heads/wiki^"])).stdout.trim(),
       remoteMarkdown: async () => (await run("git", ["--git-dir", interrupted ? parked : remote, "show", "refs/heads/wiki:delivery-page.md"])).stdout,
       advanceRemote: async (markdown: string) => {
         if (interrupted) throw new Error("Restore the owned remote before an independent write");

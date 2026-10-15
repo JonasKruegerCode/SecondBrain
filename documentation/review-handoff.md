@@ -253,8 +253,17 @@ The same owned fixture also advances its bare target with an independent normal
 Git commit/push. Two subsequent local browser saves remain available while
 delivery and the read-only status action keep reporting conflict. Actual remote
 Markdown/head, local revisions/history/search/links and exactly two browser
-writes are checked; a repeated delivery attempt cannot adopt or overwrite the
-independent revision. No automatic reconciliation is exercised or authorized.
+writes before operator review are checked; a repeated delivery attempt cannot
+adopt or overwrite the independent revision. No automatic reconciliation is
+exercised or authorized.
+An explicit scripted operator review then reads both actual Markdown snapshots
+and retains the independent paragraph through a third browser save. Actual CLI
+calls reject stale local and remote guards separately. Reviewed reconciliation
+only prepares pending delivery without changing either content/head/history;
+the next ordinary delivery publishes the merged text on top of the independent
+remote commit. The read-only UI refresh shows the recovered acknowledgement,
+with exactly three browser writes and no extra local content commit. This is a
+synthetic operator rehearsal, not automated conflict resolution or private migration.
 
 The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
 profile and the WebKit reading/navigation profile. Its six timeout cases withhold an
