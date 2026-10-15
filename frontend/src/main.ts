@@ -661,6 +661,9 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
     const content = panel.querySelector<HTMLElement>(".backlinks-content")!;
     const load = async () => {
       const restoreFocus = content.contains(document.activeElement);
+      // Replacing a focused refresh/retry button leaves focus on body. Only
+      // reclaim that unowned focus, not a control chosen during the read.
+      const canRestoreFocus = () => restoreFocus && document.activeElement === document.body;
       loaded = true;
       content.textContent = "Loading incoming links…";
       try {
@@ -670,34 +673,39 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
           content.innerHTML = '<p>This article has changed. Reload it to review its current links.</p><button type="button" class="subtle">Reload article</button>';
           const reload = content.querySelector<HTMLButtonElement>("button")!;
           reload.onclick = async () => {
+            const restoreReloadFocus = document.activeElement === reload;
+            const canRestoreReloadFocus = () => restoreReloadFocus &&
+              (document.activeElement === reload || document.activeElement === document.body);
             reload.disabled = true;
             try {
               const latest: Page = await api(`/pages/${encodeURIComponent(targetId)}`);
               if (!panel.isConnected || page?.id !== targetId || page.revision !== targetRevision) return;
               page = latest;
-              renderPage("heading");
+              // Decide before replacing main, while deliberate shell focus is
+              // still distinguishable from the disabled button's lost focus.
+              renderPage(canRestoreReloadFocus() ? "heading" : undefined);
               viewReady(latest.title);
             } catch {
               if (!panel.isConnected) return;
               content.querySelector("p")!.textContent = "Couldn’t reload this article. Try again when your connection is ready.";
               reload.disabled = false;
-              reload.focus();
+              if (canRestoreReloadFocus()) reload.focus();
             }
           };
-          if (restoreFocus) reload.focus();
+          if (canRestoreFocus()) reload.focus();
           return;
         }
         content.innerHTML = result.backlinks.length
           ? `<nav aria-label="Pages linking here"><ul>${result.backlinks.map(source => `<li><a href="${url(source.id)}">${esc(source.title)}</a>${source.relations.length ? `<small>Declared relation: ${esc(source.relations.join(", "))}</small>` : ""}</li>`).join("")}</ul></nav>${result.truncated ? `<p>Showing ${result.backlinks.length} of ${result.total} linking pages.</p>` : ""}<p class="backlinks-context">Explicit links · snapshot ${esc(result.revision.slice(0, 8))}</p><button type="button" class="subtle">Refresh links</button>`
           : '<p>No other pages link here yet.</p><button type="button" class="subtle">Refresh links</button>';
         content.querySelector("button")?.addEventListener("click", () => void load());
-        if (restoreFocus) content.querySelector<HTMLButtonElement>("button")?.focus();
+        if (canRestoreFocus()) content.querySelector<HTMLButtonElement>("button")?.focus();
       } catch {
         if (!panel.isConnected) return;
         loaded = false;
         content.innerHTML = '<p>Couldn’t load incoming links.</p><button type="button" class="subtle">Try again</button>';
         content.querySelector("button")!.addEventListener("click", () => void load());
-        if (restoreFocus) content.querySelector<HTMLButtonElement>("button")?.focus();
+        if (canRestoreFocus()) content.querySelector<HTMLButtonElement>("button")?.focus();
       }
     };
     panel.addEventListener("toggle", () => {

@@ -116,6 +116,12 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 - Reopening local Git history reads current commits, including newer agent saves.
   Reopening during a pending read shares that request; late history replies after
   leaving the article cannot replace the next article's history.
+- Incoming-link refresh/retry and revision-mismatch replies restore their lost
+  button focus only while it remains unclaimed. Reloading a changed article
+  also respects a header control deliberately focused during its pending read,
+  on success or failure. Uninterrupted keyboard reload still arrives at the
+  article heading. Reload replaces main content, so this does not promise to
+  preserve a focused node inside that replaced subtree.
 - Save conflicts preserve the local draft and require a fresh read plus deliberate
   reconciliation. Lost acknowledgements are retried with the same request ID and
   payload, including an edit followed by restoring the exact submitted draft,
