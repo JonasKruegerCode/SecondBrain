@@ -409,11 +409,11 @@ async function hydrateLinks(prose: Element, source: string) {
     } catch { /* The explicit resolution route still provides a retryable fallback. */ }
   }
 }
-function cards(pages: Page[], fragment = "") {
+function cards(pages: Page[], fragment = "", showIdentity = false) {
   return pages
     .map(
       (p, i) =>
-        `<a class="card" href="${url(p.id)}${fragment ? `#${encodeURIComponent(fragment)}` : ""}"><div class="card-meta"><span>${String(i + 1).padStart(2, "0")}</span><span>↗</span></div><h3>${esc(p.title)}</h3><p>${esc(p.excerpt || "Open this page and follow a thought.")}</p><div class="card-foot">Read page <span>→</span></div></a>`,
+        `<a class="card" href="${url(p.id)}${fragment ? `#${encodeURIComponent(fragment)}` : ""}"><div class="card-meta"><span>${String(i + 1).padStart(2, "0")}</span><span>↗</span></div><h3>${esc(p.title)}</h3>${showIdentity ? `<div class="card-id">Page ID: <code>${esc(p.id)}</code></div>` : ""}<p>${esc(p.excerpt || "Open this page and follow a thought.")}</p><div class="card-foot">Read page <span>→</span></div></a>`,
     )
     .join("");
 }
@@ -500,7 +500,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
         replaceAppUrl(path);
         void route(focusView, true, readingPoint);
       } else {
-        main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment)}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
+        main.innerHTML = `<section class="intro"><div class="eyebrow">FOLLOW THE RIGHT THREAD</div><h1>${result.status === "ambiguous" ? "Choose a page." : "A missing page."}</h1><p>${result.status === "ambiguous" ? "Several pages share this title. Select the one you meant." : "This link has no existing target. Search your wiki or return to the article."}</p><p class="link-target">${esc(target)}</p></section><div class="grid">${cards(result.candidates, result.fragment, result.status === "ambiguous")}</div><a href="/search?q=${encodeURIComponent(target)}">Search for this title →</a>`;
         complete(result.status === "ambiguous" ? "Choose a page" : "Missing page");
       }
       return;

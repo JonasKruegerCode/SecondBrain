@@ -348,6 +348,13 @@ main {
   letter-spacing: -0.4px;
   margin: 25px 0 11px;
 }
+.card-id {
+  margin-top: 12px;
+  color: var(--muted-surface-text);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 .card p {
   color: var(--muted-surface-text);
   font-size: 12px;

@@ -66,6 +66,28 @@ original commit from a separate clean checkout rather than resetting working
 data blindly. A changed source, a managed-only revision, missing provenance or
 missing Git history is a failed migration acceptance, not a warning.
 
+### Check navigation separately
+
+A verified byte audit does not establish that every link is usable. For example,
+`astronomy/sky.md` becomes page ID `sky`, while a literal `[[astronomy/sky]]`
+remains unchanged and can be unresolved. Duplicate titles can also require a
+choice between different page IDs. Neither condition silently rewrites source
+content or invalidates the exact-byte proof for the imported revision.
+
+Inspect the imported graph's `missing_targets` and `ambiguous_targets` through
+`GET /api/wiki/graph`, then follow representative article links and inspect their
+actual targets in the browser. The galaxy excludes unresolved targets from its
+map and reports their count; it is not a substitute for checking those links.
+When a title has several matches, the selection cards show each stable page ID.
+Review any intended corrections through the revision-checked editor. These
+create a later managed revision; the original import audit remains evidence for
+its pinned import, not a byte-equality claim about subsequent edited content.
+
+Markdown export is a flat copy of the selected current pages, not a history or
+rollback archive. Reimport can preserve their bytes and link syntax without
+repairing unresolved links. Use the portable backup/restore path below to retain
+the managed revision and its reachable source history.
+
 ## Replace an existing managed snapshot
 
 An import replaces the **entire managed page set** with the selected source snapshot. Pages not present in that snapshot are removed from the current view; prior managed snapshots remain in Git history. A zero-page import into a destination that currently contains pages is refused, so an empty selection cannot erase its content. Zero-page imports are permitted when the current page set is empty; a previously published empty snapshot still requires its exact HEAD as the expected base. The prefix limits the imported source, not which existing managed pages may be replaced.
