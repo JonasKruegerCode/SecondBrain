@@ -74,7 +74,7 @@ def _hash(path: Path) -> dict[str, int | str]:
 
 
 def _copy_sqlite(source: Path, destination: Path) -> None:
-    source_uri = f"file:{source.as_posix()}?mode=ro"
+    source_uri = f"{source.as_uri()}?mode=ro"
     with (
         sqlite3.connect(source_uri, uri=True, timeout=10) as current,
         sqlite3.connect(destination) as copied,
@@ -289,9 +289,12 @@ def restore_backup(archive: Path | str, vault: Path | str) -> dict[str, Any]:
         for name in SQLITE_FILES:
             item = prepared / name
             if item.exists():
-                with sqlite3.connect(f"file:{item.as_posix()}?mode=ro", uri=True) as db:
-                    if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
-                        raise _error("backup_invalid", "Restored SQLite metadata is invalid.")
+                try:
+                    with sqlite3.connect(f"{item.as_uri()}?mode=ro", uri=True) as db:
+                        if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                            raise _error("backup_invalid", "Restored SQLite metadata is invalid.")
+                except sqlite3.DatabaseError as exc:
+                    raise _error("backup_invalid", "Restored SQLite metadata is invalid.") from exc
         _publish(prepared, target)
         return {
             "operation": "restore",

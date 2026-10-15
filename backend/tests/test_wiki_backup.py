@@ -4,6 +4,7 @@
 # ruff: noqa: S101, SLF001, S603
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -22,8 +23,23 @@ from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import WikiError, WikiStore
 
 
-def test_backup_restores_history_receipts_and_local_metadata(tmp_path: Path) -> None:
-    vault = tmp_path / "vault"
+@pytest.mark.parametrize(
+    ("vault_name", "restored_name"),
+    [
+        ("vault", "restored"),
+        ("vault?query", "restored"),
+        ("vault#fragment", "restored"),
+        ("vault%3Fliteral", "restored"),
+        ("vault", "restored?query"),
+        ("vault", "restored#fragment"),
+        ("vault", "restored%3Fliteral"),
+        ("vault with spaces ü", "restored with spaces ü"),
+    ],
+)
+def test_backup_restores_history_receipts_and_local_metadata(
+    tmp_path: Path, vault_name: str, restored_name: str
+) -> None:
+    vault = tmp_path / vault_name
     store = WikiStore(vault)
     created = store.save_page("home", "# Synthetic home\n\n[[notes]]", None, "create-home")
     notes = store.save_page("notes", "# Synthetic notes", None, "create-notes")
@@ -47,7 +63,7 @@ def test_backup_restores_history_receipts_and_local_metadata(tmp_path: Path) -> 
     }
 
     store.save_page("later", "# Later synthetic page", None, "later")
-    restored_path = tmp_path / "restored"
+    restored_path = tmp_path / restored_name
     restored_result = restore_backup(archive, restored_path)
     assert restored_result["revision"] == revision
     assert restored_result["page_count"] == 2
@@ -66,6 +82,9 @@ def test_backup_restores_history_receipts_and_local_metadata(tmp_path: Path) -> 
     for name in (".wiki-indexes.sqlite3", ".wiki-delivery.sqlite3"):
         with sqlite3.connect(restored_path / name) as db:
             assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+    assert {item.name for item in tmp_path.iterdir()} == {
+        vault_name, archive.name, restored_name
+    }
 
 
 def test_empty_backup_restore_and_no_overwrite(tmp_path: Path) -> None:
@@ -119,12 +138,75 @@ def test_checksum_mismatch_is_rejected_before_publication(tmp_path: Path) -> Non
     assert not destination.exists()
 
 
-def test_cli_round_trip(tmp_path: Path) -> None:
+@pytest.mark.parametrize("restored_name", ["restored", "restored?query", "restored#fragment"])
+@pytest.mark.parametrize("ledger", [".wiki-indexes.sqlite3", ".wiki-delivery.sqlite3"])
+def test_invalid_sqlite_is_rejected_before_restore_publication(
+    tmp_path: Path, restored_name: str, ledger: str
+) -> None:
     vault = tmp_path / "vault"
     store = WikiStore(vault)
+    store.save_page("home", "# Synthetic ledger integrity", None, "ledger-home")
+    indexes = IndexCoordinator(store)
+    DeliveryCoordinator(store, indexes)
+    indexes.close()
+    before = store.snapshot()
+    archive = tmp_path / "valid.tar.gz"
+    create_backup(vault, archive)
+    with tarfile.open(archive, "r:gz") as source:
+        entries = {}
+        for member in source.getmembers():
+            fileobj = source.extractfile(member)
+            assert fileobj is not None
+            entries[member.name] = fileobj.read()
+    name = f"metadata/{ledger}"
+    invalid = b"not a SQLite database"
+    entries[name] = invalid
+    manifest = json.loads(entries["manifest.json"])
+    manifest["files"][name] = {"sha256": hashlib.sha256(invalid).hexdigest(), "bytes": len(invalid)}
+    entries["manifest.json"] = json.dumps(manifest).encode()
+    damaged = tmp_path / "invalid-ledger.tar.gz"
+    with tarfile.open(damaged, "w:gz") as output:
+        for name, data in entries.items():
+            member = tarfile.TarInfo(name)
+            member.size = len(data)
+            output.addfile(member, io.BytesIO(data))
+    destination = tmp_path / restored_name
+    expected_files = {vault.name, archive.name, damaged.name}
+
+    with pytest.raises(WikiError) as error:
+        restore_backup(damaged, destination)
+    assert error.value.code == "backup_invalid"
+    assert {item.name for item in tmp_path.iterdir()} == expected_files
+    assert store.snapshot() == before
+
+    cli = subprocess.run(
+        [sys.executable, "-m", "second_brain.wiki.backup", "restore",
+         "--archive", str(damaged), "--vault", str(destination)],
+        env={
+            "PATH": os.environ["PATH"],
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
+        capture_output=True,
+        check=False,
+    )
+    assert cli.returncode == 1
+    assert json.loads(cli.stderr)["error"] == "backup_invalid"
+    assert cli.stdout == b""
+    assert {item.name for item in tmp_path.iterdir()} == expected_files
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("suffix", ["", " ?#%3F ü"])
+def test_cli_round_trip(tmp_path: Path, suffix: str) -> None:
+    vault = tmp_path / f"vault{suffix}"
+    store = WikiStore(vault)
     store.save_page("home", "# CLI synthetic home", None, "cli-home")
+    indexes = IndexCoordinator(store)
+    namespace = indexes.namespace
+    DeliveryCoordinator(store, indexes)
+    indexes.close()
     archive = tmp_path / "cli.tar.gz"
-    restored = tmp_path / "restored"
+    restored = tmp_path / f"restored{suffix}"
     cwd = Path(__file__).resolve().parents[1]
     env = {"PATH": os.environ["PATH"], "PYTHONPATH": str(cwd / "src")}
     create = subprocess.run(
@@ -163,7 +245,13 @@ def test_cli_round_trip(tmp_path: Path) -> None:
     )
     assert restore.returncode == 0, restore.stderr
     assert json.loads(restore.stdout)["page_count"] == 1
-    assert WikiStore(restored).get_page("home")["title"] == "CLI synthetic home"  # type: ignore[index]
+    page = WikiStore(restored).get_page("home")
+    assert page is not None
+    assert page["title"] == "CLI synthetic home"
+    restored_indexes = IndexCoordinator(WikiStore(restored))
+    assert restored_indexes.namespace == namespace
+    restored_indexes.close()
+    assert {item.name for item in tmp_path.iterdir()} == {vault.name, archive.name, restored.name}
 
 
 @pytest.mark.parametrize("removed", [1, 8, 16, 32])

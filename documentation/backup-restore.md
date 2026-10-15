@@ -74,6 +74,10 @@ implicit merge or rollback over a live vault.
 The native synthetic regression covers populated and empty archives, full local
 history, request-receipt replay after restart, both SQLite ledgers, demo metadata,
 checksum/member validation, refusal to overwrite, and the real CLI round trip.
+Vault and restore paths containing spaces, Unicode, `?`, `#`, or literal percent
+escapes preserve their ledgers and leave no stray files. Checksum-valid archives
+with malformed SQLite metadata fail before publication with a structured
+`backup_invalid` CLI error.
 Truncated gzip streams, invalid trailers and manifests are rejected before
 publication; CLI failures return structured `backup_invalid` errors. Valid plain
 tar, gzip, bzip2 and xz archives retain their existing restore support.
