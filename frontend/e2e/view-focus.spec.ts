@@ -784,13 +784,16 @@ for (const width of [390, 1440]) {
       await expect(status).toHaveCount(0);
       console.log(`[search-status] ${JSON.stringify({ width, mountedStatus: true, submittedCount: 2,
         empty: true, scriptedError: true, realRetry: true, draftFocusPreserved: true })}`);
+      // Reproduce a closed page before cleanup: fixture deletion must use the
+      // independent API context, without an unroute call blocking that work.
+      await page.close();
     } finally {
       release();
-      await page.unroute(pattern);
       for (const fixture of fixtures)
         expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
           base_revision: fixture.revision, request_id: randomUUID(),
         }})).ok()).toBeTruthy();
+      console.log(`[search-fixture-cleanup] ${JSON.stringify({ width, deleted: fixtures.length, pageClosed: page.isClosed() })}`);
     }
   });
 }
