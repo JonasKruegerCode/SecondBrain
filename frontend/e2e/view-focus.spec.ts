@@ -776,7 +776,7 @@ for (const width of [390, 1440]) {
       await expect(results).toHaveAttribute("aria-busy", "false");
       await expect(input).toBeFocused();
       expect(await status.evaluate(node => node === (window as any).__searchStatus)).toBe(true);
-      const result = results.getByRole("link", { name: /Open Garden observations/ });
+      const result = results.getByRole("link", { name: /Garden observations/ });
       await result.focus();
       await page.keyboard.press("Enter");
       await expect(page.locator("article > h1")).toHaveText("Garden observations");
