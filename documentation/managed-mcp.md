@@ -91,6 +91,13 @@ Read `wiki://guidance`, then read a page and retain its revision. Save complete
 Markdown with that `base_revision` and a unique `request_id`. Retry a lost reply
 with the identical ID and payload. A revision conflict requires a fresh read
 and deliberate reconciliation. Creating a page uses null `base_revision`.
+Managed domain failures retain MCP's `isError: true`. Both `structuredContent`
+and the text content contain the same JSON object with `error`, `message`, and
+any domain details, such as `current_revision` on `revision_conflict`. A reused
+request ID with a different payload returns `request_id_reused`; it must not be
+retried as though publication were unknown. Successful outputs and schemas are
+unchanged. Missing-page reads remain normal `{error: not_found, id}` results;
+SDK validation and unexpected tool errors retain the SDK's error handling.
 Publication succeeds independently from indexing; mutation receipts record pending
 at publication and remote sync reports `not_configured`. `get_index_status` reads
 current separate index receipts; `get_delivery_status` also reports cached Git
@@ -103,3 +110,11 @@ HTTP application and lifespan: initialization, tool discovery, guidance, save,
 retry, conflict, readback through MCP and REST, slash behavior, Bearer rejection,
 Host/Origin defenses, and proxy allowlists. Tests require no running server or
 external service and use only synthetic temporary vaults.
+
+`backend/tests/test_wiki_mcp_stdio.py` additionally starts the actual stdio module
+with an SDK client, isolated HOME/Git configuration and disabled external providers.
+It checks guidance/discovery, an active local worker, REST/MCP shared publication,
+structured conflict/reused-ID errors, and save/delete receipt replay across fresh
+server processes without duplicate history. The SDK owns child shutdown even on
+failure; the whole exchange has a bounded timeout. These are protocol and local
+persistence checks, not a hosted client or production-credential acceptance.

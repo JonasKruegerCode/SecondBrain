@@ -110,6 +110,8 @@ def test_http_initialize_tools_guidance_and_shared_rest_content(tmp_path: Path) 
             },
         )
         assert conflict["isError"] is True
+        assert conflict["structuredContent"]["error"] == "revision_conflict"
+        assert conflict["structuredContent"]["current_revision"] == saved["revision"]
         assert (store.get_page("http-fixture") or {})["markdown"] == args["markdown"]
         assert (
             client.post(

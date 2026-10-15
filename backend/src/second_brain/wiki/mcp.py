@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 from collections.abc import AsyncIterator, Sequence
@@ -10,7 +11,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import CallToolResult, TextContent
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -18,9 +21,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
-from second_brain.wiki.store import WikiStore
+from second_brain.wiki.store import WikiError, WikiStore
 
-GUIDANCE = """# Managed Wiki editing guide (v2)
+GUIDANCE = """# Managed Wiki editing guide (v3)
 
 Read a page before editing and keep its revision. Use stable IDs, a concise
 opening paragraph, meaningful headings and expected [[page-id|label]] links
@@ -32,7 +35,9 @@ Save the full edited Markdown with the read base_revision and a unique request_i
 On a lost reply retry exactly that request_id and payload. A different payload
 needs a new request_id. On revision_conflict re-read and reconcile deliberately;
 never replace the base revision without reviewing the newer page. Null revision
-means create-only. Publication, external index progress and remote Git sync are
+means create-only. Domain failures set isError=true, with error/message and any
+details (such as current_revision) in structuredContent and matching JSON text.
+Publication, external index progress and remote Git sync are
 separate: mutation receipts record indices pending at publication time and
 remote_sync not_configured. Local content and revision are already committed.
 Use get_delivery_status for current publication/index progress and cached Git
@@ -48,6 +53,23 @@ ambiguous titles are reported rather than silently assigned to a page.
 This profile has no remember/recall, editorial agent, chat writer or repair job.
 Legacy MCP remains a separate deployment; do not point both writers at one vault.
 """
+
+
+class _ManagedMCP(FastMCP):
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Preserve domain failures after FastMCP's successful-output conversion."""
+        try:
+            return await super().call_tool(name, arguments)
+        except ToolError as exc:
+            error = exc.__cause__
+            if not isinstance(error, WikiError):
+                raise
+            data = {"error": error.code, "message": error.message, **error.details}
+            return CallToolResult(
+                isError=True,
+                structuredContent=data,
+                content=[TextContent(type="text", text=json.dumps(data, ensure_ascii=False))],
+            )
 
 
 def create_mcp(
@@ -66,7 +88,7 @@ def create_mcp(
         raise ValueError("Delivery must use the same managed vault and indexes.")
     if worker is not None and worker.delivery is not delivery:
         raise ValueError("Worker must belong to the same delivery service.")
-    mcp = FastMCP(
+    mcp = _ManagedMCP(
         "Second Brain Managed Wiki",
         json_response=True,
         stateless_http=True,
