@@ -76,7 +76,10 @@ function reloadApp() {
 }
 
 export function checkForUpdate() {
-  void registration?.update();
+  void registration?.update().catch(() => {
+    // Background checks are best effort. Keep the active worker and allow a
+    // later visibility check to retry when the connection is available.
+  });
 }
 
 export function startPwa(reloadAllowed: () => boolean = () => true) {

@@ -140,6 +140,15 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 - Remote Git delivery requires reviewed local and remote heads. It never performs
   an automatic pull, merge, force-push or conflict adoption.
 
+Background PWA update checks keep the active worker when the native update
+operation rejects after an unavailable worker-script fetch. A later visibility check can retry;
+this does not change worker activation, draft protection or private-cache policy.
+The regression uses real workers and a forwarding observer of native outcomes;
+the server's one-shot HTTP 503 and visibility event are synthetic. Offline UI
+and successful reconnection are checked separately; offline emulation alone did
+not establish a native update rejection. It does not explain the separate intermittent
+first-install update notice or establish physical-device behavior.
+
 ## Public interfaces
 
 The managed REST surface under `/api/wiki` covers health, page

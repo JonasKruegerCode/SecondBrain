@@ -2031,6 +2031,9 @@ for (const width of [390, 1440]) {
         await page.evaluate(() => (window as unknown as { pwaUpdateProbe?: { restore: () => void } }).pwaUpdateProbe?.restore()).catch(() => {});
         await page.close();
       }
+      // Worker-owned connections can outlive their page. Dispose the owned
+      // context before waiting for the local server to close.
+      await context.close();
       await proxy.close();
       console.info(`[pwa-update-cleanup] ${JSON.stringify({ width, pageClosed: page.isClosed() })}`);
     }
