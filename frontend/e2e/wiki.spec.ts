@@ -2381,9 +2381,11 @@ for (const finish of ["clear", "send", "stop"] as const) {
         draftConversation = await page.locator(".chat-history-list button.active").getAttribute("data-conversation");
         await page.getByRole("button", { name: "New", exact: true }).click();
         await expect(input).toHaveValue("");
+        expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1")))
+          .not.toContain(question);
       }
       // An empty active composer must not hide another conversation's unsent draft.
-      await expect(notice).toContainText("Send or clear your message");
+      await expect(notice).toContainText("Send or clear your message drafts in all conversations");
       await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
       await page.evaluate(() => {
         (window as any).__pwaChatDocument = "original-chat-document";

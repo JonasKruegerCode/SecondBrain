@@ -193,7 +193,10 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       ? conversations.map(item => [item.id, item] as const)
       : stored.conversations.map(item => [item.id, item] as const));
     for (const item of conversations) {
-      if (!dirtyIds.has(item.id)) continue;
+      // The initial empty conversation has no stored snapshot yet. Retain its
+      // identity when switching away from an unsent draft, without persisting
+      // that text or replacing an independently updated saved transcript.
+      if (!dirtyIds.has(item.id) && !(drafts.has(item.id) && !merged.has(item.id))) continue;
       const other = merged.get(item.id);
       if (!other || item.updated >= other.updated) merged.set(item.id, item);
     }

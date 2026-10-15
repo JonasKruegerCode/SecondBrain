@@ -338,7 +338,7 @@ function renderPwaState() {
       : chatReloadBlocker() === "reply"
         ? "A new version is ready. Wait for your chat reply before updating."
       : chatReloadBlocker() === "draft"
-        ? "A new version is ready. Send or clear your message before updating."
+        ? "A new version is ready. Send or clear your message drafts in all conversations before updating."
       : chatReloadBlocker() === "storage"
         ? "A new version is ready. Recover browser storage or delete unsaved conversations before updating."
       : !canReloadApp()
