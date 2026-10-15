@@ -142,6 +142,7 @@ export async function startDeliveryFixture() {
       origin: `http://127.0.0.1:${address.port}`, vault, remote, env,
       deliver, head: () => gitHead(join(vault, ".wiki.git")),
       remoteHead: () => gitHead(interrupted ? parked : remote),
+      remoteMarkdown: async () => (await run("git", ["--git-dir", interrupted ? parked : remote, "show", "refs/heads/wiki:delivery-page.md"])).stdout,
       interruptRemote: async () => {
         if (interrupted) throw new Error("Owned remote already interrupted");
         await stat(remote);

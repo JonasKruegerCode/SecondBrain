@@ -40,8 +40,9 @@ for (const width of [390, 1440]) {
       expect(failed.remote.state).toBe("error");
       expect((await get("/delivery-status")).remote.state).toBe("error");
       expect(await fixture.remoteHead()).toBe(remoteBefore);
+      expect(await fixture.remoteMarkdown()).not.toContain("quartzbeacon");
       const check = page.getByRole("button", { name: "Check sync status", exact: true });
-      await check.click();
+      await check.focus(); await page.keyboard.press("Enter");
       await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: needs attention");
       await expect(check).toBeEnabled();
       await expect(check).toBeFocused();
@@ -62,10 +63,11 @@ for (const width of [390, 1440]) {
       expect(recovered.remote.last_published_content_revision).toBe(savedHead);
       expect(recovered.remote.last_verified_remote_revision).toBe(remoteAfter);
       expect(remoteAfter).not.toBe(remoteBefore);
+      expect(await fixture.remoteMarkdown()).toContain(markdown);
       // Backend recovery alone leaves the old browser error visible. A read-only
       // recheck must expose the new acknowledgement without another content write.
       await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: needs attention");
-      await check.click();
+      await check.focus(); await page.keyboard.press("Enter");
       await expect(page.locator(".delivery-notice")).toContainText("Remote delivery: current (cached acknowledgement)");
       await expect(check).toBeEnabled();
       await expect(check).toBeFocused();
@@ -86,7 +88,7 @@ for (const width of [390, 1440]) {
         statusFetched(); await statusGate; await route.fulfill({ response: actual });
       });
       const statusRead = page.waitForResponse(r => r.url().endsWith("/api/wiki/delivery-status"));
-      await freshCheck.click(); await heldStatus;
+      await freshCheck.focus(); await page.keyboard.press("Enter"); await heldStatus;
       await editor.focus();
       await editor.evaluate(element => (element as HTMLTextAreaElement).setSelectionRange(4, 19));
       releaseStatus(); await statusRead;
