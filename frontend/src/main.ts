@@ -287,11 +287,16 @@ function viewReady(title: string) {
   });
 }
 
+function plainLinkClick(event: MouseEvent) {
+  return !event.defaultPrevented && event.button === 0 &&
+    !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey;
+}
+
 app.addEventListener("click", (e) => {
-  if (e.defaultPrevented) return;
+  if (!plainLinkClick(e)) return;
   const a = (e.target as HTMLElement).closest("a");
   const href = a?.getAttribute("href");
-  if ((href?.startsWith("/") || href?.startsWith("#")) && e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+  if (href?.startsWith("/") || href?.startsWith("#")) {
     e.preventDefault();
     if (href.startsWith("#")) {
       if (restoringHistory) return;
@@ -622,9 +627,11 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading") {
         heading.id = `section-${i + 1}`;
         heading.tabIndex = -1;
       });
-      const toc = main.querySelector(".article-toc")!;
+      const toc = main.querySelector<HTMLElement>(".article-toc")!;
       toc.innerHTML = `<nav aria-label="On this page"><div class="eyebrow">ON THIS PAGE</div><ol>${headings.map(h => `<li class="toc-level-${h.tagName.slice(1)}"><a href="#${h.id}">${esc(h.textContent || "Untitled section")}</a></li>`).join("")}</ol></nav>`;
       toc.addEventListener("click", (event) => {
+        // Let the browser open modified activations in another tab/window.
+        if (!plainLinkClick(event)) return;
         const link = (event.target as HTMLElement).closest("a");
         if (!link) return;
         event.preventDefault();

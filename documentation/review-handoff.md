@@ -102,6 +102,9 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   the view. Chat arrival leaves the composer unfocused. Fresh document loads retain the skip-link path;
   fragments take precedence. A header/main focus deliberately chosen while a
   read is pending is preserved, including internal saved-start/link redirects.
+- Article contents links retain the browser's modified-click behavior. Ctrl/Cmd
+  opens the section URL in another tab; the original article stays in place.
+  Ordinary click/Enter focuses and scrolls its section within the current visit.
 - Search normalizes submitted queries while retaining the current URL fragment;
   direct fragment destinations, reload and history remain usable. Later form
   submissions keep their input focus, including a new or empty query.

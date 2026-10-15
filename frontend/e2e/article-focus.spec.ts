@@ -26,6 +26,38 @@ for (const width of [390, 1440]) {
     await open.focus();
     await page.keyboard.press("Enter");
     await arrival(page, "Lantern Bay field atlas", info, width, "home");
+    // Follow the actual native new-tab gesture, rather than assigning window.open
+    // or scripting a click event whose browser default would never run.
+    const contentsLink = page.locator(".article-toc a").first();
+    const fragment = await contentsLink.getAttribute("href");
+    expect(fragment).toBe("#section-1");
+    await contentsLink.scrollIntoViewIfNeeded();
+    const source = await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }));
+    const [opened] = await Promise.all([
+      page.waitForEvent("popup"),
+      contentsLink.click({ modifiers: ["ControlOrMeta"] }),
+    ]);
+    try {
+      await opened.setViewportSize({ width, height: 844 });
+      await expect(opened).toHaveURL(source.url + fragment);
+      await expect(opened.locator("article > h1")).toHaveText("Lantern Bay field atlas");
+      await expect(opened.locator(fragment!)).toBeFocused();
+      await opened.reload();
+      await expect(opened).toHaveURL(source.url + fragment);
+      await expect(opened.locator(fragment!)).toBeFocused();
+      await expect(opened.locator(fragment!)).toHaveText("Three routes into the atlas");
+      await opened.screenshot({ path: info.outputPath(`toc-native-tab-${width}.png`) });
+      expect(await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }))).toEqual(source);
+      await expect(page.locator(fragment!)).not.toBeFocused();
+      console.log(`[toc-native-tab] ${JSON.stringify({ width, sourceUnchanged: true, fragment, targetReloaded: true })}`);
+    } finally { await opened.close(); }
+    // Ordinary keyboard activation still focuses the section in this visit,
+    // without changing the established TOC URL/history behavior.
+    await contentsLink.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(fragment!)).toBeFocused();
+    await expect(page).toHaveURL(source.url);
+
     const survey = page.locator(".prose").getByRole("link", { name: "night sky survey", exact: true });
     await survey.focus();
     await page.keyboard.press("Enter");
