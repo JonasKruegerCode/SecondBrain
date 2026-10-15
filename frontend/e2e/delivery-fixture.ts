@@ -1,6 +1,6 @@
 /** Real local API and Git delivery fixture, isolated from every user vault. */
 import { spawn, execFile, type ChildProcess } from "node:child_process";
-import { mkdtemp, mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -143,6 +143,20 @@ export async function startDeliveryFixture() {
       deliver, head: () => gitHead(join(vault, ".wiki.git")),
       remoteHead: () => gitHead(interrupted ? parked : remote),
       remoteMarkdown: async () => (await run("git", ["--git-dir", interrupted ? parked : remote, "show", "refs/heads/wiki:delivery-page.md"])).stdout,
+      advanceRemote: async (markdown: string) => {
+        if (interrupted) throw new Error("Restore the owned remote before an independent write");
+        const before = await gitHead(remote);
+        const writer = join(directory, "independent-writer");
+        await run("git", ["clone", "--branch", "wiki", "--", remote, writer]);
+        await writeFile(join(writer, "delivery-page.md"), markdown);
+        await run("git", ["-C", writer, "add", "--", "delivery-page.md"]);
+        await run("git", ["-C", writer, "-c", "user.name=Fixture contributor", "-c", "user.email=fixture@example.invalid", "commit", "-m", "Independent fictional article change"]);
+        await run("git", ["-C", writer, "push", "origin", "HEAD:refs/heads/wiki"]);
+        const after = await gitHead(remote);
+        const parent = (await run("git", ["--git-dir", remote, "rev-parse", "refs/heads/wiki^"])).stdout.trim();
+        if (after === before || parent !== before) throw new Error("Independent fixture write did not advance the owned remote");
+        return after;
+      },
       interruptRemote: async () => {
         if (interrupted) throw new Error("Owned remote already interrupted");
         await stat(remote);

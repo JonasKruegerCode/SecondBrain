@@ -118,11 +118,15 @@ The status endpoint is authenticated by the same REST boundary, returns
 `not_configured`, `pending`, `current` or `error`; remote additionally reports
 `conflict`, last published content revision and last verified remote revision.
 `cached_verification` means a past acknowledgement, never proof that the live
-remote has not changed since. A new local write makes delivery pending.
+remote has not changed since. A new local write makes delivery pending unless
+an existing error or conflict is still recorded.
 
 After a browser save, the editor confirms local content, reads fresh workspace
 status and polls pending work for at most 30 seconds. Errors/conflicts stop that
-poll. It never replays a content write to refresh delivery status. Navigation
+poll. **Check sync status**, below the article, rereads this cached workspace
+status without another content write, a Git retry or conflict reconciliation.
+Recovery requires the worker/operator to complete delivery separately; a changed
+remote still requires explicit operator review. Navigation
 invalidates old status responses. Article contents and on-demand Git history
 remain usable with unsaved editor drafts; history loading errors can be retried.
 

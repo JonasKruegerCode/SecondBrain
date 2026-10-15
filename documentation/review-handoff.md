@@ -249,6 +249,12 @@ acknowledgement. Both browser profiles exercise desktop and narrow paths; local
 reads, history, lexical search and explicit links remain available throughout.
 The fixture disables inherited hosted providers and uses no fabricated status
 responses. It is not a hosted Git, SSH, index-provider or production acceptance.
+The same owned fixture also advances its bare target with an independent normal
+Git commit/push. Two subsequent local browser saves remain available while
+delivery and the read-only status action keep reporting conflict. Actual remote
+Markdown/head, local revisions/history/search/links and exactly two browser
+writes are checked; a repeated delivery attempt cannot adopt or overwrite the
+independent revision. No automatic reconciliation is exercised or authorized.
 
 The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
 profile and the WebKit reading/navigation profile. Its six timeout cases withhold an
