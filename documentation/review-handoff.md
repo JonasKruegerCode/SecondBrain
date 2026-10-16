@@ -59,6 +59,15 @@ receipt, so a pending or failed provider cannot be reported as current. The wiki
 continues to provide exact reads, lexical search, local history and explicit
 Markdown graph navigation without those providers.
 
+Portable backup has two deterministic live-write regressions. A real REST save
+before Git bundle creation causes `backup_changed`, no published archive and
+no temporary debris; an explicit retry captures the completed edit. A save
+after bundle capture leaves a valid earlier snapshot. Both restore through the
+real API with exact page/history/graph checks and original-request replay
+without a new revision. The live source retains its newer edit. This covers
+local Git/SQLite/ASGI concurrency, not off-host recovery or a common snapshot
+of external providers. The [backup guide](backup-restore.md) explains the retry.
+
 Long chat page reads now expose bounded character chunks with `offset`,
 `total_chars`, `next_offset` and the page revision. A continuation must provide
 `expected_revision`; a changed snapshot returns an explicit conflict instead of

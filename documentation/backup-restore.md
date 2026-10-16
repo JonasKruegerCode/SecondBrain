@@ -38,6 +38,13 @@ one named Git revision, not a half-written working tree. For a release backup,
 still quiesce writers and delivery workers so the archive and the separately
 recorded provider/remote state describe the same operational moment.
 
+If a save lands between reading the content head and creating its Git bundle,
+the command fails with `backup_changed` and publishes no archive. The live wiki
+and its saved edit remain intact. Retry the same new archive path after the save
+has completed, or quiesce writers for the release backup. A save after bundle
+capture can instead leave a valid archive of the earlier revision: the manifest
+identifies that captured snapshot, not the latest state at command exit.
+
 ## Restore without overwriting
 
 Restore only into a new path:
@@ -74,6 +81,12 @@ implicit merge or rollback over a live vault.
 The native synthetic regression covers populated and empty archives, full local
 history, request-receipt replay after restart, both SQLite ledgers, demo metadata,
 checksum/member validation, refusal to overwrite, and the real CLI round trip.
+Two concurrent-save cases hold only the Git-bundle boundary while a real REST
+edit completes on another thread. They check rejection with no archive or
+temporary debris, a deliberate successful retry, and restoration of one exact
+revision's page, history and graph. Replaying its original REST request leaves
+the restored head unchanged. This is local Git/SQLite/ASGI evidence, not an
+off-host recovery or a simultaneous snapshot of external providers.
 Corrupt source SQLite headers or b-tree pages stop backup creation with
 `invalid_vault`; no archive is published and source bytes remain unchanged.
 SQLite busy/full/I/O failures retain a separate `storage_unavailable` result.
