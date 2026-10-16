@@ -82,6 +82,18 @@ transport/API cases verify this boundary and retry recovery, not live model
 quality. The normalized finish reasons are documented in the
 [OpenRouter API reference](https://openrouter.ai/docs/api_reference/overview#finish-reason).
 
+The local Vite proxy now closes the outgoing chat request when its browser
+disconnects before the API has sent response headers. A fully uploaded POST
+does not emit the incoming-request abort event, so the previous development
+proxy could leave the provider running after Stop reply. The hook is scoped to
+chat POSTs, preserves completed responses and removes its close listener after
+upstream completion; it also handles an already disconnected request waiting
+for an upstream socket. Native HTTP/Vite regressions check cancellation,
+concurrent isolation, the queued-socket race, normal/error completion and the
+unchanged page-write boundary. A held synthetic provider through the real
+ASGI app and browser establishes development-path cancellation, not live model
+billing or production reverse-proxy behavior.
+
 The optional chat is a bounded OpenRouter function-calling loop over search,
 exact page reads and graph neighbors. It has no write tool and no backend
 conversation archive. Visible sources contain only pages the model actually

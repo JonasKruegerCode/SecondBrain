@@ -7,7 +7,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:proxy": "node --test tests/chat-proxy.test.mjs"
   },
   "dependencies": {
     "cytoscape": "^3.28.1",

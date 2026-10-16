@@ -36,6 +36,10 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
+      - name: Native chat proxy cancellation
+        working-directory: frontend
+        run: npm run test:proxy
+
       - name: Compile
         working-directory: frontend
         run: npm run build
