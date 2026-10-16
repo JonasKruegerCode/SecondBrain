@@ -84,9 +84,10 @@ def test_validation_precedes_head_access(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_valid_unicode_preserves_bytes_and_receipts(tmp_path: Path) -> None:
     markdown = "# Observatoire 海\n\nCafé / Cafe\u0301 / 😀 / مرحبا\n"
+    request_id = "créer-海-😀"
     store = WikiStore(tmp_path)
     with TestClient(create_app(tmp_path)) as client:
-        args = {"markdown": markdown, "base_revision": None, "request_id": "créer-海-😀"}
+        args = {"markdown": markdown, "base_revision": None, "request_id": request_id}
         # ensure_ascii emits a valid surrogate pair for the astral character.
         response = client.post(
             "/api/wiki/pages/observatoire",
@@ -95,7 +96,7 @@ def test_valid_unicode_preserves_bytes_and_receipts(tmp_path: Path) -> None:
         )
         assert response.status_code == 200
     head = store._head()
-    replay = store.save_page("observatoire", **args)
+    replay = store.save_page("observatoire", markdown, None, request_id)
     assert replay == response.json()
     assert store._head() == head
     assert store._blob(head, "pages/observatoire.md") == markdown.encode("utf-8")

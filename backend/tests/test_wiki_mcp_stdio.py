@@ -51,9 +51,10 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
     params = StdioServerParameters(
         command=sys.executable, args=["-m", "second_brain.wiki.mcp"], env=env, cwd=home
     )
+    markdown = "# Harbor\n\nA fictional observatory: 海 / 😀 / Cafe\u0301 / مرحبا."
     args = {
         "id": "harbor",
-        "markdown": "# Harbor\n\nA fictional observatory: 海 / 😀 / Cafe\u0301 / مرحبا.",
+        "markdown": markdown,
         "base_revision": None,
         "request_id": "stdio-créer-海-😀",
     }
@@ -80,7 +81,7 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
 
             external = WikiStore(vault)
             publication = external._head()
-            assert external._blob(publication, "pages/harbor.md") == args["markdown"].encode()
+            assert external._blob(publication, "pages/harbor.md") == markdown.encode()
             replay = await client.call_tool("save_page", args)
             assert not replay.isError and replay.structuredContent == saved
             assert external._head() == publication
