@@ -53,9 +53,9 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
     )
     args = {
         "id": "harbor",
-        "markdown": "# Harbor\n\nA fictional observatory.",
+        "markdown": "# Harbor\n\nA fictional observatory: 海 / 😀 / Cafe\u0301 / مرحبا.",
         "base_revision": None,
-        "request_id": "stdio-create",
+        "request_id": "stdio-créer-海-😀",
     }
     # The SDK owns and closes each real child, including on assertion/timeout.
     with anyio.fail_after(30):
@@ -79,8 +79,14 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
             assert status["remote"]["state"] == "not_configured"
 
             external = WikiStore(vault)
+            publication = external._head()
+            assert external._blob(publication, "pages/harbor.md") == args["markdown"].encode()
+            replay = await client.call_tool("save_page", args)
+            assert not replay.isError and replay.structuredContent == saved
+            assert external._head() == publication
             with TestClient(create_app(vault)) as rest:
                 assert rest.get("/api/wiki/pages/harbor").json()["revision"] == saved["revision"]
+                assert rest.get("/api/wiki/pages/harbor").json()["markdown"] == args["markdown"]
                 response = rest.post(
                     "/api/wiki/pages/harbor",
                     json={"markdown": "# Harbor\n\nUpdated outside MCP.",

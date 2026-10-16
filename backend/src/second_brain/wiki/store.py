@@ -491,12 +491,18 @@ class WikiStore:
             raise WikiError(
                 "invalid_request_id", "Provide a stable request ID up to 200 characters."
             )
-        data = markdown.encode() if markdown is not None else None
-        if data is not None and len(data) > MAX_BYTES:
-            raise WikiError("content_too_large", "Pages are limited to one megabyte.")
-        payload = json.dumps([page_id, markdown, base_revision], ensure_ascii=False).encode()
+        try:
+            data = markdown.encode() if markdown is not None else None
+            if data is not None and len(data) > MAX_BYTES:
+                raise WikiError("content_too_large", "Pages are limited to one megabyte.")
+            payload = json.dumps([page_id, markdown, base_revision], ensure_ascii=False).encode()
+            request_bytes = request_id.encode()
+        except UnicodeEncodeError:
+            # JSON can contain escaped unpaired surrogates. Reject them before
+            # reading publication state or reserving an idempotency receipt.
+            raise WikiError("invalid_payload", "Provide valid Unicode text.") from None
         fingerprint = hashlib.sha256(payload).hexdigest()
-        request_path = f"requests/{hashlib.sha256(request_id.encode()).hexdigest()}.json"
+        request_path = f"requests/{hashlib.sha256(request_bytes).hexdigest()}.json"
         page_path = f"pages/{page_id}.md"
         # Retry unrelated concurrent writes. The page's base stays fixed on every retry.
         for _ in range(8):
