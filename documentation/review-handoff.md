@@ -77,6 +77,15 @@ submission/retry and a held synthetic answer adapter for the late-reply race;
 it does not establish real model quality. Both browser reading profiles run
 these cases, including 390px and 1440px stale-view notices and reload persistence.
 
+A full browser-local history scrolls within the desktop conversation list instead
+of stretching the whole workspace and pushing the composer below the viewport.
+All twenty entries remain reachable by native keyboard focus, selection and
+reload; narrow screens retain their horizontal conversation strip. Rendering
+regressions use only synthetic saved transcripts, not generated model answers.
+The update backup command resolves the active vault inside the container,
+including an explicitly retained restored-vault override; it must not assume
+the volume root remains the active vault after recovery.
+
 OpenRouter failure diagnostics retain attempt number, exception class and HTTP
 status, without raw exception messages, response excerpts or chained provider
 tracebacks. Automatic HTTPX tracing is suppressed around these requests; bounded

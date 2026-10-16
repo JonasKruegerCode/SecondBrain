@@ -60,3 +60,12 @@
 
 .chat-storage-notice { margin: 0 34px 15px; padding: 12px 14px; background: #fff5df; color: #72582c; border-radius: 9px; font-size: 12px; line-height: 1.5; flex-shrink: 0; }
 @media (max-width: 760px) { .chat-storage-notice { margin: 0 18px 14px; } }
+
+@media (min-width: 761px) {
+  .chat-history-list {
+    max-height: 55vh;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+}

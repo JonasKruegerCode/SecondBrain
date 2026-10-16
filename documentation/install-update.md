@@ -84,9 +84,14 @@ WIKI_ARCHIVE="wiki-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 wiki_compose stop frontend backend mcp
 wiki_compose run --rm --no-deps -T \
   -v "$PWD/.demo/operator-backups:/backups" \
-  backend python -m second_brain.wiki.backup create \
-  --vault /managed-vault --archive "/backups/$WIKI_ARCHIVE"
+  backend sh -c 'exec python -m second_brain.wiki.backup create \
+    --vault "${SECOND_BRAIN_WIKI_VAULT:?Set the active managed vault}" \
+    --archive "$1"' sh "/backups/$WIKI_ARCHIVE"
 ```
+
+The vault path expands inside the one-off container, using the service environment
+including any recovery override such as `/managed-vault/restored`. The archive
+path is passed as a quoted argument from the host shell.
 
 Require a successful CLI result and retain its exact content revision/page count.
 The archive must be new and outside the vault. Container-created files may be
@@ -230,3 +235,4 @@ Compose behavior: [project names](https://docs.docker.com/compose/how-tos/projec
 [up](https://docs.docker.com/reference/cli/docker/compose/up/),
 [restart](https://docs.docker.com/reference/cli/docker/compose/restart/) and
 [run](https://docs.docker.com/reference/cli/docker/compose/run/).
+
