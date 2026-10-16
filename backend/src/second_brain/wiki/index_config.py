@@ -15,7 +15,7 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
     # Titles and title-resolved graph edges now exclude block-code/comment
     # headings. Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v2"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v3"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

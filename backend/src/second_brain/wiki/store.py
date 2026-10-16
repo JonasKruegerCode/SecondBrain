@@ -24,9 +24,7 @@ TYPED_LINK_RE = re.compile(
     r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]"
 )
 MAX_BYTES = 1_000_000
-FRONTMATTER_RE = re.compile(
-    r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL
-)
+FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
 
 
@@ -60,10 +58,38 @@ def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
     return markdown[match.end() :], galaxy
 
 
+def _without_comments(line: str, in_comment: bool) -> tuple[str, bool]:
+    """Read prose comments before interpreting fence markers, preserving inline code."""
+    parts: list[str] = []
+    while line:
+        if in_comment:
+            if not parts:
+                parts.append(" ")
+            _, closing, line = line.partition("-->")
+            if not closing:
+                return "".join(parts), True
+            in_comment = False
+        else:
+            token = re.search(r"(?P<code>(?P<ticks>`+).*?(?P=ticks))|<!--", line)
+            if token is None:
+                parts.append(line)
+                break
+            parts.append(line[: token.start()])
+            if token.group("code") is not None:
+                parts.append(token.group())
+            else:
+                if not "".join(parts).strip():
+                    parts.append(" ")
+                in_comment = True
+            line = line[token.end() :]
+    return "".join(parts), in_comment
+
+
 def prose_blocks(markdown: str) -> str:
     """Exclude block code and comments while retaining literal prose headings."""
     lines: list[str] = []
     fence = ""
+    in_comment = False
     # Each tuple is (marker indentation, content indentation). Markdown list
     # continuations may legitimately start with four or more spaces, so a
     # blanket indented-code check would hide visible nested-list links from the
@@ -77,7 +103,9 @@ def prose_blocks(markdown: str) -> str:
             default=0,
         )
         relative = expanded[container_indent:]
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative)
+        # Fence info is literal, including comment markers. Only the original
+        # line can delimit a fence: removing a comment must not create one.
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative) if not in_comment else None
         if match:
             marker = match.group(1)
             if not fence:
@@ -87,7 +115,13 @@ def prose_blocks(markdown: str) -> str:
             continue
         if fence:
             continue
-
+        if in_comment or indent - container_indent < 4:
+            # A fence marker inside a comment cannot open/close a code block.
+            # Indented code cannot start a prose comment either.
+            line, in_comment = _without_comments(line, in_comment)
+            expanded = line.expandtabs(4)
+            indent = len(expanded) - len(expanded.lstrip(" "))
+            relative = expanded[container_indent:]
         list_item = re.match(r"^( *)([-+*]|\d+[.)])( +)", expanded)
         if list_item:
             marker_indent = len(list_item.group(1))
@@ -97,9 +131,7 @@ def prose_blocks(markdown: str) -> str:
             if marker_indent < 4 or parent:
                 while list_stack and marker_indent <= list_stack[-1][0]:
                     list_stack.pop()
-                content_indent = marker_indent + len(list_item.group(2)) + len(
-                    list_item.group(3)
-                )
+                content_indent = marker_indent + len(list_item.group(2)) + len(list_item.group(3))
                 list_stack.append((marker_indent, content_indent))
                 lines.append(line)
             continue
@@ -120,7 +152,7 @@ def prose_blocks(markdown: str) -> str:
         )
         if container_indent and indent < container_indent + 4:
             lines.append(line)
-    return re.sub(r"<!--.*?-->", "", "\n".join(lines), flags=re.DOTALL)
+    return "\n".join(lines)
 
 
 def prose_links(markdown: str) -> str:

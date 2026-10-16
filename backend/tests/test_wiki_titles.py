@@ -16,7 +16,14 @@ from second_brain.wiki.store import WikiError, WikiStore
         "```markdown\n# Example heading\n```\n\n",
         "~~~~text\n# Example heading\n~~~\n# Still an example\n~~~~\n\n",
         "<!--\n# Example heading\n-->\n\n",
+        "<!--\n```\n# Example heading\n-->\n\n",
+        "```html <!--\n# Example heading\n```\n\n",
+        "~~~html <!--\n# Example heading\n~~~\n\n",
+        "<!-- comment -->```\n",
+        "<!-- comment --># Example heading\n\n",
+        "An introduction <!--\n~~~~\n# Example heading\n-->\n\n",
         "    # Example heading\n\n",
+        "    <!-- code, not an open prose comment\n\n",
         "---\nlabel: example\n# Example heading\n---\n\n",
     ],
 )
@@ -60,9 +67,24 @@ def test_code_only_heading_falls_back_to_id_and_inline_title_bytes_remain(tmp_pa
     )
 
 
+def test_unclosed_comments_hide_headings_but_code_comment_literals_remain(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    assert (
+        store.save_page("unclosed", "<!--\n# Hidden\n[[missing]]", None, "u")["title"] == "unclosed"
+    )
+    assert store.graph()["missing_targets"] == []
+    literal = "# Actual `<!-- literal -->` title\n\n```md\n<!--\n```\n\n[[actual]]"
+    assert (
+        store.save_page("literal", literal, None, "l")["title"] == "Actual `<!-- literal -->` title"
+    )
+    assert store.graph()["missing_targets"] == [{"source": "literal", "target": "actual"}]
+
+
+@pytest.mark.parametrize("old_schema", ["managed-snapshots-v1", "managed-snapshots-v2"])
 def test_title_projection_upgrade_invalidates_ready_index_receipts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    old_schema: str,
 ) -> None:
     # Use the real coordinator and durable SQLite ledger; the provider is an
     # in-memory adapter, so this is not a hosted Neo4j/Qdrant acceptance test.
@@ -85,7 +107,7 @@ def test_title_projection_upgrade_invalidates_ready_index_receipts(
 
     adapter = GraphAdapter()
     old_config = hashlib.sha256(
-        json.dumps({"schema": "managed-snapshots-v1"}, sort_keys=True).encode()
+        json.dumps({"schema": old_schema}, sort_keys=True).encode()
     ).hexdigest()
     previous = IndexCoordinator(store, {"graph": adapter}, config_id=old_config)
     assert previous.run_once()["indexes"]["graph"]["state"] == "current"

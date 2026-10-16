@@ -6,7 +6,8 @@ for (const width of [390, 1440]) {
   test(`code and comment headings do not become article identity (${width})`, async ({ page, request }, info) => {
     const key = randomUUID(), id = `title-${key}`, source = `title-source-${key}`;
     const title = `Compass entry ${key}`, example = `Code example ${key}`, hidden = `Hidden annotation ${key}`;
-    const markdown = `\`\`\`markdown\n# ${example}\n\`\`\`\n\n<!--\n# ${hidden}\n-->\n\n# ${title}\n\nA fictional compass demonstration.\n`;
+    const code = `# ${example}\n<!-- literal code comment -->`;
+    const markdown = `\`\`\`markdown <!-- literal info\n${code}\n\`\`\`\n\n<!--\n\`\`\`\n# ${hidden}\n-->\n\n# ${title}\n\nA fictional compass demonstration.\n`;
     const owned: string[] = [], errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
     try {
@@ -26,7 +27,7 @@ for (const width of [390, 1440]) {
       await expect(actualLink).toHaveAttribute("href", `/wiki/${id}`);
       await actualLink.click();
       await expect(page.locator("article > h1")).toHaveText(title);
-      await expect(page.locator(".prose pre")).toHaveText(`# ${example}`);
+      await expect(page.locator(".prose pre")).toHaveText(code);
       await expect(page.locator(".prose")).not.toContainText(hidden);
       await expect(page).toHaveTitle(`${title} · Secondbrain`);
       await page.screenshot({ path: info.outputPath(`title-identity-${width}.png`), fullPage: true });

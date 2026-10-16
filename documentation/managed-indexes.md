@@ -72,8 +72,8 @@ receipt. Independent graph and search receipts let one backend recover without
 claiming the other is ready. The configuration fingerprint is shared across enabled backends:
 changing graph or vector configuration invalidates both receipts until rebuilt.
 
-Snapshot derivation version `managed-snapshots-v2` excludes block-code and comment
-headings from page titles and their title-resolved graph edges. Upgrading from v1
+Snapshot derivation version `managed-snapshots-v3` excludes block-code and comment
+headings from page titles and their title-resolved graph edges. Upgrading from v1 or v2
 invalidates old ready receipts even if the Markdown/Git revision is unchanged.
 The startup delivery worker, or the explicit one-shot command below, builds fresh
 generations before derived retrieval becomes current again. The fingerprint is
