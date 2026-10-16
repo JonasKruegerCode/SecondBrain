@@ -64,7 +64,9 @@ storage-fallback messages. Retry first displays a newer saved transcript instead
 of resending an already answered question. If another tab changes the transcript
 while an answer is pending, the answer is retained in a separate conversation
 with its original request context; the newer stored conversation is preserved.
-Deletion still wins over an in-flight reply. These guards compare transcript
+Recovery from failed browser writes also keeps a divergent unsaved branch in a
+separate conversation before Send or Retry. An unchanged saved prefix still
+recovers normally. Deletion still wins over an in-flight reply. These guards compare transcript
 content rather than timestamps. Browser storage is not a transactional multiwriter
 database: simultaneous cross-document writes and eviction beyond the bounded
 history remain outside this guarantee.

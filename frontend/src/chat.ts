@@ -189,6 +189,20 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     : drafts.size ? "draft" : undefined;
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
+  const preserveUnsavedBranch = (item: Conversation, stored: ReturnType<typeof readPersistent>) => {
+    const latest = stored.conversations.find(saved => saved.id === item.id);
+    if (stored.unavailable || !dirtyIds.has(item.id) || !latest ||
+        JSON.stringify(item.messages.slice(0, latest.messages.length)) === transcript(latest)) return item;
+    // A quota-failed local branch and a different saved branch both contain work.
+    // Never let recovery replace the saved branch with the local one.
+    dirtyIds.delete(item.id);
+    const branch = { ...item, id: crypto.randomUUID(), messages: [...item.messages] };
+    conversations.unshift(branch);
+    activeId = branch.id;
+    dirtyIds.add(branch.id);
+    conversationNotice = "Another tab changed this conversation while browser storage was unavailable. Your unsaved messages are kept in a separate conversation.";
+    return branch;
+  };
   const persist = () => {
     const stored = readPersistent();
     const merged = new Map(stored.unavailable
@@ -328,6 +342,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         item = latest;
         conversationNotice = "This conversation was updated in another tab. Your message follows the latest saved messages.";
       }
+      item = preserveUnsavedBranch(item, stored);
       item.messages.push({ role: "user", content });
       item.messages = item.messages.slice(-MAX_MESSAGES);
       item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
@@ -350,9 +365,6 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   const requestAnswer = async () => {
     if (busy) return;
     let conversation = current();
-    const beforeRequest = readPersistent();
-    const savedBeforeRequest = beforeRequest.conversations.find(item => item.id === conversation.id);
-    const requestSnapshot = transcript(savedBeforeRequest);
     // Retry uses the same read boundary as a new submission. A transcript
     // deleted in another tab must not be sent back to the provider.
     if (readPersistent().tombstones.some(item => item.id === conversation.id)) {
@@ -361,6 +373,12 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       render(true);
       return;
     }
+    const unsaved = conversation;
+    conversation = preserveUnsavedBranch(conversation, readPersistent());
+    if (conversation !== unsaved) persist();
+    const beforeRequest = readPersistent();
+    const savedBeforeRequest = beforeRequest.conversations.find(item => item.id === conversation.id);
+    const requestSnapshot = transcript(savedBeforeRequest);
     if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id) && savedBeforeRequest &&
         transcript(savedBeforeRequest) !== transcript(conversation)) {
       conversations = conversations.map(item => item.id === conversation.id ? savedBeforeRequest : item);

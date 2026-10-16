@@ -86,3 +86,48 @@ test("late synthetic reply preserves both concurrent transcripts", async ({ page
   await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic delayed adapter answer.");
   await other.close();
 });
+
+for (const finish of ["send", "retry"] as const) {
+  test(`storage recovery retains divergent saved and unsaved branches (${finish})`, async ({ page, context }) => {
+    await page.goto("/chat");
+    await page.evaluate(({ key, question }) => localStorage.setItem(key, JSON.stringify([
+      { id: "shared", title: question, updated: 1, messages: [{ role: "user", content: question }] },
+    ])), { key, question });
+    await page.reload();
+    await page.evaluate(key => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (name, value) {
+        if (name === key) throw new DOMException("Synthetic full storage", "QuotaExceededError");
+        return set.call(this, name, value);
+      };
+      window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+    }, key);
+    await page.getByLabel("Message").fill("Unsaved local question.");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    const other = await context.newPage();
+    await other.goto("/chat");
+    await other.evaluate(key => {
+      const saved = JSON.parse(localStorage.getItem(key)!);
+      saved[0].messages.push({ role: "user", content: "Concurrent saved question." });
+      saved[0].updated++;
+      localStorage.setItem(key, JSON.stringify(saved));
+    }, key);
+    await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+    if (finish === "send") {
+      await page.getByLabel("Message").fill("Local recovery follow-up.");
+      await page.getByRole("button", { name: "Send" }).click();
+    } else await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.locator(".chat-conversation-notice")).toContainText("unsaved messages");
+    const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+    expect(saved).toHaveLength(2);
+    expect(saved.find((item: { id: string }) => item.id === "shared").messages.at(-1).content).toBe("Concurrent saved question.");
+    expect(saved.find((item: { id: string }) => item.id !== "shared").messages.map((item: { content: string }) => item.content)).toEqual([
+      question, "Unsaved local question.", ...(finish === "send" ? ["Local recovery follow-up."] : []),
+    ]);
+    await page.reload();
+    await expect(page.locator(".chat-message.user")).toHaveCount(finish === "send" ? 3 : 2);
+    await other.close();
+  });
+}
