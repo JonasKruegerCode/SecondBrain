@@ -399,3 +399,30 @@ def test_history_exposes_original_commits_for_nested_imported_page(tmp_path: Pat
     commits = {entry["commit"] for entry in store.history("home")}
     assert {first, second, result["revision"]} <= commits
     assert pages(store) == {"home": "# Fictional second\n"}
+
+
+def test_imported_page_history_follows_source_rename(tmp_path: Path) -> None:
+    source = source_repo(tmp_path, {"wiki/archive/old.md": b"# Fictional first\n"})
+    first = git(source, "rev-parse", "HEAD").decode().strip()
+    git(source, "mv", "wiki/archive/old.md", "wiki/archive/home.md")
+    git(source, "commit", "--quiet", "-m", "Rename fictional page")
+    renamed = git(source, "rev-parse", "HEAD").decode().strip()
+    original = b"# Fictional latest\r\n\r\nPreserved after rename.\r\n"
+    latest = commit_files(source, {"wiki/archive/home.md": original})
+    store = WikiStore(tmp_path / "managed")
+    result = import_vault(
+        store,
+        source,
+        prefix="wiki",
+        base_revision=None,
+        request_id="renamed-history",
+    )
+
+    assert pages(store) == {"home": original.decode()}
+    parents = store._git("show", "-s", "--format=%P", result["revision"]).decode().split()
+    assert latest in parents
+    assert store._git("cat-file", "commit", first) == git(source, "cat-file", "commit", first)
+    assert git(source, "rev-parse", "HEAD").decode().strip() == latest
+    assert git(source, "status", "--porcelain") == b""
+    commits = {entry["commit"] for entry in store.history("home")}
+    assert {first, renamed, latest, result["revision"]} <= commits

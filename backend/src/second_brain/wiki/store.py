@@ -110,7 +110,11 @@ def prose_blocks(markdown: str) -> str:
             marker = match.group(1)
             if not fence:
                 fence = marker
-            elif marker[0] == fence[0] and len(marker) >= len(fence):
+            elif (
+                marker[0] == fence[0]
+                and len(marker) >= len(fence)
+                and not relative[match.end() :].strip(" \t")
+            ):
                 fence = ""
             continue
         if fence:
@@ -642,7 +646,9 @@ class WikiStore:
             source = provenance["source_revision"]
             if path and source:
                 rows.extend(
-                    self._git("log", "-20", format_arg, source, "--", path).decode().splitlines()
+                    self._git("log", "-20", "--follow", format_arg, source, "--", path)
+                    .decode()
+                    .splitlines()
                 )
         seen: set[str] = set()
         changes = []

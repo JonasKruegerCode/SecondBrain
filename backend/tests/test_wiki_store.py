@@ -313,6 +313,41 @@ def test_graph_does_not_treat_code_examples_as_links(tmp_path: Path) -> None:
     assert store.graph()["missing_targets"] == [{"source": "home", "target": "real"}]
 
 
+@pytest.mark.parametrize("marker", ["`", "~"])
+@pytest.mark.parametrize("suffix", ["not-a-close", " <!-- literal -->", "\ttext"])
+def test_fence_with_trailing_text_keeps_literal_content_out_of_navigation(
+    tmp_path: Path, marker: str, suffix: str
+) -> None:
+    store = WikiStore(tmp_path)
+    fence = marker * 3
+    markdown = (
+        f"{fence}text\n{fence}{suffix}\n# Literal code title\n"
+        f"Literal code payload [[code-target]].\n{fence}\n\n"
+        "# Visible title\nVisible prose [[real-target]].\n"
+    )
+    page = store.save_page("home", markdown, None, "create")
+    assert page["markdown"] == markdown
+    assert page["title"] == "Visible title"
+    assert page["excerpt"] == "Visible prose real-target."
+    assert store.graph()["missing_targets"] == [{"source": "home", "target": "real-target"}]
+
+
+@pytest.mark.parametrize("marker", ["`", "~"])
+def test_longer_fence_with_only_trailing_whitespace_closes_code(
+    tmp_path: Path, marker: str
+) -> None:
+    store = WikiStore(tmp_path)
+    page = store.save_page(
+        "home",
+        f"{marker * 3}text\n# Literal title\n[[code-target]]\n{marker * 5} \t\n"
+        "# Visible title\nVisible prose [[real-target]].\n",
+        None,
+        "create",
+    )
+    assert page["title"] == "Visible title"
+    assert store.graph()["missing_targets"] == [{"source": "home", "target": "real-target"}]
+
+
 @pytest.mark.parametrize("read", ["graph", "resolve-links"])
 def test_batch_read_remains_on_one_snapshot_during_concurrent_write(
     tmp_path: Path,

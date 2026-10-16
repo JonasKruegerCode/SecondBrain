@@ -258,6 +258,20 @@ This leaves the intermittent first-install notice and physical devices open.
 
 ## Public interfaces
 
+Derived article titles, excerpts and explicit links respect a fenced code
+block until a matching closing fence with only trailing spaces/tabs. A line
+such as three backticks followed by text or a comment remains literal code;
+it cannot introduce a wiki link or hide the prose after the real closing fence.
+The `managed-snapshots-v4` identity invalidates older index receipts, requiring
+a rebuild without rewriting Markdown. Native REST/browser regressions compare
+rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
+
+Imported page history follows Git-detected source renames before combining
+those commits with managed history. A real nested-source rename regression
+checks the original creation, rename and later update, exact CRLF content,
+retained source objects and an unchanged clean source repository. This uses
+Git rename detection, not a claim to reconstruct arbitrary copies or rewrites.
+
 The managed REST surface under `/api/wiki` covers health, page
 list/read/save/delete, link resolution and explicit incoming links,
 lexical/semantic/GraphRAG search, graph,
