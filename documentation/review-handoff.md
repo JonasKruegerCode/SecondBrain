@@ -58,7 +58,21 @@ exact page reads and graph neighbors. It has no write tool and no backend
 conversation archive. Visible sources contain only pages the model actually
 read. Browser-local conversations are bounded and deletable; each write merges
 the current store, and bounded deletion tombstones prevent a stale tab from
-losing or resurrecting independent conversations.
+losing or resurrecting independent conversations. Before submitting from a stale
+view, the composer adopts the latest saved transcript without discarding unsaved
+storage-fallback messages. Retry first displays a newer saved transcript instead
+of resending an already answered question. If another tab changes the transcript
+while an answer is pending, the answer is retained in a separate conversation
+with its original request context; the newer stored conversation is preserved.
+Deletion still wins over an in-flight reply. These guards compare transcript
+content rather than timestamps. Browser storage is not a transactional multiwriter
+database: simultaneous cross-document writes and eviction beyond the bounded
+history remain outside this guarantee.
+
+The concurrency regression uses a real unconfigured chat error for stale
+submission/retry and a held synthetic answer adapter for the late-reply race;
+it does not establish real model quality. Both browser reading profiles run
+these cases, including 390px and 1440px stale-view notices and reload persistence.
 
 OpenRouter failure diagnostics retain attempt number, exception class and HTTP
 status, without raw exception messages, response excerpts or chained provider

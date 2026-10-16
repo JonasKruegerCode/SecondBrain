@@ -388,6 +388,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/title-identity.spec.ts",
         "e2e/title-promotion.spec.ts",
         "e2e/title-inline.spec.ts",
+        "e2e/chat-concurrency.spec.ts",
         "e2e/forced-colors.spec.ts",
     ]),
     ("webkit", "reading-navigation", "block", [
@@ -403,6 +404,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/title-identity.spec.ts",
         "e2e/title-promotion.spec.ts",
         "e2e/title-inline.spec.ts",
+        "e2e/chat-concurrency.spec.ts",
     ]),
 ])
 def test_editor_retry_orchestration_contract_without_launching_a_browser(

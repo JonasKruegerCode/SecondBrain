@@ -244,6 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/title-identity.spec.ts",
             "e2e/title-promotion.spec.ts",
             "e2e/title-inline.spec.ts",
+            "e2e/chat-concurrency.spec.ts",
             "e2e/forced-colors.spec.ts",
         ]
     )
@@ -267,6 +268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/title-identity.spec.ts",
             "e2e/title-promotion.spec.ts",
             "e2e/title-inline.spec.ts",
+            "e2e/chat-concurrency.spec.ts",
         ]
     worker_filter = (
         "(PWA metadata registers an online-only worker without private caches|"

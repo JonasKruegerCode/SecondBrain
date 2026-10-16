@@ -159,6 +159,8 @@ function save(conversations: Conversation[], tombstones: Tombstone[], dirtyIds: 
   }
 }
 
+const transcript = (item: Conversation | undefined) => JSON.stringify(item?.messages ?? null);
+
 function freshConversation(): Conversation {
   return { id: crypto.randomUUID(), title: "New conversation", messages: [], updated: Date.now() };
 }
@@ -320,6 +322,12 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         activeId = item.id;
         conversationNotice = "The previous conversation was deleted in another tab. Your message started a new conversation.";
       }
+      const latest = stored.conversations.find(saved => saved.id === item.id);
+      if (!stored.unavailable && !dirtyIds.has(item.id) && latest && transcript(latest) !== transcript(item)) {
+        conversations = conversations.map(saved => saved.id === item.id ? latest : saved);
+        item = latest;
+        conversationNotice = "This conversation was updated in another tab. Your message follows the latest saved messages.";
+      }
       item.messages.push({ role: "user", content });
       item.messages = item.messages.slice(-MAX_MESSAGES);
       item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
@@ -341,11 +349,24 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
 
   const requestAnswer = async () => {
     if (busy) return;
-    const conversation = current();
+    let conversation = current();
+    const beforeRequest = readPersistent();
+    const savedBeforeRequest = beforeRequest.conversations.find(item => item.id === conversation.id);
+    const requestSnapshot = transcript(savedBeforeRequest);
     // Retry uses the same read boundary as a new submission. A transcript
     // deleted in another tab must not be sent back to the provider.
     if (readPersistent().tombstones.some(item => item.id === conversation.id)) {
       error = "";
+      persist();
+      render(true);
+      return;
+    }
+    if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id) && savedBeforeRequest &&
+        transcript(savedBeforeRequest) !== transcript(conversation)) {
+      conversations = conversations.map(item => item.id === conversation.id ? savedBeforeRequest : item);
+      error = "";
+      contextNotice = "";
+      conversationNotice = "This conversation was updated in another tab. Review the latest saved messages before sending again.";
       persist();
       render(true);
       return;
@@ -368,6 +389,18 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         signal: controller.signal,
       })) as ChatResponse;
       if (!alive || activeId !== requestId || controller.signal.aborted) return;
+      const afterRequest = readPersistent();
+      const latest = afterRequest.conversations.find(item => item.id === requestId);
+      // A late answer belongs to the context actually sent. Preserve both branches
+      // instead of overwriting another tab's newer messages or misattributing it.
+      if (!afterRequest.unavailable && !afterRequest.tombstones.some(item => item.id === requestId) &&
+          transcript(latest) !== requestSnapshot) {
+        dirtyIds.delete(requestId);
+        conversation = { ...conversation, id: crypto.randomUUID(), messages: [...conversation.messages] };
+        conversations.unshift(conversation);
+        activeId = conversation.id;
+        conversationNotice = "Another tab updated this conversation while the reply was pending. This reply was saved as a separate conversation; both versions are kept.";
+      }
       conversation.messages.push({
         role: "assistant",
         content: result.answer,
