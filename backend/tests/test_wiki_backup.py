@@ -439,7 +439,7 @@ def test_sqlite_storage_failure_is_not_reported_as_corruption(
         error.sqlite_errorcode = code
         raise error
 
-    monkeypatch.setattr(backup.sqlite3, "connect", unavailable)
+    monkeypatch.setattr(sqlite3, "connect", unavailable)
     with pytest.raises(WikiError) as error:
         create_backup(vault, tmp_path / "backup.tar.gz")
     assert error.value.code == "storage_unavailable"
@@ -498,9 +498,9 @@ def test_storage_errors_remain_distinct_from_corruption(
 
     if operation == "create":
         (vault / ".wiki-indexes.sqlite3").write_bytes(b"placeholder")
-        monkeypatch.setattr(backup.sqlite3, "connect", unavailable)
+        monkeypatch.setattr(sqlite3, "connect", unavailable)
     else:
-        monkeypatch.setattr(backup.tarfile, "open", unavailable)
+        monkeypatch.setattr(tarfile, "open", unavailable)
     assert backup.main([
         operation, "--vault", str(vault if operation == "create" else destination),
         "--archive", str(archive),
