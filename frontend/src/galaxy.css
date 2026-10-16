@@ -19,6 +19,9 @@
 @media (max-width: 680px) { .galaxy-breadcrumb span { flex-basis: 100%; max-width: 100%; } }
 
 /* SVG paint is not automatically remapped with the surrounding HTML canvas. */
+
+.galaxy .galaxy-density-note{font-size:11px;line-height:1.6;color:#c2d1e5;background:#15243b;border-bottom:1px solid var(--g-border);padding:12px 15px;margin:0;overflow-wrap:anywhere}
+
 @media (forced-colors: active) {
   .galaxy-neighborhood ellipse { fill: none; stroke: GrayText; stroke-opacity: 1; }
   .galaxy-neighborhood text, .galaxy-neighborhood .galaxy-count,

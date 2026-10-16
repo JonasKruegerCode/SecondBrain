@@ -581,6 +581,16 @@ and its matching CI runs rather than treating these counts as current.
   compares the original nodes and edges after its mutations. Very dense maps and
   physical touch ergonomics remain separate QA concerns; emulated taps do not
   establish device usability.
+- Expanded constellations with more than 800 internal drawable links show only
+  links incident to the selected page, or the core before selection. A visible
+  notice names that scope. Every star, API edge and directional evidence item
+  remains available; overview bundling and sparse maps keep their existing
+  behavior. A real REST fixture creates 51 linked pages and retains all 2,550
+  directed internal edges plus two real external links while checking 100
+  incident map lines, 102 complete directional evidence items, keyboard
+  selection, sparse-mode return and article entry at a narrow viewport. The old map
+  visibly drew the dense mesh; the new path passes without replacing graph
+  responses. Chromium and WebKit reading acceptance include this regression.
 - CI artifacts contain only synthetic structural/browser evidence and expire
   under the workflows' seven-day retention. They are browser emulation and
   synthetic infrastructure, not physical-device or production evidence.
