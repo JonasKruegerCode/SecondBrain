@@ -120,7 +120,9 @@ async def test_retry_recovers_and_keeps_structured_response(
         assert request.headers["authorization"] == "Bearer synthetic-key"
         if attempts == 1:
             return httpx.Response(503)
-        return httpx.Response(200, json={"choices": [{"message": expected}]})
+        return httpx.Response(
+            200, json={"choices": [{"finish_reason": "tool_calls", "message": expected}]}
+        )
 
     clients = install_transport(monkeypatch, response)
     assert await provider.tool_chat([{"role": "user", "content": "Hello"}], []) == expected
@@ -175,7 +177,8 @@ async def test_real_httpcore_debug_logs_are_bounded_per_provider_task(
                     elif outcome == "json":
                         body = PRIVATE.encode()
                     else:
-                        body = json.dumps({"choices": [{"message": {"content": "Hello"}}]}).encode()
+                        choice = {"finish_reason": "stop", "message": {"content": "Hello"}}
+                        body = json.dumps({"choices": [choice]}).encode()
             writer.write(
                 b"HTTP/1.1 " + str(status).encode() + b" " + reason + b"\r\n"
                 + private_header + b"Content-Length: " + str(len(body)).encode()
@@ -271,7 +274,6 @@ async def test_invalid_json_does_not_include_model_answer(
     assert PRIVATE not in "".join(traceback.format_exception(caught.value))
     assert all(client.is_closed for client in clients)
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["request", "backoff"])
 async def test_cancellation_closes_request_without_another_retry(
@@ -331,7 +333,7 @@ async def test_httpx_log_suppression_does_not_mute_concurrent_requests(
             await release.wait()
             return httpx.Response(
                 200,
-                json={"choices": [{"message": {"content": "Hello"}}]},
+                json={"choices": [{"finish_reason": "stop", "message": {"content": "Hello"}}]},
                 extensions={"reason_phrase": PRIVATE.encode()},
             )
         return httpx.Response(200)

@@ -71,6 +71,17 @@ regressions cover exact reconstruction, late evidence, malformed cursors,
 revision changes and metadata-budget boundaries. Scripted providers establish
 this protocol contract, not real-model answer quality.
 
+The non-streaming OpenRouter tool-chat boundary requires an explicit completed
+`stop` or `tool_calls` finish reason. Token-limit, filtered, failed, missing or
+unknown completion states return the existing sanitized unavailable error;
+partial text is not saved as a successful reply and unfinished tool batches do
+not execute. There is no automatic new generation for this condition. The
+question remains available for a deliberate Retry. Normal completed messages,
+the 1,200-token limit and transport retries remain unchanged. Synthetic HTTP
+transport/API cases verify this boundary and retry recovery, not live model
+quality. The normalized finish reasons are documented in the
+[OpenRouter API reference](https://openrouter.ai/docs/api_reference/overview#finish-reason).
+
 The optional chat is a bounded OpenRouter function-calling loop over search,
 exact page reads and graph neighbors. It has no write tool and no backend
 conversation archive. Visible sources contain only pages the model actually

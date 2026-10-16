@@ -327,7 +327,7 @@ async def test_openrouter_tool_chat_preserves_structured_calls(
     async def response(payload: dict[str, Any]) -> dict[str, Any]:
         assert payload["tool_choice"] == "auto"
         assert payload["messages"][-1]["content"] == "Find the harbor"
-        return {"choices": [{"message": expected}]}
+        return {"choices": [{"finish_reason": "tool_calls", "message": expected}]}
 
     monkeypatch.setattr(client, "_post_json_with_retry", response)
     result = await client.tool_chat(

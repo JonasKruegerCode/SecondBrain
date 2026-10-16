@@ -129,11 +129,19 @@ class OpenRouterClient(LLMClient):
         }
         data = await self._post_json_with_retry(payload)
         try:
-            message = data["choices"][0]["message"]
+            choice = data["choices"][0]
+            message = choice["message"]
+            finish = choice.get("finish_reason")
         except (KeyError, IndexError, TypeError) as exc:
             raise OpenRouterError("OpenRouter returned no assistant message.") from exc
         if not isinstance(message, dict):
             raise OpenRouterError("OpenRouter returned an invalid assistant message.")
+        # A non-streaming generation must explicitly complete. Partial text or
+        # even a parseable tool call can precede a token limit/provider failure.
+        # Reject outside the transport retry loop: do not silently issue another
+        # potentially billable generation or execute an unfinished tool batch.
+        if finish not in ("stop", "tool_calls"):
+            raise OpenRouterError("OpenRouter did not complete the assistant generation.")
         return message
 
     async def _post_with_retry(self, payload: dict[str, Any]) -> str:
