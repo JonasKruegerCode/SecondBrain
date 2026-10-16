@@ -145,3 +145,18 @@ manifest, icons and worker resources through a disposable HTTPS/password proxy,
 with certificate verification enabled. This is an HTTP/TLS gate, not a browser
 installation or an inspection of your production authentication configuration.
 See the [stack scope and limits](managed-stack-acceptance.md).
+
+## Opening a tab during an update
+
+The browser regression `pwa-existing-install.spec.ts` starts a real update in
+one tab and holds only its native install event on an owned loopback response.
+A second tab opens while that registration still reports an installing worker.
+After releasing installation, the new tab must offer the waiting version, apply
+it with a deliberate reload and retain empty CacheStorage. Desktop and narrow
+viewports run in normal Chromium acceptance and the WebKit worker slice.
+
+Registration may queue behind the browser's existing update job. The probe does
+not require the new tab's `register()` promise to resolve before installation
+finishes, fabricate worker events or change application update state. This is
+a local lifecycle regression, not a physical-device installation test or an
+explanation of the separate intermittent first-install notice.

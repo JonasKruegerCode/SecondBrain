@@ -248,6 +248,14 @@ and successful reconnection are checked separately; offline emulation alone did
 not establish a native update rejection. It does not explain the separate intermittent
 first-install update notice or establish physical-device behavior.
 
+A native two-tab PWA regression opens a new document while an update's install
+event is held by an owned loopback response. After release, the arriving tab
+must offer and apply the waiting version without private caches. The browser
+may serialize its registration behind that update; no application fix follows
+from an observer that incorrectly waits for settlement before release. Both
+viewport cases are included in normal Chromium and WebKit worker acceptance.
+This leaves the intermittent first-install notice and physical devices open.
+
 ## Public interfaces
 
 The managed REST surface under `/api/wiki` covers health, page
