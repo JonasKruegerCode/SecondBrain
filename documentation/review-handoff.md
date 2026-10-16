@@ -59,6 +59,18 @@ receipt, so a pending or failed provider cannot be reported as current. The wiki
 continues to provide exact reads, lexical search, local history and explicit
 Markdown graph navigation without those providers.
 
+Long chat page reads now expose bounded character chunks with `offset`,
+`total_chars`, `next_offset` and the page revision. A continuation must provide
+`expected_revision`; a changed snapshot returns an explicit conflict instead of
+silently combining different revisions. The next cursor is calculated from the
+actual Markdown delivered after JSON escaping and envelope budgeting, so no
+characters are skipped. Oversized metadata returns a bounded error rather than
+an empty, non-advancing continuation. Tool results stay within 8,000 characters;
+the existing eight-call/five-round limits are unchanged. Synthetic service/API
+regressions cover exact reconstruction, late evidence, malformed cursors,
+revision changes and metadata-budget boundaries. Scripted providers establish
+this protocol contract, not real-model answer quality.
+
 The optional chat is a bounded OpenRouter function-calling loop over search,
 exact page reads and graph neighbors. It has no write tool and no backend
 conversation archive. Visible sources contain only pages the model actually

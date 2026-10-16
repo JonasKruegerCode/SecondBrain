@@ -24,22 +24,26 @@ def _bounded_tool_json(result: dict[str, Any]) -> str:
         return encoded
 
     markdown = result.get("markdown")
-    if isinstance(markdown, str) and len(
-        json.dumps({**result, "markdown": "", "truncated": True}, ensure_ascii=False)
-    ) <= MAX_TOOL_RESULT_CHARS:
-        bounded = {**result, "markdown": "", "truncated": True}
-        low, high = 0, len(markdown)
+    if isinstance(markdown, str):
+        # Recompute the cursor inside every candidate: JSON escaping and cursor
+        # digit counts are part of the same budget as the actual text.
+        low, high = (1 if markdown else 0), len(markdown)
+        best: str | None = None
         while low <= high:
             middle = (low + high) // 2
-            candidate = json.dumps(
-                {**bounded, "markdown": markdown[:middle]}, ensure_ascii=False
-            )
+            prefix = {**result, "markdown": markdown[:middle], "truncated": True}
+            if type(result.get("offset")) is int and type(result.get("total_chars")) is int:
+                end = result["offset"] + middle
+                prefix["next_offset"] = end if end < result["total_chars"] else None
+                prefix["truncated"] = end < result["total_chars"]
+            candidate = json.dumps(prefix, ensure_ascii=False)
             if len(candidate) <= MAX_TOOL_RESULT_CHARS:
-                encoded = candidate
+                best = candidate
                 low = middle + 1
             else:
                 high = middle - 1
-        return encoded
+        if best is not None:
+            return best
 
     return json.dumps(
         {
@@ -130,10 +134,22 @@ class WikiChat:
                 "type": "function",
                 "function": {
                     "name": "read_page",
-                    "description": "Read one exact wiki page by its stable page ID.",
+                    "description": (
+                        "Read a bounded chunk of one exact wiki page. If next_offset is set, "
+                        "continue with that offset and expected_revision from the result. "
+                        "Only the returned markdown has been read; a chunk is not the full page."
+                    ),
                     "parameters": {
                         "type": "object",
-                        "properties": {"page_id": {"type": "string", "maxLength": 160}},
+                        "properties": {
+                            "page_id": {"type": "string", "maxLength": 160},
+                            "offset": {"type": "integer", "minimum": 0},
+                            "expected_revision": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160,
+                            },
+                        },
                         "required": ["page_id"],
                         "additionalProperties": False,
                     },
@@ -183,11 +199,7 @@ class WikiChat:
             call_ids: set[str] = set()
             for call in tool_calls:
                 call_id = call.get("id") if isinstance(call, dict) else None
-                if (
-                    not isinstance(call_id, str)
-                    or not call_id.strip()
-                    or call_id in call_ids
-                ):
+                if not isinstance(call_id, str) or not call_id.strip() or call_id in call_ids:
                     raise WikiError(
                         "chat_unavailable", "The model returned an invalid tool response."
                     )
@@ -298,19 +310,47 @@ class WikiChat:
         sources: dict[str, dict[str, str]],
         activity: list[str],
     ) -> dict[str, Any]:
-        page_id = args.get("page_id")
-        if set(args) != {"page_id"} or not isinstance(page_id, str) or len(page_id) > 160:
+        page_id, offset = args.get("page_id"), args.get("offset", 0)
+        expected = args.get("expected_revision")
+        if (
+            set(args) - {"page_id", "offset", "expected_revision"}
+            or not isinstance(page_id, str)
+            or len(page_id) > 160
+            or type(offset) is not int
+            or offset < 0
+            or (
+                "expected_revision" in args
+                and (not isinstance(expected, str) or not 1 <= len(expected) <= 160)
+            )
+            or (offset > 0 and expected is None)
+        ):
             return {"error": "invalid_arguments"}
         page = self.store.get_page(page_id)
         if page is None:
             return {"error": "not_found"}
-        activity.append(f"Read “{page['title']}”.")
+        if expected is not None and expected != page["revision"]:
+            return {
+                "error": "revision_conflict",
+                "message": "The page changed. Read it again from offset 0 before continuing.",
+            }
+        markdown = page["markdown"]
+        if offset > len(markdown):
+            return {"error": "invalid_arguments"}
+        end = min(offset + MAX_TOOL_RESULT_CHARS, len(markdown))
+        activity.append(
+            f"Read “{page['title']}”."
+            if offset == 0
+            else f"Read “{page['title']}” from character {offset}."
+        )
         return {
             "id": page["id"],
             "title": page["title"],
             "revision": page["revision"],
-            "markdown": page["markdown"][:MAX_TOOL_RESULT_CHARS],
-            "truncated": len(page["markdown"]) > MAX_TOOL_RESULT_CHARS,
+            "markdown": markdown[offset:end],
+            "offset": offset,
+            "total_chars": len(markdown),
+            "next_offset": end if end < len(markdown) else None,
+            "truncated": end < len(markdown),
         }
 
     def _neighbors(
