@@ -162,11 +162,38 @@ async function api(path: string, options?: RequestInit) {
     signal?.removeEventListener("abort", abort);
   }
 }
-function markdown(s: string) {
+function markdown(s: string, pageTitle?: string) {
+  const options = { ...marked.defaults, async: false };
+  const tokens = marked.lexer(s, options);
+  // Only an actual top-level ATX title can duplicate the separate page heading.
+  // Raw HTML, nested headings and unrelated H1s remain article content.
+  const firstTitle = tokens.find(token => token.type === "heading" && token.depth === 1 &&
+    /^#[ \t]+[^\r\n]+/.test(token.raw));
+  const earlierHtmlTitle = firstTitle && tokens.slice(0, tokens.indexOf(firstTitle)).some(token =>
+    token.type === "html" && !token.raw.trimStart().startsWith("<!--") && /^#[ \t]+/m.test(token.raw));
+  const candidate = pageTitle !== undefined && !earlierHtmlTitle &&
+    firstTitle?.raw.match(/^#[ \t]+([^\r\n]+)/)?.[1].trim() === pageTitle ? firstTitle : undefined;
+  let candidateIndex = -1, headingCount = 0;
+  marked.walkTokens(tokens, token => {
+    if (token.type !== "heading") return;
+    if (token === candidate) candidateIndex = headingCount;
+    headingCount++;
+  });
+  const marker = crypto.randomUUID();
+  const renderer = new marked.Renderer();
+  const heading = renderer.heading.bind(renderer);
+  let renderedHeadings = 0;
+  renderer.heading = (text, level, raw) => {
+    const html = heading(text, level, raw);
+    return renderedHeadings++ === candidateIndex
+      ? html.replace("<h1>", `<h1 data-article-title="${marker}">`) : html;
+  };
   const doc = new DOMParser().parseFromString(
-    marked.parse(s, { async: false }) as string,
+    marked.parser(tokens, { ...options, renderer }),
     "text/html",
   );
+  const sourceTitle = doc.querySelector(`[data-article-title="${marker}"]`);
+  let titleHeading: HTMLHeadingElement | undefined;
   const allow = new Set(
     "P H1 H2 H3 H4 H5 H6 UL OL LI BLOCKQUOTE PRE CODE STRONG EM DEL A IMG HR BR TABLE THEAD TBODY TR TD TH".split(
       " ",
@@ -190,6 +217,7 @@ function markdown(s: string) {
     if (!allow.has(el.tagName))
       return document.createTextNode(el.textContent || "");
     const out = document.createElement(el.tagName.toLowerCase());
+    if (el === sourceTitle) titleHeading = out as HTMLHeadingElement;
     // Some engines do not put scrollable code blocks in the native Tab order.
     if (el.tagName === "PRE") out.tabIndex = 0;
     if (el.tagName === "OL") {
@@ -241,7 +269,7 @@ function markdown(s: string) {
   }
   const f = document.createDocumentFragment();
   doc.body.childNodes.forEach((n) => f.append(clean(n)));
-  return f;
+  return { fragment: f, titleHeading };
 }
 
 function articleMarkdown(s: string) {
@@ -388,9 +416,9 @@ function focusFragment() {
   let fragment = "";
   try { fragment = decodeURIComponent(location.hash.slice(1)); } catch { return; }
   const slug = (s: string) => s.trim().toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
-  const headings = Array.from(app.querySelectorAll<HTMLHeadingElement>(".prose h1,.prose h2,.prose h3,.prose h4,.prose h5,.prose h6"));
+  const headings = Array.from(app.querySelectorAll<HTMLHeadingElement>("article > h1[data-article-section],.prose h1,.prose h2,.prose h3,.prose h4,.prose h5,.prose h6"));
   const target = (fragment === "main-content" ? app.querySelector<HTMLElement>("#main-content") : null) ||
-    headings.find(h => h.id === fragment) || headings.find(h => slug(h.textContent || "") === slug(fragment));
+    headings.find(h => h.id === fragment) || headings.find(h => slug(h.dataset.sectionLabel ?? h.textContent ?? "") === slug(fragment));
   if (target) { target.focus({ preventScroll: true }); target.scrollIntoView({ block: "start" }); }
 }
 
@@ -650,16 +678,28 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     connections.textContent = "Explore connections";
     main.querySelector(".toolbar > div")!.prepend(connections);
     const prose = main.querySelector(".prose")!;
-    prose.append(markdown(articleMarkdown(page.markdown || "").replace(/^\s*# [^\n]*\n?/, "")));
-    void hydrateLinks(prose, page.id);
+    const articleSource = articleMarkdown(page.markdown || "");
+    const leadingTitle = /^\s*# [^\n]*\n?/;
+    const rendered = markdown(articleSource.replace(leadingTitle, ""), leadingTitle.test(articleSource) ? undefined : page.title);
+    prose.append(rendered.fragment);
     const headings = Array.from(prose.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
     if (headings.length) {
       headings.forEach((heading, i) => {
         heading.id = `section-${i + 1}`;
         heading.tabIndex = -1;
       });
+      if (rendered.titleHeading) {
+        // Keep this heading's old section identity on the existing page title.
+        // Later section numbers, named arrival and TOC focus remain available.
+        const title = main.querySelector<HTMLHeadingElement>("article > h1")!;
+        title.id = rendered.titleHeading.id;
+        title.dataset.articleSection = "title";
+        title.dataset.sectionLabel = rendered.titleHeading.textContent || "";
+        headings[headings.indexOf(rendered.titleHeading)] = title;
+        rendered.titleHeading.remove();
+      }
       const toc = main.querySelector<HTMLElement>(".article-toc")!;
-      toc.innerHTML = `<nav aria-label="On this page"><div class="eyebrow">ON THIS PAGE</div><ol>${headings.map(h => `<li class="toc-level-${h.tagName.slice(1)}"><a href="#${h.id}">${esc(h.textContent || "Untitled section")}</a></li>`).join("")}</ol></nav>`;
+      toc.innerHTML = `<nav aria-label="On this page"><div class="eyebrow">ON THIS PAGE</div><ol>${headings.map(h => `<li class="toc-level-${h.tagName.slice(1)}"><a href="#${h.id}">${esc(h.dataset.sectionLabel ?? h.textContent ?? "Untitled section")}</a></li>`).join("")}</ol></nav>`;
       toc.addEventListener("click", (event) => {
         // Let the browser open modified activations in another tab/window.
         if (!plainLinkClick(event)) return;
@@ -671,6 +711,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
         target?.scrollIntoView({ block: "start" });
       });
     }
+    void hydrateLinks(prose, page.id);
     const panel = document.createElement("details");
     panel.className = "page-backlinks";
     panel.innerHTML = '<summary>Linked from</summary><div class="backlinks-content" role="status">Open to see pages that link here.</div>';
