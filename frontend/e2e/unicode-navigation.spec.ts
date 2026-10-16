@@ -3,11 +3,12 @@ import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 
 for (const width of [390, 1440]) {
-  test(`Unicode page identities survive navigation and editing at ${width}px`, async ({ page, request }, testInfo) => {
+  for (const identity of ["Unicode", "leading-hyphen"]) {
+  test(`${identity} page identities survive navigation and editing at ${width}px`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     const token = randomUUID();
-    const source = `café-海-${token}`;
-    const target = `étoile-δ-${token}`;
+    const source = identity === "Unicode" ? `café-海-${token}` : `-synthetic-${token}`;
+    const target = identity === "Unicode" ? `étoile-δ-${token}` : `--companion-${token}`;
     const title = "Synthetic Unicode atlas 海";
     const body = [
       `# ${title}`, "",
@@ -76,6 +77,23 @@ for (const width of [390, 1440]) {
       await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article ↗", exact: true }).click();
       await expect(page.locator("article h1")).toHaveText(title);
       expect((await (await request.get(endpoint(source))).json()).markdown).toBe(updated);
+      if (identity === "leading-hyphen") {
+        // Saved rendering fixture only: no fabricated provider response.
+        await page.evaluate(({ source, title }) => localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+          id: "synthetic-hyphen-source", title: "Synthetic saved source", updated: 1,
+          messages: [{ role: "user", content: "Synthetic saved question." },
+            { role: "assistant", content: "Synthetic saved display fixture.", sources: [{ id: source, title, evidence: "read" }] }],
+        }])), { source, title });
+        await page.goto("/chat");
+        await expect(page.locator(".chat-message")).toHaveCount(2);
+        await page.reload();
+        await expect(page.locator(".chat-message")).toHaveCount(2);
+        const citation = page.locator(".chat-sources a");
+        await expect(citation).toHaveAttribute("href", `/wiki/${encodeURIComponent(source)}`);
+        await page.screenshot({ path: testInfo.outputPath(`hyphen-chat-source-${width}.png`), fullPage: true });
+        await citation.click();
+        await expect(page.locator("article h1")).toHaveText(title);
+      }
       expect(errors).toEqual([]);
     } finally {
       for (const id of created.reverse()) {
@@ -88,4 +106,5 @@ for (const width of [390, 1440]) {
       }
     }
   });
+  }
 }

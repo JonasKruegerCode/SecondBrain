@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 REF = "refs/heads/wiki"
-ID_RE = re.compile(r"[\w][\w.-]{0,159}\Z", re.UNICODE)
+ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
 LINK_RE = re.compile(r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]")
 TYPED_LINK_RE = re.compile(
     r"(?m)^\s*(?:[-*]\s+)?([A-Za-z][\w -]*?)::\s*"

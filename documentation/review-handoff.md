@@ -22,6 +22,12 @@ one candidate snapshot, then publishes that snapshot with a compare-and-swap ref
 update. REST, the browser and direct managed MCP all use the same `WikiStore`;
 there is no second loose-file writer.
 
+Legacy page IDs beginning with ASCII hyphens are retained without renaming.
+The same bounded ID contract applies to import, reads, edits, export and saved
+chat sources. Synthetic option-shaped IDs exercise literal Git/file handling;
+leading dots, traversal, separators, whitespace and oversized IDs stay invalid.
+This compatibility fix does not establish a complete private-vault migration.
+
 The store regression also terminates an owned child process at controlled
 boundaries immediately before and after the real Git ref update. Reopening the
 store and retrying the exact request must recover one publication and its

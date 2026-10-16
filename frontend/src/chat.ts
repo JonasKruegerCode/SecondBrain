@@ -55,7 +55,7 @@ function validMessage(value: unknown): value is Message {
   if (value.role === "user" && value.content.length > 4000) return false;
   if (value.sources !== undefined && (!Array.isArray(value.sources) ||
       !value.sources.every(source => record(source) && typeof source.id === "string" &&
-        /^[\p{L}\p{N}_][\p{L}\p{N}_.-]{0,159}$/u.test(source.id) && typeof source.title === "string" &&
+        /^[\p{L}\p{N}_-][\p{L}\p{N}_.-]{0,159}$/u.test(source.id) && typeof source.title === "string" &&
         source.evidence === "read"))) return false;
   if (value.activity !== undefined && (!Array.isArray(value.activity) ||
       !value.activity.every(item => typeof item === "string"))) return false;
