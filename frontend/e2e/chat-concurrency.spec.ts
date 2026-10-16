@@ -87,7 +87,7 @@ test("late synthetic reply preserves both concurrent transcripts", async ({ page
   await other.close();
 });
 
-for (const finish of ["send", "retry"] as const) {
+for (const finish of ["send", "retry", "new", "select"] as const) {
   test(`storage recovery retains divergent saved and unsaved branches (${finish})`, async ({ page, context }) => {
     await page.goto("/chat");
     await page.evaluate(({ key, question }) => localStorage.setItem(key, JSON.stringify([
@@ -117,17 +117,19 @@ for (const finish of ["send", "retry"] as const) {
     if (finish === "send") {
       await page.getByLabel("Message").fill("Local recovery follow-up.");
       await page.getByRole("button", { name: "Send" }).click();
-    } else await page.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    } else if (finish === "new") await page.getByRole("button", { name: "New", exact: true }).click();
+    else if (finish === "select") await page.locator('[data-conversation="shared"]').click();
+    else await page.getByRole("button", { name: "Retry", exact: true }).click();
+    if (finish !== "new") await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await expect(page.locator(".chat-conversation-notice")).toContainText("unsaved messages");
     const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
-    expect(saved).toHaveLength(2);
+    expect(saved).toHaveLength(finish === "new" ? 3 : 2);
     expect(saved.find((item: { id: string }) => item.id === "shared").messages.at(-1).content).toBe("Concurrent saved question.");
-    expect(saved.find((item: { id: string }) => item.id !== "shared").messages.map((item: { content: string }) => item.content)).toEqual([
+    expect(saved.find((item: { id: string; messages: unknown[] }) => item.id !== "shared" && item.messages.length).messages.map((item: { content: string }) => item.content)).toEqual([
       question, "Unsaved local question.", ...(finish === "send" ? ["Local recovery follow-up."] : []),
     ]);
     await page.reload();
-    await expect(page.locator(".chat-message.user")).toHaveCount(finish === "send" ? 3 : 2);
+    await expect(page.locator(".chat-message.user")).toHaveCount(finish === "new" ? 0 : finish === "send" ? 3 : 2);
     await other.close();
   });
 }

@@ -198,13 +198,14 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     dirtyIds.delete(item.id);
     const branch = { ...item, id: crypto.randomUUID(), messages: [...item.messages] };
     conversations.unshift(branch);
-    activeId = branch.id;
+    if (activeId === item.id) activeId = branch.id;
     dirtyIds.add(branch.id);
     conversationNotice = "Another tab changed this conversation while browser storage was unavailable. Your unsaved messages are kept in a separate conversation.";
     return branch;
   };
   const persist = () => {
     const stored = readPersistent();
+    for (const item of [...conversations]) preserveUnsavedBranch(item, stored);
     const merged = new Map(stored.unavailable
       ? conversations.map(item => [item.id, item] as const)
       : stored.conversations.map(item => [item.id, item] as const));
