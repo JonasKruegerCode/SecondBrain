@@ -237,6 +237,7 @@ function markdown(s: string, pageTitle?: string) {
       if (target !== null) out.dataset.wikiTarget = target;
     }
     if (el.tagName === "IMG") {
+      out.setAttribute("alt", el.getAttribute("alt") || "");
       const src = el.getAttribute("src") || "";
       try {
         const resolved = new URL(src, location.href);
@@ -246,8 +247,7 @@ function markdown(s: string, pageTitle?: string) {
               resolved.origin === location.origin)) &&
           ["http:", "https:"].includes(resolved.protocol)
         ) {
-          out.setAttribute("src", resolved.href);
-          out.setAttribute("alt", el.getAttribute("alt") || "");
+          if (!sourceTitle?.contains(el)) out.setAttribute("src", resolved.href);
           out.setAttribute("loading", "lazy");
         }
       } catch {}
@@ -270,6 +270,24 @@ function markdown(s: string, pageTitle?: string) {
   const f = document.createDocumentFragment();
   doc.body.childNodes.forEach((n) => f.append(clean(n)));
   return { fragment: f, titleHeading };
+}
+
+function titleInline(heading: HTMLHeadingElement): DocumentFragment {
+  // A display title keeps Markdown emphasis, never navigation or active media.
+  // Rebuild from the confirmed, sanitized source heading without attributes.
+  function copy(node: Node): Node {
+    if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent || "");
+    const out = document.createDocumentFragment();
+    if (!(node instanceof HTMLElement)) return out;
+    if (node.tagName === "IMG") return document.createTextNode(node.getAttribute("alt") || "");
+    const children = ["STRONG", "EM", "DEL", "CODE", "BR"].includes(node.tagName)
+      ? document.createElement(node.tagName.toLowerCase()) : out;
+    node.childNodes.forEach(child => children.append(copy(child)));
+    return children;
+  }
+  const fragment = document.createDocumentFragment();
+  heading.childNodes.forEach(child => fragment.append(copy(child)));
+  return fragment;
 }
 
 function articleMarkdown(s: string) {
@@ -681,8 +699,15 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     const articleSource = articleMarkdown(page.markdown || "");
     const leadingTitle = /^\s*# [^\n]*\n?/;
     const rendered = markdown(articleSource.replace(leadingTitle, ""), leadingTitle.test(articleSource) ? undefined : page.title);
-    prose.append(rendered.fragment);
-    const headings = Array.from(prose.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
+    const title = main.querySelector<HTMLHeadingElement>("article > h1")!;
+    const leadingHeading = articleSource.match(leadingTitle)?.[0];
+    const displayHeading = rendered.titleHeading || (leadingHeading
+      ? markdown(leadingHeading, page.title).titleHeading : undefined);
+    if (displayHeading) {
+      const inline = titleInline(displayHeading);
+      if (inline.textContent?.trim()) title.replaceChildren(inline);
+    }
+    const headings = Array.from(rendered.fragment.querySelectorAll<HTMLHeadingElement>("h1,h2,h3,h4,h5,h6"));
     if (headings.length) {
       headings.forEach((heading, i) => {
         heading.id = `section-${i + 1}`;
@@ -691,7 +716,6 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
       if (rendered.titleHeading) {
         // Keep this heading's old section identity on the existing page title.
         // Later section numbers, named arrival and TOC focus remain available.
-        const title = main.querySelector<HTMLHeadingElement>("article > h1")!;
         title.id = rendered.titleHeading.id;
         title.dataset.articleSection = "title";
         title.dataset.sectionLabel = rendered.titleHeading.textContent || "";
@@ -711,6 +735,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
         target?.scrollIntoView({ block: "start" });
       });
     }
+    prose.append(rendered.fragment);
     void hydrateLinks(prose, page.id);
     const panel = document.createElement("details");
     panel.className = "page-backlinks";

@@ -53,7 +53,7 @@ for (const width of [390, 1440]) {
 
       const assertArticle = async () => {
         const outer = page.locator("article > h1");
-        await expect(outer).toHaveText(title);
+        await expect(outer).toHaveText(label);
         await expect(outer).toHaveAttribute("id", "section-6");
         await expect(outer).toHaveAttribute("data-article-section", "title");
         await expect(outer).toHaveAttribute("data-section-label", label);
