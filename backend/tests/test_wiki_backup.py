@@ -4,6 +4,7 @@
 # ruff: noqa: S101, SLF001, S603
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
@@ -17,6 +18,7 @@ from typing import Literal
 
 import pytest
 
+from second_brain.wiki import backup
 from second_brain.wiki.backup import create_backup, restore_backup
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.indexes import IndexCoordinator
@@ -374,3 +376,138 @@ def test_restore_preserves_supported_tar_compression_formats(
     assert restored.save_page(
         "home", "# Synthetic compatible backup", None, "compatible-home"
     ) == created
+
+
+@pytest.mark.parametrize("ledger", [".wiki-indexes.sqlite3", ".wiki-delivery.sqlite3"])
+@pytest.mark.parametrize("damage", ["header", "btree"])
+def test_corrupt_source_ledger_has_structured_error_and_no_archive(
+    tmp_path: Path, ledger: str, damage: str
+) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    store.save_page("home", "# Synthetic source integrity", None, "source-home")
+    before = store.snapshot()
+    damaged = vault / ledger
+    if damage == "btree":
+        with sqlite3.connect(damaged) as db:
+            db.execute("CREATE TABLE synthetic (value TEXT)")
+        content = bytearray(damaged.read_bytes())
+        content[100] = 0  # Invalid root b-tree page type, with valid SQLite header.
+        original = bytes(content)
+    else:
+        original = b"not a SQLite database"
+    damaged.write_bytes(original)
+    archive = tmp_path / "backup.tar.gz"
+    with pytest.raises(WikiError) as error:
+        create_backup(vault, archive)
+    assert error.value.code == "invalid_vault"
+    assert store.snapshot() == before
+    assert damaged.read_bytes() == original
+    assert {item.name for item in tmp_path.iterdir()} == {"vault"}
+
+
+    cli = subprocess.run(
+        [sys.executable, "-m", "second_brain.wiki.backup", "create",
+         "--vault", str(vault), "--archive", str(archive)],
+        env={"PATH": os.environ["PATH"],
+             "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        capture_output=True, check=False,
+    )
+    assert cli.returncode == 1
+    assert json.loads(cli.stderr) == {
+        "error": "invalid_vault", "message": "Managed SQLite metadata is invalid."
+    }
+    assert cli.stdout == b""
+    assert store.snapshot() == before
+    assert damaged.read_bytes() == original
+    assert {item.name for item in tmp_path.iterdir()} == {"vault"}
+
+
+@pytest.mark.parametrize("code", [sqlite3.SQLITE_BUSY, sqlite3.SQLITE_FULL, sqlite3.SQLITE_IOERR])
+def test_sqlite_storage_failure_is_not_reported_as_corruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    store.save_page("home", "# Synthetic SQLite storage", None, "sqlite-storage")
+    before = store.snapshot()
+    ledger = vault / ".wiki-indexes.sqlite3"
+    ledger.write_bytes(b"placeholder")
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        error = sqlite3.OperationalError("synthetic SQLite storage failure")
+        error.sqlite_errorcode = code
+        raise error
+
+    monkeypatch.setattr(backup.sqlite3, "connect", unavailable)
+    with pytest.raises(WikiError) as error:
+        create_backup(vault, tmp_path / "backup.tar.gz")
+    assert error.value.code == "storage_unavailable"
+    assert store.snapshot() == before
+    assert ledger.read_bytes() == b"placeholder"
+    assert {item.name for item in tmp_path.iterdir()} == {"vault"}
+
+
+def test_damaged_bzip2_has_structured_error_and_no_restore(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    store = WikiStore(vault)
+    store.save_page("home", "# Synthetic bzip2 integrity", None, "bzip-home")
+    before = store.snapshot()
+    archive = tmp_path / "backup.tar.gz"
+    create_backup(vault, archive)
+    damaged = tmp_path / "damaged.tar.bz2"
+    _repack_archive(archive, damaged, "w:bz2")
+    data = bytearray(damaged.read_bytes())
+    data[-8] ^= 1  # Corrupt the native bzip2 trailer, beyond tar's logical EOF.
+    damaged.write_bytes(data)
+    destination = tmp_path / "restored"
+    with pytest.raises(WikiError) as error:
+        restore_backup(damaged, destination)
+    assert error.value.code == "backup_invalid"
+    assert store.snapshot() == before
+    expected = {vault.name, archive.name, damaged.name}
+    assert {item.name for item in tmp_path.iterdir()} == expected
+    cli = subprocess.run(
+        [sys.executable, "-m", "second_brain.wiki.backup", "restore",
+         "--archive", str(damaged), "--vault", str(destination)],
+        env={"PATH": os.environ["PATH"],
+             "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
+        capture_output=True, check=False,
+    )
+    assert cli.returncode == 1
+    assert json.loads(cli.stderr)["error"] == "backup_invalid"
+    assert cli.stdout == b""
+    assert store.snapshot() == before
+    assert {item.name for item in tmp_path.iterdir()} == expected
+
+
+@pytest.mark.parametrize("operation", ["create", "restore"])
+def test_storage_errors_remain_distinct_from_corruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    operation: str,
+) -> None:
+    vault = tmp_path / "vault"
+    WikiStore(vault).save_page("home", "# Synthetic storage boundary", None, "storage-home")
+    archive = tmp_path / "backup.tar.gz"
+    destination = tmp_path / "restored"
+    if operation == "restore":
+        create_backup(vault, archive)
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        raise OSError(errno.EIO, "synthetic storage failure")
+
+    if operation == "create":
+        (vault / ".wiki-indexes.sqlite3").write_bytes(b"placeholder")
+        monkeypatch.setattr(backup.sqlite3, "connect", unavailable)
+    else:
+        monkeypatch.setattr(backup.tarfile, "open", unavailable)
+    assert backup.main([
+        operation, "--vault", str(vault if operation == "create" else destination),
+        "--archive", str(archive),
+    ]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error"] == "storage_unavailable"
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".*-backup-*"))
+    assert not list(tmp_path.glob(".*-restore-*"))

@@ -74,6 +74,9 @@ implicit merge or rollback over a live vault.
 The native synthetic regression covers populated and empty archives, full local
 history, request-receipt replay after restart, both SQLite ledgers, demo metadata,
 checksum/member validation, refusal to overwrite, and the real CLI round trip.
+Corrupt source SQLite headers or b-tree pages stop backup creation with
+`invalid_vault`; no archive is published and source bytes remain unchanged.
+SQLite busy/full/I/O failures retain a separate `storage_unavailable` result.
 Vault and restore paths containing spaces, Unicode, `?`, `#`, or literal percent
 escapes preserve their ledgers and leave no stray files. Checksum-valid archives
 with malformed SQLite metadata fail before publication with a structured
@@ -81,6 +84,10 @@ with malformed SQLite metadata fail before publication with a structured
 Truncated gzip streams, invalid trailers and manifests are rejected before
 publication; CLI failures return structured `backup_invalid` errors. Valid plain
 tar, gzip, bzip2 and xz archives retain their existing restore support.
+Native bzip2 stream corruption also returns `backup_invalid`, while filesystem
+errors carrying an errno remain `storage_unavailable`. These error-contract
+checks include temporary-directory cleanup; they are not disk-failure recovery
+or repair of damaged metadata.
 The separate [disposable stack acceptance](managed-stack-acceptance.md) covers
 container invocation and named-volume recovery with synthetic content. Neither
 that isolated stack nor the native test establishes production reverse

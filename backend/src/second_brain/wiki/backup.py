@@ -75,13 +75,21 @@ def _hash(path: Path) -> dict[str, int | str]:
 
 def _copy_sqlite(source: Path, destination: Path) -> None:
     source_uri = f"{source.as_uri()}?mode=ro"
-    with (
-        sqlite3.connect(source_uri, uri=True, timeout=10) as current,
-        sqlite3.connect(destination) as copied,
-    ):
-        current.backup(copied)
-        if copied.execute("PRAGMA integrity_check").fetchone() != ("ok",):
-            raise _error("invalid_vault", "Managed SQLite metadata is invalid.")
+    try:
+        with (
+            sqlite3.connect(source_uri, uri=True, timeout=10) as current,
+            sqlite3.connect(destination) as copied,
+        ):
+            current.backup(copied)
+            if copied.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                raise _error("invalid_vault", "Managed SQLite metadata is invalid.")
+    except sqlite3.DatabaseError as exc:
+        # Extended SQLite codes retain the primary result in their low byte.
+        # Busy, full or unavailable storage is not evidence of corrupt metadata.
+        primary = getattr(exc, "sqlite_errorcode", 0) & 0xFF
+        if primary in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
+            raise _error("invalid_vault", "Managed SQLite metadata is invalid.") from exc
+        raise _error("storage_unavailable", "Backup storage is unavailable.") from exc
 
 
 def _source(vault: Path, archive: Path) -> tuple[Path, Path]:
@@ -260,6 +268,12 @@ def restore_backup(archive: Path | str, vault: Path | str) -> dict[str, Any]:
         try:
             manifest, extracted = _read_archive(source, prepared_root)
         except (tarfile.TarError, EOFError, gzip.BadGzipFile, zlib.error, lzma.LZMAError) as exc:
+            raise _error("backup_invalid", "The backup archive is invalid.") from exc
+        except OSError as exc:
+            # bz2 reports a bad compressed stream as plain OSError without an
+            # errno. Preserve real filesystem errors (EIO, ENOSPC, etc.).
+            if exc.errno is not None:
+                raise
             raise _error("backup_invalid", "The backup archive is invalid.") from exc
         repo = prepared / ".wiki.git"
         subprocess.run(
