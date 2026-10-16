@@ -634,6 +634,16 @@ history visit, focus and reading position. Search/Back then verifies that the
 current visit still owns its exploration cleanup. The gate delays delivery only;
 both graph payloads come from the content service.
 
+## Focused galaxy keyboard zoom
+
+With a map star focused, `+` (or `=`) and `-` use the existing zoom limits and
+keep that star inside the visible map. Shortcuts are local to stars: literal
+search text, document controls, and Ctrl/Meta/Alt browser chords are preserved.
+The real REST-backed dense-constellation regression now runs at 390 and 1440px,
+including zoom limits, focused-star visibility, search input, complete link
+evidence and article return. A large sparse map still opens in list view;
+closely spaced stars do not become large touch targets merely by adding keys.
+
 ## Known release gates
 
 - real OpenRouter multi-turn result and answer-quality inspection

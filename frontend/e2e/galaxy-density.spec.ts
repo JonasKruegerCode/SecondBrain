@@ -2,7 +2,8 @@ import { expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
-test("dense curated constellation shows the core or selected page's direct links", async ({ page, request }, info) => {
+for (const width of [390, 1440]) {
+test(`dense curated constellation shows direct links and keyboard zoom (${width})`, async ({ page, request }, info) => {
   test.setTimeout(180_000);
   const prefix = `density-${randomUUID()}`;
   const ids = Array.from({ length: 51 }, (_, index) => `${prefix}-${index}`);
@@ -40,13 +41,13 @@ test("dense curated constellation shows the core or selected page's direct links
       edge.source === outside || edge.target === outside)).toHaveLength(2);
     expect(new Set(fixtureEdges.map((edge: { source: string; target: string }) => `${edge.source}:${edge.target}`)).size).toBe(2550);
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width, height: 844 });
     await page.goto("/galaxy");
     await expect(page.getByRole("button", { name: "Map view", exact: true })).toBeVisible();
     await page.locator(".galaxy-cluster").filter({ hasText: label }).click();
     await page.getByRole("button", { name: "Map view", exact: true }).click();
     await expect(page.locator(".galaxy-stage svg")).toBeVisible();
-    await page.screenshot({ path: info.outputPath("dense-before-selection-390.png"), fullPage: true });
+    await page.screenshot({ path: info.outputPath(`dense-before-selection-${width}.png`), fullPage: true });
 
     const notice = page.locator(".galaxy-density-note");
     await expect(notice).toBeVisible();
@@ -64,6 +65,40 @@ test("dense curated constellation shows the core or selected page's direct links
     const other = page.locator(`.galaxy-star[data-node="${ids[17]}"]`);
     await other.focus();
     await expect(other).toBeFocused();
+    const viewWidth = () => page.locator(".galaxy-stage svg").evaluate(element =>
+      (element as SVGSVGElement).viewBox.baseVal.width);
+    const focusedVisible = () => other.evaluate(element => {
+      const star = element as SVGGraphicsElement;
+      const bounds = star.ownerSVGElement!.getBoundingClientRect();
+      const point = new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!);
+      return point.x >= bounds.left + 25.9 && point.x <= bounds.right - 25.9 &&
+        point.y >= bounds.top + 25.9 && point.y <= bounds.bottom - 25.9;
+    });
+    const fitWidth = await viewWidth();
+    await page.keyboard.press("+");
+    await expect.poll(viewWidth).toBeLessThan(fitWidth);
+    await expect(other).toBeFocused();
+    expect(await focusedVisible(), "zoom must retain a visible focused star").toBe(true);
+    for (let step = 0; step < 20; step++) await page.keyboard.press("+");
+    expect(await viewWidth()).toBeCloseTo(fitWidth / 4, 3);
+    expect(await focusedVisible(), "maximum zoom must not hide focus or silently reset").toBe(true);
+    await page.keyboard.press("=");
+    expect(await viewWidth()).toBeCloseTo(fitWidth / 4, 3);
+    for (let step = 0; step < 20; step++) await page.keyboard.press("-");
+    expect(await viewWidth()).toBeCloseTo(fitWidth / .75, 3);
+    expect(await focusedVisible()).toBe(true);
+    await page.keyboard.press("=");
+    await expect.poll(viewWidth).toBeCloseTo(fitWidth, 3);
+    // Literal search text must not invoke map zoom.
+    const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
+    await search.fill("Synthetic");
+    await search.press("End");
+    await page.keyboard.press("+");
+    await page.keyboard.press("-");
+    await expect(search).toHaveValue("Synthetic+-");
+    expect(await viewWidth()).toBeCloseTo(fitWidth, 3);
+    await search.fill("");
+    await other.focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
     await expect(lines).toHaveCount(100);
@@ -72,11 +107,19 @@ test("dense curated constellation shows the core or selected page's direct links
     await expect(page.locator(".galaxy-evidence")).toContainText(outsideTitle);
     expect((await lines.locator("title").allTextContents()).some(text => text.includes(outsideTitle))).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: info.outputPath("dense-selected-390.png"), fullPage: true });
+    await page.screenshot({ path: info.outputPath(`dense-selected-${width}.png`), fullPage: true });
     await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article" }).click();
     await expect(page).toHaveURL(new RegExp(`/wiki/${ids[17]}$`));
     await expect(page.locator("article > h1")).toHaveText(title(17));
     await page.goBack();
+    await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
+    await page.getByRole("button", { name: "List view", exact: true }).click();
+    await expect(page.locator(".galaxy-stage")).toBeHidden();
+    await expect(notice).toBeHidden();
+    await page.getByRole("button", { name: "Map view", exact: true }).click();
+    await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
+    await expect(lines).toHaveCount(100);
+    await expect(notice).toBeVisible();
     await page.getByRole("button", { name: "All constellations" }).click();
     await page.locator(".galaxy-cluster").filter({ hasText: outsideTitle }).click();
     await expect(notice).toBeHidden();
@@ -94,3 +137,5 @@ test("dense curated constellation shows the core or selected page's direct links
     }
   }
 });
+
+}
