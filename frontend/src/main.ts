@@ -174,6 +174,8 @@ function markdown(s: string) {
   );
   function clean(n: Node): Node {
     if (n.nodeType === 3) return document.createTextNode(n.textContent || "");
+    // Comments are source annotations, not visible article prose.
+    if (n.nodeType !== 1) return document.createTextNode("");
     const el = n as HTMLElement;
     // GFM task markers carry content, but never become editable form controls.
     // Rebuild only the inert checkbox shape emitted by Markdown; retain no

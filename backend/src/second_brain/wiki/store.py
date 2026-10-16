@@ -60,8 +60,8 @@ def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
     return markdown[match.end() :], galaxy
 
 
-def prose_links(markdown: str) -> str:
-    """Ignore code examples and comments when deriving explicit prose links."""
+def prose_blocks(markdown: str) -> str:
+    """Exclude block code and comments while retaining literal prose headings."""
     lines: list[str] = []
     fence = ""
     # Each tuple is (marker indentation, content indentation). Markdown list
@@ -120,8 +120,12 @@ def prose_links(markdown: str) -> str:
         )
         if container_indent and indent < container_indent + 4:
             lines.append(line)
-    text = re.sub(r"<!--.*?-->", "", "\n".join(lines), flags=re.DOTALL)
-    return re.sub(r"(`+).*?\1", "", text, flags=re.DOTALL)
+    return re.sub(r"<!--.*?-->", "", "\n".join(lines), flags=re.DOTALL)
+
+
+def prose_links(markdown: str) -> str:
+    """Ignore code examples and comments when deriving explicit prose links."""
+    return re.sub(r"(`+).*?\1", "", prose_blocks(markdown), flags=re.DOTALL)
 
 
 def plain_text_excerpt(markdown: str) -> str:
@@ -251,7 +255,7 @@ class WikiStore:
     def _page(page_id: str, data: bytes, revision: str) -> dict[str, Any]:
         markdown = data.decode("utf-8")
         content, galaxy = split_frontmatter(markdown)
-        heading = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+        heading = re.search(r"^#\s+(.+)$", prose_blocks(content), re.MULTILINE)
         title = heading.group(1).strip() if heading else page_id
         page = {
             "id": page_id,

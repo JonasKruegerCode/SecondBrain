@@ -385,6 +385,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/code-reading.spec.ts",
         "e2e/image-reading.spec.ts",
         "e2e/unicode-navigation.spec.ts",
+        "e2e/title-identity.spec.ts",
         "e2e/forced-colors.spec.ts",
     ]),
     ("webkit", "reading-navigation", "block", [
@@ -397,6 +398,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/code-reading.spec.ts",
         "e2e/image-reading.spec.ts",
         "e2e/unicode-navigation.spec.ts",
+        "e2e/title-identity.spec.ts",
     ]),
 ])
 def test_editor_retry_orchestration_contract_without_launching_a_browser(
