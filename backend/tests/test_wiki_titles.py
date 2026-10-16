@@ -1,8 +1,13 @@
+import hashlib
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from second_brain.wiki.store import WikiStore
+from second_brain.wiki.index_config import configured_indexes
+from second_brain.wiki.indexes import IndexCoordinator
+from second_brain.wiki.store import WikiError, WikiStore
 
 
 @pytest.mark.parametrize(
@@ -53,3 +58,52 @@ def test_code_only_heading_falls_back_to_id_and_inline_title_bytes_remain(tmp_pa
         store.save_page("literal", literal, None, "literal")["title"]
         == "Actual `inline code` and **formatting**"
     )
+
+
+def test_title_projection_upgrade_invalidates_ready_index_receipts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Use the real coordinator and durable SQLite ledger; the provider is an
+    # in-memory adapter, so this is not a hosted Neo4j/Qdrant acceptance test.
+    monkeypatch.delenv("SECOND_BRAIN_WIKI_GRAPH_INDEX", raising=False)
+    monkeypatch.delenv("SECOND_BRAIN_WIKI_VECTOR_INDEX", raising=False)
+    store = WikiStore(tmp_path)
+    store.save_page("article", "```md\n# Example\n```\n\n# Actual\nText.", None, "a")
+    store.save_page("source", "# Source\n[[Actual]]", None, "s")
+    revision = store._head()
+
+    class GraphAdapter:
+        def __init__(self) -> None:
+            self.snapshots: list[dict[str, Any]] = []
+
+        def build(self, generation: str, snapshot: dict[str, Any]) -> None:
+            self.snapshots.append(snapshot)
+
+        def neighbors(self, generation: str, seeds: list[str], hops: int, limit: int) -> list[str]:
+            return ["source", "article"]
+
+    adapter = GraphAdapter()
+    old_config = hashlib.sha256(
+        json.dumps({"schema": "managed-snapshots-v1"}, sort_keys=True).encode()
+    ).hexdigest()
+    previous = IndexCoordinator(store, {"graph": adapter}, config_id=old_config)
+    assert previous.run_once()["indexes"]["graph"]["state"] == "current"
+    upgraded = configured_indexes(store)
+    upgraded.adapters["graph"] = adapter
+    assert upgraded.config_id != old_config
+    assert upgraded.status()["indexes"]["graph"]["state"] == "pending"
+    with pytest.raises(WikiError) as failure:
+        upgraded.neighbors(["source"])
+    assert failure.value.code == "index_pending"
+    assert len(adapter.snapshots) == 1
+    assert upgraded.run_once()["indexes"]["graph"]["state"] == "current"
+    assert len(adapter.snapshots) == 2
+    assert adapter.snapshots[-1]["graph"]["edges"] == [
+        {"source": "source", "target": "article", "type": "wikilink"}
+    ]
+    assert {page["id"] for page in upgraded.neighbors(["source"])["pages"]} == {
+        "source",
+        "article",
+    }
+    assert store._head() == revision

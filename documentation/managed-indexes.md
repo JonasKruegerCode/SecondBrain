@@ -72,6 +72,15 @@ receipt. Independent graph and search receipts let one backend recover without
 claiming the other is ready. The configuration fingerprint is shared across enabled backends:
 changing graph or vector configuration invalidates both receipts until rebuilt.
 
+Snapshot derivation version `managed-snapshots-v2` excludes block-code and comment
+headings from page titles and their title-resolved graph edges. Upgrading from v1
+invalidates old ready receipts even if the Markdown/Git revision is unchanged.
+The startup delivery worker, or the explicit one-shot command below, builds fresh
+generations before derived retrieval becomes current again. The fingerprint is
+shared, so both configured backends rebuild; enabled vector indexing can make
+new paid embedding requests. This does not rewrite Markdown/history or delete
+old provider generations; normal retention rules still apply.
+
 The coordinator now records each new build attempt in a local retention ledger.
 Cleanup is deliberately operator initiated and dry-run by default. It protects the
 current ready receipt plus the configured number of recent ready generations,
