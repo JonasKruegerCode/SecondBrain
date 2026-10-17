@@ -114,7 +114,7 @@ marked.use({
         return source.indexOf("[[");
       },
       tokenizer(source: string) {
-        const match = /^\[\[([^\]\|\r\n]+)(?:\|([^\]\r\n]+))?\]\]/.exec(source);
+        const match = /^\[\[([^\]\|\r\n]+)(?:\|([^\]\r\n]*))?\]\]/.exec(source);
         if (!match || !match[1].trim()) return;
         return {
           type: "wikilink",
@@ -226,9 +226,9 @@ function markdown(s: string, pageTitle?: string) {
     }
     if (el.tagName === "A") {
       const href = el.getAttribute("href") || "";
-      if (/^\/(wiki\/|resolve\?)/.test(href) || /^#/.test(href) || /^https?:\/\//.test(href)) {
+      if (/^\/(wiki\/|resolve\?)/.test(href) || /^#/.test(href) || /^https?:\/\//i.test(href)) {
         out.setAttribute("href", href);
-        if (href.startsWith("http")) {
+        if (/^https?:\/\//i.test(href)) {
           out.setAttribute("target", "_blank");
           out.setAttribute("rel", "noopener noreferrer");
         }

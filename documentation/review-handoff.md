@@ -157,6 +157,13 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- An empty wiki alias (`[[page-id|]]`) uses the target label and the same
+  resolution, missing-target and backlink behavior as an unaliased reference.
+  Safe HTTP(S) anchor schemes are case-insensitive and keep external-tab
+  isolation; executable schemes remain inert. The narrow/desktop browser
+  regression checks article navigation, graph evidence and unchanged
+  editor/reload Markdown. This renderer correction does not change graph or
+  index semantics.
 - Backslash-escaped wiki examples remain literal article text and do not create
   graph edges, backlinks, missing targets or ambiguous targets. Odd/even opening
   escape counts match the article renderer; paired backslashes still permit a
