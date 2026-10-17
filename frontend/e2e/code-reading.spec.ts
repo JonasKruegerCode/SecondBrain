@@ -3,6 +3,70 @@ import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 
 for (const width of [390, 1440]) {
+  test(`generic HTML boundaries agree with graph navigation at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const id = `html-boundary-reading-${randomUUID()}`;
+    const visible = `html-boundary-visible-${randomUUID()}`;
+    const literal = `html-boundary-literal-${randomUUID()}`;
+    // EM is a supported inert inline wrapper. Unknown custom elements are
+    // deliberately flattened by the separate sanitizer, not this lexer test.
+    const markdown = `# Synthetic HTML boundaries\n\nIntro\n<em>\n    [[${visible}|Paragraph target]]</em>\n\nNumbered paragraph\n2. <em>\n    [[${visible}|Numbered target]]</em>\n\n123. <div>\n     \u00a0\n     [[${literal}]]\n\n[[${visible}|Visible target]]\n`;
+    const created: string[] = [];
+    try {
+      for (const [pageId, body] of [[visible, "# Visible HTML companion\n"], [literal, "# Literal HTML companion\n"], [id, markdown]]) {
+        const saved = await request.post(`/api/wiki/pages/${pageId}`, { data: {
+          markdown: body, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(saved.ok()).toBe(true);
+        created.push(pageId);
+      }
+      await page.goto(`/wiki/${id}`);
+      await expect(page.locator(".prose a")).toHaveText(["Paragraph target", "Numbered target", "Visible target"]);
+      await expect(page.locator(".prose")).toContainText(`[[${literal}]]`);
+      const checkGraph = async (includeLiteral = false) => {
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: { source: string }) => edge.source === id)
+          .map((edge: { target: string }) => edge.target).sort())
+          .toEqual((includeLiteral ? [visible, literal] : [visible]).sort());
+        expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === id)).toEqual([]);
+        const backlinks = await (await request.get(`/api/wiki/pages/${literal}/backlinks`)).json();
+        expect(backlinks.total).toBe(Number(includeLiteral));
+      };
+      await checkGraph();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.locator("#editor").fill(markdown + `\n[[${literal}|Now linked]].\n`);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".prose a")).toHaveCount(4);
+      await checkGraph(true);
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await page.locator("#editor").fill(markdown);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".prose a")).toHaveCount(3);
+      await page.reload();
+      await expect(page.locator(".prose a")).toHaveText(["Paragraph target", "Numbered target", "Visible target"]);
+      expect((await (await request.get(`/api/wiki/pages/${id}`)).json()).markdown).toBe(markdown);
+      await checkGraph();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`html-boundary-navigation-${width}.png`), fullPage: true });
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await expect(page.locator(`.galaxy-evidence a[data-open='${visible}']`)).toHaveCount(1);
+      await expect(page.locator(`.galaxy-evidence a[data-open='${literal}']`)).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath(`html-boundary-galaxy-${width}.png`), fullPage: true });
+    } finally {
+      for (const pageId of created.reverse()) {
+        const saved = await request.get(`/api/wiki/pages/${pageId}`);
+        expect(saved.ok()).toBe(true);
+        const removed = await request.delete(`/api/wiki/pages/${pageId}`, { data: {
+          base_revision: (await saved.json()).revision, request_id: randomUUID(),
+        } });
+        expect(removed.ok()).toBe(true);
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`literal fence tails agree with graph navigation at ${width}px`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     const id = `fence-reading-${randomUUID()}`;

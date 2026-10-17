@@ -288,8 +288,8 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v10`
-also rebuilds projections using quote and list-item container boundaries.
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v11`
+also rebuilds projections using quote, list-item and generic HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
 
@@ -301,8 +301,8 @@ excluded from page identity. An iterative work stack avoids Python recursion;
 a synthetic 150-level quote control covers that boundary. Original Markdown,
 page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
 prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
-Old v1–v9 index receipts rebuild with
-v10; configured vector rebuilds can incur embedding costs.
+Old v1–v10 index receipts rebuild with
+v11; configured vector rebuilds can incur embedding costs.
 
 List items now enter the same iterative container projection before quote/code
 classification, including a quote on the marker's first line (`- > ~~~`).
@@ -326,9 +326,8 @@ remain distinct valid list controls. Paragraph state also retains indented lazy
 continuations, including inside wide ordered items. Original indentation is kept
 so literal continuation headings cannot become the page title. Blank lines and
 recognized code/quote/list/heading boundaries terminate paragraph continuation.
-Definitions, standalone HTML/block openers and GFM table delimiters conservatively
-block newly admitting indented rows until a blank; their earlier limited projection
-is preserved rather than claiming complete HTML/reference parsing.
+Definitions, non-generic HTML forms and GFM table delimiters still conservatively
+block newly admitting indented rows; this is not complete reference/HTML parsing.
 
 The paragraph-boundary corpus includes actual Git bytes/history, graph/backlinks,
 titles and excerpts, plus contrastive setext/table/definition/HTML and inline
@@ -336,10 +335,31 @@ prose controls. Both new real-service 390/1440px cases fail against the exact
 prior store, then check code versus visible lazy links, two-space list markers,
 editor save/restoration and directional galaxy evidence after correction.
 
-This remains a bounded grammar correction. HTML/reference and other inline forms
-are not completely covered: a conservative HTML barrier can still miss an
-indented continuation after an inline custom tag, and list deindentation can
-still expose links within generic HTML. Do not infer full Markdown parity.
+Generic type-6/type-7 HTML blocks now keep their entire body literal until a
+blank line, including a closing-tag line and list-deindented body text. An
+inline standalone tag does not terminate an existing top-level paragraph;
+list block text and active GFM table rows have distinct boundaries. Recognition
+preserves internal tabs and follows the installed Marked 12 tag/attribute and
+column-zero interruption rules, rather than treating every tag-shaped line
+as a block. Only ASCII-space/tab blank lines release the block; a non-breaking
+space is still literal HTML content. Non-1 ordered markers and empty items
+cannot interrupt an existing top-level paragraph. Thirty-six native-checked literal cases
+and a real Git/history/backlink control cover these distinctions; 24 literals fail on the preceding
+store. An independent 396-case bounded comparison found no new mismatches
+after correcting internal-tab recognition; processing-instruction/declaration
+cases still differ. No complete Markdown parity is claimed.
+
+Two additional actual-service narrow/desktop browser cases use a supported
+inert EM wrapper, literal HTML-list content, editor mutation/restoration and
+galaxy evidence. Unknown custom elements are deliberately flattened to text
+by the separate sanitizer, so a native lexer wikilink inside such an element
+does not by itself prove a clickable browser link. The first diagnostic fixture
+exposed this boundary; the security filter is not loosened by this change.
+
+The existing synthetic Git-interruption test now atomically publishes its PID
+handshake after writing it. An observed race allowed cancellation between file
+creation and the PID write, causing an empty-file parse failure rather than
+testing transport cleanup. Transport behavior and cleanup assertions are unchanged.
 
 Imported page history follows Git-detected source renames before combining
 those commits with managed history. A real nested-source rename regression

@@ -151,6 +151,7 @@ class _ProseContainer(NamedTuple):
     markdown: str
     prefix: str
     quoted: bool
+    list_item: bool = False
 
 
 _LIST_START = re.compile(r"^( {0,3})([-+*]|[0-9]{1,9}[.)])((?:[ \t].+)?)$")
@@ -213,14 +214,14 @@ def prose_blocks(markdown: str) -> str:
         if isinstance(segment, _ProseContainer):
             quoted = quoted or segment.quoted
             prefix += segment.prefix
-            parts = _prose_segments(segment.markdown, quoted=quoted)
+            parts = _prose_segments(segment.markdown, quoted=quoted, top=not segment.list_item)
             pending.extend((part, prefix, quoted) for part in reversed(parts))
         else:
             output.append(prefix + segment)
     return "\n".join(output)
 
 
-def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContainer]:
+def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _ProseContainer]:
     # Marked normalizes only line-leading tabs at each container level.
     # Expanding whole lines would change tabs inside explicit link targets.
     markdown = re.sub(
@@ -232,8 +233,10 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
     fence = ""
     in_comment = False
     raw_html = ""
+    blank_html = False
     paragraph = False
     paragraph_barrier = False
+    table = False
     previous_prose = ""
     source_lines = markdown.splitlines()
     skip_until = 0
@@ -243,6 +246,20 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
         expanded = line.expandtabs(4)
         indent = len(expanded) - len(expanded.lstrip(" "))
         relative = expanded
+        terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
+        if table and (
+            indent >= 4
+            or _QUOTE_INTERRUPT.match(line + ("\n" if terminated else ""))
+            or re.match(r"^ {0,3}(?:`{3,}(?=[^`]*$)|~{3,})", relative)
+        ):
+            table = False
+            paragraph_barrier = False
+        # Generic HTML blocks are literal until a blank, even after a closing
+        # tag. This state precedes Markdown containers inside the HTML body.
+        if blank_html:
+            if line.strip(" "):
+                continue
+            blank_html = False
         # Marked's raw HTML blocks keep Markdown literal through the entire
         # closing-tag line. Blank lines, headings and fences inside are data.
         if raw_html:
@@ -302,18 +319,37 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
                 if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
                     raw_html = tag
                 continue
-        # Definitions, HTML blocks and GFM tables do not establish paragraph
-        # continuation. Keep the existing projection for these forms, but do not
-        # newly admit indented code after them. A blank releases the barrier.
-        html_boundary = re.match(
-            rf"^ {{0,3}}<(?:[!?]|/?(?:{_HTML_BLOCK_TAGS})(?:[ \t]|/?>|$))",
-            relative,
+        # Marked's HTML start grammar differs from its paragraph/table
+        # interrupters: only column-zero type-6 tags interrupt existing prose.
+        # List contents use block text (top=False), not top-level paragraphs.
+        html_line = line + ("\n" if terminated else "")
+        block_html = re.match(
+            rf"^ {{0,3}}</?(?:{_HTML_BLOCK_TAGS})(?: +|\n|/?>)",
+            html_line,
             re.IGNORECASE | re.ASCII,
-        ) or re.fullmatch(
-            r" {0,3}</?[A-Za-z][A-Za-z0-9-]*"
-            r"""(?:[ \t]+(?:[^<>\"']|\"[^\"]*\"|'[^']*')*)?/?>[ \t]*""",
-            relative,
         )
+        standalone_html = re.fullmatch(
+            r" {0,3}(?:<(?!script|pre|style|textarea)[a-z][\w-]*"
+            r"""(?: +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'"""
+            r"""| *= *[^\s"'=<>`]+)?)*? */?>"""
+            r"|</(?!script|pre|style|textarea)[a-z][\w-]*\s*>)[ \t]*",
+            line,
+            re.IGNORECASE | re.ASCII,
+        )
+        html_interrupt = bool(block_html and line.startswith("<"))
+        if table and (indent >= 4 or html_interrupt):
+            table = False
+        if not in_comment and (
+            (block_html and (not top or not paragraph or html_interrupt) and not table)
+            or (standalone_html and not table and (not top or not paragraph))
+        ):
+            blank_html = True
+            paragraph = False
+            paragraph_barrier = False
+            continue
+        # Definitions and non-generic HTML forms retain their conservative
+        # projection. They must not newly admit indented code as paragraph text.
+        html_boundary = re.match(r"^ {0,3}<[!?]", relative)
         definition = re.match(r"^ {0,3}\[[^\]]+\]:", relative)
         table_rule = (
             paragraph
@@ -324,6 +360,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
             paragraph_barrier = True
             paragraph = False
         if table_rule:
+            table = True
             lines.append(line)
             continue
 
@@ -331,10 +368,26 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
         # Keeping a projection-only prefix prevents a nested H1 becoming the
         # page identity while allowing ordinary list prose into excerpts.
         list_item = _LIST_START.match(line) if not in_comment else None
+        if (
+            list_item
+            and top
+            and (
+                (paragraph and not list_item.group(3).strip())
+                or (
+                    (paragraph or table)
+                    and list_item.group(2)[0].isdigit()
+                    and list_item.group(2) not in ("1.", "1)")
+                )
+            )
+        ):
+            # Only nonempty items (ordered items starting at 1) interrupt a
+            # top-level paragraph. Table rows also reject non-1 interruption.
+            list_item = None
         if list_item:
             paragraph = False
             skip_until, inner, content_indent = _list_item_end(source_lines, line_number, list_item)
-            lines.append(_ProseContainer(inner, " " * content_indent, False))
+            table = False
+            lines.append(_ProseContainer(inner, " " * content_indent, False, True))
             continue
 
         if in_comment or indent < 4:
@@ -348,6 +401,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
         if not expanded.strip():
             paragraph = False
             paragraph_barrier = False
+            table = False
             previous_prose = ""
             lines.append(line)
             continue
@@ -356,6 +410,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
             setext = paragraph and re.fullmatch(r" {0,3}(?:=+|-+) *", expanded)
             paragraph = not bool(
                 paragraph_barrier
+                or table
                 or setext
                 or re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", expanded)
                 or re.fullmatch(r" {0,3}(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})", expanded)

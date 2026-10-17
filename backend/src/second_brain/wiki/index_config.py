@@ -13,9 +13,9 @@ from second_brain.wiki.store import WikiStore
 
 def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
-    # Derived content follows code, quote/list-container and raw-HTML boundaries.
+    # Derived content follows code, containers and literal HTML block boundaries.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v10"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v11"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

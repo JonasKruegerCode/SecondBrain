@@ -126,7 +126,11 @@ def test_git_interruption_kills_transport_and_descendant_before_propagating(
         monkeypatch,
         "import pathlib, subprocess, sys, time\n"
         "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
-        f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))\n"
+        # Existence is the interrupt handshake: publish only after the PID is
+        # complete, so the tested cancellation cannot kill a half-written file.
+        f"ready = pathlib.Path({str(pid_file.with_suffix('.ready'))!r})\n"
+        "ready.write_text(str(child.pid))\n"
+        f"ready.replace({str(pid_file)!r})\n"
         "time.sleep(30)\n",
     )
     original = cast(Callable[..., tuple[bytes, bytes]], subprocess.Popen.communicate)
