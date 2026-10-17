@@ -1,8 +1,9 @@
 .chat-page { display: grid; grid-template-columns: 245px minmax(0, 1fr); gap: 26px; padding: 38px 0 55px; min-height: 700px; }
 .chat-history, .chat-workspace { border: 1px solid #dce6dd; background: #ffffffa8; backdrop-filter: blur(18px); box-shadow: 0 18px 60px #315f4b0d; }
 .chat-history { border-radius: 18px; padding: 18px 12px; display: flex; flex-direction: column; min-height: 620px; min-width: 0; }
-.chat-history-heading { display: flex; align-items: center; justify-content: space-between; padding: 3px 8px 15px; color: var(--muted-text); font-size: 9px; font-weight: 700; letter-spacing: 1.5px; }
-.chat-history-heading button { background: #e4eee7; color: #315e51; border-radius: 20px; padding: 8px 12px; font-size: 11px; min-height: 44px; min-width: 44px; }
+.chat-history-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px 15px; color: var(--muted-text); font-size: 9px; font-weight: 700; letter-spacing: 1.5px; }
+.chat-history-heading > span { min-width: 0; overflow-wrap: anywhere; }
+.chat-history-heading button { flex-shrink: 0; background: #e4eee7; color: #315e51; border-radius: 20px; padding: 8px 12px; font-size: 11px; min-height: 44px; min-width: 44px; }
 .chat-history-list { display: grid; gap: 5px; }
 .chat-history-list button { text-align: left; padding: 13px 12px; border-radius: 10px; background: transparent; color: #4d625a; min-height: 58px; min-width: 0; }
 .chat-history-list button.active { background: #edf3ec; color: #244c42; }
@@ -11,7 +12,8 @@
 .chat-history-list small { margin-top: 6px; color: var(--muted-surface-text); font-size: 10px; }
 .chat-delete { margin-top: auto; padding: 12px; color: #8a655e; background: transparent; font-size: 11px; min-height: 44px; }
 .chat-workspace { border-radius: 22px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
-.chat-heading { padding: 28px 34px 22px; display: flex; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e5ece5; }
+.chat-heading { padding: 28px 34px 22px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e5ece5; }
+.chat-heading > div { flex: 1 1 200px; min-width: 0; }
 .chat-heading h1 { margin: 9px 0 7px; font-size: 28px; letter-spacing: -1.1px; font-weight: 550; }
 .chat-heading p { margin: 0; max-width: 610px; color: var(--muted-surface-text); font-size: 13px; line-height: 1.6; }
 .chat-boundary { align-self: flex-start; white-space: nowrap; padding: 8px 11px; border-radius: 20px; color: #427062; background: #e8f2ea; font-size: 10px; }

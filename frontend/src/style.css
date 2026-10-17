@@ -91,11 +91,13 @@ button:disabled {
     radial-gradient(ellipse at 0 100%, #f3e6c74d, transparent 40%);
 }
 header {
-  height: 96px;
+  min-height: 96px;
   max-width: 1320px;
-  padding: 0 52px;
+  padding: 16px 52px;
   margin: auto;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid #d9e2d8;
@@ -126,6 +128,7 @@ header {
 }
 nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
 }
 nav a {
@@ -591,8 +594,8 @@ textarea {
 }
 @media (max-width: 800px) {
   header {
-    padding: 0 22px;
-    height: 85px;
+    padding: 16px 22px;
+    min-height: 85px;
   }
   .workspace {
     display: none;
@@ -611,10 +614,7 @@ textarea {
     letter-spacing: -2px;
   }
   .art {
-    transform: scale(0.7);
-    transform-origin: right center;
-    width: 230px;
-    margin-right: -20px;
+    display: none;
   }
   .grid {
     grid-template-columns: repeat(2, 1fr);

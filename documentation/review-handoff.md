@@ -799,6 +799,20 @@ correction. Screenshots include the selected edge star and its full-name panel.
 This fixes viewport clipping, not label collisions or physical touch selection
 in dense maps; the complete page list remains available.
 
+## Native minimum text size
+
+Native Chromium minimum text size is checked separately from narrow viewports.
+The 24-pixel Blink minimum previously pushed the chat's **New** button outside
+its sidebar and extended middle-width navigation beyond the page. Header rows,
+chat heading labels and the read-only badge now wrap when text needs room.
+The purely decorative Home artwork is hidden through the tablet breakpoint:
+its transformed absolute children otherwise overflowed the page at 600/800px.
+Five real-browser cases at 390/600/800/1024/1440 pixels check the enlarged label,
+Home overflow, control bounds, pointer/keyboard New actions with distinct unsent
+drafts and navigation without model calls.
+This is a renderer text-setting check, not browser-zoom equivalence, physical
+installation, Safari behavior or complete accessibility acceptance.
+
 ## Known release gates
 
 - real OpenRouter multi-turn result and answer-quality inspection

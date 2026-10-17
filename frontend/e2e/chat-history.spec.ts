@@ -1,5 +1,62 @@
-import { expect } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { test } from "./reading-test";
+
+// A real Blink text setting changes glyph metrics without narrowing the
+// viewport. This is separate from browser zoom, Safari and physical devices.
+for (const width of [390, 600, 800, 1024, 1440]) {
+  test(`native minimum text keeps chat and navigation controls reachable (${width})`, async ({ browserName, baseURL }, info) => {
+    test.skip(browserName !== "chromium", "Blink minimum font size is Chromium-specific");
+    const browser = await chromium.launch({
+      ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}),
+      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--blink-settings=minimumFontSize=24"],
+    });
+    try {
+      const context = await browser.newContext({ viewport: { width, height: 1000 } });
+      const page = await context.newPage();
+      let modelRequests = 0;
+      page.on("request", request => {
+        if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") modelRequests++;
+      });
+      await page.goto(`${baseURL}/?overview=1`);
+      await expect(page.getByRole("heading", { name: "A growing collection", exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+      await page.screenshot({ path: info.outputPath(`home-minimum-text-${width}.png`) });
+      await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
+      const heading = page.locator(".chat-history-heading");
+      const label = heading.locator("span");
+      const create = heading.getByRole("button", { name: "New", exact: true });
+      await expect(create).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`chat-minimum-text-${width}.png`) });
+      const parent = (await heading.boundingBox())!;
+      const labelBounds = (await label.boundingBox())!;
+      // Prove the native setting actually enlarged the formerly nine-pixel label.
+      expect(labelBounds.height).toBeGreaterThanOrEqual(24);
+      for (const target of [label, create]) {
+        const box = (await target.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(parent.x - 1);
+        expect(box.x + box.width).toBeLessThanOrEqual(parent.x + parent.width + 1);
+        expect(box.y + box.height).toBeLessThanOrEqual(parent.y + parent.height + 1);
+        expect(await target.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBeTruthy();
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+      await page.locator("textarea").fill("Synthetic unsent question.");
+      await create.click();
+      await expect(page.locator("textarea")).toHaveValue("");
+      await page.locator("textarea").fill("A second synthetic unsent question.");
+      await create.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator("textarea")).toHaveValue("");
+      const search = page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Search", exact: true });
+      await search.focus();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/\/search$/);
+      expect(modelRequests).toBe(0);
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+  });
+}
 
 for (const width of [1440, 1024, 390]) {
   test(`full local chat history stays usable without stretching the workspace (${width})`, async ({ page }, testInfo) => {
