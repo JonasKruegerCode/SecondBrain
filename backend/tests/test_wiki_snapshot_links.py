@@ -7,6 +7,49 @@ import pytest
 from second_brain.wiki.store import WikiStore
 
 
+@pytest.mark.parametrize("slashes", [1, 2, 3, 4])
+def test_wikilinks_honor_markdown_escape_parity(tmp_path: Path, slashes: int) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("target", "# Target", None, "target")
+    store.save_page("first", "# Shared", None, "first")
+    store.save_page("second", "# Shared", None, "second")
+    prefix = "\\" * slashes
+    markdown = (
+        f"# Home\n{prefix}[[target|label]] {prefix}[[absent]] {prefix}[[shared]]\n"
+        f"uses:: {prefix}[[target]]\n"
+        f"uses:: {prefix}[[absent]]\nuses:: {prefix}[[shared]]\n"
+        "[[first]]\n"
+    )
+    saved = store.save_page("home", markdown, None, "home")
+    graph = store.snapshot()["graph"]
+    edges = [{"source": "home", "target": "first", "type": "wikilink"}]
+    if slashes % 2 == 0:
+        edges.append({"source": "home", "target": "target", "type": "wikilink"})
+    assert graph["edges"] == edges
+    assert graph["missing_targets"] == (
+        [{"source": "home", "target": "absent"}] if slashes % 2 == 0 else []
+    )
+    assert graph["ambiguous_targets"] == (
+        [{"source": "home", "target": "shared", "candidates": ["first", "second"]}]
+        if slashes % 2 == 0
+        else []
+    )
+    assert saved["markdown"] == markdown
+    assert (store.get_page("home") or {})["markdown"] == markdown
+    assert store.backlinks("target")["total"] == (1 if slashes % 2 == 0 else 0)
+
+
+def test_escape_inside_wikilink_does_not_escape_its_opening(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("target", "# Target", None, "target")
+    markdown = r"# Home" + "\n" + r"[\[not-a-link]] [[target|alias\]] [[missing\]]"
+    store.save_page("home", markdown, None, "home")
+    graph = store.graph()
+    assert graph["edges"] == [{"source": "home", "target": "target", "type": "wikilink"}]
+    assert graph["missing_targets"] == [{"source": "home", "target": "missing\\"}]
+    assert graph["ambiguous_targets"] == []
+
+
 def test_empty_snapshot_has_no_revision(tmp_path: Path) -> None:
     snapshot = WikiStore(tmp_path).snapshot()
     assert snapshot["revision"] is None
@@ -141,9 +184,7 @@ def test_nested_list_links_remain_graph_prose_but_indented_code_does_not(
         "Three-space prose. References Target page Supporting nested prose. "
         "Code example Nested fence After list."
     )
-    assert store.graph()["edges"] == [
-        {"source": "home", "target": "target", "type": "wikilink"}
-    ]
+    assert store.graph()["edges"] == [{"source": "home", "target": "target", "type": "wikilink"}]
     assert store.graph()["missing_targets"] == []
 
 

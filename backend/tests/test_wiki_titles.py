@@ -81,7 +81,13 @@ def test_unclosed_comments_hide_headings_but_code_comment_literals_remain(tmp_pa
 
 
 @pytest.mark.parametrize(
-    "old_schema", ["managed-snapshots-v1", "managed-snapshots-v2", "managed-snapshots-v3"]
+    "old_schema",
+    [
+        "managed-snapshots-v1",
+        "managed-snapshots-v2",
+        "managed-snapshots-v3",
+        "managed-snapshots-v4",
+    ],
 )
 def test_title_projection_upgrade_invalidates_ready_index_receipts(
     tmp_path: Path,

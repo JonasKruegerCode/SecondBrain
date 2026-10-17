@@ -157,6 +157,12 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- Backslash-escaped wiki examples remain literal article text and do not create
+  graph edges, backlinks, missing targets or ambiguous targets. Odd/even opening
+  escape counts match the article renderer; paired backslashes still permit a
+  real link. Raw Markdown and the existing typed-relation grammar are preserved.
+  Index identity v5 invalidates earlier derived receipts so refresh cannot retain
+  the old false links.
 - Article lists retain Markdown meaning: continued numbered lists keep their
   starting number (including zero), and task markers keep checked/unchecked
   state as disabled native checkboxes. Other form inputs remain stripped;

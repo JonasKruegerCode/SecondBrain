@@ -145,3 +145,70 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+for (const width of [390, 1440]) {
+  test(`escaped wiki examples agree with graph navigation at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const id = `escape-reading-${randomUUID()}`;
+    const target = `escape-target-${randomUUID()}`;
+    const literal = `escape-literal-${randomUUID()}`;
+    const missing = `escape-missing-${randomUUID()}`;
+    const markdown = [
+      "# Synthetic escaped links",
+      "",
+      `Literal \\[[${literal}|Literal target]] and \\[[${missing}]].`,
+      "",
+      `Odd escape ${"\\".repeat(3)}[[${literal}]].`,
+      "",
+      `Even escape ${"\\".repeat(2)}[[${target}|Visible target]].`,
+      "",
+      `Actual [[${target}|Visible target]].`,
+      "",
+      `uses:: \\[[${literal}]]`,
+      "",
+    ].join("\n");
+    const created: string[] = [];
+    try {
+      for (const [pageId, body] of [[target, "# Visible target\nSynthetic target.\n"], [literal, "# Literal target\nSynthetic literal example.\n"], [id, markdown]]) {
+        const saved = await request.post(`/api/wiki/pages/${pageId}`, { data: {
+          markdown: body, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(saved.ok()).toBe(true);
+        created.push(pageId);
+      }
+      await page.goto(`/wiki/${id}`);
+      const prose = page.locator(".prose");
+      await expect(prose.locator("a")).toHaveCount(2);
+      await expect(prose.locator("a")).toHaveText(["Visible target", "Visible target"]);
+      await expect(prose).toContainText(`[[${literal}|Literal target]]`);
+      await expect(prose).toContainText(`[[${missing}]]`);
+      const graphResponse = await request.get("/api/wiki/graph");
+      expect(graphResponse.ok()).toBe(true);
+      const graph = await graphResponse.json();
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === id))
+        .toEqual([{ source: id, target, type: "wikilink" }]);
+      expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === id)).toEqual([]);
+      const literalBacklinks = await request.get(`/api/wiki/pages/${literal}/backlinks`);
+      expect(literalBacklinks.ok()).toBe(true);
+      expect((await literalBacklinks.json()).backlinks).toEqual([]);
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(page.locator(".prose a")).toHaveCount(2);
+      await page.reload();
+      await expect(page.locator(".prose a")).toHaveCount(2);
+      expect((await (await request.get(`/api/wiki/pages/${id}`)).json()).markdown).toBe(markdown);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`escaped-navigation-${width}.png`), fullPage: true });
+    } finally {
+      for (const pageId of created.reverse()) {
+        const saved = await request.get(`/api/wiki/pages/${pageId}`);
+        expect(saved.ok()).toBe(true);
+        const removed = await request.delete(`/api/wiki/pages/${pageId}`, { data: {
+          base_revision: (await saved.json()).revision, request_id: randomUUID(),
+        } });
+        expect(removed.ok()).toBe(true);
+      }
+    }
+  });
+}

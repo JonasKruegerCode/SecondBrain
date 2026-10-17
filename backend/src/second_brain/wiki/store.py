@@ -164,6 +164,14 @@ def prose_links(markdown: str) -> str:
     return re.sub(r"(`+).*?\1", "", prose_blocks(markdown), flags=re.DOTALL)
 
 
+def _markdown_escaped(text: str, position: int) -> bool:
+    """Markdown consumes backslashes in pairs before an opening delimiter."""
+    start = position
+    while start and text[start - 1] == "\\":
+        start -= 1
+    return (position - start) % 2 == 1
+
+
 def plain_text_excerpt(markdown: str) -> str:
     """Collapse article prose into a short, presentation-safe summary.
 
@@ -458,8 +466,13 @@ class WikiStore:
             links: list[tuple[str, str | None]] = [
                 (match.group(2), re.sub(r"[^\w]+", "_", match.group(1).strip().lower()).strip("_"))
                 for match in TYPED_LINK_RE.finditer(prose)
+                if not _markdown_escaped(prose, match.start(2) - 2)
             ]
-            links.extend((match.group(1), None) for match in LINK_RE.finditer(prose))
+            links.extend(
+                (match.group(1), None)
+                for match in LINK_RE.finditer(prose)
+                if not _markdown_escaped(prose, match.start())
+            )
             outgoing: set[tuple[str, str | None]] = set()
             for raw_target, rel in links:
                 target, candidates = WikiStore._resolve_target(raw_target, page["id"], ids, titles)
