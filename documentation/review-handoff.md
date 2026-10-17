@@ -276,14 +276,29 @@ This leaves the intermittent first-install notice and physical devices open.
 
 ## Public interfaces
 
-Derived article titles, excerpts and explicit links respect a fenced code
-block until a matching closing fence with only trailing spaces/tabs. A line
+Derived article titles, excerpts and explicit links respect a top-level or
+list-continuation fenced code block until a matching closing fence with only
+trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
 examples. Current `managed-snapshots-v6` also excludes literal raw HTML blocks.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
+
+Known reading/graph mismatch: a quoted tilde fence such as `> ~~~md`,
+`> [[example-target]]`, `> ~~~` renders as literal code but currently publishes
+an explicit graph link (or a missing-target row). The same target can therefore
+appear in backlinks or neighbor context despite having no article anchor.
+A synthetic real-service Chromium rehearsal reproduces this at 390/1440px;
+eight focused parser probes give six failures and two passing backtick controls.
+These are diagnostic failing probes, not a passing regression suite. The
+correction remains open: plain unquoted text may be lazy quoted-code continuation,
+whereas a blank boundary or heading can end that quote. Removing all `>` prefixes
+or ending a fence at every unquoted line would discard visible links or retain
+false ones. Preserve visible quote links, nested containers, exact Markdown and
+quote termination when implementing the correction. Existing v6 raw-HTML and
+unquoted/list-fence coverage does not establish complete Markdown parity.
 
 Imported page history follows Git-detected source renames before combining
 those commits with managed history. A real nested-source rename regression
