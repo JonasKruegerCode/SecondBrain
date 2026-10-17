@@ -9,6 +9,7 @@ import errno
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -214,7 +215,7 @@ def test_native_long_unicode_filename_refused_before_preparation(
         pytest.fail("filename refusal must happen before temporary output creation")
 
     with monkeypatch.context() as patch:
-        patch.setattr(exporter.tempfile, "mkdtemp", no_preparation)
+        patch.setattr(tempfile, "mkdtemp", no_preparation)
         with pytest.raises(WikiError) as error:
             exporter.export_vault(store, target, base_revision=str(before["revision"]))
     assert error.value.code == "export_filename_too_long"
@@ -268,9 +269,9 @@ def test_unknown_filename_limit_uses_native_write(
         return limit
 
     if limit == "missing":
-        monkeypatch.delattr(exporter.os, "pathconf")
+        monkeypatch.delattr(os, "pathconf")
     else:
-        monkeypatch.setattr(exporter.os, "pathconf", pathconf)
+        monkeypatch.setattr(os, "pathconf", pathconf)
     if too_long:
 
         def fail(_path: Path, _data: bytes) -> int:
