@@ -34,7 +34,15 @@ jobs:
 
       - name: Type check
         working-directory: frontend
-        run: npx tsc --noEmit
+        run: npm run typecheck
+
+      - name: Native chat proxy cancellation
+        working-directory: frontend
+        run: npm run test:proxy
+
+      - name: PWA lifecycle state transitions
+        working-directory: frontend
+        run: npm run test:pwa
 
       - name: Compile
         working-directory: frontend

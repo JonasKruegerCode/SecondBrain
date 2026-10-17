@@ -118,6 +118,8 @@ Available operations:
   Hard-delete a page (Git keeps the history). Only for truly obsolete pages.
 - {"op": "link", "page": "<slug>", "to": "<slug>", "type": "<relation or null>"}
   Add a wikilink. Give "type" only when the relation is explicitly stated.
+- {"op": "unlink", "page": "<slug>", "to": "<slug>", "type": "<relation or null>"}
+  Remove an incorrect wikilink. Give "type" to remove only that exact relation.
 - {"op": "merge", "source": "<slug>", "target": "<slug>"}
   Merge a true duplicate into another page.
 - {"op": "mark_outdated", "page": "<slug>", "reason": "..."}
@@ -172,6 +174,8 @@ Check, using ONLY the shown pages:
 - Do shown pages contradict each other? → mark_outdated the superseded statement
 - Are two shown pages clearly related but not linked? → link
   (add "type" only if the pages state the relation explicitly)
+- Does a shown link explicitly contradict the shown pages? → unlink
+  (remove it only when the contradiction is unambiguous)
 - Is a section obviously stale? → mark_outdated
 
 Do not use create_page. Do not add new content. If everything is fine,

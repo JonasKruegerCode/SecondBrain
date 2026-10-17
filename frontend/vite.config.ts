@@ -10,11 +10,31 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: `http://localhost:${apiPort}`,
-        changeOrigin: true,
+        // Preserve browser host for the managed API's same-origin write guard.
+        changeOrigin: false,
+        configure(proxy) {
+          proxy.on("proxyReq", (upstream, request, response) => {
+            if (request.method !== "POST" || request.url?.split("?")[0] !== "/api/wiki/chat") return;
+            // A fully received POST can still lose its waiting browser before
+            // upstream headers arrive. Vite's proxyRes hook starts too late.
+            const disconnected = () => {
+              if (!response.writableEnded) upstream.destroy();
+            };
+            response.once("close", disconnected);
+            upstream.once("close", () => response.off("close", disconnected));
+            if (response.destroyed) disconnected();
+          });
+        },
       },
     },
   },
   build: {
     outDir: "dist",
+    rollupOptions: {
+      input: {
+        wiki: new URL("./index.html", import.meta.url).pathname,
+        legacy: new URL("./legacy.html", import.meta.url).pathname,
+      },
+    },
   },
 });

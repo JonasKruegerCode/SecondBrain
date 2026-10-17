@@ -1,0 +1,392 @@
+# Managed wiki: first runnable development milestone
+
+This is an **opt-in development profile**, not the completed 2.0 release. It uses
+real local Markdown content and Git history, without Redis, Neo4j, Qdrant, remote
+Git, an embedding provider, or a chat model. Legacy APIs and workers remain an
+optional compatibility profile; the default legacy Compose stack serves
+`legacy.html`. Do not attach the legacy worker or a direct file writer to a
+managed vault.
+
+## Start and stop
+
+Use Linux or WSL with Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. From the
+repository root, install the locked dependencies and locate Poetry's actual
+Python executable; an in-project `backend/.venv` is not required:
+
+```sh
+(cd backend && poetry sync --no-interaction)
+(cd frontend && npm ci)
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
+```
+
+Open <http://127.0.0.1:5173>. The demo uses `.demo/vault`, separate from the legacy
+`vault` directory and Docker volumes. Ctrl+C stops API and frontend together.
+The first launch explicitly seeds a fictional atlas; later launches retain all
+edits. To start empty in another directory:
+
+```sh
+SECOND_BRAIN_WIKI_API_KEY= PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-demo.py \
+  --vault .demo/empty-vault --empty
+```
+
+The seeder's repeat-verification and interrupted `--resume` behavior are in
+[demo-start.md](demo-start.md). It never overwrites an existing nonempty wiki.
+No chat response or external semantic index is simulated by the demo. The
+default runner also clears any inherited OpenRouter key; `--with-openrouter` is
+an explicit paid-provider opt-in.
+
+For a deliberate empty/template/local-Git installation choice, use the
+[first-start command](first-start.md). It does not start services, seed on API
+startup, or replace a populated wiki. [Markdown export](wiki-export.md) prepares
+a separate, revision-guarded content-only directory without copying Git internals.
+[Explicit managed Git sync](managed-git-sync.md) publishes or imports reviewed
+snapshots with durable acknowledgements and a guarded normal push. See [recoverable delivery](managed-delivery.md) for the factory-owned worker
+and explicit opt-in remote bootstrap.
+[Portable backup and restore](backup-restore.md) captures a verified Git bundle,
+durable local ledgers and demo metadata, then restores only into a new vault.
+External index providers, secrets and proxy configuration remain separate.
+
+The separate `docker-compose.wiki.yml` describes an empty managed installation
+on `127.0.0.1:8080` plus managed HTTP MCP on `127.0.0.1:3001`. Its container
+build/start, HTTPS/auth, restart and independent-volume restore have separate
+[disposable CI acceptance](managed-stack-acceptance.md); inspect the actual run
+for the reviewed revision. Both services use an independent
+`managed_wiki` volume; the backend port is not exposed. Only the MCP service
+receives the configured Bearer key, while browser/API access remains behind the
+deployment's same-origin reverse-proxy authentication. Put authenticated HTTPS
+reverse-proxy protection in front before exposing either endpoint beyond
+localhost. Existing production proxy credentials are not changed. This milestone
+does not migrate the production vault. Explicit local Git import and independent
+HTTP MCP startup are described below.
+
+Compose gates the frontend on `/api/wiki/health`. That route now performs a
+cheap read-only check of the bare Git repository and, once a revision exists,
+the published commit object. It accepts a deliberately empty unborn vault but
+returns a sanitized 503 when the local authority disappears or becomes
+unreadable. This is a readiness check, not an off-host backup or a disk-durability
+test.
+
+## Publication contract
+
+The directory's `.wiki.git` is a bare local Git repository. `refs/heads/wiki`
+points to the authoritative published snapshot. Trees contain UTF-8
+`pages/<id>.md`, per-page revision tokens, and durable request receipts. The
+working directory is not a second authoritative filesystem writer.
+
+A save validates the page revision that the client actually read. Null revision
+means create-only. Content, revision and retry receipt publish with a single
+`git update-ref` compare-and-swap. Concurrent unrelated writes may be retried;
+the page base revision never changes implicitly. Revision tokens change across
+delete/recreate even when the Markdown is identical. A lost response is retried
+with the same request ID and identical payload; a reused ID with a different
+payload fails. Earlier published versions remain in local Git history.
+
+Prepared but unpublished objects are invisible to reads. The reference is the
+publication boundary; there is no export/journal to reconcile at startup.
+Use the [portable backup command](backup-restore.md) to preserve hidden
+`.wiki.git` history, durable request receipts, local SQLite ledgers and the
+demo marker where present. Avoid pruning request/history objects arbitrarily.
+Normal operation requires local Git; remote/provider failure is independent.
+
+Mutation receipts record external indexes **pending** at publication time; current
+progress is available from `/api/wiki/index-status`. Optional snapshot adapters
+now support Neo4j, vectors, and bounded non-generative GraphRAG retrieval; see
+[managed indexes](managed-indexes.md) for configuration and explicit worker runs.
+Remote synchronization is **not_configured** unless deliberately opted in;
+`/api/wiki/delivery-status` reports fresh workspace index progress and cached Git
+verification separately. Factory-owned workers reconstruct pending work after
+saves and restarts. The immutable save receipt remains publication-time evidence. The immediate graph derives
+explicit wikilinks and typed relations from one content snapshot, resolves unique
+titles, and reports missing/ambiguous targets without inferring dependencies.
+The browser uses the same target resolver for ID/title links, ambiguous choices and missing links. A first snapshot galaxy is available at `/galaxy`; its topology grouping is a navigation aid, not a semantic classification.
+
+## REST and MCP
+
+Managed REST is `/api/wiki`: page listing, page read/create/save/delete, lexical
+search, snapshot graph, recent page history, and bounded read-only chat. Saves require `markdown`,
+`base_revision`, and `request_id`. Reads are independent of Git pulls and models.
+All responses use `Cache-Control: no-store`. Browser writes reject foreign
+origins; the optional `SECOND_BRAIN_WIKI_API_KEY` requires a server-side Bearer
+credential on all managed endpoints. Ordinary browser use should retain
+reverse-proxy authentication; no provider key is sent to the frontend.
+
+### Read-only wiki chat
+
+`POST /api/wiki/chat` accepts the most recent 1–12 user/assistant messages, ending
+with the user turn. The server invokes the configured OpenRouter model with only
+three tools: lexical/semantic/GraphRAG search, exact page read, and bounded graph
+neighbors. There is no save, delete, memory, or arbitrary MCP tool. Tool arguments,
+message count/size, rounds, calls, output, runtime, and response body size are
+bounded. Page results are model content rather than instructions. Provider errors,
+empty answers, timeouts, unavailable indexes, and exhausted limits become clean
+API failures without exposing credentials or raw provider errors. Oversized page
+reads keep a valid JSON envelope and trim only the Markdown field instead of
+cutting through serialized tool output.
+
+The response separates the answer, short observable activity labels, and exact
+sources for pages that were actually read. Search hits and graph neighbors remain
+navigation activity and are not exposed as citations. It never returns hidden
+reasoning. The browser renders source links and stores conversations only in local
+storage, with new/delete controls. It sends
+at most 12 recent messages for multi-turn context. The backend has no conversation
+archive and the service worker must not cache these private messages when PWA work
+lands. Chat remains available only through the same origin/authentication boundary
+as the rest of the managed API.
+
+Local MCP uses the **same** WikiStore:
+
+```sh
+SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/managed-vault \
+WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+PYTHONPATH=backend/src "$WIKI_PYTHON" -m second_brain.wiki.mcp
+```
+
+This is a local stdio transport. The `wiki://guidance` resource documents concise
+article openings, headings, links at the point of use, stable IDs, source
+discipline, revision conflicts and exact retries. Managed tools are get/list/
+search/save/delete/graph/history. Legacy remember/recall remain in the separate
+[optional compatibility profile](legacy-memory-profile.md), and are absent here.
+No automatic editorial repair runs.
+
+Streamable HTTP provides those same tools at `/mcp`, with an optional Bearer
+key and explicit Host/Origin allowlists. See [managed-mcp.md](managed-mcp.md)
+for local startup, reverse-proxy configuration and transport differences from
+legacy. A real SDK client against a running MCP server was checked alongside
+REST against the same isolated vault.
+
+## Controlled local Git import
+
+See [wiki-import.md](wiki-import.md) for importing a complete clean local Git
+repository with an optional page-directory prefix. An import validates all
+pages before atomically replacing the managed page set; an existing destination
+requires its reviewed snapshot head. The source stays unchanged. Original
+source commits, including history outside the selected prefix, remain reachable
+and appear in page history through the source-path mapping. No remote credentials
+or Git configuration are copied. Shallow/incomplete history, duplicate IDs,
+dirty sources, invalid Markdown and missing prefixes are refused. Empty input
+cannot erase a populated wiki. A separate read-only audit pins the publication
+revision and proves page IDs, exact Markdown bytes, path provenance, retained
+source parent and object integrity. Replacement rollback uses a portable backup
+restored into a new vault. This is not automatic remote synchronization.
+
+## Verification and remaining work
+
+Backend tests exercise real local Git, genuine separate-process writers, stale
+revisions, request reuse, delete/recreate, fault injection before/after the
+publication boundary, restart, graph refresh, code-example links, API failures,
+access controls, MCP calls and safe fictional seeding. Fault injection is not a
+power-loss durability test. Neo4j/Testcontainers and deployed service failures
+have not been tested by these cases.
+
+The frontend provides a bright responsive Home, safe rendered Markdown,
+aliased wikilinks, direct URLs, browser navigation, persisted start page,
+lexical search, article contents, on-demand local Git history, and a revision-aware
+editor with conflict drafts and separate delivery progress. The original
+frontend is retained as a separate build entry for legacy deployment. Screenshot
+inspection and running-browser tests are required after UI changes; build/type
+checks alone do not establish visual quality.
+
+Not complete: production Git credential provisioning, live provider/deployment integration,
+provider-scale index retention validation, large-vault galaxy acceptance beyond the 320-page fixture,
+physical-device PWA installation, deployment packaging and
+full migration acceptance. Device installation and real-model chat quality are
+not claimed. Do not use this milestone as the final production migration.
+
+### Browser regression command
+
+Start the isolated demo, then run `cd frontend && npm run test:browser`. Install
+Playwright Chromium and Linux host libraries once with
+`npx playwright install --with-deps chromium`; an existing
+compatible executable can be selected with `PLAYWRIGHT_EXECUTABLE_PATH`. Use only
+a disposable synthetic vault: the suite deliberately creates, edits and deletes
+fixture pages. Test artifacts are kept under the ignored `.demo` directory.
+
+The current evidence snapshot and copyable review summary live in
+[review-handoff.md](review-handoff.md). Keep commit-specific counts there instead
+of accumulating historical CI logs in this architecture guide. The durable
+coverage includes real local Git, separate-process writers, frozen imports,
+byte-preserving export/import, guarded remote publication, restart, request
+identity, prepared-object retention and delivery conflict recovery.
+
+The twelve-page template -> plain export -> committed Git -> managed import
+roundtrip preserved every Markdown byte. The imported app and network MCP were
+also exercised against the real REST services. Browser evidence uses the
+fictional fixture at desktop and narrow viewports; deliberately intercepted
+error/model responses remain identified as synthetic contracts rather than live
+provider evidence.
+
+The preceding index milestone started real REST/MCP semantic services with
+embedded Qdrant and synthetic embeddings. Docker is unavailable here; container
+build/deployment, hosted index/embedding providers, authenticated production Git,
+real-model chat and actual device installation remain untested.
+
+The imported atlas was also opened in the running browser, and desktop/mobile
+screenshots were inspected. The narrow-view table inspection exposed excessive
+word wrapping; tables now scroll inside a keyboard-focusable region with readable
+column widths. The browser contract covers 390px and 1440px views, keyboard
+scrolling and absence of page overflow.
+
+A synthetic 500-page Git import took 8.8 seconds in the development environment.
+Listing, current Markdown graph and lexical search took approximately 42–56 ms.
+Batched reads use one immutable tree and two Git processes; an equivalent
+previous 500-page listing took 5.22 seconds versus 0.049 seconds with the batch
+reader and identical content/revision results. These are local fixture timings,
+not a production scalability guarantee. Concurrent publication during a batch
+read is covered by a regression ensuring the returned graph remains on its
+declared snapshot.
+
+
+## Link navigation and snapshot galaxy
+
+Wiki links use exact page IDs first, then case-insensitive unique titles. Duplicate
+titles offer explicit candidate cards; missing targets are marked within prose.
+Title aliases, cross-page heading fragments and `[[#Heading]]` work alongside
+direct URLs and browser history. Rendering still ignores wikilinks inside code.
+The bounded read endpoint `/api/wiki/resolve-links?target=...&source=...` shares
+the graph resolver and returns its content revision. Article links are hydrated
+in small batches; their resolution route remains available on request failure.
+A late response for an abandoned article cannot replace the current edit target.
+
+Link resolution reads the same immutable Git page snapshot without deriving
+unused graph edges. A local synthetic320 comparison (320 pages, 648 links,
+eight resolution targets, nine sequential samples per variant) measured a
+store median of 47.144 ms before and 36.112 ms after this change. Real loopback
+REST requests with `Connection: close` measured repeated-request medians of
+47.643 and 39.763 ms; keep-alive requests measured 87.958 and 77.945 ms.
+Each REST variant used one first request and eight repeated requests. The same
+Git revision returned identical 1,089 response bytes and `no-store`; the vault
+snapshot remained unchanged. This small development observation does not
+establish cold OS cache, a percentile/SLA, hosted network, browser rendering,
+mobile-device or provider performance. A concurrency regression verifies that
+a title changed by another writer during the blob read cannot mix revisions,
+and that the next resolution sees the new title without a process restart.
+
+Articles offer a compact, expandable **Linked from** panel. Its read endpoint
+`GET /api/wiki/pages/{id}/backlinks?limit=20` uses the same immutable Markdown
+snapshot and resolver as the graph, without requiring a graph provider. The limit
+is an integer from 1 to 100. Each unique incoming source includes its ID, title,
+content revision, excerpt and any explicitly declared relation labels. Sources
+are sorted by title then ID; repeated links are collapsed, and self-links,
+unresolved/ambiguous targets and code examples are excluded. The response includes
+the snapshot `revision`, article `target_revision`, `total` and `truncated`.
+Unknown pages return 404 and invalid limits return 400. Existing authentication
+and no-store policy apply. The panel loads on demand, supports retry/refresh, and
+requires an article reload if its content revision changed. Delayed responses
+cannot update an abandoned article. Incoming links express actual authorship,
+not an inferred dependency or a generic related-pages list.
+
+The galaxy reads `/api/wiki/graph`, which derives resolved edges from one
+immutable Markdown snapshot. Optional YAML frontmatter makes editorial grouping
+explicit without changing the Markdown/Git source:
+
+```yaml
+---
+galaxy_group: sky-navigation
+galaxy_label: Sky & navigation
+galaxy_anchor: true
+---
+```
+
+`galaxy_group` is a stable 1–80 character ID using letters, numbers, dots,
+underscores or hyphens. `galaxy_label` is an optional reader-facing label and
+`galaxy_anchor: true` selects the core page. Unknown YAML is preserved and
+ignored; malformed galaxy values never prevent reading the article. Frontmatter
+remains visible in the raw editor and history but is hidden from rendered prose.
+
+Pages without this metadata use deterministic link-topology neighborhoods:
+prefer highly linked local hubs over connectors spanning at least 80% of a
+component; additional cores are separated by at least two links. Assign pages to
+their nearest core, with deterministic ties. The UI labels each group as curated
+or topology-derived. A generic wikilink never implies a dependency. The evidence
+panel preserves actual source/target direction and declared relation labels.
+Unresolved targets do not become invented stars. Use the explicit refresh link
+to read a newer revision after saves/deletions.
+
+Overview, focused neighborhood, star selection, local title/ID search and article
+navigation share a keyboard-accessible sidebar. Zoom/pan are bounded. Returning
+from a star or neighborhood with the keyboard restores focus
+to the originating page or constellation.
+On narrow screens, controls remain reachable and a list view offers a reduced alternative.
+Above 250 pages or 800 links, list view is the default and skips SVG construction.
+The fast 251-page injected contract still isolates the no-SVG frontend behavior.
+An additional opt-in scale fixture now imports 320 generated pages and 648 links
+as one real managed Git snapshot, starts the actual REST/Vite services, and drives
+the list/search/evidence/mutation/delete path in Chromium at 1440 and 390 px. The
+fixture refuses nonempty destinations and contains only explicit synthetic prose.
+In this development environment the first graph build took about 47 ms and the
+expanded browser case about 2.6 seconds; these are single local observations, not
+a production scalability promise. Selecting the map on this fixture now renders
+one core per curated constellation and aggregates only the real cross-constellation
+links, including their counts. Selecting one constellation expands its 40 pages and
+their individual links. The browser contract also confirms that core positions stay
+stable after a real page mutation. This is useful evidence for the checked fixture,
+not production-scale or final galaxy acceptance.
+
+Run the reproducible scale path with `SECOND_BRAIN_WIKI_API_KEY= make demo-scale PYTHON="$WIKI_PYTHON"`,
+using the Poetry executable selected in the startup recipe above.
+Then, in another terminal, run
+`cd frontend && PLAYWRIGHT_SCALE=1 npm run test:browser -- e2e/scale.spec.ts`.
+The normal browser suite skips this costly opt-in fixture. Its current case count
+and exact commit evidence are recorded in
+[review-handoff.md](review-handoff.md). Browser emulation is not a
+physical-device installation or hosted-provider/model test. Deliberately
+intercepted failures and model responses remain explicit; ordinary content and
+mutations use the real local services.
+
+## Read-only chat evidence
+
+The iterative OpenRouter function-calling loop now uses the same managed store
+and optional index coordinator as REST/MCP. Backend regressions drive search and
+page reads through the real Git-backed services, verify multi-round tool messages
+and source upgrades, keep long-page tool JSON valid within the context cap,
+reject an attempted write tool, preserve page content, and cover
+origin/payload/provider/step-limit failures. A browser regression checks
+multi-turn payloads, local persistence/deletion, source links, and 390px overflow.
+Its model response is explicitly intercepted synthetic data; no demo fixture or
+runtime path contains a fake answer. Saved chat records are validated before
+rendering and bounded to 20 conversations with 24 messages each. Malformed
+records are skipped; valid records remain available. If browser storage refuses
+a write, answers remain usable in the tab and a visible notice explains that
+new messages are not persisted and earlier saved deletions may remain. A bounded
+tab-memory fallback preserves answers and deletions while following wiki links
+and returning to Chat; a document reload loses that fallback. A later
+successful write persists the current state and clears that notice. Browser
+regressions cover corrupt records, the same runtime limits, rejected storage
+writes, deletion and recovery. Desktop 1440px and mobile 390px screenshots
+of that UI contract were inspected. `OPENROUTER_API_KEY` was unavailable in this
+environment, so real provider/model quality, billing behavior, and tool-call
+compatibility are not claimed.
+
+A restored conversation ending in a user question exposes an explicit Retry
+action because no answer is saved. Reloading, selecting a conversation or
+returning from an article does not start a model request automatically. The
+selection is preserved locally, and Retry resends the existing context without
+adding a duplicate question. The demo-tour regression follows Home, an article
+and its galaxy star before checking the actual unconfigured server's 503 response,
+reload, selection and navigation. It checks that wiki content remains unchanged;
+it does not supply or claim a real model answer.
+
+## Installable PWA evidence
+
+The managed frontend now ships a web-app manifest, safe-zone icons at 192/512 px,
+an Apple touch icon and standalone launch metadata. A small runtime exposes an
+install action only when the browser supplies `beforeinstallprompt`, distinguishes
+offline/update/install states, and preserves the selected wiki start page on app
+launch. Android/Chromium and iOS/Safari installation steps are documented in the
+[PWA guide](pwa.md); production still requires HTTPS.
+
+The service worker is intentionally online-only: no fetch handler, no CacheStorage
+and no private wiki/chat/auth responses copied for offline use. Nginx forces worker
+revalidation. A changed worker waits, the UI offers **Update now**, and accepting
+it activates the worker before one controlled reload. The release marker must be
+bumped with deployments that should surface this notice.
+
+A real Chromium secure-context regression validates the manifest through the
+DevTools app-manifest and installability APIs, root-scope registration, empty
+CacheStorage, no fetch interception, and the visible 390-px offline notice. A
+same-origin test proxy then serves two real worker revisions, observes the waiting
+update, applies it through the UI and confirms the app reloads without a private
+cache. The icon and offline mobile UI were inspected. This is not evidence of an
+Android/iOS homescreen installation, OS icon rendering, or production HTTPS;
+those remain explicit release checks.
