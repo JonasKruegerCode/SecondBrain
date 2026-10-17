@@ -153,7 +153,7 @@ class _ProseContainer(NamedTuple):
     quoted: bool
 
 
-_LIST_START = re.compile(r"^( {0,3})([-+*]|[0-9]{1,9}[.)])((?:[ \t].*)?)$")
+_LIST_START = re.compile(r"^( {0,3})([-+*]|[0-9]{1,9}[.)])((?:[ \t].+)?)$")
 
 
 def _list_item_end(lines: list[str], start: int, match: re.Match[str]) -> tuple[int, str, int]:
@@ -232,6 +232,9 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
     fence = ""
     in_comment = False
     raw_html = ""
+    paragraph = False
+    paragraph_barrier = False
+    previous_prose = ""
     source_lines = markdown.splitlines()
     skip_until = 0
     for line_number, line in enumerate(source_lines):
@@ -243,10 +246,12 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
         # Marked's raw HTML blocks keep Markdown literal through the entire
         # closing-tag line. Blank lines, headings and fences inside are data.
         if raw_html:
+            paragraph = False
             if re.search(rf"</{raw_html}>", relative, re.IGNORECASE | re.ASCII):
                 raw_html = ""
             continue
         if not fence and not in_comment and _QUOTE_PREFIX.match(relative):
+            paragraph = False
             skip_until, inner = _quote_end(
                 source_lines, line_number, 0, markdown.endswith(("\r", "\n"))
             )
@@ -257,6 +262,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
         if quoted:
             quoted_line = line
             if fence:
+                paragraph = False
                 if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", quoted_line):
                     fence = ""
                 continue
@@ -264,6 +270,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
                 re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", quoted_line) if not in_comment else None
             )
             if match:
+                paragraph = False
                 fence = match.group(1)
                 continue
         else:
@@ -271,6 +278,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
             # comment must not create a fence delimiter.
             match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative) if not in_comment else None
             if match:
+                paragraph = False
                 marker = match.group(1)
                 if not fence:
                     fence = marker
@@ -282,21 +290,49 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
                     fence = ""
                 continue
             if fence:
+                paragraph = False
                 continue
         if not in_comment:
             terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
             html_line = relative + ("\n" if terminated else "")
             html = re.match(r"^ {0,3}<(?ai:(script|pre|style|textarea))[\s>]", html_line)
             if html:
+                paragraph = False
                 tag = html.group(1).lower()
                 if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
                     raw_html = tag
                 continue
+        # Definitions, HTML blocks and GFM tables do not establish paragraph
+        # continuation. Keep the existing projection for these forms, but do not
+        # newly admit indented code after them. A blank releases the barrier.
+        html_boundary = re.match(
+            rf"^ {{0,3}}<(?:[!?]|/?(?:{_HTML_BLOCK_TAGS})(?:[ \t]|/?>|$))",
+            relative,
+            re.IGNORECASE | re.ASCII,
+        ) or re.fullmatch(
+            r" {0,3}</?[A-Za-z][A-Za-z0-9-]*"
+            r"""(?:[ \t]+(?:[^<>\"']|\"[^\"]*\"|'[^']*')*)?/?>[ \t]*""",
+            relative,
+        )
+        definition = re.match(r"^ {0,3}\[[^\]]+\]:", relative)
+        table_rule = (
+            paragraph
+            and "|" in previous_prose
+            and re.fullmatch(r" {0,3}\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *", relative)
+        )
+        if html_boundary or definition or table_rule:
+            paragraph_barrier = True
+            paragraph = False
+        if table_rule:
+            lines.append(line)
+            continue
+
         # Parse list contents before quote/fence contents on the next pass.
         # Keeping a projection-only prefix prevents a nested H1 becoming the
         # page identity while allowing ordinary list prose into excerpts.
         list_item = _LIST_START.match(line) if not in_comment else None
         if list_item:
+            paragraph = False
             skip_until, inner, content_indent = _list_item_end(source_lines, line_number, list_item)
             lines.append(_ProseContainer(inner, " " * content_indent, False))
             continue
@@ -310,9 +346,24 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContaine
             relative = expanded
 
         if not expanded.strip():
+            paragraph = False
+            paragraph_barrier = False
+            previous_prose = ""
             lines.append(line)
             continue
         if indent < 4:
+            lines.append(line)
+            setext = paragraph and re.fullmatch(r" {0,3}(?:=+|-+) *", expanded)
+            paragraph = not bool(
+                paragraph_barrier
+                or setext
+                or re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", expanded)
+                or re.fullmatch(r" {0,3}(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})", expanded)
+            )
+            previous_prose = line
+        elif paragraph:
+            # Marked merges indented code candidates into existing paragraph
+            # text. Preserve indentation so literal headings stay non-titles.
             lines.append(line)
     return lines
 

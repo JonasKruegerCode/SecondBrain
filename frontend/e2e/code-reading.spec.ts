@@ -605,3 +605,85 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+for (const width of [390, 1440]) {
+  test(`list paragraphs agree with graph navigation at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const id = `list-paragraph-reading-${randomUUID()}`;
+    const target = `list-paragraph-target-${randomUUID()}`;
+    const literal = `list-paragraph-literal-${randomUUID()}`;
+    const continued = `list-paragraph-continued-${randomUUID()}`;
+    const markdown = `# Synthetic list paragraphs\n\n- \n\n    [[${literal}]]\n\n123. [[Visible\tcompanion|First target]]\n    [[${continued}|Continued target]]\n\n-  \n\n    [[${target}|Spaced marker target]]\n\nVisible prose [[${target}|Visible target]].\n`;
+    const created: string[] = [];
+    try {
+      for (const [pageId, body] of [[target, "# Visible\tcompanion\nSynthetic target.\n"], [literal, "# Literal companion\n"], [continued, "# Continued companion\n"], [id, markdown]]) {
+        const saved = await request.post(`/api/wiki/pages/${pageId}`, { data: {
+          markdown: body, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(saved.ok()).toBe(true);
+        created.push(pageId);
+      }
+      await page.goto(`/wiki/${id}`);
+      await expect(page.locator(".prose pre")).toHaveCount(1);
+      await expect(page.locator(".prose pre a")).toHaveCount(0);
+      await expect(page.locator(".prose pre").first()).toContainText(`[[${literal}]]`);
+      await expect(page.locator(".prose h1,.prose h2")).toHaveCount(0);
+      await expect(page.locator(".prose a")).toHaveCount(4);
+      await expect(page.locator(".prose a")).toHaveText(["First target", "Continued target", "Spaced marker target", "Visible target"]);
+      const graphResponse = await request.get("/api/wiki/graph");
+      expect(graphResponse.ok()).toBe(true);
+      const graph = await graphResponse.json();
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === id)
+        .map((edge: { target: string }) => edge.target).sort()).toEqual([target, continued].sort());
+      expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === id)).toEqual([]);
+      const backlinks = await request.get(`/api/wiki/pages/${target}/backlinks`);
+      expect(backlinks.ok()).toBe(true);
+      expect((await backlinks.json()).backlinks.map((row: { id: string }) => row.id)).toEqual([id]);
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      // Publish a real link outside the code, then restore the original source.
+      // The same target must gain and lose an actual incoming edge, while its
+      // appearances inside the indented code block remain literal throughout.
+      const literalBacklinks = async () => {
+        const response = await request.get(`/api/wiki/pages/${literal}/backlinks`);
+        expect(response.ok()).toBe(true);
+        return (await response.json()).total;
+      };
+      expect(await literalBacklinks()).toBe(0);
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await page.locator("#editor").fill(markdown + `\nVisible [[${literal}|Now visible]].\n`);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".prose a").filter({ hasText: "Now visible" })).toHaveCount(1);
+      expect(await literalBacklinks()).toBe(1);
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await page.locator("#editor").fill(markdown);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".prose a")).toHaveCount(4);
+      expect(await literalBacklinks()).toBe(0);
+      const restoredGraph = await (await request.get("/api/wiki/graph")).json();
+      expect(restoredGraph.edges.filter((edge: { source: string }) => edge.source === id)
+        .map((edge: { target: string }) => edge.target).sort()).toEqual([target, continued].sort());
+      expect(restoredGraph.missing_targets.filter((edge: { source: string }) => edge.source === id)).toEqual([]);
+      await page.reload();
+      await expect(page.locator(".prose pre")).toHaveCount(1);
+      expect((await (await request.get(`/api/wiki/pages/${id}`)).json()).markdown).toBe(markdown);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`list-paragraph-navigation-${width}.png`), fullPage: true });
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await expect(page.locator(`.galaxy-evidence a[data-open='${target}']`)).toHaveCount(1);
+      await expect(page.locator(`.galaxy-evidence a[data-open='${literal}']`)).toHaveCount(0);
+      await expect(page.locator(`.galaxy-evidence a[data-open='${continued}']`)).toHaveCount(1);
+      await page.screenshot({ path: testInfo.outputPath(`list-paragraph-galaxy-${width}.png`), fullPage: true });
+    } finally {
+      for (const pageId of created.reverse()) {
+        const saved = await request.get(`/api/wiki/pages/${pageId}`);
+        expect(saved.ok()).toBe(true);
+        const removed = await request.delete(`/api/wiki/pages/${pageId}`, { data: {
+          base_revision: (await saved.json()).revision, request_id: randomUUID(),
+        } });
+        expect(removed.ok()).toBe(true);
+      }
+    }
+  });
+}

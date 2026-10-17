@@ -288,7 +288,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v9`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v10`
 also rebuilds projections using quote and list-item container boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -301,8 +301,8 @@ excluded from page identity. An iterative work stack avoids Python recursion;
 a synthetic 150-level quote control covers that boundary. Original Markdown,
 page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
 prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
-Old v1–v8 index receipts rebuild with
-v9; configured vector rebuilds can incur embedding costs.
+Old v1–v9 index receipts rebuild with
+v10; configured vector rebuilds can incur embedding costs.
 
 List items now enter the same iterative container projection before quote/code
 classification, including a quote on the marker's first line (`- > ~~~`).
@@ -319,11 +319,27 @@ fail against the exact prior store's phantom edge. The corrected browser path
 checks visible title-resolved links, code, graph/backlinks and direct-editor
 mutation/restoration, then inspects the galaxy's directional evidence.
 
-This remains a bounded grammar correction. Whitespace-only empty items followed
-by indented content can still expose a false link; deeply indented lazy paragraph
-continuations can still lose one. Both were reproduced on the preceding store.
-Generic raw HTML and other inline forms are not completely covered. Do not infer
-full Markdown parity from these regressions.
+A single whitespace character after a list marker no longer creates a list
+container: native Marked treats that line as a paragraph, and indented content
+after the blank remains code. A bare marker and a marker followed by two spaces
+remain distinct valid list controls. Paragraph state also retains indented lazy
+continuations, including inside wide ordered items. Original indentation is kept
+so literal continuation headings cannot become the page title. Blank lines and
+recognized code/quote/list/heading boundaries terminate paragraph continuation.
+Definitions, standalone HTML/block openers and GFM table delimiters conservatively
+block newly admitting indented rows until a blank; their earlier limited projection
+is preserved rather than claiming complete HTML/reference parsing.
+
+The paragraph-boundary corpus includes actual Git bytes/history, graph/backlinks,
+titles and excerpts, plus contrastive setext/table/definition/HTML and inline
+prose controls. Both new real-service 390/1440px cases fail against the exact
+prior store, then check code versus visible lazy links, two-space list markers,
+editor save/restoration and directional galaxy evidence after correction.
+
+This remains a bounded grammar correction. HTML/reference and other inline forms
+are not completely covered: a conservative HTML barrier can still miss an
+indented continuation after an inline custom tag, and list deindentation can
+still expose links within generic HTML. Do not infer full Markdown parity.
 
 Imported page history follows Git-detected source renames before combining
 those commits with managed history. A real nested-source rename regression
