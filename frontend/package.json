@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json",
     "test:browser": "playwright test",
+    "test:pwa": "node --test tests/pwa.test.mjs",
     "test:proxy": "node --test tests/chat-proxy.test.mjs"
   },
   "dependencies": {

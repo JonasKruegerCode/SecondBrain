@@ -34,15 +34,25 @@ function inspect(reg: ServiceWorkerRegistration) {
   registration = reg;
   waitingWorker = reg.waiting || undefined;
   publish();
-  reg.addEventListener("updatefound", () => {
+  const watchInstalling = () => {
     const installing = reg.installing;
-    installing?.addEventListener("statechange", () => {
-      if (installing.state === "installed" && navigator.serviceWorker.controller) {
+    if (!installing) return;
+    // Capture the older worker before installation completes. A first install
+    // can claim this document before its queued statechange listener runs.
+    const active = reg.active || navigator.serviceWorker.controller;
+    const replacesActiveWorker = Boolean(active && active !== installing);
+    const changed = () => {
+      if (installing.state === "installed" && replacesActiveWorker) {
         waitingWorker = reg.waiting || installing;
         publish();
       }
-    });
-  });
+    };
+    installing.addEventListener("statechange", changed);
+    changed();
+  };
+  reg.addEventListener("updatefound", watchInstalling);
+  // register() may resolve after updatefound, with an install still in flight.
+  watchInstalling();
 }
 
 export function observePwa(listener: (state: PwaState) => void): () => void {

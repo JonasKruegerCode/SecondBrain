@@ -274,6 +274,23 @@ from an observer that incorrectly waits for settlement before release. Both
 viewport cases are included in normal Chromium and WebKit worker acceptance.
 This leaves the intermittent first-install notice and physical devices open.
 
+Application lifecycle inspection now observes an already-installing worker as
+well as future `updatefound` events. It captures the older active/controller
+worker before installation completes, so a first worker claiming the document
+does not turn itself into an update notice merely because callback delivery is
+late. Existing waiting updates, explicit activation and dirty-tab reload
+protection keep their previous contracts.
+
+`npm run test:pwa` transpiles the actual PWA module and checks five deterministic
+event-state cases. Two fail on the preceding source: missed observation of an
+already-installing update and a false first-install update under an explicitly
+synthetic callback ordering. The fixtures model application events; they do not
+prove that a browser produces that ordering or diagnose the historical WebKit
+failure. Native worker/update browser acceptance remains separate, including
+the two-tab held installation described above. Its final hidden-notice assertion
+is preserved. No worker script, offline/private-data caching or installation
+permission policy changes.
+
 The acceptance runner passes its actual Python executable to nested delivery
 fixtures unless `WIKI_PYTHON` is explicitly set. This supports Poetry or other
 virtual environments outside `backend/.venv`, as used by the documented Make
