@@ -86,10 +86,18 @@ class WikiChat:
             if not isinstance(item, dict):
                 raise WikiError("invalid_payload", "Every chat message must be an object.")
             role, content = item.get("role"), item.get("content")
-            if role not in {"user", "assistant"} or not isinstance(content, str):
+            if (
+                not isinstance(role, str)
+                or role not in {"user", "assistant"}
+                or not isinstance(content, str)
+            ):
                 raise WikiError(
                     "invalid_payload", "Chat messages need a user/assistant role and text content."
                 )
+            try:
+                content.encode("utf-8")
+            except UnicodeEncodeError:
+                raise WikiError("invalid_payload", "Provide valid Unicode text.") from None
             content = content.strip()
             if not content or len(content) > MAX_MESSAGE_CHARS:
                 raise WikiError(
@@ -193,6 +201,14 @@ class WikiChat:
         calls = 0
         for _ in range(MAX_ROUNDS):
             reply = await self.provider.tool_chat(messages, self.tools(), max_tokens=1200)
+            # JSON can decode unpaired surrogate escapes. Reject malformed model
+            # strings before any tool in the batch executes or is sent back.
+            try:
+                json.dumps(reply, ensure_ascii=False).encode("utf-8")
+            except UnicodeEncodeError:
+                raise WikiError(
+                    "chat_unavailable", "The model returned invalid Unicode text."
+                ) from None
             tool_calls = reply.get("tool_calls") or []
             if not isinstance(tool_calls, list):
                 raise WikiError("chat_unavailable", "The model returned an invalid tool response.")
@@ -260,6 +276,12 @@ class WikiChat:
         except (TypeError, json.JSONDecodeError):
             return {"error": "invalid_arguments"}
         if not isinstance(args, dict):
+            return {"error": "invalid_arguments"}
+        # An ASCII arguments string may contain escapes that become invalid only
+        # after decoding. Let the model correct them without calling wiki services.
+        try:
+            json.dumps(args, ensure_ascii=False).encode("utf-8")
+        except UnicodeEncodeError:
             return {"error": "invalid_arguments"}
         try:
             if name == "search_wiki":

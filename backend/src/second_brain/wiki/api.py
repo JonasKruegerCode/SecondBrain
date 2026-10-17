@@ -198,6 +198,7 @@ def create_app(
             raise WikiError("invalid_payload", "Provide a JSON request.") from exc
         if not isinstance(body, dict):
             raise WikiError("invalid_payload", "Provide a JSON object.")
+        messages = WikiChat.validate_messages(body.get("messages"))
         if chat is None:
             try:
                 from second_brain.llm.providers.openrouter.client import OpenRouterClient
@@ -215,7 +216,7 @@ def create_app(
                     while (await request.receive())["type"] != "http.disconnect":
                         pass
 
-                answer_task = asyncio.create_task(chat.answer(body.get("messages")))
+                answer_task = asyncio.create_task(chat.answer(messages))
                 disconnect_task = asyncio.create_task(disconnected())
                 try:
                     done, _ = await asyncio.wait(

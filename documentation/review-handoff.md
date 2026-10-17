@@ -91,6 +91,16 @@ transport/API cases verify this boundary and retry recovery, not live model
 quality. The normalized finish reasons are documented in the
 [OpenRouter API reference](https://openrouter.ai/docs/api_reference/overview#finish-reason).
 
+Chat text uses strict Unicode scalar validation without normalization. Escaped
+unpaired surrogates in client context return `400 invalid_payload` before a
+provider invocation. Malformed Unicode anywhere in a model reply rejects the
+whole batch before a wiki tool executes; escaped tool arguments are checked
+again after JSON decoding and return a recoverable `invalid_arguments` result.
+Previously invalid client text could reach the provider, and malformed model
+strings could survive until a later request or response encoding failure.
+Valid astral, combining and multilingual text remains exact. Synthetic REST and
+provider cases prove these boundaries, not real-model answer quality.
+
 The local Vite proxy now closes the outgoing chat request when its browser
 disconnects before the API has sent response headers. A fully uploaded POST
 does not emit the incoming-request abort event, so the previous development
