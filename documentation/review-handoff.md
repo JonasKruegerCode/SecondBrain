@@ -268,8 +268,9 @@ Derived article titles, excerpts and explicit links respect a fenced code
 block until a matching closing fence with only trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
-The `managed-snapshots-v4` identity invalidates older index receipts, requiring
-a rebuild without rewriting Markdown. Native REST/browser regressions compare
+The fence correction introduced index identity v4; the current
+`managed-snapshots-v5` also excludes escaped wiki examples. Earlier receipts
+require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
 
 Imported page history follows Git-detected source renames before combining
