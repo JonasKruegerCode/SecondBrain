@@ -21,6 +21,14 @@ def _error(code: str, message: str) -> WikiError:
     return WikiError(code, message)
 
 
+def _filename_too_long() -> WikiError:
+    return _error(
+        "export_filename_too_long",
+        "A page ID plus .md exceeds the destination filesystem filename limit. "
+        "Use Git-backed portable backup/restore to preserve this vault and its page IDs.",
+    )
+
+
 def _publish(prepared: Path, destination: Path) -> None:
     """Use Linux's atomic no-replace rename; fail closed on unsupported hosts."""
     libc = ctypes.CDLL(None, use_errno=True)
@@ -75,21 +83,35 @@ def export_vault(
         error.details["current_revision"] = revision
         raise error
     target = _destination(Path(destination), store.path)
+    # The prepared directory is a sibling, so its filename limit belongs to
+    # the destination parent filesystem, even when target is an empty mount.
+    try:
+        name_max = os.pathconf(target.parent, "PC_NAME_MAX")
+    except (AttributeError, OSError, ValueError):
+        name_max = -1  # Unsupported or indeterminate: let native writes decide.
+    names: set[str] = set()
+    for page in snapshot["pages"]:
+        page_id = page["id"]
+        if not ID_RE.fullmatch(page_id) or page_id in {".", ".."}:
+            error = _error("invalid_vault", "The snapshot contains an unsafe page ID.")
+            raise error
+        filename = f"{page_id}.md"
+        if filename in names:
+            error = _error("invalid_vault", "The snapshot contains duplicate page IDs.")
+            raise error
+        names.add(filename)
+        if name_max > 0 and len(os.fsencode(filename)) > name_max:
+            raise _filename_too_long()
     prepared = Path(tempfile.mkdtemp(prefix=f".{target.name}-export-", dir=target.parent))
     removed_empty = False
     try:
-        names: set[str] = set()
         for page in snapshot["pages"]:
-            page_id = page["id"]
-            if not ID_RE.fullmatch(page_id) or page_id in {".", ".."}:
-                error = _error("invalid_vault", "The snapshot contains an unsafe page ID.")
-                raise error
-            filename = f"{page_id}.md"
-            if filename in names:
-                error = _error("invalid_vault", "The snapshot contains duplicate page IDs.")
-                raise error
-            names.add(filename)
-            (prepared / filename).write_bytes(page["markdown"].encode("utf-8"))
+            try:
+                (prepared / f"{page['id']}.md").write_bytes(page["markdown"].encode("utf-8"))
+            except OSError as exc:
+                if exc.errno == errno.ENAMETOOLONG:
+                    raise _filename_too_long() from exc
+                raise
         # Revalidate after preparation. rmdir refuses a directory filled by a
         # concurrent writer; the final no-replace rename refuses any new target.
         _destination(target, store.path)

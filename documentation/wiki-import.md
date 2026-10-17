@@ -88,6 +88,15 @@ rollback archive. Reimport can preserve their bytes and link syntax without
 repairing unresolved links. Use the portable backup/restore path below to retain
 the managed revision and its reachable source history.
 
+Flat export also requires each unchanged page ID plus `.md` to fit the
+destination filesystem's filename byte limit. A valid Unicode ID can exceed
+that limit even within the 160-character ID contract. Export refuses with
+`export_filename_too_long` before preparing output when the limit is known;
+unsupported or indeterminate limit checks fall back to the filesystem write.
+Source pages and any existing empty destination remain unchanged on refusal.
+Use [portable Git-backed backup/restore](backup-restore.md) to retain these IDs
+and their history; export does not truncate or rename them.
+
 ## Replace an existing managed snapshot
 
 An import replaces the **entire managed page set** with the selected source snapshot. Pages not present in that snapshot are removed from the current view; prior managed snapshots remain in Git history. A zero-page import into a destination that currently contains pages is refused, so an empty selection cannot erase its content. Zero-page imports are permitted when the current page set is empty; a previously published empty snapshot still requires its exact HEAD as the expected base. The prefix limits the imported source, not which existing managed pages may be replaced.
