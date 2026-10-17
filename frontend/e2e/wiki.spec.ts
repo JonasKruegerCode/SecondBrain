@@ -3044,3 +3044,58 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+
+for (const width of [390, 1440]) {
+  test(`block comment closing lines cannot publish phantom links (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const token = randomUUID(), source = `comment-source-${token}`;
+    const hidden = `comment-hidden-${token}`, visible = `comment-visible-${token}`;
+    const created: string[] = [];
+    const save = async (id: string, markdown: string) => {
+      const response = await request.post(`/api/wiki/pages/${id}`, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+      expect(response.ok()).toBe(true); created.push(id); return response.json();
+    };
+    let markdown = `# Synthetic comment boundary\n\n<!-- An annotation -->[[${hidden}|Hidden suffix]]\n\n<!-- A multiline annotation\n# Literal example\n[[comment-body-absent]]\n\n-->[[comment-closing-absent]]\n\nVisible [[${visible}|Visible companion]].\n\nInline <!-- annotation -->[[${visible}|Inline companion]].\n`;
+    try {
+      await save(hidden, "# Synthetic hidden companion");
+      await save(visible, "# Synthetic visible companion");
+      await save(source, markdown);
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Synthetic comment boundary");
+      const check = async () => {
+        const prose = page.locator(".prose");
+        await expect(prose.getByRole("link", { name: "Visible companion", exact: true })).toHaveCount(1);
+        await expect(prose.getByRole("link", { name: "Inline companion", exact: true })).toHaveCount(1);
+        await expect(prose.locator(`[data-wiki-target="${hidden}"]`)).toHaveCount(0);
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: any) => edge.source === source)).toEqual([{ source, target: visible, type: "wikilink" }]);
+        expect(graph.missing_targets.filter((edge: any) => edge.source === source)).toEqual([]);
+        const current = await (await request.get(`/api/wiki/pages/${source}`)).json();
+        expect(current.markdown).toBe(markdown);
+        expect(current.excerpt).not.toContain("Hidden suffix");
+        expect(current.excerpt).not.toContain("comment-closing-absent");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await check();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      markdown += "\nAn intentional synthetic edit.\n";
+      await page.locator("#editor").fill(markdown);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".notice")).toContainText("Saved locally");
+      await check(); await page.reload(); await check();
+      expect((await (await request.get(`/api/wiki/pages/${source}/history`)).json()).history).toHaveLength(2);
+      await page.screenshot({ path: info.outputPath(`comment-boundary-${width}.png`), fullPage: true });
+      await page.locator(".prose").getByRole("link", { name: "Inline companion", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Synthetic visible companion");
+      await page.goBack(); await check();
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await (await request.get(`/api/wiki/pages/${id}`)).json();
+        const response = await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: current.revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}

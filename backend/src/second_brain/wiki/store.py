@@ -232,6 +232,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
     lines: list[str | _ProseContainer] = []
     fence = ""
     in_comment = False
+    block_comment = False
     raw_html = ""
     delimited_html = ""
     blank_html = False
@@ -267,6 +268,11 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             paragraph = False
             if re.search(rf"</{raw_html}>", relative, re.IGNORECASE | re.ASCII):
                 raw_html = ""
+            continue
+        if block_comment:
+            # A type-2 HTML token owns the whole closing line, including any
+            # apparent Markdown suffix. Inline comments use the separate helper.
+            block_comment = "-->" not in line
             continue
         # Types 3/4/5 HTML stop at their delimiter, not at a blank or the
         # end of the closing line. Marked restarts block parsing on any suffix.
@@ -304,6 +310,15 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         expanded = line if html_consumed else line.expandtabs(4)
         indent = len(expanded) - len(expanded.lstrip(" "))
         relative = expanded
+        comment_open = re.match(r"^ {0,3}<!--", line) if not fence and not in_comment else None
+        if comment_open and ((not table and (not top or not paragraph)) or line.startswith("<!--")):
+            body = line[comment_open.end() :]
+            block_comment = not (body.startswith((">", "->")) or "-->" in body)
+            paragraph = False
+            paragraph_barrier = False
+            table = False
+            previous_prose = ""
+            continue
         if not fence and not in_comment and _QUOTE_PREFIX.match(relative):
             paragraph = False
             skip_until, inner = _quote_end(
