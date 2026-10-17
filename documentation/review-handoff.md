@@ -806,8 +806,20 @@ The real-service dense-constellation regression selects the rightmost star,
 checks containment and font size through 320/390/1440px resizes, then zooms and
 resets. Both narrow/desktop cases fail on the preceding UI and pass with this
 correction. Screenshots include the selected edge star and its full-name panel.
-This fixes viewport clipping, not label collisions or physical touch selection
-in dense maps; the complete page list remains available.
+This fixes viewport clipping; physical touch selection in dense maps remains
+a separate concern and the complete page list remains available.
+
+Expanded maps can show a core label and a selected-page label on the same
+horizontal diameter. Both fitted inside the SVG but could paint over each
+other. When their screen rectangles collide, the selected label now takes
+priority and the unselected core label temporarily hides. Every view update
+restores and rechecks it, so zooming apart restores the core name. No star,
+hit circle, link endpoint, accessible name or full-name detail changes.
+Two real-service 33-page regressions reproduce the old overlap at 390/1440px
+and check separation through 320/390/800/1440px resizes, keyboard zoom/reset,
+core-label recovery, unchanged star positions and article/history navigation.
+This bounds the two active star labels; it does not promise that labels avoid
+every other star or that a dense map becomes comfortable on a physical device.
 
 ## Native minimum text size
 

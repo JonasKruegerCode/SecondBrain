@@ -265,6 +265,20 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
           label.setAttribute("y", String((baseline + dy) / unit));
         }
       });
+      // The only active labels are the core and the selected page. Their
+      // screen-sized text can collide even when both fit inside the map.
+      // Give the selection priority without shifting stars or detaching text
+      // from its star. The normal fit above restores the core on every view
+      // change, so it reappears as soon as the labels have room again.
+      const selectedLabel = svg.querySelector<SVGTextElement>(".galaxy-star.is-selected text");
+      const coreLabel = svg.querySelector<SVGTextElement>(".galaxy-star.is-core:not(.is-selected) text");
+      if (selectedLabel?.style.visibility === "visible" && coreLabel?.style.visibility === "visible") {
+        const selected = selectedLabel.getBoundingClientRect(), core = coreLabel.getBoundingClientRect();
+        if (selected.left < core.right + 3 && selected.right + 3 > core.left &&
+          selected.top < core.bottom + 3 && selected.bottom + 3 > core.top) {
+          coreLabel.style.visibility = "hidden";
+        }
+      }
       svg.querySelectorAll<SVGCircleElement>(".galaxy-hit").forEach(hit => {
         hit.setAttribute("r", String(Math.min(22 / unit, hitSpacing * .45)));
       });
