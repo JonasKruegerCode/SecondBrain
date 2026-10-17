@@ -412,10 +412,15 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/chat-history.spec.ts",
     ]),
 ])
+@pytest.mark.parametrize("fixture_python", [None, "", "/synthetic/explicit-python"])
 def test_editor_retry_orchestration_contract_without_launching_a_browser(
     engine: str, profile: str, service_workers: str, suites: list[str],
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    fixture_python: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if fixture_python is None:
+        monkeypatch.delenv("WIKI_PYTHON", raising=False)
+    else:
+        monkeypatch.setenv("WIKI_PYTHON", fixture_python)
     main = cast(Callable[..., int], acceptance_runner()["main"])
     namespace = main.__globals__
     monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
@@ -451,6 +456,9 @@ def test_editor_retry_orchestration_contract_without_launching_a_browser(
     assert browser_calls[0].args[0].count("e2e/editor-retry.spec.ts") == 1
     assert browser_calls[0].kwargs["cwd"] == tmp_path / "frontend"
     assert browser_calls[0].kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == engine
+    expected_python = fixture_python or sys.executable
+    assert browser_calls[0].kwargs["env"]["WIKI_PYTHON"] == expected_python
+    assert processes.Popen.call_args.kwargs["env"]["WIKI_PYTHON"] == expected_python
     assert "OPENROUTER_API_KEY" not in browser_calls[0].kwargs["env"]
     processes.Popen.assert_called_once()
     assert processes.Popen.call_args.kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == engine

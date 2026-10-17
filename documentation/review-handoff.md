@@ -274,6 +274,12 @@ from an observer that incorrectly waits for settlement before release. Both
 viewport cases are included in normal Chromium and WebKit worker acceptance.
 This leaves the intermittent first-install notice and physical devices open.
 
+The acceptance runner passes its actual Python executable to nested delivery
+fixtures unless `WIKI_PYTHON` is explicitly set. This supports Poetry or other
+virtual environments outside `backend/.venv`, as used by the documented Make
+commands. Browser/service orchestration tests cover the default and override
+for Chromium and WebKit; real local delivery cases exercise the default.
+
 ## Public interfaces
 
 Derived article titles, excerpts and explicit links respect a top-level or

@@ -230,6 +230,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     service_cleanup_ok = True
 
     env = {**os.environ}
+    # Nested delivery fixtures need the interpreter running this acceptance,
+    # including Poetry environments outside backend/.venv. Honor an override.
+    env["WIKI_PYTHON"] = env.get("WIKI_PYTHON") or sys.executable
     env.pop("OPENROUTER_API_KEY", None)
     env["PLAYWRIGHT_BROWSER_ENGINE"] = args.browser_engine
     command = [
