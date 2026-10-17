@@ -282,7 +282,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v7`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v8`
 also rebuilds projections using quote-container boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -293,8 +293,10 @@ lazy lines without a `>` prefix, exact closing markers and the boundaries at
 blank lines, headings and outdented list continuations. Quoted headings remain
 excluded from page identity. An iterative work stack avoids Python recursion;
 a synthetic 150-level quote control covers that boundary. Original Markdown,
-page IDs and Git history are unchanged. Old v1–v6 index receipts rebuild with
-v7; configured vector rebuilds can incur embedding costs.
+page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
+prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
+Old v1–v7 index receipts rebuild with
+v8; configured vector rebuilds can incur embedding costs.
 
 The focused corpus compares quote boundaries with the installed Marked 12
 renderer; real-store cases check graph/backlinks and raw Git bytes. Actual

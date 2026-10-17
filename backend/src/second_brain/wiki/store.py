@@ -87,7 +87,7 @@ def _without_comments(line: str, in_comment: bool) -> tuple[str, bool]:
 
 # These are paragraph interrupters in the installed Marked 12 blockquote
 # grammar. Quote containers admit lazy continuation, even around code fences.
-_QUOTE_PREFIX = re.compile(r"^ {0,3}> ?")
+_QUOTE_PREFIX = re.compile(r"^ {0,3}>[ \t]?")
 _HTML_BLOCK_TAGS = (
     "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|"
     "details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|"
@@ -102,6 +102,16 @@ _QUOTE_INTERRUPT = re.compile(
 )
 
 
+def _dedent_columns(line: str, columns: int) -> str:
+    """Remove only container indentation; tabs in targets and prose are data."""
+    position = 0
+    width = 0
+    while position < len(line) and width < columns and line[position] in " \t":
+        width += 1 if line[position] == " " else 4 - width % 4
+        position += 1
+    return " " * max(0, width - columns) + line[position:]
+
+
 def _quote_end(lines: list[str], start: int, indent: int, terminated: bool) -> tuple[int, str]:
     """Collect one quote container, preserving its lazy paragraph continuations."""
     inner: list[str] = []
@@ -110,7 +120,7 @@ def _quote_end(lines: list[str], start: int, indent: int, terminated: bool) -> t
         expanded = lines[index].expandtabs(4)
         if indent and len(expanded) - len(expanded.lstrip(" ")) < indent:
             break
-        line = expanded[indent:]
+        line = _dedent_columns(lines[index], indent)
         prefix = _QUOTE_PREFIX.match(line)
         if prefix is None:
             break
@@ -123,7 +133,7 @@ def _quote_end(lines: list[str], start: int, indent: int, terminated: bool) -> t
             expanded = lines[index].expandtabs(4)
             if indent and len(expanded) - len(expanded.lstrip(" ")) < indent:
                 break
-            candidate = expanded[indent:]
+            candidate = _dedent_columns(lines[index], indent)
             has_newline = index + 1 < len(lines) or terminated
             fence = has_newline and re.match(r"^ {0,3}(?:`{3,}(?=[^`]*$)|~{3,})", candidate)
             if (
@@ -194,12 +204,13 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | tuple[str]]:
         # Quoted fences use the renderer's exact closing grammar, including
         # mixed marker suffixes. Invalid backtick info remains visible prose.
         if quoted:
+            quoted_line = _dedent_columns(line, container_indent)
             if fence:
-                if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", relative):
+                if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", quoted_line):
                     fence = ""
                 continue
             match = (
-                re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", relative) if not in_comment else None
+                re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", quoted_line) if not in_comment else None
             )
             if match:
                 fence = match.group(1)

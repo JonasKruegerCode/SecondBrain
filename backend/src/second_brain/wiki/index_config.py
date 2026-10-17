@@ -15,7 +15,7 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
     # Titles, excerpts and graph edges follow code-fence, quote-container and raw-HTML boundaries.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v7"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v8"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

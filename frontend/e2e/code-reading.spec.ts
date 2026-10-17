@@ -452,10 +452,10 @@ for (const width of [390, 1440]) {
       `> ~~~md\n> [[${literal}]]\n> ~~~`,
       `> > ~~~md\n[[${literal}]]\n> > ~~~`,
     ];
-    const markdown = `# Synthetic quoted code\n\n> Visible [[${target}|Quoted target]].\n>\n${code.join("\n\n")}\n\nVisible prose [[${target}|Visible target]].\n`;
+    const markdown = `# Synthetic quoted code\n\n> Visible [[Visible\tcompanion|Quoted target]].\n>\n${code.join("\n\n")}\n\nVisible prose [[${target}|Visible target]].\n`;
     const created: string[] = [];
     try {
-      for (const [pageId, body] of [[target, "# Visible target\nSynthetic target.\n"], [literal, "# Literal companion\n"], [id, markdown]]) {
+      for (const [pageId, body] of [[target, "# Visible\tcompanion\nSynthetic target.\n"], [literal, "# Literal companion\n"], [id, markdown]]) {
         const saved = await request.post(`/api/wiki/pages/${pageId}`, { data: {
           markdown: body, base_revision: null, request_id: randomUUID(),
         } });

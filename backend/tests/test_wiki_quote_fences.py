@@ -131,3 +131,35 @@ def test_quoted_heading_cannot_become_page_identity() -> None:
     assert source["title"] == "Actual heading"
     assert source["excerpt"] == "Real prose."
     assert source["markdown"] == markdown
+
+
+def test_quoted_wikilink_preserves_internal_tab_for_title_resolution(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("target", "# Title\twith tab", None, "target")
+    markdown = "> [[Title\twith tab|Visible label]]\n"
+    store.save_page("source", markdown, None, "source")
+    read = store.get_page("source")
+    assert read is not None
+    assert read["markdown"] == markdown
+    assert store._git("show", "HEAD:pages/source.md") == markdown.encode()
+    graph = store.graph()
+    assert graph["edges"] == [{"source": "source", "target": "target", "type": "wikilink"}]
+    assert graph["missing_targets"] == []
+    assert graph["ambiguous_targets"] == []
+    assert store.backlinks("target")["total"] == 1
+
+
+@pytest.mark.parametrize("marker", ["~~~", "```"])
+def test_quoted_fence_closer_with_trailing_tab_remains_literal(marker: str) -> None:
+    # Native Marked's closing regex allows spaces, but does not accept a tab.
+    markdown = f"> {marker}\n> [[hidden]]\n> {marker}\t\n> [[also-hidden]]"
+    source = WikiStore._page("source", markdown.encode(), "synthetic-revision")
+    targets = [
+        WikiStore._page(target, f"# {target}".encode(), "synthetic-revision")
+        for target in ("hidden", "also-hidden")
+    ]
+    graph = WikiStore._graph([source, *targets], "synthetic-head")
+    assert source["markdown"] == markdown
+    assert graph["edges"] == []
+    assert graph["missing_targets"] == []
+    assert graph["ambiguous_targets"] == []
