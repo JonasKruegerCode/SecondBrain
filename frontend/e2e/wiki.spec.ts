@@ -2974,3 +2974,73 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+
+for (const width of [390, 1440]) {
+  test(`delimited HTML blocks preserve real article identity and graph (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const token = randomUUID();
+    const target = `delimited-visible-${token}`, hidden = `delimited-hidden-${token}`;
+    const created: string[] = [];
+    const save = async (id: string, markdown: string, base_revision: string | null = null) => {
+      const response = await request.post(`/api/wiki/pages/${id}`, { data: { markdown, base_revision, request_id: randomUUID() } });
+      expect(response.ok()).toBe(true);
+      if (!created.includes(id)) created.push(id);
+      return response.json();
+    };
+    try {
+      await save(target, "# Synthetic visible companion");
+      await save(hidden, "# Synthetic hidden companion");
+      for (const [kind, opening, closing] of [
+        ["instruction", "<?synthetic", "?>"],
+        ["declaration", "<!SYNTHETIC", ">"],
+        ["cdata", "<![CDATA[", "]]>"]
+      ]) {
+        const id = `delimited-${kind}-${token}`;
+        const title = `Synthetic ${kind} article`;
+        let markdown = `${opening}\n# Literal title\n[[${hidden}]] [[delimited-absent]]\n\n- [[delimited-list-absent]]\n${closing}[[${target}|Same-line companion]]\n\n# ${title}\n\nVisible [[${target}|Visible companion]].\n`;
+        const saved = await save(id, markdown);
+        await page.goto(`/wiki/${id}`);
+        await expect(page.locator(".prose")).toBeVisible();
+        await page.screenshot({ path: info.outputPath(`delimited-${kind}-${width}.png`), fullPage: true });
+        const check = async () => {
+          await expect(page.locator("article > h1")).toHaveText(title);
+          await expect(page.locator(".prose h1")).toHaveCount(0);
+          await expect(page.locator(".prose").getByRole("link", { name: "Same-line companion", exact: true })).toHaveCount(1);
+          await expect(page.locator(".prose").getByRole("link", { name: "Visible companion", exact: true })).toHaveCount(1);
+          await expect(page.locator(`.prose [data-wiki-target="${hidden}"]`)).toHaveCount(0);
+          const graph = await (await request.get("/api/wiki/graph")).json();
+          expect(graph.edges.filter((edge: any) => edge.source === id)).toEqual([{ source: id, target, type: "wikilink" }]);
+          expect(graph.missing_targets.filter((edge: any) => edge.source === id)).toEqual([]);
+          expect((await (await request.get(`/api/wiki/pages/${id}`)).json()).markdown).toBe(markdown);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        };
+        await check();
+        await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+        await expect(page.locator("#editor")).toHaveValue(markdown);
+        markdown += "\nAn intentional synthetic edit.\n";
+        await page.locator("#editor").fill(markdown);
+        await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+        await expect(page.locator(".notice")).toContainText("Saved locally");
+        await check();
+        await page.reload();
+        await check();
+        const current = await (await request.get(`/api/wiki/pages/${id}`)).json();
+        expect(current.revision).not.toBe(saved.revision);
+        expect((await (await request.get(`/api/wiki/pages/${id}/history`)).json()).history).toHaveLength(2);
+        await page.locator(".prose").getByRole("link", { name: "Same-line companion", exact: true }).click();
+        await expect(page.locator("article > h1")).toHaveText("Synthetic visible companion");
+        await page.goBack();
+        await check();
+      }
+    } finally {
+      for (const id of created.reverse()) {
+        const response = await request.get(`/api/wiki/pages/${id}`);
+        expect(response.ok()).toBe(true);
+        const current = await response.json();
+        const deleted = await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: current.revision, request_id: randomUUID() } });
+        expect(deleted.ok()).toBe(true);
+      }
+    }
+  });
+}

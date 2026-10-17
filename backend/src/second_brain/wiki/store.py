@@ -233,6 +233,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
     fence = ""
     in_comment = False
     raw_html = ""
+    delimited_html = ""
     blank_html = False
     paragraph = False
     paragraph_barrier = False
@@ -267,6 +268,42 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             if re.search(rf"</{raw_html}>", relative, re.IGNORECASE | re.ASCII):
                 raw_html = ""
             continue
+        # Types 3/4/5 HTML stop at their delimiter, not at a blank or the
+        # end of the closing line. Marked restarts block parsing on any suffix.
+        # They do not interrupt a top-level paragraph or GFM table; list block
+        # text (top=False) admits them between its own text tokens.
+        html_consumed = False
+        while delimited_html or (
+            not fence
+            and not in_comment
+            and not table
+            and (not top or not paragraph)
+            and re.match(r"^ {0,3}(?:<\?|<![A-Z]|<!\[CDATA\[)", line, re.I | re.ASCII)
+        ):
+            html_consumed = True
+            if not delimited_html:
+                opening = line.lstrip(" ")
+                delimited_html = (
+                    "?>"
+                    if opening.startswith("<?")
+                    else ("]]>" if opening[:9].upper() == "<![CDATA[" else ">")
+                )
+            paragraph = False
+            paragraph_barrier = False
+            previous_prose = ""
+            _, closing, line = line.partition(delimited_html)
+            if not closing:
+                line = ""
+                break
+            delimited_html = ""
+            # Container collectors below must see the remainder too. The
+            # original Markdown/Git bytes are never changed by this projection.
+            source_lines[line_number] = line
+        if delimited_html or (html_consumed and not line):
+            continue
+        expanded = line if html_consumed else line.expandtabs(4)
+        indent = len(expanded) - len(expanded.lstrip(" "))
+        relative = expanded
         if not fence and not in_comment and _QUOTE_PREFIX.match(relative):
             paragraph = False
             skip_until, inner = _quote_end(
@@ -394,7 +431,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             # A fence marker inside a comment cannot open/close a code block.
             # Indented code cannot start a prose comment either.
             line, in_comment = _without_comments(line, in_comment)
-            expanded = line.expandtabs(4)
+            expanded = line if html_consumed else line.expandtabs(4)
             indent = len(expanded) - len(expanded.lstrip(" "))
             relative = expanded
 

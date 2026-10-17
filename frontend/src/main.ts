@@ -172,7 +172,8 @@ function markdown(s: string, pageTitle?: string) {
     /^#[ \t]+[^\r\n]+/.test(token.raw));
   const earlierHtmlTitle = firstTitle && tokens.slice(0, tokens.indexOf(firstTitle)).some(token =>
     token.type === "html" && !token.raw.trimStart().startsWith("<!--") &&
-    !/^ {0,3}<(script|pre|style|textarea)[\s>]/i.test(token.raw) && /^#[ \t]+/m.test(token.raw));
+    !/^ {0,3}(?:<(script|pre|style|textarea)[\s>]|<\?|<![a-z]|<!\[CDATA\[)/i.test(token.raw) &&
+    /^#[ \t]+/m.test(token.raw));
   const candidate = pageTitle !== undefined && !earlierHtmlTitle &&
     firstTitle?.raw.match(/^#[ \t]+([^\r\n]+)/)?.[1].trim() === pageTitle ? firstTitle : undefined;
   let candidateIndex = -1, headingCount = 0;
