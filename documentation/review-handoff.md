@@ -282,23 +282,28 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Current `managed-snapshots-v6` also excludes literal raw HTML blocks.
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v7`
+also rebuilds projections using quote-container boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
 
-Known reading/graph mismatch: a quoted tilde fence such as `> ~~~md`,
-`> [[example-target]]`, `> ~~~` renders as literal code but currently publishes
-an explicit graph link (or a missing-target row). The same target can therefore
-appear in backlinks or neighbor context despite having no article anchor.
-A synthetic real-service Chromium rehearsal reproduces this at 390/1440px;
-eight focused parser probes give six failures and two passing backtick controls.
-These are diagnostic failing probes, not a passing regression suite. The
-correction remains open: plain unquoted text may be lazy quoted-code continuation,
-whereas a blank boundary or heading can end that quote. Removing all `>` prefixes
-or ending a fence at every unquoted line would discard visible links or retain
-false ones. Preserve visible quote links, nested containers, exact Markdown and
-quote termination when implementing the correction. Existing v6 raw-HTML and
-unquoted/list-fence coverage does not establish complete Markdown parity.
+Quoted code now follows quote containers before deriving titles, excerpts and
+explicit links. The projection retains visible quote links, nested quotes,
+lazy lines without a `>` prefix, exact closing markers and the boundaries at
+blank lines, headings and outdented list continuations. Quoted headings remain
+excluded from page identity. An iterative work stack avoids Python recursion;
+a synthetic 150-level quote control covers that boundary. Original Markdown,
+page IDs and Git history are unchanged. Old v1–v6 index receipts rebuild with
+v7; configured vector rebuilds can incur embedding costs.
+
+The focused corpus compares quote boundaries with the installed Marked 12
+renderer; real-store cases check graph/backlinks and raw Git bytes. Actual
+browser cases at 390/1440px compare literal nested quote code, visible quote
+anchors, graph/missing targets, backlinks and editor/reload bytes. This is a
+bounded grammar correction. A preexisting first-line list quote such as
+`- > ~~~`, then an outdented `> [[example]]`, remains a separate known graph
+mismatch. Generic raw HTML blocks and other inline forms are not completely
+covered. Do not infer full Markdown parity from the quote-fence regressions.
 
 Imported page history follows Git-detected source renames before combining
 those commits with managed history. A real nested-source rename regression

@@ -85,9 +85,78 @@ def _without_comments(line: str, in_comment: bool) -> tuple[str, bool]:
     return "".join(parts), in_comment
 
 
+# These are paragraph interrupters in the installed Marked 12 blockquote
+# grammar. Quote containers admit lazy continuation, even around code fences.
+_QUOTE_PREFIX = re.compile(r"^ {0,3}> ?")
+_HTML_BLOCK_TAGS = (
+    "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|"
+    "details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|"
+    "h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|"
+    "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|"
+    "th|thead|title|tr|track|ul"
+)
+_QUOTE_INTERRUPT = re.compile(
+    r"^(?: {0,3}(?:#{1,6}(?:\s|$)|>|(?:[*+-]|1[.)]) )"
+    r"| {0,3}(?:(?:-[\t ]*){3,}|(?:_[\t ]*){3,}|(?:\*[\t ]*){3,})$"
+    rf"|</?(?:{_HTML_BLOCK_TAGS})(?: +|\n|/?>)|<(?:script|pre|style|textarea|!--))",
+)
+
+
+def _quote_end(lines: list[str], start: int, indent: int, terminated: bool) -> tuple[int, str]:
+    """Collect one quote container, preserving its lazy paragraph continuations."""
+    inner: list[str] = []
+    index = start
+    while index < len(lines):
+        expanded = lines[index].expandtabs(4)
+        if indent and len(expanded) - len(expanded.lstrip(" ")) < indent:
+            break
+        line = expanded[indent:]
+        prefix = _QUOTE_PREFIX.match(line)
+        if prefix is None:
+            break
+        content = line[prefix.end() :]
+        inner.append(content)
+        index += 1
+        if not content:
+            continue
+        while index < len(lines):
+            expanded = lines[index].expandtabs(4)
+            if indent and len(expanded) - len(expanded.lstrip(" ")) < indent:
+                break
+            candidate = expanded[indent:]
+            has_newline = index + 1 < len(lines) or terminated
+            fence = has_newline and re.match(r"^ {0,3}(?:`{3,}(?=[^`]*$)|~{3,})", candidate)
+            if (
+                not candidate.strip()
+                or fence
+                or _QUOTE_INTERRUPT.match(candidate + ("\n" if has_newline else ""))
+            ):
+                break
+            inner.append(candidate)
+            index += 1
+    return index, "\n".join(inner)
+
+
 def prose_blocks(markdown: str) -> str:
-    """Exclude block code and comments while retaining literal prose headings."""
-    lines: list[str] = []
+    """Project prose without making quoted code into links or quoted H1s into titles.
+
+    An explicit work stack handles nested quotes without Python recursion. Only
+    this derived projection changes; original Markdown remains authoritative.
+    """
+    output: list[str] = []
+    pending: list[tuple[str | tuple[str], bool]] = [((markdown,), False)]
+    while pending:
+        segment, quoted = pending.pop()
+        if isinstance(segment, tuple):
+            parts = _prose_segments(segment[0], quoted=quoted)
+            pending.extend((part, quoted or isinstance(part, tuple)) for part in reversed(parts))
+        else:
+            output.append(("> " if quoted else "") + segment)
+    return "\n".join(output)
+
+
+def _prose_segments(markdown: str, *, quoted: bool) -> list[str | tuple[str]]:
+    lines: list[str | tuple[str]] = []
     fence = ""
     in_comment = False
     raw_html = ""
@@ -97,7 +166,10 @@ def prose_blocks(markdown: str) -> str:
     # graph and excerpts.
     list_stack: list[tuple[int, int]] = []
     source_lines = markdown.splitlines()
+    skip_until = 0
     for line_number, line in enumerate(source_lines):
+        if line_number < skip_until:
+            continue
         expanded = line.expandtabs(4)
         indent = len(expanded) - len(expanded.lstrip(" "))
         container_indent = max(
@@ -111,22 +183,44 @@ def prose_blocks(markdown: str) -> str:
             if re.search(rf"</{raw_html}>", relative, re.IGNORECASE | re.ASCII):
                 raw_html = ""
             continue
-        # Fence info is literal, including comment markers. Only the original
-        # line can delimit a fence: removing a comment must not create one.
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative) if not in_comment else None
-        if match:
-            marker = match.group(1)
-            if not fence:
-                fence = marker
-            elif (
-                marker[0] == fence[0]
-                and len(marker) >= len(fence)
-                and not relative[match.end() :].strip(" \t")
-            ):
-                fence = ""
+        if not fence and not in_comment and _QUOTE_PREFIX.match(relative):
+            if indent == 0:
+                list_stack.clear()
+            skip_until, inner = _quote_end(
+                source_lines, line_number, container_indent, markdown.endswith(("\r", "\n"))
+            )
+            lines.append((inner,))
             continue
-        if fence:
-            continue
+        # Quoted fences use the renderer's exact closing grammar, including
+        # mixed marker suffixes. Invalid backtick info remains visible prose.
+        if quoted:
+            if fence:
+                if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", relative):
+                    fence = ""
+                continue
+            match = (
+                re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", relative) if not in_comment else None
+            )
+            if match:
+                fence = match.group(1)
+                continue
+        else:
+            # Fence info is literal, including comment markers. Removing a
+            # comment must not create a fence delimiter.
+            match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative) if not in_comment else None
+            if match:
+                marker = match.group(1)
+                if not fence:
+                    fence = marker
+                elif (
+                    marker[0] == fence[0]
+                    and len(marker) >= len(fence)
+                    and not relative[match.end() :].strip(" \t")
+                ):
+                    fence = ""
+                continue
+            if fence:
+                continue
         if not in_comment:
             terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
             html_line = relative + ("\n" if terminated else "")
@@ -173,7 +267,7 @@ def prose_blocks(markdown: str) -> str:
         )
         if container_indent and indent < container_indent + 4:
             lines.append(line)
-    return "\n".join(lines)
+    return lines
 
 
 def prose_links(markdown: str) -> str:
