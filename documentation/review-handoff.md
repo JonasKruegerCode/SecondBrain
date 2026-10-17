@@ -282,8 +282,8 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v8`
-also rebuilds projections using quote-container boundaries.
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v9`
+also rebuilds projections using quote and list-item container boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
 
@@ -295,17 +295,29 @@ excluded from page identity. An iterative work stack avoids Python recursion;
 a synthetic 150-level quote control covers that boundary. Original Markdown,
 page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
 prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
-Old v1–v7 index receipts rebuild with
-v8; configured vector rebuilds can incur embedding costs.
+Old v1–v8 index receipts rebuild with
+v9; configured vector rebuilds can incur embedding costs.
 
-The focused corpus compares quote boundaries with the installed Marked 12
-renderer; real-store cases check graph/backlinks and raw Git bytes. Actual
-browser cases at 390/1440px compare literal nested quote code, visible quote
-anchors, graph/missing targets, backlinks and editor/reload bytes. This is a
-bounded grammar correction. A preexisting first-line list quote such as
-`- > ~~~`, then an outdented `> [[example]]`, remains a separate known graph
-mismatch. Generic raw HTML blocks and other inline forms are not completely
-covered. Do not infer full Markdown parity from the quote-fence regressions.
+List items now enter the same iterative container projection before quote/code
+classification, including a quote on the marker's first line (`- > ~~~`).
+Ordered, nested, empty and outdented item boundaries retain visible links after
+code. Leading indentation tabs are expanded per container; tabs inside targets
+remain literal. Item indentation prevents a nested H1 from becoming the page
+title while preserving ordinary list prose for excerpts.
+
+The focused corpus has 33 quote and 31 list/quote cases. Expected links were
+checked against installed Marked 12; backend tests use real stores, backlinks,
+raw Git bytes, reload/history, comment boundaries and depth-150 controls without
+requiring Node in backend CI. Both new 390/1440px real-service browser cases
+fail against the exact prior store's phantom edge. The corrected browser path
+checks visible title-resolved links, code, graph/backlinks and direct-editor
+mutation/restoration, then inspects the galaxy's directional evidence.
+
+This remains a bounded grammar correction. Whitespace-only empty items followed
+by indented content can still expose a false link; deeply indented lazy paragraph
+continuations can still lose one. Both were reproduced on the preceding store.
+Generic raw HTML and other inline forms are not completely covered. Do not infer
+full Markdown parity from these regressions.
 
 Imported page history follows Git-detected source renames before combining
 those commits with managed history. A real nested-source rename regression

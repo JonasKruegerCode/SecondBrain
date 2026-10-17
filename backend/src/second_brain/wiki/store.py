@@ -14,7 +14,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 REF = "refs/heads/wiki"
 ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
@@ -147,6 +147,57 @@ def _quote_end(lines: list[str], start: int, indent: int, terminated: bool) -> t
     return index, "\n".join(inner)
 
 
+class _ProseContainer(NamedTuple):
+    markdown: str
+    prefix: str
+    quoted: bool
+
+
+_LIST_START = re.compile(r"^( {0,3})([-+*]|[0-9]{1,9}[.)])((?:[ \t].*)?)$")
+
+
+def _list_item_end(lines: list[str], start: int, match: re.Match[str]) -> tuple[int, str, int]:
+    """Normalize one list item using Marked's item/continuation boundaries.
+
+    List indentation is removed only from the container. Outdented lazy lines
+    stay in the item until a block boundary or a preceding blank ends them.
+    """
+    tail = re.sub(r"^\t+", lambda item: " " * (3 * len(item.group())), match.group(3))
+    original = match.group(3)
+    spaces = len(original) - len(original.lstrip(" "))
+    spaces = 1 if spaces > 4 else spaces
+    indent = len(match.group(1)) + len(match.group(2)) + (spaces if original else 1)
+    inner = [tail[spaces:]]
+    index = start + 1
+    if not tail and index < len(lines) and not lines[index].strip(" "):
+        return index + 1, "", indent
+    limit = min(3, indent - 1)
+    bullet = re.compile(rf"^ {{0,{limit}}}(?:[*+-]|[0-9]{{1,9}}[.)])(?:[ \t].*)?$")
+    fence = re.compile(rf"^ {{0,{limit}}}(?:`{{3}}|~{{3}})")
+    heading = re.compile(rf"^ {{0,{limit}}}#")
+    rule = re.compile(rf"^ {{0,{limit}}}(?:(?:- *){{3,}}|(?:_ *){{3,}}|(?:\* *){{3,}})$")
+    blank = False
+    previous = tail
+    while index < len(lines):
+        line = lines[index]
+        if fence.match(line) or heading.match(line) or bullet.match(line) or rule.match(line):
+            break
+        leading = len(line) - len(line.lstrip(" "))
+        if leading >= indent or not line.strip():
+            inner.append(line[indent:])
+        else:
+            previous_leading = len(previous) - len(previous.lstrip(" "))
+            if blank or previous_leading >= 4 or fence.match(previous) or heading.match(previous):
+                break
+            if rule.match(previous):
+                break
+            inner.append(line)
+        blank = blank or not line.strip()
+        previous = line[indent:]
+        index += 1
+    return index, "\n".join(inner).rstrip("\n"), indent
+
+
 def prose_blocks(markdown: str) -> str:
     """Project prose without making quoted code into links or quoted H1s into titles.
 
@@ -154,27 +205,33 @@ def prose_blocks(markdown: str) -> str:
     this derived projection changes; original Markdown remains authoritative.
     """
     output: list[str] = []
-    pending: list[tuple[str | tuple[str], bool]] = [((markdown,), False)]
+    pending: list[tuple[str | _ProseContainer, str, bool]] = [
+        (_ProseContainer(markdown, "", False), "", False)
+    ]
     while pending:
-        segment, quoted = pending.pop()
-        if isinstance(segment, tuple):
-            parts = _prose_segments(segment[0], quoted=quoted)
-            pending.extend((part, quoted or isinstance(part, tuple)) for part in reversed(parts))
+        segment, prefix, quoted = pending.pop()
+        if isinstance(segment, _ProseContainer):
+            quoted = quoted or segment.quoted
+            prefix += segment.prefix
+            parts = _prose_segments(segment.markdown, quoted=quoted)
+            pending.extend((part, prefix, quoted) for part in reversed(parts))
         else:
-            output.append(("> " if quoted else "") + segment)
+            output.append(prefix + segment)
     return "\n".join(output)
 
 
-def _prose_segments(markdown: str, *, quoted: bool) -> list[str | tuple[str]]:
-    lines: list[str | tuple[str]] = []
+def _prose_segments(markdown: str, *, quoted: bool) -> list[str | _ProseContainer]:
+    # Marked normalizes only line-leading tabs at each container level.
+    # Expanding whole lines would change tabs inside explicit link targets.
+    markdown = re.sub(
+        r"(?m)^( *)(\t+)",
+        lambda match: match.group(1) + "    " * len(match.group(2)),
+        markdown,
+    )
+    lines: list[str | _ProseContainer] = []
     fence = ""
     in_comment = False
     raw_html = ""
-    # Each tuple is (marker indentation, content indentation). Markdown list
-    # continuations may legitimately start with four or more spaces, so a
-    # blanket indented-code check would hide visible nested-list links from the
-    # graph and excerpts.
-    list_stack: list[tuple[int, int]] = []
     source_lines = markdown.splitlines()
     skip_until = 0
     for line_number, line in enumerate(source_lines):
@@ -182,11 +239,7 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | tuple[str]]:
             continue
         expanded = line.expandtabs(4)
         indent = len(expanded) - len(expanded.lstrip(" "))
-        container_indent = max(
-            (content for _, content in list_stack if content <= indent),
-            default=0,
-        )
-        relative = expanded[container_indent:]
+        relative = expanded
         # Marked's raw HTML blocks keep Markdown literal through the entire
         # closing-tag line. Blank lines, headings and fences inside are data.
         if raw_html:
@@ -194,17 +247,15 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | tuple[str]]:
                 raw_html = ""
             continue
         if not fence and not in_comment and _QUOTE_PREFIX.match(relative):
-            if indent == 0:
-                list_stack.clear()
             skip_until, inner = _quote_end(
-                source_lines, line_number, container_indent, markdown.endswith(("\r", "\n"))
+                source_lines, line_number, 0, markdown.endswith(("\r", "\n"))
             )
-            lines.append((inner,))
+            lines.append(_ProseContainer(inner, "> ", True))
             continue
         # Quoted fences use the renderer's exact closing grammar, including
         # mixed marker suffixes. Invalid backtick info remains visible prose.
         if quoted:
-            quoted_line = _dedent_columns(line, container_indent)
+            quoted_line = line
             if fence:
                 if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", quoted_line):
                     fence = ""
@@ -241,42 +292,27 @@ def _prose_segments(markdown: str, *, quoted: bool) -> list[str | tuple[str]]:
                 if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
                     raw_html = tag
                 continue
-        if in_comment or indent - container_indent < 4:
+        # Parse list contents before quote/fence contents on the next pass.
+        # Keeping a projection-only prefix prevents a nested H1 becoming the
+        # page identity while allowing ordinary list prose into excerpts.
+        list_item = _LIST_START.match(line) if not in_comment else None
+        if list_item:
+            skip_until, inner, content_indent = _list_item_end(source_lines, line_number, list_item)
+            lines.append(_ProseContainer(inner, " " * content_indent, False))
+            continue
+
+        if in_comment or indent < 4:
             # A fence marker inside a comment cannot open/close a code block.
             # Indented code cannot start a prose comment either.
             line, in_comment = _without_comments(line, in_comment)
             expanded = line.expandtabs(4)
             indent = len(expanded) - len(expanded.lstrip(" "))
-            relative = expanded[container_indent:]
-        list_item = re.match(r"^( *)([-+*]|\d+[.)])( +)", expanded)
-        if list_item:
-            marker_indent = len(list_item.group(1))
-            parent = any(content <= marker_indent for _, content in list_stack)
-            # Four-space list-looking text without a list container is still an
-            # indented code block under CommonMark-style rules.
-            if marker_indent < 4 or parent:
-                while list_stack and marker_indent <= list_stack[-1][0]:
-                    list_stack.pop()
-                content_indent = marker_indent + len(list_item.group(2)) + len(list_item.group(3))
-                list_stack.append((marker_indent, content_indent))
-                lines.append(line)
-            continue
+            relative = expanded
 
         if not expanded.strip():
             lines.append(line)
             continue
-        if indent == 0:
-            list_stack.clear()
-            lines.append(line)
-            continue
         if indent < 4:
-            lines.append(line)
-            continue
-        container_indent = max(
-            (content for _, content in list_stack if content <= indent),
-            default=0,
-        )
-        if container_indent and indent < container_indent + 4:
             lines.append(line)
     return lines
 
