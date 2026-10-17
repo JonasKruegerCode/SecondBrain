@@ -106,6 +106,40 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
     await expect(page.locator(".galaxy-evidence > li")).toHaveCount(102);
     await expect(page.locator(".galaxy-evidence")).toContainText(outsideTitle);
     expect((await lines.locator("title").allTextContents()).some(text => text.includes(outsideTitle))).toBe(false);
+    // Screen-sized labels must stay inside the actual SVG, including when an
+    // outer star is selected in a narrow, dense constellation.
+    const edgeId = await page.locator(".galaxy-star").evaluateAll(elements =>
+      elements.map(element => {
+        const star = element as SVGGraphicsElement;
+        return { id: star.getAttribute("data-node")!, x: new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!).x };
+      }).sort((a, b) => b.x - a.x)[0].id);
+    await page.locator(`.galaxy-star[data-node="${edgeId}"]`).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(ids.indexOf(edgeId)));
+    const labelsContained = () => page.locator(".galaxy-star text").evaluateAll(elements => {
+      const svg = (elements[0] as SVGTextElement).ownerSVGElement!;
+      const bounds = svg.getBoundingClientRect();
+      return elements.every(element => {
+        const label = element as SVGTextElement;
+        if (getComputedStyle(label).visibility === "hidden") return true;
+        const box = label.getBoundingClientRect();
+        return box.left >= bounds.left + 5 && box.right <= bounds.right - 5 &&
+          box.top >= bounds.top + 5 && box.bottom <= bounds.bottom - 5 &&
+          parseFloat(getComputedStyle(label).fontSize) * label.getScreenCTM()!.a >= 11.99;
+      });
+    });
+    for (const labelWidth of [width, 320, 1440, width]) {
+      await page.setViewportSize({ width: labelWidth, height: 844 });
+      await expect.poll(labelsContained).toBe(true);
+      await expect(page.locator(".galaxy-star.is-selected text")).toBeVisible();
+    }
+    await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+    await expect.poll(labelsContained).toBe(true);
+    await page.getByRole("button", { name: "Reset", exact: true }).click();
+    await expect.poll(labelsContained).toBe(true);
+    await page.screenshot({ path: info.outputPath(`dense-edge-label-${width}.png`), fullPage: true });
+    await page.locator(`.galaxy-star[data-node="${ids[17]}"]`).focus();
+    await page.keyboard.press("Enter");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`dense-selected-${width}.png`), fullPage: true });
     await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article" }).click();

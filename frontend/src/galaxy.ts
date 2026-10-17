@@ -240,6 +240,29 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         if (label.closest(".galaxy-star")) {
           label.setAttribute("y", String(24 / unit));
           label.style.strokeWidth = `${3 / unit}px`;
+          label.setAttribute("x", "0");
+          const star = label.closest<SVGGElement>(".galaxy-star")!;
+          const point = new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!);
+          const visible = point.x >= bounds.left && point.x <= bounds.right &&
+            point.y >= bounds.top && point.y <= bounds.bottom;
+          label.style.visibility = visible ? "visible" : "hidden";
+          // Labels stay screen-sized while the map zooms. Fit their text and
+          // offset within the SVG without moving stars, hit circles or links.
+          const letters = [...(label.dataset.label || label.textContent || "")];
+          label.textContent = letters.join("");
+          while (letters.length > 1 && label.getComputedTextLength() * unit > bounds.width - 12) {
+            letters.pop(); label.textContent = letters.join("") + "…";
+          }
+          let baseline = 24;
+          if (label.getBoundingClientRect().bottom > bounds.bottom - 6) {
+            baseline = -18;
+            label.setAttribute("y", String(baseline / unit));
+          }
+          const box = label.getBoundingClientRect();
+          const dx = Math.max(bounds.left + 6 - box.left, Math.min(0, bounds.right - 6 - box.right));
+          const dy = Math.max(bounds.top + 6 - box.top, Math.min(0, bounds.bottom - 6 - box.bottom));
+          label.setAttribute("x", String(dx / unit));
+          label.setAttribute("y", String((baseline + dy) / unit));
         }
       });
       svg.querySelectorAll<SVGCircleElement>(".galaxy-hit").forEach(hit => {
@@ -339,7 +362,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
       const related = selectedNode && (id === selectedNode || adjacency.get(selectedNode)!.has(id));
       const dimmed = !matching(id) || (selectedNode !== null && !related);
-      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" text-anchor="middle">${escape(name(id).length > 27 ? name(id).slice(0, 25) + "…" : name(id))}</text>` : ""}</g>`;
+      const label = name(id).length > 27 ? name(id).slice(0, 25) + "…" : name(id);
+      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
     stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${Math.max(340, rows * 300) + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
     stage.hidden = listOnly;

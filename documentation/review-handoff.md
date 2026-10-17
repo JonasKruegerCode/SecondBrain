@@ -753,6 +753,24 @@ including zoom limits, focused-star visibility, search input, complete link
 evidence and article return. A large sparse map still opens in list view;
 closely spaced stars do not become large touch targets merely by adding keys.
 
+## Expanded galaxy labels at the viewport edge
+
+A synthetic 1,000-page import exposed a clipped selected-star label in a
+125-page expanded constellation at 390px. Expanded-map labels now retain their
+screen-sized font while their baseline and horizontal offset stay within the
+actual SVG bounds. Text is fitted only when necessary; full names remain in
+the selected-page panel, accessible label and SVG title. Stars, hit circles,
+link endpoints and graph evidence do not move. Offscreen stars do not leave
+floating edge labels, and each view update restores the original display text
+before fitting it again.
+
+The real-service dense-constellation regression selects the rightmost star,
+checks containment and font size through 320/390/1440px resizes, then zooms and
+resets. Both narrow/desktop cases fail on the preceding UI and pass with this
+correction. Screenshots include the selected edge star and its full-name panel.
+This fixes viewport clipping, not label collisions or physical touch selection
+in dense maps; the complete page list remains available.
+
 ## Known release gates
 
 - real OpenRouter multi-turn result and answer-quality inspection
