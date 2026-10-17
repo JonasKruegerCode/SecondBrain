@@ -469,6 +469,17 @@ inputs and are never uploaded; successful runs remove them and the vault.
 The acceptance runner starts the real API and Vite frontend, runs the
 normal Playwright suite and writes an ignored structural record below
 `.demo/acceptance/`. It clears inherited OpenRouter access.
+Every invocation now owns an explicit Playwright output directory beneath that
+record: `browser-chromium` for the full suite, the existing named outputs for
+diagnostic/WebKit/scale profiles, and separate `browser-create`/`browser-restart`
+directories for first start. A later run cannot clear an earlier failure's
+screenshots, error context or structural attachments. Direct `npm run test:browser`
+still uses its ordinary shared default; the managed runner supplies the isolation.
+CI includes synthetic error contexts and the existing allowlisted galaxy
+attachments from these run directories, alongside screenshots and result/log
+records. Vaults and browser-state/page receipts remain excluded. Retention
+regressions simulate Playwright clearing each selected output; native browser
+acceptance separately checks actual output generation and application behavior.
 `make acceptance-scale PYTHON="$WIKI_PYTHON"` runs the existing scale suite
 against a fresh owned 320-page synthetic Git vault. The fixed `--scale` profile
 rejects other profiles, filters and repeats; its structural record identifies

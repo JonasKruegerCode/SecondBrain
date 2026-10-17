@@ -81,5 +81,8 @@ jobs:
             .demo/browser-results/**/attachments/galaxy-stability*.json
             .demo/browser-results/**/attachments/galaxy-link-mutation*.json
             .demo/acceptance/*/browser-*/**/*.png
+            .demo/acceptance/*/browser-*/**/error-context.md
+            .demo/acceptance/*/browser-*/**/attachments/galaxy-stability*.json
+            .demo/acceptance/*/browser-*/**/attachments/galaxy-link-mutation*.json
           if-no-files-found: warn
           retention-days: 7

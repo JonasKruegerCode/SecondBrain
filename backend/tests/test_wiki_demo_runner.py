@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import runpy
+import shutil
 import signal
 import socket
 import subprocess
@@ -450,8 +451,7 @@ def test_editor_retry_orchestration_contract_without_launching_a_browser(
     browser_calls = [call for call in processes.run.call_args_list if call.args[0][0] != "git"]
     assert len(browser_calls) == 1
     expected_command = ["npm", "run", "test:browser", "--", *suites]
-    if engine == "webkit":
-        expected_command.extend(["--output", str(artifact_dir / "browser-webkit")])
+    expected_command.extend(["--output", str(artifact_dir / f"browser-{engine}")])
     assert browser_calls[0].args[0] == expected_command
     assert browser_calls[0].args[0].count("e2e/editor-retry.spec.ts") == 1
     assert browser_calls[0].kwargs["cwd"] == tmp_path / "frontend"
@@ -766,3 +766,78 @@ def test_openrouter_failure_evidence_records_only_observed_progress(
     assert "sensitive" not in (tmp_path / "result.json").read_text()
     assert "real forecast" not in (tmp_path / "result.json").read_text()
 
+
+@pytest.mark.parametrize("arguments, expected_outputs", [
+    ([], ["browser-chromium"]),
+    (["--first-start"], ["browser-create", "browser-restart"]),
+])
+def test_acceptance_preserves_failed_browser_evidence_across_later_runs(
+    arguments: list[str], expected_outputs: list[str],
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    supervisor = MagicMock(pid=4321)
+
+    def start(command: list[str], **kwargs: Any) -> Any:
+        vault = Path(command[command.index("--vault") + 1])
+        vault.mkdir(exist_ok=True)
+        (vault / "owned-fixture").touch()
+        return supervisor
+
+    outputs: list[Path] = []
+    commands: list[list[str]] = []
+    evidence = {
+        "failed-test/error-context.md": b"Synthetic failure context: expected article title",
+        "failed-test/test-failed-1.png": b"\x89PNG\r\n\x1a\nsynthetic screenshot bytes",
+        "failed-test/structure.json": b'{"article":"Synthetic article","status":"failed"}',
+    }
+
+    def run(command: list[str], **kwargs: Any) -> Any:
+        if command[0] == "git":
+            return MagicMock(returncode=0, stdout="synthetic-head")
+        commands.append(command)
+        # Playwright clears its selected output directory at every invocation.
+        output = (
+            Path(command[command.index("--output") + 1])
+            if "--output" in command
+            else tmp_path / ".demo" / "browser-results"
+        )
+        shutil.rmtree(output, ignore_errors=True)
+        output.mkdir(parents=True)
+        outputs.append(output)
+        if len(outputs) == 1:
+            for name, content in evidence.items():
+                target = output / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+            return MagicMock(returncode=1)
+        return MagicMock(returncode=0)
+
+    processes = MagicMock()
+    processes.Popen.side_effect = start
+    processes.run.side_effect = run
+    processes.TimeoutExpired = subprocess.TimeoutExpired
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    monkeypatch.setitem(namespace, "_wait_for_http", lambda *args, **kwargs: None)
+    monkeypatch.setitem(namespace, "_stop_process_group", MagicMock())
+
+    assert main(arguments) == 1
+    failed_output = outputs[0]
+    assert main(arguments) == 0
+    for name, content in evidence.items():
+        assert (failed_output / name).read_bytes() == content
+    assert len(outputs) == 1 + len(expected_outputs)
+    assert len(set(outputs)) == len(outputs)
+    results = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
+    assert len(results) == 2
+    failed_result = next(
+        path for path in results if json.loads(path.read_text())["status"] == "failed"
+    )
+    passed_result = next(
+        path for path in results if json.loads(path.read_text())["status"] == "passed"
+    )
+    assert failed_output == failed_result.parent / expected_outputs[0]
+    assert outputs[1:] == [passed_result.parent / name for name in expected_outputs]
+    assert all(command.count("--output") == 1 for command in commands)

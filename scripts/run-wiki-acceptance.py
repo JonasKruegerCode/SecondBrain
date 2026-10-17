@@ -321,25 +321,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         else (("scale",) if args.scale else ("demo",))
     )
     browser_command = ["npm", "run", "test:browser", "--", *suites]
-    if args.scale:
-        browser_command.extend(["--output", str(artifact_dir / "browser-scale")])
     if args.browser_grep:
         browser_command.extend(["--grep", args.browser_grep])
     if worker_filter:
         browser_command.extend(["--grep", worker_filter])
     if args.repeat_each != 1:
         browser_command.extend(["--repeat-each", str(args.repeat_each)])
-    if args.browser_grep or args.repeat_each != 1 or args.browser_engine != "chromium":
-        output_name = (
-            "browser-diagnostic"
-            if args.browser_engine == "chromium"
-            else "browser-webkit"
-        )
+    output_name = "browser-chromium"
+    if args.scale:
+        output_name = "browser-scale"
+    elif args.browser_engine == "webkit":
+        output_name = "browser-webkit"
         if args.webkit_workers:
             output_name = "browser-webkit-workers"
         if args.webkit_first_install_diagnostic:
             output_name = "browser-webkit-first-install-diagnostic"
-        browser_command.extend(["--output", str(artifact_dir / output_name)])
+    elif args.browser_grep or args.repeat_each != 1:
+        output_name = "browser-diagnostic"
     if args.first_start:
         command.append("--empty")
         env.update(
@@ -352,14 +350,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         for phase in phases:
             phase_env = {**env, "PLAYWRIGHT_FIRST_START_PHASE": phase}
             process_state = artifact_dir / f"processes-{phase}.json"
-            phase_command = browser_command
-            if args.first_start:
-                # Preserve each phase's images and the ordinary suite's output.
-                phase_command = [
-                    *browser_command,
-                    "--output",
-                    str(artifact_dir / f"browser-{phase}"),
-                ]
+            # Playwright clears its output directory before running. Every run
+            # and first-start phase must retain its own failure evidence.
+            phase_output = f"browser-{phase}" if args.first_start else output_name
+            phase_command = [
+                *browser_command, "--output", str(artifact_dir / phase_output),
+            ]
             with service_log.open("ab") as services:
                 supervisor = subprocess.Popen(
                     [*command, "--process-state", str(process_state)],
