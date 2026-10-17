@@ -168,8 +168,13 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   graph edges, backlinks, missing targets or ambiguous targets. Odd/even opening
   escape counts match the article renderer; paired backslashes still permit a
   real link. Raw Markdown and the existing typed-relation grammar are preserved.
-  Index identity v5 invalidates earlier derived receipts so refresh cannot retain
+  Index identity v6 invalidates earlier derived receipts so refresh cannot retain
   the old false links.
+- Raw HTML `pre`, `script`, `style` and `textarea` blocks keep their Markdown
+  examples literal through the closing-tag line. Their apparent headings and
+  wiki references do not become titles, excerpts, graph edges or backlinks;
+  prose after the block retains normal navigation. The same index upgrade
+  invalidates v5 receipts without changing source Markdown, IDs or history.
 - Article lists retain Markdown meaning: continued numbered lists keep their
   starting number (including zero), and task markers keep checked/unchecked
   state as disabled native checkboxes. Other form inputs remain stripped;

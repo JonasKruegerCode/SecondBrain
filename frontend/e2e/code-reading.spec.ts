@@ -356,3 +356,88 @@ for (const width of [390, 1440]) {
   });
 
 }
+
+for (const width of [390, 1440]) {
+  test(`raw HTML blocks agree with article graph evidence at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const token = randomUUID();
+    const source = `html-source-${token}`;
+    const hidden = `html-hidden-${token}`;
+    const visible = `html-visible-${token}`;
+    const absent = `html-absent-${token}`;
+    const title = "Synthetic raw HTML boundaries";
+    const markdown = [
+      ...["pre", "script", "style", "textarea"].flatMap(tag => [
+        `<${tag}>`, "# Example heading inside raw HTML", `[[${hidden}]]`, "",
+        `[[${absent}]]`, `</${tag}>`, "",
+      ]),
+      `# ${title}`, "", `Visible [[${visible}|Real companion]].`, "",
+    ].join("\n");
+    const endpoint = (id: string) => `/api/wiki/pages/${encodeURIComponent(id)}`;
+    const created: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const [id, body] of [[hidden, "# Hidden synthetic target\n"], [visible, "# Real synthetic companion\n"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: {
+          markdown: body, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBeTruthy();
+        created.push(id);
+      }
+      await page.goto(`/wiki/${source}`);
+      const assertReading = async () => {
+        await expect(page.locator("article > h1")).toHaveText(title);
+        // The genuine ATX title after raw HTML is promoted into the page
+        // heading exactly once; example headings remain literal block text.
+        await expect(page.locator("article h1")).toHaveCount(1);
+        const prose = page.locator(".prose");
+        await expect(prose.locator("h1")).toHaveCount(0);
+        await expect(prose.locator("a")).toHaveCount(1);
+        await expect(prose.getByRole("link", { name: "Real companion", exact: true }))
+          .toHaveAttribute("href", `/wiki/${visible}`);
+        await expect(prose.locator("h1,h2,h3,h4,h5,h6").filter({ hasText: "Example heading inside raw HTML" })).toHaveCount(0);
+        await expect(prose.locator("pre")).toContainText(`[[${hidden}]]`);
+        await expect(prose.locator(".missing-link")).toHaveCount(0);
+        await expect(prose.locator("script,style,textarea")).toHaveCount(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await assertReading();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.reload();
+      await assertReading();
+      await page.screenshot({ path: testInfo.outputPath(`raw-html-reading-${width}.png`), fullPage: true });
+      const saved = await request.get(endpoint(source));
+      expect(saved.ok()).toBeTruthy();
+      const article = await saved.json();
+      expect(article.markdown).toBe(markdown);
+      expect(article.title).toBe(title);
+      expect(article.excerpt).toBe("Visible Real companion.");
+      const graphResponse = await request.get("/api/wiki/graph");
+      expect(graphResponse.ok()).toBeTruthy();
+      const graph = await graphResponse.json();
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === source))
+        .toEqual([{ source, target: visible, type: "wikilink" }]);
+      expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === source)).toEqual([]);
+      for (const [id, expected] of [[hidden, []], [visible, [source]]] as const) {
+        const response = await request.get(endpoint(id) + "/backlinks");
+        expect(response.ok()).toBeTruthy();
+        expect((await response.json()).backlinks.map((entry: { id: string }) => entry.id)).toEqual(expected);
+      }
+      await page.locator(".prose").getByRole("link", { name: "Real companion", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Real synthetic companion");
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await request.get(endpoint(id));
+        expect(current.ok()).toBeTruthy();
+        const deleted = await request.delete(endpoint(id), { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(deleted.ok()).toBeTruthy();
+      }
+    }
+  });
+}

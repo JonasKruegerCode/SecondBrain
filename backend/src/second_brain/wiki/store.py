@@ -90,12 +90,14 @@ def prose_blocks(markdown: str) -> str:
     lines: list[str] = []
     fence = ""
     in_comment = False
+    raw_html = ""
     # Each tuple is (marker indentation, content indentation). Markdown list
     # continuations may legitimately start with four or more spaces, so a
     # blanket indented-code check would hide visible nested-list links from the
     # graph and excerpts.
     list_stack: list[tuple[int, int]] = []
-    for line in markdown.splitlines():
+    source_lines = markdown.splitlines()
+    for line_number, line in enumerate(source_lines):
         expanded = line.expandtabs(4)
         indent = len(expanded) - len(expanded.lstrip(" "))
         container_indent = max(
@@ -103,6 +105,12 @@ def prose_blocks(markdown: str) -> str:
             default=0,
         )
         relative = expanded[container_indent:]
+        # Marked's raw HTML blocks keep Markdown literal through the entire
+        # closing-tag line. Blank lines, headings and fences inside are data.
+        if raw_html:
+            if re.search(rf"</{raw_html}>", relative, re.IGNORECASE | re.ASCII):
+                raw_html = ""
+            continue
         # Fence info is literal, including comment markers. Only the original
         # line can delimit a fence: removing a comment must not create one.
         match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative) if not in_comment else None
@@ -119,6 +127,15 @@ def prose_blocks(markdown: str) -> str:
             continue
         if fence:
             continue
+        if not in_comment:
+            terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
+            html_line = relative + ("\n" if terminated else "")
+            html = re.match(r"^ {0,3}<(?ai:(script|pre|style|textarea))[\s>]", html_line)
+            if html:
+                tag = html.group(1).lower()
+                if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
+                    raw_html = tag
+                continue
         if in_comment or indent - container_indent < 4:
             # A fence marker inside a comment cannot open/close a code block.
             # Indented code cannot start a prose comment either.
