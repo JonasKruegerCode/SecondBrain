@@ -526,6 +526,21 @@ must leave its revision, commit list, focus and visit intact. Paired viewport an
 full-page images distinguish offscreen skip-link geometry from capture effects.
 Transport delays/aborts are explicitly scripted, not claims of real API outages.
 
+Rapid canceled browser traversal also preserves the native visit stack. Two
+queued Back actions could previously suppress the immediate correction; the
+one-second fallback then replaced an earlier article entry with the editor's
+URL. The draft survived, but subsequent Back skipped articles. Recovery now
+defers its correction, reads the actual current history position and coalesces
+additional traversal events. A suppressed correction retries a known position
+instead of replacing that visit; untracked entries retain their separate
+fallback. Eight real-service Chromium cases cover double Back, another Back
+during recovery, double Back followed by Forward and a two-entry jump at
+390/1440px. They compare the original visit identity, exact draft and history
+length across the timeout window, then discard and traverse every original
+entry in both directions. No History methods or successful API replies are
+substituted. This is native desktop-browser evidence, not physical mobile
+Back gestures, Safari or arbitrary external changes to history state.
+
 The delivery recovery suite owns a separate loopback API, forwarding proxy,
 temporary vault and local bare Git target. It saves real Markdown while its Git
 target is renamed out of reach, runs actual delivery to observe an error, then

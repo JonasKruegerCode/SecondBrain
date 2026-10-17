@@ -26,6 +26,7 @@ const navigationEntry = (index: number): NavigationEntry => ({ session: navigati
 let activeEntry = navigationEntry(0);
 let restoringHistory = false;
 let historyRestoreTimer: number | undefined;
+let historyCorrectionTimer: number | undefined;
 type ReadingPoint = { x: number; y: number };
 const readingPoints = new Map<string, ReadingPoint>();
 const galaxyViews = new Map<string, GalaxyViewState>();
@@ -315,17 +316,40 @@ function resetHistoryTracking(path: string) {
   activeEntry = navigationEntry(0);
   restoringHistory = false;
   window.clearTimeout(historyRestoreTimer);
+  window.clearTimeout(historyCorrectionTimer);
   replaceAppUrl(path);
+}
+function queueHistoryCorrection() {
+  window.clearTimeout(historyCorrectionTimer);
+  window.clearTimeout(historyRestoreTimer);
+  // Let already queued native traversals finish. A delta captured from the
+  // first popstate can be obsolete by the time a second Back arrives.
+  historyCorrectionTimer = window.setTimeout(() => {
+    if (!restoringHistory) return;
+    const current = readNavigationEntry(history.state);
+    const targetUrl = location.pathname + location.search + location.hash;
+    if (current?.id === activeEntry.id && targetUrl === activeUrl) {
+      restoringHistory = false;
+      return;
+    }
+    const delta = current ? activeEntry.index - current.index : 0;
+    if (!delta) {
+      resetHistoryTracking(activeUrl);
+      return;
+    }
+    history.go(delta);
+    // A browser can suppress a correction during another traversal. Retry
+    // from its actual position; never replace a known, different visit.
+    historyRestoreTimer = window.setTimeout(() => {
+      if (restoringHistory) queueHistoryCorrection();
+    }, 1000);
+  }, 0);
 }
 function restoreHistory(entry: NavigationEntry | null) {
   const delta = entry ? activeEntry.index - entry.index : 0;
   if (delta) {
     restoringHistory = true;
-    // Never queue competing corrections or leave navigation blocked forever.
-    historyRestoreTimer = window.setTimeout(() => {
-      if (restoringHistory) resetHistoryTracking(activeUrl);
-    }, 1000);
-    history.go(delta);
+    queueHistoryCorrection();
   } else resetHistoryTracking(activeUrl);
 }
 function navigate(path: string) {
@@ -1006,7 +1030,8 @@ window.addEventListener("popstate", event => {
     if (entry?.id === activeEntry.id && targetUrl === activeUrl) {
       restoringHistory = false;
       window.clearTimeout(historyRestoreTimer);
-    }
+      window.clearTimeout(historyCorrectionTimer);
+    } else queueHistoryCorrection();
     return;
   }
   const previous = new URL(activeUrl, location.origin);

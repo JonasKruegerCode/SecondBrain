@@ -1261,6 +1261,74 @@ test("canceling browser back keeps the unsaved editor draft and URL", async ({
   );
 });
 
+for (const width of [390, 1440]) {
+  for (const traversal of ["rapid double Back", "Back during correction", "double Back then Forward", "jump Back two entries"] as const) {
+    test(`canceled ${traversal} preserves every native history entry (${width})`, async ({ page, request }, info) => {
+      const owned: { id: string; revision: string }[] = [];
+      let dismissed = 0;
+      const dismiss = async (dialog: import("@playwright/test").Dialog) => { dismissed++; await dialog.dismiss(); };
+      try {
+        await page.setViewportSize({ width, height: 844 });
+        const c = await create(request, "# Native history C\nSynthetic final article."); owned.push(c);
+        const b = await create(request, `# Native history B\n[[${c.id}|Next history article]]`); owned.push(b);
+        const a = await create(request, `# Native history A\n[[${b.id}|Next history article]]`); owned.push(a);
+        await page.goto("/?overview=1");
+        const snapshot = () => page.evaluate(() => ({ url: location.pathname + location.search + location.hash, state: history.state, length: history.length }));
+        const home = await snapshot();
+        await page.locator(`a[href="/wiki/${a.id}"]`).click();
+        await expect(page.locator("article h1")).toHaveText("Native history A"); const visitA = await snapshot();
+        await page.getByRole("link", { name: "Next history article", exact: true }).click();
+        await expect(page.locator("article h1")).toHaveText("Native history B"); const visitB = await snapshot();
+        await page.getByRole("link", { name: "Next history article", exact: true }).click();
+        await expect(page.locator("article h1")).toHaveText("Native history C"); const visitC = await snapshot();
+        await page.getByRole("button", { name: "Edit page" }).click();
+        const draft = "# Native history C\nKeep this exact unsaved draft.";
+        await page.getByRole("textbox", { name: /Markdown/ }).fill(draft);
+        page.on("dialog", dismiss);
+        // Exercise native browser traversal queues without replacing History methods.
+        await page.evaluate(mode => {
+          if (mode === "Back during correction") {
+            // Registered after the app listener, so the first cancellation
+            // has already requested recovery when this listener runs.
+            addEventListener("popstate", () => history.back(), { once: true }); history.back();
+          } else if (mode === "jump Back two entries") history.go(-2);
+          else { history.back(); history.back(); if (mode === "double Back then Forward") history.forward(); }
+        }, traversal);
+        await expect.poll(() => dismissed).toBeGreaterThan(0);
+        await expect.poll(snapshot).toEqual(visitC);
+        await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+        // A one-second fallback must not replace a prior entry while making
+        // only the URL appear recovered. Retain the original visit identity.
+        await page.waitForTimeout(1250);
+        expect(await snapshot()).toEqual(visitC);
+        await expect(page.getByRole("textbox", { name: /Markdown/ })).toHaveValue(draft);
+        if (traversal === "rapid double Back") await page.screenshot({ path: info.outputPath(`native-history-draft-${width}.png`) });
+        page.off("dialog", dismiss); page.once("dialog", dialog => dialog.accept());
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.locator("#editor")).toHaveCount(0);
+        await expect(page.locator("article h1")).toHaveText("Native history C");
+        for (const visit of [visitB, visitA, home]) {
+          await page.goBack(); await expect.poll(snapshot).toEqual({ ...visit, length: visitC.length });
+          if (visit === home) await expect(page.locator(`a[href="/wiki/${a.id}"]`)).toBeVisible();
+          else await expect(page.locator("article h1")).toBeVisible();
+        }
+        for (const visit of [visitA, visitB, visitC]) {
+          await page.goForward(); await expect.poll(snapshot).toEqual({ ...visit, length: visitC.length });
+          await expect(page.locator("article h1")).toBeVisible();
+        }
+        await expect(page.locator("article h1")).toHaveText("Native history C");
+        await expect(page.locator(".prose")).toHaveText("Synthetic final article.");
+      } finally {
+        page.off("dialog", dismiss);
+        for (const item of owned.reverse()) {
+          const response = await request.delete(`/api/wiki/pages/${item.id}`, { data: { base_revision: item.revision, request_id: randomUUID() } });
+          expect(response.ok(), "native history fixture cleanup").toBe(true);
+        }
+      }
+    });
+  }
+}
+
 test("real demo table stays readable and keyboard-scrollable on mobile", async ({
   page,
 }) => {
