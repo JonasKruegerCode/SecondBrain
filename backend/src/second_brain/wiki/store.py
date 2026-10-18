@@ -45,6 +45,14 @@ _INLINE_LINK_RE = re.compile(
 _ANCHOR_TAG_RE = re.compile(r"</?a(?:\s[^<>]*?)?\s*/?>", re.I)
 _AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
 _URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
+# A whole prose block containing only a simple emphasized URL has its own
+# inline-token scope. Do not extend this shortcut to surrounding inline text:
+# delimiter runs, escapes and nested formatting change Marked's token boundaries.
+_EMPHASIS_URL_RE = re.compile(
+    r"(?P<delimiter>\*\*|__)(?P<url>(?:ftp://|https?://|www\.)"
+    r"[^\s<*_`\\~]+?)(?P=delimiter)",
+    re.I,
+)
 _URL_BACKPEDAL_RE = re.compile(
     r"""(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![A-Za-z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+"""
 )
@@ -675,6 +683,13 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     Code spans likewise shield their contents. Mask with spaces to preserve
     line boundaries and avoid manufacturing typed relations or new links.
     """
+    emphasis = _EMPHASIS_URL_RE.fullmatch(text) if mask_urls else None
+    if emphasis is not None:
+        inner = emphasis.group("url")
+        end = _autolink_end(inner, 0)
+        if end is not None:
+            delimiter = emphasis.group("delimiter")
+            text = delimiter + " " * end + inner[end:] + delimiter
     parts: list[str] = []
     code_ends = _code_span_ends(text)
     position = 0

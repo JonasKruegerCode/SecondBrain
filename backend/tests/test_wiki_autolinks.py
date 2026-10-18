@@ -42,6 +42,16 @@ from second_brain.wiki.store import (
         ("text <a href='/'>https://example.test/[[shown]]</a>", {"shown"}),
         ("HTTPS://example.test/[[hidden]] [[shown]]", {"shown"}),
         ("prefix HTTPS://example.test/[[shown]]", {"shown"}),
+        ("**HTTPS://example.test/[[hidden]]**", set()),
+        ("__HTTPS://example.test/[[hidden]]__", set()),
+        ("**HTTPS://example.test/(unclosed/[[shown]]**", {"shown"}),
+        ("word__HTTPS://example.test/[[shown]]__", {"shown"}),
+        ("__HTTPS://example.test/[[shown]]__word", {"shown"}),
+        ("**HTTPS://example.test/[[shown]]", {"shown"}),
+        ("**HTTPS://example.test/[[shown]]**word", {"shown"}),
+        ("*HTTPS://example.test/[[shown]]**!", {"shown"}),
+        ("~*HTTPS://example.test/[[shown]]~*", {"shown"}),
+        (r"\`*HTTPS://example.test/[[shown]]*`", {"shown"}),
         ("\\<custom:record/[[shown]]>", {"shown"}),
         ("[[https://example.test/target|shown]]", {"https://example.test/target"}),
         ("https://example.test/[[hidden]]\n\n[[shown]]", {"shown"}),
@@ -60,9 +70,12 @@ def test_urls_remain_excerpt_text_without_becoming_graph_edges(tmp_path: Path) -
     store = WikiStore(tmp_path)
     for target in ("hidden", "shown"):
         store.save_page(target, f"# {target}", None, target)
-    markdown = "# URL boundary\r\n\r\nhttps://example.test/[[hidden]]\r\n\r\n[[shown]]\r\n"
+    markdown = (
+        "# URL boundary\r\n\r\n**HTTPS://example.test/[[hidden]]**\r\n\r\n"
+        "prefix HTTPS://example.test/[[shown]]\r\n"
+    )
     saved = store.save_page("source", markdown, None, "source")
-    assert "https://example.test/" in saved["excerpt"]
+    assert "HTTPS://example.test/" in saved["excerpt"]
     reopened = WikiStore(tmp_path)
     assert reopened.backlinks("hidden")["total"] == 0
     assert reopened.backlinks("shown")["total"] == 1

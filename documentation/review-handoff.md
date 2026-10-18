@@ -365,7 +365,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v22`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v23`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -409,6 +409,20 @@ rebuilding configured vectors may incur embedding costs. Source Markdown, IDs,
 history and REST/MCP/mutation contracts remain unchanged. Coverage does not
 establish complete inline HTML/escape behavior, every uppercase-scheme token
 position, or a general parser complexity guarantee.
+
+Version v23 additionally excludes a URL in a whole prose block consisting only
+of a simple `**URL**` or `__URL__` wrapper. The wrapper's inner URL starts its own
+Marked token scope, so uppercase schemes there are external links too. Source
+bytes, visible excerpt text and later deliberate prose links remain unchanged;
+older derived receipts including v22 require a rebuild with the same configured
+embedding-cost caveat. This shortcut deliberately does not handle surrounding
+inline text, nested/escaped formatting or arbitrary delimiter runs. A broader
+scanner correction was rejected because actual Marked12 counterprobes exposed
+visible links it would wrongly suppress, including `*HTTPS://example.test/[[x]]**!`
+and `~*HTTPS://example.test/[[x]]~*`. A remaining example is
+`prefix **HTTPS://example.test/[[x]]**`: it can still produce a backend phantom
+edge. Complete inline-token parity remains open; do not generalize this bounded
+whole-block correction to other formatting scopes.
 
 The browser CI job now has a 20-minute budget, preserving every profile,
 assertion and per-test timeout. On the preceding revision all six harness
