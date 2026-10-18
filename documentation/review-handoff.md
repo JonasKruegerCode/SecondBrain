@@ -237,6 +237,15 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 - Article contents links retain the browser's modified-click behavior. Ctrl/Cmd
   opens the section URL in another tab; the original article stays in place.
   Ordinary click/Enter focuses and scrolls its section within the current visit.
+  Section labels include image alternatives as well as visible inline text.
+  Previously an image-only heading produced an empty contents link and could
+  not be reached through its named fragment. The contents list and named
+  arrival now share an inert text projection, including promoted article titles;
+  a heading without text or alternative text uses "Untitled section". Numeric
+  section IDs and original Markdown/history stay unchanged. Duplicate named
+  labels still select the first matching heading; numeric fragments distinguish
+  them. Real narrow/desktop tests cover image-only, mixed and empty-alt headings,
+  direct/reload arrival, keyboard focus and unchanged source snapshots.
   An intermittent local Chromium 153 run observed a trusted, unprevented click
   without a new Context page; its cause remains unknown despite green Chromium
   156 CI. The native regression now records down/up/click targets, connected

@@ -41,6 +41,66 @@ async function assertRawSnapshot(page: Page, request: APIRequestContext, id: str
 }
 
 for (const width of [390, 1440]) {
+  test(`image heading labels preserve section navigation at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const owned: string[] = [], errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const promoted of [false, true]) {
+        const id = `image-heading-${randomUUID()}`;
+        const markdown = [
+          promoted ? "Fictional preface." : "# Fictional atlas", "",
+          "[Read chart](#chart)", "", "[Read notes](#coast-marker-notes)", "",
+          `${promoted ? "#" : "##"} ![Chart](/app-icon.svg)`, "",
+          "## Coast ![marker](/app-icon.svg) &amp; `notes`", "",
+          "## ![](/app-icon.svg)", "",
+        ].join("\n");
+        const created = await request.post(endpoint(id), { data: {
+          markdown, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(created.ok()).toBeTruthy();
+        owned.push(id);
+        const saved = await created.json();
+        await page.goto(`/wiki/${id}`);
+        const chart = page.locator("article #section-1");
+        const notes = page.locator(".prose #section-2");
+        const assertReading = async () => {
+          const toc = page.getByRole("navigation", { name: "On this page", exact: true });
+          await expect(toc.locator("a")).toHaveText(["Chart", "Coast marker & notes", "Untitled section"]);
+          await expect.poll(() => page.locator('.prose img[alt="marker"]').evaluate(
+            (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+          )).toBe(true);
+          if (promoted) {
+            await expect(chart).toHaveText("Chart");
+            await expect(chart).toHaveAttribute("data-article-section", "title");
+            await assertInertTitle(chart);
+          } else {
+            await expect(chart.getByRole("img", { name: "Chart", exact: true })).toHaveCount(1);
+          }
+          for (const [label, target] of [["Chart", chart], ["Coast marker & notes", notes], ["Untitled section", page.locator(".prose #section-3")]] as const) {
+            await toc.getByRole("link", { name: label, exact: true }).click();
+            await expect(target).toBeFocused();
+          }
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        };
+        await assertReading();
+        await page.locator(".prose").getByRole("link", { name: "Read chart", exact: true }).click();
+        await expect(chart).toBeFocused();
+        await page.locator(".prose").getByRole("link", { name: "Read notes", exact: true }).click();
+        await expect(notes).toBeFocused();
+        await page.goto(`/wiki/${id}#chart`);
+        await expect(chart).toBeFocused();
+        await page.reload();
+        await expect(chart).toBeFocused();
+        await assertRawSnapshot(page, request, id, markdown, saved.title, saved.revision, assertReading);
+        await page.screenshot({ path: testInfo.outputPath(`image-heading-${promoted ? "promoted" : "section"}-${width}.png`), fullPage: true });
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await removeOwnedPages(request, owned);
+    }
+  });
+
   test(`confirmed title inline formatting preserves article identity at ${width}px`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     const owned: string[] = [], errors: string[] = [];

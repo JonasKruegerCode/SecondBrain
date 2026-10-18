@@ -738,13 +738,16 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
       headings.forEach((heading, i) => {
         heading.id = `section-${i + 1}`;
         heading.tabIndex = -1;
+        // Reuse the inert title projection so image alternatives participate in
+        // both TOC labels and named-fragment matching without fetching media.
+        heading.dataset.sectionLabel = titleInline(heading).textContent?.trim() || "Untitled section";
       });
       if (rendered.titleHeading) {
         // Keep this heading's old section identity on the existing page title.
         // Later section numbers, named arrival and TOC focus remain available.
         title.id = rendered.titleHeading.id;
         title.dataset.articleSection = "title";
-        title.dataset.sectionLabel = rendered.titleHeading.textContent || "";
+        title.dataset.sectionLabel = rendered.titleHeading.dataset.sectionLabel;
         headings[headings.indexOf(rendered.titleHeading)] = title;
         rendered.titleHeading.remove();
       }
