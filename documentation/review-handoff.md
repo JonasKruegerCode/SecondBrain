@@ -279,6 +279,14 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   A passing instrumented pair identifies only those measured activations; it
   neither explains the earlier absence nor establishes that instrumentation is
   timing-neutral. No product workaround or full browser-parity claim is made.
+  The retained native failure also created a blank CDP page target, as did a
+  successful activation; target creation alone therefore does not distinguish
+  arrival. The bounded diagnostic now records target changes/destruction and
+  Playwright context-page arrival on one elapsed-time axis (at most 32 events,
+  16 new targets), plus the final context page list. It makes no new protocol
+  calls during the gesture, changes no timeout/assertion, and removes its context
+  listener on exit. This narrows a future failure's observation boundary; it is
+  not a renderer/worker cause or proof that instrumentation is timing-neutral.
 - Search normalizes submitted queries while retaining the current URL fragment;
   direct fragment destinations, reload and history remain usable. Later form
   submissions keep their input focus, including a new or empty query.

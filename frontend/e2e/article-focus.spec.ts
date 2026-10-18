@@ -23,6 +23,16 @@ for (const width of [390, 1440]) {
     let cdp: CDPSession | null = null;
     let cdpUnavailable = false;
     const targets: { type: string; url: string; opener: boolean }[] = [];
+    const targetIds = new Map<string, number>();
+    const lifecycle: unknown[] = [];
+    let activationStartedAt: number | null = null;
+    const recordLifecycle = (event: string, detail: object) => {
+      if (activationStartedAt !== null && lifecycle.length < 32) {
+        lifecycle.push({ event, elapsedMs: Date.now() - activationStartedAt, ...detail });
+      }
+    };
+    const onContextPage = (opened: Page) => recordLifecycle("context-page", { url: opened.url(), closed: opened.isClosed() });
+    context.on("page", onContextPage);
     // Setup precedes navigation so protocol round trips do not delay the
     // first native gesture. Optional diagnostics cannot replace its outcome.
     if (browser?.browserType().name() === "chromium") {
@@ -30,8 +40,19 @@ for (const width of [390, 1440]) {
         cdp = await browser.newBrowserCDPSession();
         const known = new Set((await cdp.send("Target.getTargets")).targetInfos.map(target => target.targetId));
         cdp.on("Target.targetCreated", ({ targetInfo }) => {
-          if (targetInfo.type === "page" && !known.has(targetInfo.targetId)) targets.push({ type: targetInfo.type,
-            url: targetInfo.url, opener: Boolean(targetInfo.openerId) });
+          if (targetInfo.type === "page" && !known.has(targetInfo.targetId) && targetIds.size < 16) {
+            targetIds.set(targetInfo.targetId, targetIds.size + 1);
+            targets.push({ type: targetInfo.type, url: targetInfo.url, opener: Boolean(targetInfo.openerId) });
+            recordLifecycle("target-created", { target: targetIds.get(targetInfo.targetId), url: targetInfo.url,
+              attached: targetInfo.attached, opener: Boolean(targetInfo.openerId) });
+          }
+        });
+        cdp.on("Target.targetInfoChanged", ({ targetInfo }) => {
+          if (targetIds.has(targetInfo.targetId)) recordLifecycle("target-changed", {
+            target: targetIds.get(targetInfo.targetId), url: targetInfo.url, attached: targetInfo.attached });
+        });
+        cdp.on("Target.targetDestroyed", ({ targetId }) => {
+          if (targetIds.has(targetId)) recordLifecycle("target-destroyed", { target: targetIds.get(targetId) });
         });
         await cdp.send("Target.setDiscoverTargets", { discover: true });
       } catch {
@@ -96,6 +117,8 @@ for (const width of [390, 1440]) {
         };
       });
       targets.length = 0;
+      targetIds.clear();
+      activationStartedAt = Date.now();
       // A browser-created tab need not retain an opener/popup association.
       const [opened] = await Promise.all([
         context.waitForEvent("page", { timeout: 8000 }),
@@ -112,7 +135,9 @@ for (const width of [390, 1440]) {
           delete (window as any).__tocTrace;
           return trace;
         }).catch(() => ({ unavailable: true }));
-        console.log(`[toc-activation-trace] ${JSON.stringify({ width, cdp: Boolean(cdp), cdpUnavailable, targets, dom })}`);
+        activationStartedAt = null;
+        console.log(`[toc-activation-trace] ${JSON.stringify({ width, cdp: Boolean(cdp), cdpUnavailable, targets,
+          lifecycle, contextPages: context.pages().map(item => ({ url: item.url(), closed: item.isClosed() })), dom })}`);
       });
       try {
         await opened.bringToFront();
@@ -154,6 +179,7 @@ for (const width of [390, 1440]) {
       await page.keyboard.press("Enter");
       await arrival(page, "Night sky survey", info, width, "search");
     } finally {
+      context.off("page", onContextPage);
       await page.evaluate(() => {
         (window as any).__stopTocTrace?.();
         delete (window as any).__stopTocTrace;
