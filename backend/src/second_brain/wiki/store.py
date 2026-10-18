@@ -278,14 +278,14 @@ def _prose_segments(
     blank_html = False
     paragraph = False
     paragraph_barrier = False
-    table = False
+    table = 0
     previous_prose = ""
     source_lines = markdown.splitlines()
     # Block structure is read from raw source before inline tokenization. An
     # inline comment cannot swallow a heading/fence/container in another block.
     scopes: list[list[int]] = []
     scope: list[int] = []
-    table_lines: set[int] = set()
+    table_lines: dict[int, int] = {}
     last_prose_line = -2
 
     def append_prose(text: str, *, separate: bool = False) -> None:
@@ -295,7 +295,7 @@ def _prose_segments(
             scopes.append(scope)
         scope.append(len(lines))
         if table:
-            table_lines.add(len(lines))
+            table_lines[len(lines)] = table
         lines.append(text)
         last_prose_line = line_number
 
@@ -458,19 +458,21 @@ def _prose_segments(
         definition = re.match(r"^ {0,3}\[[^\]]+\]:", relative)
         table_rule = (
             paragraph
-            and "|" in previous_prose
+            and re.search(r"[:|]", relative)
             and re.fullmatch(r" {0,3}\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *", relative)
+            and len(_table_cells(previous_prose)) == len(_table_cells(relative))
         )
         if html_boundary or definition or table_rule:
             paragraph_barrier = True
             paragraph = False
         if table_rule:
-            table = True
+            table = len(_table_cells(previous_prose))
             # The preceding prose line becomes the table header only after
             # this delimiter row has been recognized.
             if lines and isinstance(lines[-1], str):
-                table_lines.add(len(lines) - 1)
-            append_prose(line, separate=True)
+                table_lines[len(lines) - 1] = table
+            # Alignment syntax is structure, not visible cell content.
+            append_prose("", separate=True)
             continue
 
         # Parse list contents before quote/fence contents on the next pass.
@@ -541,31 +543,47 @@ def _prose_segments(
             projected = _without_code_spans("\n".join(str(lines[index]) for index in indices))
             for index, text in zip(indices, projected.split("\n"), strict=True):
                 lines[index] = text
-    for index in table_lines:
+    for index, columns in table_lines.items():
         text = lines[index]
         assert isinstance(text, str)
-        lines[index] = _without_cell_comments(text, for_links=for_links)
+        lines[index] = _without_cell_comments(text, columns, for_links=for_links)
     return lines
 
 
-def _without_cell_comments(row: str, *, for_links: bool = False) -> str:
-    """Each unescaped GFM pipe starts a new inline scope, even inside code."""
-    parts: list[str] = []
+def _table_cells(row: str) -> list[str]:
+    """Marked's GFM split: unescaped pipes delimit even inside code spans."""
+    cells: list[str] = []
     start = 0
     slashes = 0
 
-    def project(cell: str) -> str:
-        text = _without_comments(cell, False, has_later_close=False)[0]
-        return _without_code_spans(text) if for_links else text
-
     for offset, char in enumerate(row):
         if char == "|" and slashes % 2 == 0:
-            parts.append(project(row[start:offset]))
-            parts.append("|")
+            cells.append(row[start:offset])
             start = offset + 1
         slashes = slashes + 1 if char == "\\" else 0
-    parts.append(project(row[start:]))
-    return "".join(parts)
+    cells.append(row[start:])
+    if cells and not cells[0].strip():
+        cells.pop(0)
+    if cells and not cells[-1].strip():
+        cells.pop()
+    # Marked removes one escaping backslash before inline tokenization.
+    return [cell.strip().replace(r"\|", "|") for cell in cells]
+
+
+def _without_cell_comments(row: str, columns: int, *, for_links: bool = False) -> str:
+    """Project only rendered cells, with independent comment/code scopes."""
+    parts: list[str] = []
+    for cell in _table_cells(row)[:columns]:
+        text = _without_comments(cell, False, has_later_close=False)[0]
+        parts.append(_without_code_spans(text) if for_links else text)
+    # A leading pipe also keeps cell text from becoming a new ATX title or
+    # typed relation in the projection. Source bytes are never rewritten.
+    # A raw pipe can also look like a wiki alias separator. Keep cells on
+    # distinct projected lines so an apparent link cannot span two cells.
+    # The dot preserves the excerpt's visible column separator; the leading
+    # pipe on subsequent lines keeps cell content from becoming metadata.
+    separator = " ·\n| " if for_links else " | "
+    return ("| " if row.lstrip().startswith("|") else "") + separator.join(parts)
 
 
 def prose_links(markdown: str) -> str:

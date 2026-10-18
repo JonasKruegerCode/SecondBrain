@@ -136,7 +136,7 @@ def test_excerpt_is_plain_text_for_cards_search_and_chat(tmp_path: Path) -> None
         "1. **Question:** Does [[night-sky|the survey]] need a marker?\n\n"
         "| Record | Meaning |\n"
         "| --- | --- |\n"
-        "| [[tide-clock|Tide clock]] | *Modeled* phase |\n\n"
+        "| [[tide-clock\\|Tide clock]] | *Modeled* phase |\n\n"
         "```md\n**not article prose**\n```\n"
         "Read [the guide](https://example.test/guide)."
     )
