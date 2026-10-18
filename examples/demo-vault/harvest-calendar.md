@@ -13,9 +13,9 @@ The calendar connects three ways of talking about time: the tide, the ecology of
 
 | Record | What it can tell us | What it cannot establish |
 | --- | --- | --- |
-| [[tide-clock|tide clock]] | A modeled phase in the fictional setting | A safe time to enter a real shore |
-| [[salt-marsh|salt marsh listening station]] | A documented listening session | A long-term ecological trend |
-| [[shellfish-kitchen|shellfish kitchen notebook]] | A cultural memory and its wording | A verified harvesting practice |
+| [[tide-clock\|tide clock]] | A modeled phase in the fictional setting | A safe time to enter a real shore |
+| [[salt-marsh\|salt marsh listening station]] | A documented listening session | A long-term ecological trend |
+| [[shellfish-kitchen\|shellfish kitchen notebook]] | A cultural memory and its wording | A verified harvesting practice |
 
 ## Open question
 

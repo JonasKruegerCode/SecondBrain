@@ -147,18 +147,16 @@ def test_cli_requires_explicit_vault_and_reports_refusal(
 
 
 def test_shipped_demo_has_twelve_fictional_pages_and_no_dangling_links(tmp_path: Path) -> None:
-    import re
-
     template = demo.default_template()
     pages = demo._read_template(template)
     assert len(pages) == 12
     assert all("Fictional demonstration" in markdown for markdown in pages.values())
-    targets = {
-        target
-        for markdown in pages.values()
-        for target in re.findall(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]", markdown)
-    }
-    assert targets <= pages.keys()
     vault = tmp_path / "full-demo"
     assert demo.seed_vault(vault)["pages"] == 12
-    assert len(WikiStore(vault).list_pages()) == 12
+    store = WikiStore(vault)
+    assert len(store.list_pages()) == 12
+    # The real service understands escaped aliases inside GFM cells; a raw
+    # regex would incorrectly include the escape in the target ID.
+    graph = store.graph()
+    assert graph["missing_targets"] == []
+    assert graph["ambiguous_targets"] == []

@@ -451,6 +451,16 @@ test("demo galaxy summarizes bridges without dropping its pages or internal link
   ];
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
+    // Demo table aliases must be real rendered links, not phantom graph edges
+    // synthesized by treating the alias separator as another GFM column.
+    for (const [id, columns, links] of [["lantern-festival", 3, 6], ["harvest-calendar", 3, 3]] as const) {
+      await page.goto(`/wiki/${id}`);
+      await expect(page.locator(".prose table thead th")).toHaveCount(columns);
+      await expect(page.locator(".prose table tbody td")).toHaveCount(9);
+      await expect(page.locator(".prose table a[data-wiki-target]")).toHaveCount(links);
+      await expect(page.locator(".prose table a[href^='/resolve']")).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath(`demo-table-${id}-${width}.png`), fullPage: true });
+    }
     await page.goto("/galaxy");
     await expect(page.locator(".galaxy-star")).toHaveCount(12);
     await expect(page.locator(".galaxy-edge:not(.is-bridge)")).toHaveCount(22);

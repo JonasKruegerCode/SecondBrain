@@ -13,9 +13,9 @@ The imagined festival is a small public evening about seeing the same coast thro
 
 | Station | Activity | Wiki route |
 | --- | --- | --- |
-| Sky walk | Compare horizon cards | [[night-sky-survey|night sky survey]] → [[navigation-history|navigation stories]] |
-| Listening corner | Describe a sound before guessing its source | [[salt-marsh|salt marsh listening station]] → [[field-notebook|field notebook]] |
-| Story table | Read a memory beside a recipe card | [[oral-history|oral history collection]] → [[shellfish-kitchen|shellfish kitchen notebook]] |
+| Sky walk | Compare horizon cards | [[night-sky-survey\|night sky survey]] → [[navigation-history\|navigation stories]] |
+| Listening corner | Describe a sound before guessing its source | [[salt-marsh\|salt marsh listening station]] → [[field-notebook\|field notebook]] |
+| Story table | Read a memory beside a recipe card | [[oral-history\|oral history collection]] → [[shellfish-kitchen\|shellfish kitchen notebook]] |
 
 ## Preparation tasks
 

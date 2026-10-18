@@ -611,6 +611,14 @@ identity v19 invalidates older derived receipts; configured vector rebuilds can
 incur embedding costs. These are bounded table regressions, not general Markdown,
 reference or inline-HTML parity, production migration or physical-device proof.
 
+The full native profile exposed unescaped table aliases in two demo articles:
+the old graph had counted links that were not clickable in the article. The
+festival and calendar fixtures now escape their alias pipes. The existing
+galaxy counts remain unchanged; the regression additionally checks all nine
+rendered table links and their column counts at both widths. No existing vault
+is reseeded or rewritten. The full profile also reproduced the separately
+documented native modified-click timeout; isolated success does not explain it.
+
 ## Reproduce the demo and checks
 
 Use Linux or WSL with Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. From the
