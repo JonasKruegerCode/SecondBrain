@@ -24,6 +24,15 @@ TYPED_LINK_RE = re.compile(
     r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]"
 )
 MAX_BYTES = 1_000_000
+# Marked 12 block definitions: their destination/title is metadata, not prose.
+# Keep its permissive grammar, including multiline titles and escaped labels.
+_DEFINITION_RE = re.compile(
+    r" {0,3}\[(?!\s*\])(?:\\.|[^\[\]\\])+\]: *(?:\n *)?"
+    r"(?:[^<\s][^\s]*|<.*?>)"
+    r"(?:(?: +(?:\n *)?| *\n *)"
+    r"""(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\)))?"""
+    r" *(?:\n+|$)"
+)
 FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
 
@@ -281,6 +290,16 @@ def _prose_segments(
     table = 0
     previous_prose = ""
     source_lines = markdown.splitlines()
+    # One normalized source and line offsets avoid repeatedly joining the tail
+    # for a document with many reference definitions. HTML suffix parsing can
+    # shorten the current line; account for that without changing source bytes.
+    definition_source = "\n".join(source_lines)
+    source_offsets: list[int] = []
+    source_lengths = [len(line) for line in source_lines]
+    source_offset = 0
+    for length in source_lengths:
+        source_offsets.append(source_offset)
+        source_offset += length + 1
     # Block structure is read from raw source before inline tokenization. An
     # inline comment cannot swallow a heading/fence/container in another block.
     scopes: list[list[int]] = []
@@ -452,17 +471,25 @@ def _prose_segments(
             paragraph = False
             paragraph_barrier = False
             continue
-        # Definitions and non-generic HTML forms retain their conservative
-        # projection. They must not newly admit indented code as paragraph text.
+        if not paragraph and not table:
+            position = source_offsets[line_number] + source_lengths[line_number] - len(line)
+            definition = _DEFINITION_RE.match(definition_source, position)
+            if definition:
+                consumed = definition.group()
+                skip_until = line_number + consumed.count("\n") + int(not consumed.endswith("\n"))
+                paragraph_barrier = False
+                previous_prose = ""
+                continue
+        # Definition-like lines inside a paragraph/table remain ordinary prose.
+        # Invalid definitions must not create a new paragraph boundary either.
         html_boundary = re.match(r"^ {0,3}<[!?]", relative)
-        definition = re.match(r"^ {0,3}\[[^\]]+\]:", relative)
         table_rule = (
             paragraph
             and re.search(r"[:|]", relative)
             and re.fullmatch(r" {0,3}\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *", relative)
             and len(_table_cells(previous_prose)) == len(_table_cells(relative))
         )
-        if html_boundary or definition or table_rule:
+        if html_boundary or table_rule:
             paragraph_barrier = True
             paragraph = False
         if table_rule:

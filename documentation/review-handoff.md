@@ -365,10 +365,21 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v19`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v20`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
+
+Reference definitions follow the installed Marked12 block grammar: destinations
+and optional titles, including multiline metadata, do not create graph links,
+backlinks, excerpt text or page titles. Paragraph/list text continuations,
+invalid definitions and GFM table cells remain prose. Version v20 invalidates
+older derived receipts without rewriting Markdown, IDs or history; a configured
+vector rebuild may incur embedding costs. This is bounded block-definition
+coverage, not complete Markdown parity. Inline link destinations can still
+contribute apparent wiki targets; image metadata remains unverified. Synthetic CRLF/store/history and
+real-service article/galaxy regressions retain visible links and check that a
+later explicit prose link does create its expected backlink.
 
 Quoted code now follows quote containers before deriving titles, excerpts and
 explicit links. The projection retains visible quote links, nested quotes,
