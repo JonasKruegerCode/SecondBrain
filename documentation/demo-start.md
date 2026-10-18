@@ -37,6 +37,11 @@ Do not rerun template setup as a restart command: it verifies the original
 template and refuses later edits. For an interrupted seed, stop the services and
 explicitly resume with the same template using the [first-start procedure](first-start.md).
 An existing `.wiki.git` alone does not prove that an interrupted template finished.
+The launcher refuses an unfinished or invalid demo marker before starting either
+service, including with `--empty`; that flag skips seeding, not recovery. Resume
+an interrupted seed explicitly with the same template, then restart normally.
+Completed demos may still contain later edits, and markerless empty/imported
+managed vaults remain usable without reseeding.
 
 The combined launcher treats both services as long-running peers. If either API
 or frontend exits unexpectedly, it stops the other service and returns a nonzero

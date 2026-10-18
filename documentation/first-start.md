@@ -68,9 +68,13 @@ operator guides instead of these isolated-preview settings.
 
 Restart with this launcher to retain later edits. Repeating template setup
 verifies the original template and refuses edited content; an interrupted seed
-needs explicit `--resume` with the same template. Use a normal shell without Git
-directory/object/index overrides when setting up the vault; Git's environment
-and global configuration are not sanitized by the launcher. For the default
+needs explicit `--resume` with the same template.
+The launcher refuses unfinished or invalid demo markers before starting services;
+`--empty` does not bypass this check or recover a partial template. After explicit
+resume, completed demos retain later edits without revalidating the original template.
+Use a normal shell without Git directory/object/index overrides when setting up
+the vault; Git's environment and global configuration are not sanitized by the
+launcher. For the default
 fictional tour, use [`make demo`](managed-wiki-development.md). Setup itself
 neither starts services nor configures production services, remotes, or secrets.
 

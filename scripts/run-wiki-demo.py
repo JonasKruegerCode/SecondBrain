@@ -11,7 +11,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from second_brain.wiki.demo import seed_vault
+from second_brain.wiki.demo import FORMAT_VERSION, MARKER, seed_vault
 from second_brain.wiki.scale_demo import create_scale_vault
 
 
@@ -70,6 +70,35 @@ def _record_processes(path: Path | None, children: Sequence[subprocess.Popen[byt
     temporary.replace(path)
 
 
+def _require_completed_seed(vault: Path) -> None:
+    """Do not mistake a partial seed's Git directory for a finished demo."""
+    path = vault / MARKER
+    if not path.exists() and not path.is_symlink():
+        return  # Empty and imported managed vaults need no demo marker.
+    try:
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("unsafe marker")
+        marker = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(marker, dict)
+            or marker.get("format") != FORMAT_VERSION
+            or marker.get("state") not in ("seeding", "complete")
+        ):
+            raise ValueError("invalid marker")
+    except (OSError, ValueError) as exc:
+        raise SystemExit(
+            "Demo marker is invalid or unreadable; inspect or restore it before starting."
+        ) from exc
+    if marker["state"] == "seeding":
+        raise SystemExit(
+            "Demo seed is unfinished. Use the explicit --resume setup procedure with "
+            "the same template before starting services. --empty does not finish a seed."
+        )
+    repository = vault / ".wiki.git"
+    if not repository.is_dir() or repository.is_symlink():
+        raise SystemExit("Completed demo repository is missing or unsafe; inspect or restore it.")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
@@ -111,6 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     else:
         vault = (args.vault or root / ".demo" / "vault").resolve()
+    _require_completed_seed(vault)
     if args.scale_pages is None and not (vault / ".wiki.git").exists() and not args.empty:
         seed_vault(vault)
     if not (root / "frontend" / "node_modules").is_dir():
