@@ -961,6 +961,17 @@ core-label recovery, unchanged star positions and article/history navigation.
 This bounds the two active star labels; it does not promise that labels avoid
 every other star or that a dense map becomes comfortable on a physical device.
 
+The star display cap counts Unicode codepoints before keeping its 25-character
+prefix and ellipsis. Previously UTF-16 slicing could cut an astral character in
+half and render a replacement glyph even though the full page title was valid.
+Two real-service narrow/wide regressions reproduce the old broken mathematical
+symbol and cover both a mathematical symbol and an emoji after correction.
+Full accessible names, SVG titles, selected-page headings, star positions,
+graph edges and article/history navigation are retained. This is codepoint-safe
+truncation; combining sequences and joined emoji are not grapheme-aware.
+The native Linux runner lacks some emoji glyphs: exact DOM codepoints and
+well-formed truncation do not prove font coverage or physical-device rendering.
+
 ## Native minimum text size
 
 Native Chromium minimum text size is checked separately from narrow viewports.

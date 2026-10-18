@@ -376,7 +376,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
       const related = selectedNode && (id === selectedNode || adjacency.get(selectedNode)!.has(id));
       const dimmed = !matching(id) || (selectedNode !== null && !related);
-      const label = name(id).length > 27 ? name(id).slice(0, 25) + "…" : name(id);
+      const titleLetters = [...name(id)];
+      const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
       return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
     stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${Math.max(340, rows * 300) + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;

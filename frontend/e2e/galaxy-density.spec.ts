@@ -3,6 +3,59 @@ import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
 for (const width of [390, 1440]) {
+  test(`galaxy display caps keep astral title characters intact (${width})`, async ({ page, request }, info) => {
+    const token = randomUUID(), group = `unicode-label-${token}`;
+    const ids = [`unicode-core-${token}`, `unicode-neighbor-${token}`];
+    const titles = ["Synthetic orbital guide 𝛼 beyond the horizon", "Synthetic orbital guide 🚀 through the night"];
+    const owned: string[] = [];
+    try {
+      for (const [index, id] of ids.entries()) {
+        const response = await request.post(`/api/wiki/pages/${id}`, { data: {
+          markdown: `---\ngalaxy_group: ${group}\ngalaxy_label: Synthetic Unicode constellation\n${index === 0 ? "galaxy_anchor: true\n" : ""}---\n# ${titles[index]}\n\n[[${ids[1 - index]}]]\n`,
+          base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true); owned.push(id);
+      }
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/galaxy?page=${ids[0]}`);
+      const stars = page.locator(".galaxy-star");
+      await expect(stars).toHaveCount(2);
+      const positions = await stars.evaluateAll(elements => elements.map(el => el.getAttribute("transform")));
+      for (const [index, id] of ids.entries()) {
+        const star = page.locator(`.galaxy-star[data-node="${id}"]`);
+        await star.focus(); await page.keyboard.press("Enter");
+        await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(titles[index]);
+        await expect(star).toHaveAttribute("aria-label", new RegExp(titles[index]));
+        await expect(star.locator("title")).toHaveText(titles[index]);
+        const label = star.locator("text");
+        await expect(label).toHaveAttribute("data-label", [...titles[index]].slice(0, 25).join("") + "…");
+        await expect(label).toBeVisible();
+        const geometry = await label.evaluate(element => {
+          const label = element as SVGGraphicsElement;
+          const box = label.getBoundingClientRect(), bounds = label.ownerSVGElement!.getBoundingClientRect();
+          return { text: label.textContent || "", inside: box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom };
+        });
+        expect(geometry.text).not.toMatch(/[\uD800-\uDFFF]/u);
+        expect(geometry.inside).toBe(true);
+      }
+      expect(await stars.evaluateAll(elements => elements.map(el => el.getAttribute("transform")))).toEqual(positions);
+      const graph = await (await request.get("/api/wiki/graph")).json();
+      expect(graph.edges.filter((edge: any) => ids.includes(edge.source))).toHaveLength(2);
+      await page.screenshot({ path: info.outputPath(`unicode-star-label-${width}.png`), fullPage: true });
+      await page.locator(".galaxy-selected-heading .galaxy-article").click();
+      await expect(page.locator("article > h1")).toHaveText(titles[1]);
+      await page.goBack();
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(titles[1]);
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await (await request.get(`/api/wiki/pages/${id}`)).json();
+        expect((await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: current.revision, request_id: randomUUID() } })).ok()).toBe(true);
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
 test(`dense curated constellation shows direct links and keyboard zoom (${width})`, async ({ page, request }, info) => {
   test.setTimeout(180_000);
   const prefix = `density-${randomUUID()}`;
