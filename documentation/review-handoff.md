@@ -365,7 +365,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v21`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v22`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -392,8 +392,23 @@ image brackets inventing a wikilink. Separate CRLF source/history, excerpt label
 older-index receipt and real API/Vite article/galaxy cases cover the correction.
 Version v21 requires rebuilding older derived receipts, potentially incurring
 configured embedding costs, without changing Markdown, IDs or history. This is
-not full lexer/sanitizer parity: bare URL/autolink syntax and other image/label
-forms remain outside this bounded correction.
+not full lexer/sanitizer parity; other image/label forms remain outside this
+bounded correction.
+
+URL/autolink navigation projection now follows bounded Marked12 token rules:
+ordinary protocol/www URLs, angle-scheme links, punctuation backpedaling,
+code/extension precedence and separate bare-URL versus angle-link anchor state.
+A URL containing wiki-shaped brackets stays visible as an external URL, without
+inventing a wiki edge or backlink. Excerpts use their own prose projection so
+visible URL text is retained; existing excerpt formatting is not a raw-URL
+fidelity guarantee. Twenty-nine syntax/context controls match the actual
+installed frontend extension; the preceding store disagrees on nineteen.
+CRLF/store/history, excerpt, receipt and real-service article/galaxy cases cover
+the change. Version v22 invalidates earlier derived receipts including v21;
+rebuilding configured vectors may incur embedding costs. Source Markdown, IDs,
+history and REST/MCP/mutation contracts remain unchanged. Coverage does not
+establish complete inline HTML/escape behavior, every uppercase-scheme token
+position, or a general parser complexity guarantee.
 
 The browser CI job now has a 20-minute budget, preserving every profile,
 assertion and per-test timeout. On the preceding revision all six harness

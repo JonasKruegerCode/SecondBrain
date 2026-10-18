@@ -111,6 +111,7 @@ def test_unclosed_comments_hide_headings_but_code_comment_literals_remain(tmp_pa
         "managed-snapshots-v10",
         "managed-snapshots-v19",
         "managed-snapshots-v20",
+        "managed-snapshots-v21",
     ],
 )
 def test_title_projection_upgrade_invalidates_ready_index_receipts(

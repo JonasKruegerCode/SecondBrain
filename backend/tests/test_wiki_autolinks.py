@@ -1,0 +1,77 @@
+"""Bounded URL token cases compared with the installed frontend Marked12 extension."""
+
+from pathlib import Path
+
+import pytest
+
+from second_brain.wiki.store import (
+    LINK_RE,
+    WikiStore,
+    _markdown_escaped,
+    plain_text_excerpt,
+    prose_links,
+)
+
+
+@pytest.mark.parametrize(
+    "markdown,expected",
+    [
+        ("text <a>https://x.test/[[hidden]]</a>", set()),
+        ('text <a href="/">x</a >https://x.test/[[shown]]', {"shown"}),
+        ('text <a href="/"> <custom:record/[[hidden]]> </a>', set()),
+        ("https://example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("prefixhttps://example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("www.example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("ftp://example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("<https://example.test/[[hidden]]> [[shown]]", {"shown"}),
+        ("<custom:record/[[hidden]]> [[shown]]", {"shown"}),
+        ("<x:record/[[shown]]>", {"shown"}),
+        ("https://example.test/(unclosed/[[shown]]", {"shown"}),
+        ("https://example.test/(closed/[[hidden]]) [[shown]]", {"shown"}),
+        ("https://example.test/[[hidden]]). [[shown]]", {"shown"}),
+        ("https://example.test/[[hidden]]&amp; [[shown]]", {"shown"}),
+        ("https://example.test/<[[shown]]>", {"shown"}),
+        ("[[shown]]https://example.test/[[hidden]]", {"shown"}),
+        ("`https://example.test/[[hidden]]` [[shown]]", {"shown"}),
+        ("https://example.test/`[[hidden]]` [[shown]]", {"shown"}),
+        ("**https://example.test/[[hidden]]** [[shown]]", {"shown"}),
+        ("> https://example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("- https://example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("a | b\n--- | ---\nhttps://example.test/[[hidden]] | [[shown]]", {"shown"}),
+        ("[label [[shown]]](https://example.test/[[hidden]])", {"shown"}),
+        ("text <a href='/'>https://example.test/[[shown]]</a>", {"shown"}),
+        ("HTTPS://example.test/[[hidden]] [[shown]]", {"shown"}),
+        ("prefix HTTPS://example.test/[[shown]]", {"shown"}),
+        ("\\<custom:record/[[shown]]>", {"shown"}),
+        ("[[https://example.test/target|shown]]", {"https://example.test/target"}),
+        ("https://example.test/[[hidden]]\n\n[[shown]]", {"shown"}),
+    ],
+)
+def test_url_navigation_scope(markdown: str, expected: set[str]) -> None:
+    prose = prose_links(markdown)
+    assert {
+        m.group(1)
+        for m in LINK_RE.finditer(prose)
+        if m.group(1).strip() and not _markdown_escaped(prose, m.start())
+    } == expected
+
+
+def test_urls_remain_excerpt_text_without_becoming_graph_edges(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    for target in ("hidden", "shown"):
+        store.save_page(target, f"# {target}", None, target)
+    markdown = "# URL boundary\r\n\r\nhttps://example.test/[[hidden]]\r\n\r\n[[shown]]\r\n"
+    saved = store.save_page("source", markdown, None, "source")
+    assert "https://example.test/" in saved["excerpt"]
+    reopened = WikiStore(tmp_path)
+    assert reopened.backlinks("hidden")["total"] == 0
+    assert reopened.backlinks("shown")["total"] == 1
+    assert reopened._git("show", "HEAD:pages/source.md") == markdown.encode()
+    reopened.save_page("source", markdown + "\r\n[[hidden]]", saved["revision"], "next")
+    assert reopened.backlinks("hidden")["total"] == 1
+    assert len(reopened.history("source")) == 2
+    assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
+
+
+def test_excerpt_keeps_visible_url_text() -> None:
+    assert "https://example.test/" in plain_text_excerpt("https://example.test/[[visible]]")

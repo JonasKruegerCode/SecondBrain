@@ -140,6 +140,71 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [390, 1440]) {
+  test(`URL autolinks stay out of graph evidence at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const source = `url-source-${randomUUID()}`;
+    const shown = `url-shown-${randomUUID()}`;
+    const hidden = `url-hidden-${randomUUID()}`;
+    const markdown = ["# URL boundary source", "",
+      `https://example.test/[[${hidden}]]`, "",
+      `<https://example.test/[[${hidden}]]>`, "",
+      `www.example.test/[[${hidden}]]`, "",
+      `[[${shown}|Visible companion]]`, "",
+      `> https://example.test/[[${hidden}]]`, ">", `> [[${shown}|Quoted companion]]`, "",
+      `- https://example.test/[[${hidden}]] [[${shown}|Listed companion]]`, "",
+      `Source | Companion`, `--- | ---`,
+      `https://example.test/[[${hidden}]] | [[${shown}]]`, "",
+    ].join("\r\n");
+    const endpoint = (id: string) => `/api/wiki/pages/${id}`;
+    const created: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const [id, body] of [[shown, "# Reference companion"], [hidden, "# Metadata companion"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: { markdown: body, base_revision: null, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true); created.push(id);
+      }
+      const original = await (await request.get(endpoint(source))).json();
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("URL boundary source");
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(4);
+      await expect(page.locator(`.prose a[data-wiki-target='${shown}']`)).toHaveCount(4);
+      await expect(page.locator(`.prose a[href*='example.test']`)).toHaveCount(6);
+      const graph = await (await request.get("/api/wiki/graph")).json();
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === source)
+        .map((edge: { target: string }) => edge.target)).toEqual([shown]);
+      expect((await (await request.get(`${endpoint(hidden)}/backlinks`)).json()).total).toBe(0);
+      expect(original.excerpt).toContain("https://example.test/");
+      await page.screenshot({ path: info.outputPath(`url-autolinks-${width}.png`), fullPage: true });
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown.replace(/\r\n/g, "\n"));
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      const current = await (await request.get(endpoint(source))).json();
+      expect(current.markdown).toBe(markdown); expect(current.revision).toBe(original.revision);
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await expect(page.locator(`.galaxy-evidence a[data-open='${shown}']`)).toHaveCount(1);
+      await expect(page.locator(`.galaxy-evidence a[data-open='${hidden}']`)).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath(`url-autolinks-galaxy-${width}.png`), fullPage: true });
+      const saved = await request.post(endpoint(source), { data: {
+        markdown: markdown + `\r\n[[${hidden}]]`, base_revision: original.revision, request_id: randomUUID(),
+      } });
+      expect(saved.ok()).toBe(true);
+      expect((await (await request.get(`${endpoint(hidden)}/backlinks`)).json()).total).toBe(1);
+      expect((await (await request.get(`${endpoint(source)}/history`)).json()).history).toHaveLength(2);
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await request.get(endpoint(id)); expect(current.ok()).toBe(true);
+        const response = await request.delete(endpoint(id), { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
 for (const method of ["keyboard", "wheel", "touch-emulation"] as const) {
   test(`narrow demo table reveals its linked third column with ${method}`, async ({ browser, browserName }, info) => {
     test.skip(method === "touch-emulation" && browserName !== "chromium", "CDP touch input is Chromium emulation, not a physical device");

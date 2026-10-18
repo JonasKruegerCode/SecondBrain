@@ -41,6 +41,13 @@ _INLINE_LINK_RE = re.compile(
     r"""(?:\s+("(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)))?"""
     r"\s*\)"
 )
+# Marked12 URL/autolink token boundaries; punctuation trimming runs to a fixpoint.
+_ANCHOR_TAG_RE = re.compile(r"</?a(?:\s[^<>]*?)?\s*/?>", re.I)
+_AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
+_URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
+_URL_BACKPEDAL_RE = re.compile(
+    r"""(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![A-Za-z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+"""
+)
 FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
 
@@ -253,7 +260,7 @@ def _list_item_end(lines: list[str], start: int, match: re.Match[str]) -> tuple[
     return index, "\n".join(inner).rstrip("\n"), indent
 
 
-def prose_blocks(markdown: str, *, for_links: bool = False) -> str:
+def prose_blocks(markdown: str, *, for_links: bool = False, for_excerpt: bool = False) -> str:
     """Project prose without making quoted code into links or quoted H1s into titles.
 
     An explicit work stack handles nested quotes without Python recursion. Only
@@ -269,7 +276,11 @@ def prose_blocks(markdown: str, *, for_links: bool = False) -> str:
             quoted = quoted or segment.quoted
             prefix += segment.prefix
             parts = _prose_segments(
-                segment.markdown, quoted=quoted, top=not segment.list_item, for_links=for_links
+                segment.markdown,
+                quoted=quoted,
+                top=not segment.list_item,
+                for_links=for_links,
+                for_excerpt=for_excerpt,
             )
             pending.extend((part, prefix, quoted) for part in reversed(parts))
         else:
@@ -278,7 +289,7 @@ def prose_blocks(markdown: str, *, for_links: bool = False) -> str:
 
 
 def _prose_segments(
-    markdown: str, *, quoted: bool, top: bool, for_links: bool = False
+    markdown: str, *, quoted: bool, top: bool, for_links: bool = False, for_excerpt: bool = False
 ) -> list[str | _ProseContainer]:
     # Marked normalizes only line-leading tabs at each container level.
     # Expanding whole lines would change tabs inside explicit link targets.
@@ -576,14 +587,16 @@ def _prose_segments(
             # Inline code can cross soft line breaks, but never another block.
             # Preserve line boundaries so typed links cannot become new lines.
             projected = _without_inline_link_metadata(
-                "\n".join(str(lines[index]) for index in indices)
+                "\n".join(str(lines[index]) for index in indices), mask_urls=not for_excerpt
             )
             for index, text in zip(indices, projected.split("\n"), strict=True):
                 lines[index] = text
     for index, columns in table_lines.items():
         text = lines[index]
         assert isinstance(text, str)
-        lines[index] = _without_cell_comments(text, columns, for_links=for_links)
+        lines[index] = _without_cell_comments(
+            text, columns, for_links=for_links, for_excerpt=for_excerpt
+        )
     return lines
 
 
@@ -607,12 +620,16 @@ def _table_cells(row: str) -> list[str]:
     return [cell.strip().replace(r"\|", "|") for cell in cells]
 
 
-def _without_cell_comments(row: str, columns: int, *, for_links: bool = False) -> str:
+def _without_cell_comments(
+    row: str, columns: int, *, for_links: bool = False, for_excerpt: bool = False
+) -> str:
     """Project only rendered cells, with independent comment/code scopes."""
     parts: list[str] = []
     for cell in _table_cells(row)[:columns]:
         text = _without_comments(cell, False, has_later_close=False)[0]
-        parts.append(_without_inline_link_metadata(text) if for_links else text)
+        parts.append(
+            _without_inline_link_metadata(text, mask_urls=not for_excerpt) if for_links else text
+        )
     # A leading pipe also keeps cell text from becoming a new ATX title or
     # typed relation in the projection. Source bytes are never rewritten.
     # A raw pipe can also look like a wiki alias separator. Keep cells on
@@ -628,7 +645,30 @@ def prose_links(markdown: str) -> str:
     return prose_blocks(markdown, for_links=True)
 
 
-def _without_inline_link_metadata(text: str) -> str:
+def _autolink_end(text: str, position: int, *, bare: bool = True) -> int | None:
+    if text[position] == "<" and not _markdown_escaped(text, position):
+        angle = _AUTOLINK_RE.match(text, position)
+        if angle is not None:
+            return angle.end()
+    if not bare:
+        return None
+    # Marked's inline-text lookahead is case-sensitive even though its URL
+    # tokenizer is not. Embedded uppercase schemes remain ordinary prose.
+    if position and not text.startswith(("http://", "https://", "ftp://", "www."), position):
+        return None
+    match = _URL_RE.match(text, position)
+    if match is None:
+        return None
+    url = match.group()
+    while True:
+        backpedal = _URL_BACKPEDAL_RE.match(url)
+        shortened = backpedal.group() if backpedal is not None else ""
+        if shortened == url:
+            return position + len(url) if url else None
+        url = shortened
+
+
+def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     """Project valid inline links in source order within one block/cell.
 
     The frontend extension consumes a wikilink before ordinary link syntax.
@@ -638,12 +678,30 @@ def _without_inline_link_metadata(text: str) -> str:
     parts: list[str] = []
     code_ends = _code_span_ends(text)
     position = 0
+    in_anchor = False
     while position < len(text):
         code_end = code_ends.get(position)
         if code_end is not None:
             parts.append(re.sub(r"[^\n]", " ", text[position:code_end]))
             position = code_end
             continue
+        if text[position] == "<" and not _markdown_escaped(text, position):
+            anchor = _ANCHOR_TAG_RE.match(text, position)
+            if anchor is not None:
+                tag = anchor.group().lower()
+                if tag.startswith("<a "):
+                    in_anchor = True
+                elif tag.startswith("</a>"):
+                    in_anchor = False
+                parts.append(anchor.group())
+                position = anchor.end()
+                continue
+        if mask_urls:
+            url_end = _autolink_end(text, position, bare=not in_anchor)
+            if url_end is not None:
+                parts.append(re.sub(r"[^\n]", " ", text[position:url_end]))
+                position = url_end
+                continue
         if text[position] in "[!" and not _markdown_escaped(text, position):
             wiki = LINK_RE.match(text, position) if text.startswith("[[", position) else None
             if wiki is not None and wiki.group(1).strip():
@@ -725,7 +783,7 @@ def plain_text_excerpt(markdown: str) -> str:
     structural Markdown and non-prose blocks.
     """
     lines = []
-    for raw_line in prose_links(markdown).splitlines():
+    for raw_line in prose_blocks(markdown, for_links=True, for_excerpt=True).splitlines():
         line = raw_line.strip()
         if not line or line.startswith(("#", ">")):
             continue
