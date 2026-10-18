@@ -619,6 +619,15 @@ rendered table links and their column counts at both widths. No existing vault
 is reseeded or rewritten. The full profile also reproduced the separately
 documented native modified-click timeout; isolated success does not explain it.
 
+The narrow festival table also has a focused reading regression: reach the
+scroll region with native Tab, reveal its third-column link with ArrowRight or
+horizontal wheel input, and open the fully visible link. Chromium additionally
+uses an emulated CDP touch swipe in a touch-enabled context; WebKit skips this
+CDP-only case. All methods preserve source/revision, prevent page-wide overflow
+and retain page-error checks. The viewport screenshots show the revealed column,
+not merely an offscreen DOM link. This is not physical touch/device acceptance.
+Reproduce with the acceptance runner's `--browser-grep 'narrow demo table'`.
+
 ## Reproduce the demo and checks
 
 Use Linux or WSL with Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. From the

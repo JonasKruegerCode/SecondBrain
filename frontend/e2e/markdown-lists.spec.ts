@@ -2,6 +2,79 @@ import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 
+for (const method of ["keyboard", "wheel", "touch-emulation"] as const) {
+  test(`narrow demo table reveals its linked third column with ${method}`, async ({ browser, browserName }, info) => {
+    test.skip(method === "touch-emulation" && browserName !== "chromium", "CDP touch input is Chromium emulation, not a physical device");
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 1000 },
+      hasTouch: method === "touch-emulation", isMobile: method === "touch-emulation",
+      serviceWorkers: browserName === "webkit" ? "block" : "allow",
+      baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5173",
+    });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      const response = await context.request.get("/api/wiki/pages/lantern-festival");
+      expect(response.ok()).toBe(true);
+      const original = await response.json();
+      await page.goto("/wiki/lantern-festival");
+      await expect(page.locator("article > h1")).toHaveText(original.title);
+      const region = page.getByRole("region", { name: "Table; scroll horizontally to read all columns" });
+      await expect(region.locator("a[data-wiki-target]")).toHaveCount(6);
+      await expect(region.locator("a[href^='/resolve']")).toHaveCount(0);
+      await page.getByRole("link", { name: "Program sketch", exact: true }).click();
+      const before = await region.evaluate(el => ({ left: el.scrollLeft, width: el.clientWidth, total: el.scrollWidth }));
+      expect(before.left).toBe(0);
+      expect(before.total).toBeGreaterThan(before.width);
+      if (method === "keyboard") {
+        await page.keyboard.press("Tab");
+        await expect(region).toBeFocused();
+        for (let step = 0; step < 10; step++) await page.keyboard.press("ArrowRight");
+      } else if (method === "wheel") {
+        await region.hover();
+        await page.mouse.wheel(1000, 0);
+      } else {
+        const box = await region.boundingBox();
+        expect(box).not.toBeNull();
+        const session = await context.newCDPSession(page);
+        try {
+          const y = box!.y + 60, start = box!.x + box!.width - 20, end = box!.x + 20;
+          await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: start, y }] });
+          for (let step = 1; step <= 8; step++) {
+            await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: start + (end - start) * step / 8, y }] });
+          }
+          await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        } finally { await session.detach(); }
+      }
+      await expect.poll(() => region.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+      const link = region.getByRole("link", { name: "navigation stories", exact: true });
+      // Visibility alone does not establish that a clipped table link is readable.
+      await expect.poll(async () => {
+        const [outer, inner] = await Promise.all([region.boundingBox(), link.boundingBox()]);
+        return !!outer && !!inner && inner.x >= outer.x - 1 && inner.x + inner.width <= outer.x + outer.width + 1
+          && inner.y >= 0 && inner.y + inner.height <= 1000;
+      }).toBe(true);
+      const after = await region.evaluate(el => ({ left: el.scrollLeft, width: el.clientWidth, total: el.scrollWidth }));
+      expect(await page.evaluate(() => scrollX)).toBe(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`table-scroll-${method}.png`) });
+      await link.click();
+      await expect(page).toHaveURL(/\/wiki\/navigation-history$/);
+      await expect(page.locator("article > h1")).toHaveText("Navigation stories of Lantern Bay");
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(6);
+      await expect(page.locator(".prose a[data-wiki-target='lantern-festival']")).toHaveAttribute("href", "/wiki/lantern-festival");
+      const savedResponse = await context.request.get("/api/wiki/pages/lantern-festival");
+      expect(savedResponse.ok()).toBe(true);
+      const saved = await savedResponse.json();
+      expect(saved.markdown).toBe(original.markdown);
+      expect(saved.revision).toBe(original.revision);
+      expect(errors).toEqual([]);
+      console.info("[table-scroll] " + JSON.stringify({ engine: browserName, service_workers: browserName === "webkit" ? "block" : "allow", method, before, after, physical_device: false, source_unchanged: true }));
+    } finally { await context.close(); }
+  });
+}
+
 for (const width of [390, 1440]) {
   test(`GFM table columns agree with graph and article links at ${width}px`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 1000 });
