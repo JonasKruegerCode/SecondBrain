@@ -36,6 +36,7 @@ const MAX_WIKI_ACTIONS = 8;
 let tabConversations: Conversation[] | undefined;
 let tabTombstones: Tombstone[] | undefined;
 let tabDirtyIds: Set<string> | undefined;
+let tabBaselines: Map<string, string> | undefined;
 let reloadBlocker: () => "draft" | "reply" | undefined = () => undefined;
 export function chatReloadBlocker() {
   const active = reloadBlocker();
@@ -141,7 +142,10 @@ function load(): { conversations: Conversation[]; tombstones: Tombstone[]; unava
   return readPersistent();
 }
 
-function save(conversations: Conversation[], tombstones: Tombstone[], dirtyIds: Set<string>): boolean {
+function save(
+  conversations: Conversation[], tombstones: Tombstone[], dirtyIds: Set<string>,
+  baselines: Map<string, string>,
+): boolean {
   try {
     // Persist deletion intent before the conversation snapshot. A stale tab can then
     // merge without resurrecting a conversation if the second write is interrupted.
@@ -150,11 +154,13 @@ function save(conversations: Conversation[], tombstones: Tombstone[], dirtyIds: 
     tabConversations = undefined;
     tabTombstones = undefined;
     tabDirtyIds = undefined;
+    tabBaselines = undefined;
     return true;
   } catch {
     tabConversations = conversations;
     tabTombstones = tombstones;
     tabDirtyIds = new Set(conversations.filter(item => dirtyIds.has(item.id)).map(item => item.id));
+    tabBaselines = new Map([...baselines].filter(([id]) => dirtyIds.has(id)));
     return false;
   }
 }
@@ -175,6 +181,11 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   // Preserve pending writes across SPA navigation while browser storage is full.
   // A restored in-tab snapshot must still merge its unsaved messages on recovery.
   const dirtyIds = new Set(tabDirtyIds);
+  // Immutable persisted bases survive quota failure and SPA navigation. A
+  // bounded transcript can drop old turns without becoming a concurrent edit.
+  const baselines = new Map(tabBaselines ?? loaded.conversations.map(
+    item => [item.id, transcript(item)] as const,
+  ));
   const deletedIds = new Map<string, number>();
   // Unsent text belongs to its conversation while this Chat view stays open.
   // Keep it out of saved transcripts and provider requests until Send.
@@ -191,8 +202,13 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
   const preserveUnsavedBranch = (item: Conversation, stored: ReturnType<typeof readPersistent>) => {
     const latest = stored.conversations.find(saved => saved.id === item.id);
-    if (stored.unavailable || !dirtyIds.has(item.id) || !latest ||
-        JSON.stringify(item.messages.slice(0, latest.messages.length)) === transcript(latest)) return item;
+    if (stored.unavailable || !dirtyIds.has(item.id) || !latest) return item;
+    const savedTranscript = transcript(latest);
+    if (savedTranscript === transcript(item)) {
+      baselines.set(item.id, savedTranscript); // Already saved elsewhere, no divergent work.
+      return item;
+    }
+    if (savedTranscript === baselines.get(item.id)) return item;
     // A quota-failed local branch and a different saved branch both contain work.
     // Never let recovery replace the saved branch with the local one.
     dirtyIds.delete(item.id);
@@ -252,8 +268,13 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     for (const id of drafts.keys()) {
       if (!conversations.some(item => item.id === id)) drafts.delete(id);
     }
-    storageUnavailable = !save(conversations, tombstones, dirtyIds);
+    for (const id of baselines.keys()) {
+      if (!conversations.some(item => item.id === id)) baselines.delete(id);
+    }
+    storageUnavailable = !save(conversations, tombstones, dirtyIds, baselines);
     if (!storageUnavailable) {
+      baselines.clear();
+      conversations.forEach(item => baselines.set(item.id, transcript(item)));
       dirtyIds.clear();
       deletedIds.clear();
     }
@@ -343,6 +364,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         item = latest;
         conversationNotice = "This conversation was updated in another tab. Your message follows the latest saved messages.";
       }
+      if (!stored.unavailable && !dirtyIds.has(item.id) && latest)
+        baselines.set(item.id, transcript(latest));
       item = preserveUnsavedBranch(item, stored);
       item.messages.push({ role: "user", content });
       item.messages = item.messages.slice(-MAX_MESSAGES);
@@ -390,6 +413,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       render(true);
       return;
     }
+    if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id))
+      baselines.set(conversation.id, requestSnapshot);
     const requestId = conversation.id;
     const controller = new AbortController();
     requestController = controller;

@@ -3,6 +3,166 @@ import { test } from "./reading-test";
 
 const key = "secondbrain.chat.conversations.v1";
 const question = "Initial synthetic question.";
+const boundedHistory = () => Array.from({ length: 24 }, (_, index) => ({
+  role: index % 2 ? "assistant" : "user",
+  content: `Synthetic history turn ${index}.`,
+}));
+
+for (const width of [390, 1440]) {
+  test(`bounded chat history keeps one conversation after a successful follow-up (${width})`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/chat");
+    const messages = boundedHistory();
+    await page.evaluate(({ key, messages }) => localStorage.setItem(key, JSON.stringify([
+      { id: "bounded", title: "Synthetic bounded history", updated: 1, messages },
+    ])), { key, messages });
+    await page.reload();
+    // Explicit synthetic provider response: this tests browser history, not model quality.
+    await page.route("**/api/wiki/chat", route => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ answer: "Synthetic bounded reply.", sources: [], activity: [] }),
+    }));
+    await page.getByLabel("Message").fill("Synthetic bounded follow-up.");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic bounded reply.");
+    await expect(page.locator(".chat-conversation-notice")).toHaveCount(0);
+    await expect(page.locator("[data-conversation]")).toHaveCount(1);
+    const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].id).toBe("bounded");
+    expect(saved[0].messages).toEqual([
+      ...messages.slice(2),
+      { role: "user", content: "Synthetic bounded follow-up." },
+      { role: "assistant", content: "Synthetic bounded reply.", sources: [], activity: [] },
+    ]);
+    await page.reload();
+    await expect(page.locator(".chat-message")).toHaveCount(24);
+    await expect(page.locator("[data-conversation]")).toHaveCount(1);
+    await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic bounded reply.");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await page.screenshot({ path: testInfo.outputPath(`chat-bounded-history-${width}.png`), fullPage: true });
+  });
+}
+
+test("bounded chat history keeps its original conversation after quota recovery across SPA navigation", async ({ page }) => {
+  await page.goto("/chat");
+  const messages = boundedHistory();
+  await page.evaluate(({ key, messages }) => localStorage.setItem(key, JSON.stringify([
+    { id: "bounded", title: "Synthetic bounded history", updated: 1, messages },
+  ])), { key, messages });
+  await page.reload();
+  // Explicit synthetic failure and recovery responses; no real model is called.
+  let requests = 0;
+  await page.route("**/api/wiki/chat", route => {
+    requests++;
+    return route.fulfill({
+      status: requests === 1 ? 503 : 200,
+      contentType: "application/json",
+      body: JSON.stringify(requests === 1
+        ? { message: "Synthetic provider failure." }
+        : { answer: "Synthetic SPA recovery reply.", sources: [], activity: [] }),
+    });
+  });
+  await page.evaluate(key => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (name, value) {
+      if (name === key) throw new DOMException("Synthetic full storage", "QuotaExceededError");
+      return set.call(this, name, value);
+    };
+    window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+  }, key);
+  await page.getByLabel("Message").fill("Synthetic SPA unsaved question.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-error")).toContainText("Synthetic provider failure.");
+  const navigation = page.getByRole("navigation", { name: "Primary", exact: true });
+  await navigation.getByRole("link", { name: "Home", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "A growing collection", exact: true })).toBeVisible();
+  await navigation.getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.locator(".chat-message.user").last()).toContainText("Synthetic SPA unsaved question.");
+  await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic SPA recovery reply.");
+  await expect(page.locator(".chat-conversation-notice")).toHaveCount(0);
+  const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  expect(saved).toHaveLength(1);
+  expect(saved[0].id).toBe("bounded");
+  expect(saved[0].messages).toEqual([
+    ...messages.slice(2),
+    { role: "user", content: "Synthetic SPA unsaved question." },
+    { role: "assistant", content: "Synthetic SPA recovery reply.", sources: [], activity: [] },
+  ]);
+  expect(requests).toBe(2);
+  await page.reload();
+  await expect(page.locator("[data-conversation]")).toHaveCount(1);
+  await expect(page.locator(".chat-message")).toHaveCount(24);
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic SPA recovery reply.");
+});
+
+test("bounded chat history recovery preserves a concurrent saved branch", async ({ page, context }) => {
+  await page.goto("/chat");
+  const messages = boundedHistory();
+  await page.evaluate(({ key, messages }) => localStorage.setItem(key, JSON.stringify([
+    { id: "bounded", title: "Synthetic bounded history", updated: 1, messages },
+  ])), { key, messages });
+  await page.reload();
+  // Both responses are synthetic; no provider request is made by this test.
+  let requests = 0;
+  await page.route("**/api/wiki/chat", route => {
+    requests++;
+    return route.fulfill({
+      status: requests === 1 ? 503 : 200,
+      contentType: "application/json",
+      body: JSON.stringify(requests === 1
+        ? { message: "Synthetic provider failure." }
+        : { answer: "Synthetic recovery reply.", sources: [], activity: [] }),
+    });
+  });
+  await page.evaluate(key => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (name, value) {
+      if (name === key) throw new DOMException("Synthetic full storage", "QuotaExceededError");
+      return set.call(this, name, value);
+    };
+    window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+  }, key);
+  await page.getByLabel("Message").fill("Synthetic unsaved bounded question.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-error")).toContainText("Synthetic provider failure.");
+  const other = await context.newPage();
+  await other.goto("/chat");
+  const concurrent = [
+    ...messages.slice(2),
+    { role: "user", content: "Synthetic concurrent bounded question." },
+    { role: "assistant", content: "Synthetic concurrent bounded answer." },
+  ];
+  await other.evaluate(({ key, concurrent }) => {
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    saved[0].messages = concurrent;
+    saved[0].updated++;
+    localStorage.setItem(key, JSON.stringify(saved));
+  }, { key, concurrent });
+  await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic recovery reply.");
+  const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  expect(saved).toHaveLength(2);
+  expect(saved.find((item: { id: string }) => item.id === "bounded").messages).toEqual(concurrent);
+  const local = saved.find((item: { id: string }) => item.id !== "bounded");
+  expect(local.messages).toEqual([
+    ...messages.slice(2),
+    { role: "user", content: "Synthetic unsaved bounded question." },
+    { role: "assistant", content: "Synthetic recovery reply.", sources: [], activity: [] },
+  ]);
+  expect(requests).toBe(2);
+  await page.reload();
+  await expect(page.locator("[data-conversation]")).toHaveCount(2);
+  await expect(page.locator(".chat-message")).toHaveCount(24);
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic recovery reply.");
+  await page.locator('[data-conversation="bounded"]').click();
+  await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic concurrent bounded answer.");
+  await other.close();
+});
+
 for (const width of [1440, 390]) {
   test(`stale chat retains newer saved turns (${width})`, async ({ page, context }, testInfo) => {
     await page.goto("/chat");

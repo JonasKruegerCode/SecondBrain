@@ -126,8 +126,14 @@ while an answer is pending, the answer is retained in a separate conversation
 with its original request context; the newer stored conversation is preserved.
 Recovery from failed browser writes also keeps a divergent unsaved branch in a
 separate conversation before any persistence action, including Send, Retry, New
-and history selection. An unchanged saved prefix still
-recovers normally. Deletion still wins over an in-flight reply. These guards compare transcript
+and history selection. Recovery compares the current stored transcript with an
+immutable known persisted base, rather than assuming older messages remain a
+prefix after the 24-message bound trims history. Normal long conversations keep
+their original ID without a false concurrent-edit notice. Known bases survive
+quota failure and SPA navigation in document memory only; successful writes
+refresh them from the bounded saved messages. Identical already-saved messages
+do not need a duplicate branch. The persisted storage format and provider
+context limits are unchanged. Deletion still wins over an in-flight reply. These guards compare transcript
 content rather than timestamps. Browser storage is not a transactional multiwriter
 database: simultaneous cross-document writes and eviction beyond the bounded
 history remain outside this guarantee.
@@ -136,6 +142,11 @@ The concurrency regression uses a real unconfigured chat error for stale
 submission/retry and a held synthetic answer adapter for the late-reply race;
 it does not establish real model quality. Both browser reading profiles run
 these cases, including 390px and 1440px stale-view notices and reload persistence.
+Additional synthetic cases cover 24-message follow-ups at both widths, real
+concurrent branch preservation during injected quota failure, and quota recovery
+after leaving and returning to Chat through SPA navigation. Mocked provider
+responses and injected quota errors are adapter checks, not model-quality or
+physical storage-exhaustion evidence.
 
 A full browser-local history scrolls within the desktop conversation list instead
 of stretching the whole workspace and pushing the composer below the viewport.
