@@ -78,6 +78,12 @@ def _without_comments(line: str, in_comment: bool) -> tuple[str, bool]:
             if token.group("code") is not None:
                 parts.append(token.group())
             else:
+                # Marked accepts these two complete inline comment tokens.
+                # Their following prose must not inherit an open-comment state.
+                tail = line[token.end() :]
+                if tail.startswith((">", "->")):
+                    line = tail[1 if tail.startswith(">") else 2 :]
+                    continue
                 if not "".join(parts).strip():
                     parts.append(" ")
                 in_comment = True

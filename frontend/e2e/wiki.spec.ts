@@ -3047,6 +3047,63 @@ for (const width of [390, 1440]) {
 
 
 for (const width of [390, 1440]) {
+  test(`short inline comments retain visible wiki links (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const token = randomUUID(), source = `short-comment-source-${token}`;
+    const visible = `short-comment-visible-${token}`, hidden = `short-comment-hidden-${token}`;
+    const created: string[] = [];
+    const save = async (id: string, markdown: string) => {
+      const response = await request.post(`/api/wiki/pages/${id}`, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+      expect(response.ok()).toBe(true); created.push(id); return response.json();
+    };
+    let markdown = `# Synthetic short annotations\n\nInline<!-->[[${visible}|Short companion]].\n\nInline<!--->[[${visible}|Dash companion]].\n\nNormal<!-- annotation -->[[${visible}|Normal companion]].\n\n<!-->[[${hidden}|Block suffix]]\n\nCode \`<!-->[[${hidden}|Code example]]\`.\n`;
+    try {
+      await save(visible, "# Synthetic visible destination");
+      await save(hidden, "# Synthetic literal destination");
+      await save(source, markdown);
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Synthetic short annotations");
+      const check = async () => {
+        for (const name of ["Short companion", "Dash companion", "Normal companion"]) {
+          await expect(page.locator(".prose").getByRole("link", { name, exact: true })).toHaveCount(1);
+        }
+        await expect(page.locator(`.prose [data-wiki-target="${hidden}"]`)).toHaveCount(0);
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: any) => edge.source === source)).toEqual([{ source, target: visible, type: "wikilink" }]);
+        expect(graph.missing_targets.filter((edge: any) => edge.source === source)).toEqual([]);
+        const current = await (await request.get(`/api/wiki/pages/${source}`)).json();
+        expect(current.markdown).toBe(markdown);
+        expect(current.excerpt).toContain("Short companion");
+        expect(current.excerpt).toContain("Dash companion");
+        expect(current.excerpt).not.toContain("Block suffix");
+        const backlinks = await (await request.get(`/api/wiki/pages/${visible}/backlinks`)).json();
+        expect(backlinks.backlinks.some((item: any) => item.id === source)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await check();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      markdown += "\nAn intentional synthetic edit.\n";
+      await page.locator("#editor").fill(markdown);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".notice")).toContainText("Saved locally");
+      await check(); await page.reload(); await check();
+      expect((await (await request.get(`/api/wiki/pages/${source}/history`)).json()).history).toHaveLength(2);
+      await page.screenshot({ path: info.outputPath(`short-inline-comment-${width}.png`), fullPage: true });
+      await page.locator(".prose").getByRole("link", { name: "Short companion", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Synthetic visible destination");
+      await page.goBack(); await check();
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await (await request.get(`/api/wiki/pages/${id}`)).json();
+        const response = await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: current.revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`block comment closing lines cannot publish phantom links (${width})`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 900 });
     const token = randomUUID(), source = `comment-source-${token}`;
