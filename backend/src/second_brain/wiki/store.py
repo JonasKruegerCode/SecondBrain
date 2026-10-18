@@ -236,7 +236,7 @@ def _list_item_end(lines: list[str], start: int, match: re.Match[str]) -> tuple[
     return index, "\n".join(inner).rstrip("\n"), indent
 
 
-def prose_blocks(markdown: str) -> str:
+def prose_blocks(markdown: str, *, for_links: bool = False) -> str:
     """Project prose without making quoted code into links or quoted H1s into titles.
 
     An explicit work stack handles nested quotes without Python recursion. Only
@@ -251,14 +251,18 @@ def prose_blocks(markdown: str) -> str:
         if isinstance(segment, _ProseContainer):
             quoted = quoted or segment.quoted
             prefix += segment.prefix
-            parts = _prose_segments(segment.markdown, quoted=quoted, top=not segment.list_item)
+            parts = _prose_segments(
+                segment.markdown, quoted=quoted, top=not segment.list_item, for_links=for_links
+            )
             pending.extend((part, prefix, quoted) for part in reversed(parts))
         else:
             output.append(prefix + segment)
     return "\n".join(output)
 
 
-def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _ProseContainer]:
+def _prose_segments(
+    markdown: str, *, quoted: bool, top: bool, for_links: bool = False
+) -> list[str | _ProseContainer]:
     # Marked normalizes only line-leading tabs at each container level.
     # Expanding whole lines would change tabs inside explicit link targets.
     markdown = re.sub(
@@ -531,39 +535,53 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             lines[index], in_inline_comment = _without_comments(
                 text, in_inline_comment, has_later_close=offset < last_close
             )
+        if for_links and indices:
+            # Inline code can cross soft line breaks, but never another block.
+            # Preserve line boundaries so typed links cannot become new lines.
+            projected = _without_code_spans("\n".join(str(lines[index]) for index in indices))
+            for index, text in zip(indices, projected.split("\n"), strict=True):
+                lines[index] = text
     for index in table_lines:
         text = lines[index]
         assert isinstance(text, str)
-        lines[index] = _without_cell_comments(text)
+        lines[index] = _without_cell_comments(text, for_links=for_links)
     return lines
 
 
-def _without_cell_comments(row: str) -> str:
+def _without_cell_comments(row: str, *, for_links: bool = False) -> str:
     """Each unescaped GFM pipe starts a new inline scope, even inside code."""
     parts: list[str] = []
     start = 0
     slashes = 0
+
+    def project(cell: str) -> str:
+        text = _without_comments(cell, False, has_later_close=False)[0]
+        return _without_code_spans(text) if for_links else text
+
     for offset, char in enumerate(row):
         if char == "|" and slashes % 2 == 0:
-            parts.append(_without_comments(row[start:offset], False, has_later_close=False)[0])
+            parts.append(project(row[start:offset]))
             parts.append("|")
             start = offset + 1
         slashes = slashes + 1 if char == "\\" else 0
-    parts.append(_without_comments(row[start:], False, has_later_close=False)[0])
+    parts.append(project(row[start:]))
     return "".join(parts)
 
 
 def prose_links(markdown: str) -> str:
     """Ignore code examples and comments when deriving explicit prose links."""
-    text = prose_blocks(markdown)
+    return prose_blocks(markdown, for_links=True)
+
+
+def _without_code_spans(text: str) -> str:
+    """Mask inline code within one block/cell without joining source lines."""
     parts: list[str] = []
     position = 0
-    # This retains the existing cross-line projection; paragraph-scope parsing
-    # is deliberately outside this code-delimiter correction.
     for start, end in sorted(_code_span_ends(text).items()):
         if start < position:
             continue
         parts.append(text[position:start])
+        parts.append(re.sub(r"[^\n]", " ", text[start:end]))
         position = end
     parts.append(text[position:])
     return "".join(parts)

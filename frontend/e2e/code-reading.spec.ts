@@ -751,3 +751,96 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+
+const endpoint = (id: string) => `/api/wiki/pages/${encodeURIComponent(id)}`;
+
+for (const width of [390, 1440]) {
+  test(`code spans respect paragraph, heading and table cell scopes at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const owned: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    const cases = [
+      { name: "paragraph", visible: true, body: (target: string) => `\`open\n\n[[${target}]]\n\n\`close` },
+      { name: "heading", visible: true, body: (target: string) => `\`open\n## [[${target}]]\n\`close` },
+      { name: "table-cell", visible: true, body: (target: string) => `| one | two |\n| --- | --- |\n| \`open | [[${target}]]\` |` },
+      { name: "same-paragraph", visible: false, body: (target: string) => `\`open\n[[${target}]]\n\`close` },
+    ];
+    try {
+      for (const fixture of cases) {
+        const token = randomUUID().slice(0, 8);
+        const source = `scope-source-${token}`;
+        const target = `scope-target-${token}`;
+        const title = `Synthetic ${fixture.name} scope`;
+        const markdown = `# ${title}\n\n${fixture.body(target)}\n`;
+        let revision = "";
+        for (const [id, body] of [[target, "# Synthetic scope companion\n\nFictional target.\n"], [source, markdown]]) {
+          const created = await request.post(endpoint(id), { data: {
+            markdown: body, base_revision: null, request_id: randomUUID(),
+          } });
+          expect(created.ok()).toBe(true);
+          owned.push(id);
+          if (id === source) revision = (await created.json()).revision;
+        }
+        await page.goto(`/wiki/${source}`);
+        const assertReading = async () => {
+          await expect(page.locator("article > h1")).toHaveText(title);
+          const links = page.locator(`.prose a[href='/wiki/${target}']`);
+          await expect(links).toHaveCount(Number(fixture.visible));
+          if (fixture.visible) {
+            await expect(links).toHaveText(target);
+            await expect(page.locator(".prose code a")).toHaveCount(0);
+          } else {
+            await expect(page.locator(".prose code")).toContainText(`[[${target}]]`);
+            await expect(page.locator(".prose a")).toHaveCount(0);
+          }
+          if (fixture.name === "heading") await expect(page.locator(".prose h2 a")).toHaveText(target);
+          if (fixture.name === "table-cell") await expect(page.locator(".prose td a")).toHaveText(target);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        };
+        await assertReading();
+        // Real API graph/backlinks must agree with the browser's rendered anchor.
+        const graphResponse = await request.get("/api/wiki/graph");
+        expect(graphResponse.ok()).toBe(true);
+        const graph = await graphResponse.json();
+        expect(graph.edges.filter((edge: { source: string }) => edge.source === source))
+          .toEqual(fixture.visible ? [{ source, target, type: "wikilink" }] : []);
+        expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === source)).toEqual([]);
+        const backlinks = await request.get(endpoint(target) + "/backlinks");
+        expect(backlinks.ok()).toBe(true);
+        expect((await backlinks.json()).backlinks.map((entry: { id: string }) => entry.id))
+          .toEqual(fixture.visible ? [source] : []);
+
+        await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+        await expect(page.locator("#editor")).toHaveValue(markdown);
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.reload();
+        await assertReading();
+        await page.screenshot({ path: info.outputPath(`code-span-${fixture.name}-${width}.png`), fullPage: true });
+        if (fixture.visible) {
+          await page.locator(`.prose a[href='/wiki/${target}']`).click();
+          await expect(page.locator("article > h1")).toHaveText("Synthetic scope companion");
+          await page.goBack();
+          await assertReading();
+        }
+        const stored = await request.get(endpoint(source));
+        expect(stored.ok()).toBe(true);
+        expect(await stored.json()).toMatchObject({ markdown, revision });
+        const history = await request.get(endpoint(source) + "/history");
+        expect(history.ok()).toBe(true);
+        expect((await history.json()).history).toHaveLength(1);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of [...owned].reverse()) {
+        const current = await request.get(endpoint(id));
+        expect(current.ok()).toBe(true);
+        const removed = await request.delete(endpoint(id), { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(removed.ok()).toBe(true);
+      }
+    }
+  });
+}

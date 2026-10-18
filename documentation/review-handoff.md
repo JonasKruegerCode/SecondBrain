@@ -337,7 +337,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v17`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v18`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -351,7 +351,7 @@ a synthetic 150-level quote control covers that boundary. Original Markdown,
 page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
 prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
 Old v1–v14 index receipts rebuild with
-v17; configured vector rebuilds can incur embedding costs.
+v18; configured vector rebuilds can incur embedding costs.
 
 List items now enter the same iterative container projection before quote/code
 classification, including a quote on the marker's first line (`- > ~~~`).
@@ -425,7 +425,7 @@ and reference differences remain outside this change. Two real-service browser
 cases (390/1440px) each exercise all three forms, same-line link navigation,
 editor mutation, reload, graph and two Git history entries. Both fail on the
 preceding product's literal title. Derived provider receipts must rebuild under
-v17; this can incur configured embedding costs without rewriting Markdown/history.
+v18; this can incur configured embedding costs without rewriting Markdown/history.
 
 Block comments now keep their entire type-2 HTML token out of derived links and
 excerpts, including the complete closing line. Previously `<!-- note -->[[target]]`
@@ -443,7 +443,7 @@ comment/context cases and all117 earlier delimiter cases, including the nine
 former block-comment suffix differences. Two real-service 390/1440px browser
 regressions fail on the old phantom edge and pass with actual editor mutation,
 reload, history, normal inline-link navigation and preserved source bytes.
-The current index identity is v17, requiring older receipts to rebuild, with
+The current index identity is v18, requiring older receipts to rebuild, with
 possible configured embedding costs. No frontend rendering/sanitizer, mutation
 or API contract is changed.
 
@@ -457,7 +457,7 @@ heading, table/list/quote, normal multiline/block/code controls and exact CRLF
 source/history; sixteen fail on the unchanged preceding store. A bounded
 independent 44-case comparison agrees with installed Marked. Two real-service
 390/1440px browser cases compare actual anchors, graph/backlinks, excerpts,
-editor save, reload/Back and history. The current fingerprint is v17; older
+editor save, reload/Back and history. The current fingerprint is v18; older
 provider receipts rebuild without rewriting Markdown, potentially incurring
 configured embedding costs. No article renderer/sanitizer or API mutation change.
 An inline `<!--` without any `-->` in its remaining projection container is
@@ -473,7 +473,7 @@ nine of the initial twenty fail on the unchanged preceding store. A bounded
 independent 64-case comparison agrees with installed Marked. Two real-service
 390/1440px browser cases compare actual anchors/headings with graph/backlinks,
 excerpt text, editor save/reload/Back and two Git history entries. The current
-index fingerprint is v17; old receipts rebuild without rewriting Markdown,
+index fingerprint is v18; old receipts rebuild without rewriting Markdown,
 potentially incurring configured embedding costs. Renderer/sanitizer and mutation
 contracts are unchanged.
 
@@ -496,7 +496,7 @@ Two real-service 390/1440px browser cases check seven actual visible links,
 code/valid-comment exclusions, graph/backlinks, exact editor save, reload/Back,
 no overflow and two Git history entries. This changes derived projections only;
 original Markdown, IDs, history, rendering/sanitizer and REST/MCP mutation
-contracts are unchanged. Index identity v17 rebuilds older receipts; configured
+contracts are unchanged. Index identity v18 rebuilds older receipts; configured
 embedding costs may apply. General Markdown/escaping/reference semantics and
 existing table column-count approximations remain separate limits.
 
@@ -506,16 +506,32 @@ Backtick runs close only on an equally long maximal run; a backslash inside code
 does not escape its closing delimiter. Comment scanning uses the same delimiter
 index in source order, so backticks inside comments do not capture later prose.
 Original Markdown, IDs, history, renderer/sanitizer and mutation contracts are
-unchanged. Current fingerprint v17 rebuilds older provider receipts, potentially
+unchanged. Current fingerprint v18 rebuilds older provider receipts, potentially
 incurring configured embedding costs. General Markdown/reference semantics and
-cross-paragraph inline projection and excerpt backslash presentation remain
-separate limits. Fifteen focused backend cases include exact CRLF source,
+excerpt backslash presentation remain separate limits. Fifteen focused backend cases include exact CRLF source,
 graph/backlink changes after a real revision, reopening and original Git bytes.
 Six of fourteen delimiter cases fail on the preceding store; all fourteen agree
 with installed Marked 12.0.2. A separate bounded 1,024-case comparison of run
 lengths, opening/closing backslashes and surrounding comments/code also agrees.
 Two real-service narrow/wide cases check visible anchors against graph/backlinks
 and excerpts, direct editor save, reload/Back, history and page overflow.
+
+Inline code now stays within one Markdown block or GFM cell when deriving
+links/excerpts. Previously a backtick in an earlier paragraph, heading, list item,
+quote paragraph or table cell could hide a later visible wikilink. The existing
+block/container projection now scopes delimiter matching; soft line breaks within
+one paragraph still belong to one code span. Masking retains newlines and spaces
+to avoid concatenating link syntax. Default title projection is unchanged.
+Nine CRLF Git-store regressions cover graph/backlinks, source, revision and history;
+a bounded 72-variant comparison with installed Marked 12.0.2 agrees. Two real-service
+390/1440px cases cover three visible-link boundaries plus same-paragraph code,
+raw editor/cancel/reload, navigation/Back and source/history preservation. Both
+fail against the preceding store on the missing graph edge and pass with the fix.
+Three new screenshots were personally inspected (narrow table and code control,
+wide heading). This is scoped evidence, not full Markdown/reference parity.
+Fingerprint v18 invalidates older derived receipts; rebuilding configured vectors
+may incur embedding costs. Markdown, IDs, Git history, rendering and REST/MCP
+mutation contracts are unchanged.
 
 The existing synthetic Git-interruption test now atomically publishes its PID
 handshake after writing it. An observed race allowed cancellation between file

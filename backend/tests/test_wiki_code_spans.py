@@ -1,7 +1,7 @@
 """Exact inline code delimiters checked against installed Marked 12.0.2.
 
-These tests cover delimiter recognition, not a general Markdown tokenizer or
-paragraph-boundary changes. Source Markdown remains authoritative.
+These tests cover delimiter recognition and selected block/cell scopes, not a
+general Markdown tokenizer. Source Markdown remains authoritative.
 """
 
 from pathlib import Path
@@ -46,9 +46,7 @@ def test_literal_backticks_preserve_graph_backlinks_excerpt_and_source(tmp_path:
     assert saved["markdown"] == markdown
     assert "companion" in saved["excerpt"]
     assert "hidden" not in saved["excerpt"]
-    assert store.graph()["edges"] == [
-        {"source": "source", "target": "target", "type": "wikilink"}
-    ]
+    assert store.graph()["edges"] == [{"source": "source", "target": "target", "type": "wikilink"}]
     assert store.backlinks("target")["total"] == 1
     assert store.backlinks("hidden")["total"] == 0
     reopened = WikiStore(tmp_path).get_page("source")
@@ -62,3 +60,33 @@ def test_literal_backticks_preserve_graph_backlinks_excerpt_and_source(tmp_path:
     assert len(updated.history("source")) == 2
     assert updated._git("show", "HEAD:pages/source.md") == changed.encode()
     assert updated._git("show", "HEAD~1:pages/source.md") == markdown.encode()
+
+
+@pytest.mark.parametrize(
+    "body,visible",
+    [
+        ("`open\n\n[[target]]\n\n`close", True),
+        ("`open\n## [[target]]\n`close", True),
+        ("| one | two |\n| --- | --- |\n| `open | [[target]]` |", True),
+        ("- `open\n- [[target]]`", True),
+        ("> `open\n> \n> [[target]]`", True),
+        ("`open\n[[target]]\n`close", False),
+        ("> `open\n> [[target]]`", False),
+        ("- `open\n  [[target]]`", False),
+        (r"| one | two |" + "\n| --- | --- |\n" + r"| `open \| [[target]]` | other |", False),
+    ],
+)
+def test_inline_code_stays_in_its_block_or_cell(tmp_path: Path, body: str, visible: bool) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("target", "# Target", None, "target")
+    markdown = ("# Source\n\n" + body).replace("\n", "\r\n")
+    saved = store.save_page("source", markdown, None, "source")
+    reopened = WikiStore(tmp_path)
+    assert reopened.graph()["edges"] == (
+        [{"source": "source", "target": "target", "type": "wikilink"}] if visible else []
+    )
+    assert reopened.backlinks("target")["total"] == int(visible)
+    assert (reopened.get_page("source") or {})["markdown"] == markdown
+    assert (reopened.get_page("source") or {})["revision"] == saved["revision"]
+    assert len(reopened.history("source")) == 1
+    assert reopened._git("show", "HEAD:pages/source.md") == markdown.encode()
