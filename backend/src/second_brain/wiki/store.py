@@ -58,7 +58,7 @@ def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
     return markdown[match.end() :], galaxy
 
 
-def _without_comments(line: str, in_comment: bool) -> tuple[str, bool]:
+def _without_comments(line: str, in_comment: bool, *, has_later_close: bool) -> tuple[str, bool]:
     """Read prose comments before interpreting fence markers, preserving inline code."""
     parts: list[str] = []
     while line:
@@ -83,6 +83,14 @@ def _without_comments(line: str, in_comment: bool) -> tuple[str, bool]:
                 tail = line[token.end() :]
                 if tail.startswith((">", "->")):
                     line = tail[1 if tail.startswith(">") else 2 :]
+                    continue
+                # Unlike block comments, inline comments require a terminator.
+                # Without one anywhere in this remaining container, the opener
+                # is literal prose. A later terminator is only a conservative
+                # guard: full inline block/cell scope parsing is separate.
+                if "-->" not in tail and not has_later_close:
+                    parts.append(token.group())
+                    line = tail
                     continue
                 if not "".join(parts).strip():
                     parts.append(" ")
@@ -247,6 +255,9 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
     table = False
     previous_prose = ""
     source_lines = markdown.splitlines()
+    last_comment_close = max(
+        (number for number, text in enumerate(source_lines) if "-->" in text), default=-1
+    )
     skip_until = 0
     for line_number, line in enumerate(source_lines):
         if line_number < skip_until:
@@ -451,7 +462,9 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         if in_comment or indent < 4:
             # A fence marker inside a comment cannot open/close a code block.
             # Indented code cannot start a prose comment either.
-            line, in_comment = _without_comments(line, in_comment)
+            line, in_comment = _without_comments(
+                line, in_comment, has_later_close=line_number < last_comment_close
+            )
             expanded = line if html_consumed else line.expandtabs(4)
             indent = len(expanded) - len(expanded.lstrip(" "))
             relative = expanded

@@ -315,7 +315,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v14`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v15`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -328,8 +328,8 @@ excluded from page identity. An iterative work stack avoids Python recursion;
 a synthetic 150-level quote control covers that boundary. Original Markdown,
 page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
 prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
-Old v1–v13 index receipts rebuild with
-v14; configured vector rebuilds can incur embedding costs.
+Old v1–v14 index receipts rebuild with
+v15; configured vector rebuilds can incur embedding costs.
 
 List items now enter the same iterative container projection before quote/code
 classification, including a quote on the marker's first line (`- > ~~~`).
@@ -403,7 +403,7 @@ and reference differences remain outside this change. Two real-service browser
 cases (390/1440px) each exercise all three forms, same-line link navigation,
 editor mutation, reload, graph and two Git history entries. Both fail on the
 preceding product's literal title. Derived provider receipts must rebuild under
-v14; this can incur configured embedding costs without rewriting Markdown/history.
+v15; this can incur configured embedding costs without rewriting Markdown/history.
 
 Block comments now keep their entire type-2 HTML token out of derived links and
 excerpts, including the complete closing line. Previously `<!-- note -->[[target]]`
@@ -421,7 +421,7 @@ comment/context cases and all117 earlier delimiter cases, including the nine
 former block-comment suffix differences. Two real-service 390/1440px browser
 regressions fail on the old phantom edge and pass with actual editor mutation,
 reload, history, normal inline-link navigation and preserved source bytes.
-The current index identity is v14, requiring older receipts to rebuild, with
+The current index identity is v15, requiring older receipts to rebuild, with
 possible configured embedding costs. No frontend rendering/sanitizer, mutation
 or API contract is changed.
 
@@ -435,12 +435,29 @@ heading, table/list/quote, normal multiline/block/code controls and exact CRLF
 source/history; sixteen fail on the unchanged preceding store. A bounded
 independent 44-case comparison agrees with installed Marked. Two real-service
 390/1440px browser cases compare actual anchors, graph/backlinks, excerpts,
-editor save, reload/Back and history. The current fingerprint is v14; older
+editor save, reload/Back and history. The current fingerprint is v15; older
 provider receipts rebuild without rewriting Markdown, potentially incurring
 configured embedding costs. No article renderer/sanitizer or API mutation change.
-This remains incomplete inline-comment parsing: unclosed inline comments and
-multiline inline comments crossing block boundaries or table-cell scopes retain
-known differences, as do references and other inline forms.
+An inline `<!--` without any `-->` in its remaining projection container is
+now preserved as literal prose, matching Marked's requirement for a complete
+inline comment token. Previously such an opener could suppress following titles,
+excerpts and real graph links through EOF although the article rendered them.
+A single linear scan records the last possible closing line per container; the
+line scanner also checks its remaining tail, so an earlier same-line closed
+comment does not hide a later literal opener. Block comments still permit EOF,
+and fenced/inline code stays separate. Twenty-one focused backend cases cover
+these boundaries plus exact CRLF source/history, graph/backlinks and reopening;
+nine of the initial twenty fail on the unchanged preceding store. A bounded
+independent 64-case comparison agrees with installed Marked. Two real-service
+390/1440px browser cases compare actual anchors/headings with graph/backlinks,
+excerpt text, editor save/reload/Back and two Git history entries. The current
+index fingerprint is v15; old receipts rebuild without rewriting Markdown,
+potentially incurring configured embedding costs. Renderer/sanitizer and mutation
+contracts are unchanged.
+
+This is a sufficient no-terminator check, not complete inline scope parsing:
+a later `-->` inside another block or table cell can still cause known differences.
+Those cross-scope cases, references and other inline forms remain separate.
 
 The existing synthetic Git-interruption test now atomically publishes its PID
 handshake after writing it. An observed race allowed cancellation between file

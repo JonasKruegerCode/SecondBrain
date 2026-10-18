@@ -3047,6 +3047,63 @@ for (const width of [390, 1440]) {
 
 
 for (const width of [390, 1440]) {
+  test(`unclosed inline comments preserve visible prose (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const token = randomUUID(), source = `unclosed-source-${token}`;
+    const target = `unclosed-target-${token}`, hidden = `unclosed-hidden-${token}`;
+    const created: string[] = [];
+    const save = async (id: string, markdown: string) => {
+      const response = await request.post(`/api/wiki/pages/${id}`, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+      expect(response.ok()).toBe(true); created.push(id); return response.json();
+    };
+    let markdown = `# Synthetic unclosed annotation\n\nProse<!-- unfinished [[${target}|Visible companion]].\n\n## Visible later heading\n\nLater [[${target}|Later companion]].\n\nCode \`<!-- [[${hidden}|Code example]]\`.\n\n<!-- unfinished block [[${hidden}|Block example]]\n`;
+    try {
+      await save(target, "# Synthetic visible destination");
+      await save(hidden, "# Synthetic literal destination");
+      await save(source, markdown);
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Synthetic unclosed annotation");
+      const check = async () => {
+        await expect(page.locator(".prose").getByRole("link", { name: "Visible companion", exact: true })).toHaveCount(1);
+        await expect(page.locator(".prose").getByRole("link", { name: "Later companion", exact: true })).toHaveCount(1);
+        await expect(page.locator(".prose").getByRole("heading", { name: "Visible later heading", exact: true })).toHaveCount(1);
+        await expect(page.locator(`.prose [data-wiki-target="${hidden}"]`)).toHaveCount(0);
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: any) => edge.source === source)).toEqual([{ source, target, type: "wikilink" }]);
+        expect(graph.missing_targets.filter((edge: any) => edge.source === source)).toEqual([]);
+        const current = await (await request.get(`/api/wiki/pages/${source}`)).json();
+        expect(current.markdown).toBe(markdown);
+        expect(current.excerpt).toContain("Visible companion");
+        expect(current.excerpt).toContain("Later companion");
+        expect(current.excerpt).not.toContain("Block example");
+        const backlinks = await (await request.get(`/api/wiki/pages/${target}/backlinks`)).json();
+        expect(backlinks.backlinks.some((item: any) => item.id === source)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await check();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      markdown = markdown.replace("\n<!-- unfinished block", "\nAn intentional synthetic edit.\n\n<!-- unfinished block");
+      await page.locator("#editor").fill(markdown);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".notice")).toContainText("Saved locally");
+      await check(); await page.reload(); await check();
+      expect((await (await request.get(`/api/wiki/pages/${source}/history`)).json()).history).toHaveLength(2);
+      await page.screenshot({ path: info.outputPath(`unclosed-inline-comment-${width}.png`), fullPage: true });
+      await page.locator(".prose").getByRole("link", { name: "Visible companion", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Synthetic visible destination");
+      await page.goBack(); await check();
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await (await request.get(`/api/wiki/pages/${id}`)).json();
+        const response = await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: current.revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`short inline comments retain visible wiki links (${width})`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 900 });
     const token = randomUUID(), source = `short-comment-source-${token}`;
