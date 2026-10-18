@@ -58,43 +58,67 @@ def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
     return markdown[match.end() :], galaxy
 
 
+def _code_span_ends(text: str) -> dict[int, int]:
+    """Index exact backtick runs, honoring escapes only before opening code.
+
+    An escaped first tick is literal; the rest of its run can still open code.
+    Closing runs are maximal and backslashes inside code are ordinary bytes.
+    """
+    runs = list(re.finditer(r"`+", text))
+    following: dict[int, int] = {}
+    ends: dict[int, int] = {}
+    for run in reversed(runs):
+        opening = run.start() + int(_markdown_escaped(text, run.start()))
+        length = run.end() - opening
+        if length and length in following:
+            ends[opening] = following[length]
+        following[run.end() - run.start()] = run.end()
+    return ends
+
+
 def _without_comments(line: str, in_comment: bool, *, has_later_close: bool) -> tuple[str, bool]:
     """Read prose comments before interpreting fence markers, preserving inline code."""
     parts: list[str] = []
-    while line:
+    code_ends = _code_span_ends(line)
+    position = 0
+    while position < len(line):
         if in_comment:
             if not parts:
                 parts.append(" ")
-            _, closing, line = line.partition("-->")
-            if not closing:
+            closing = line.find("-->", position)
+            if closing < 0:
                 return "".join(parts), True
+            position = closing + 3
             in_comment = False
         else:
-            token = re.search(r"(?P<code>(?P<ticks>`+).*?(?P=ticks))|<!--", line)
+            token = re.search(r"`+|<!--", line[position:])
             if token is None:
-                parts.append(line)
+                parts.append(line[position:])
                 break
-            parts.append(line[: token.start()])
-            if token.group("code") is not None:
-                parts.append(token.group())
+            start = position + token.start()
+            end = position + token.end()
+            parts.append(line[position:start])
+            if token.group().startswith("`"):
+                # Consume comments in source order: a tick inside a comment
+                # must never steal a later prose code opener.
+                code_end = code_ends.get(start, code_ends.get(start + 1))
+                end = code_end if code_end is not None else end
+                parts.append(line[start:end])
             else:
                 # Marked accepts these two complete inline comment tokens.
-                # Their following prose must not inherit an open-comment state.
-                tail = line[token.end() :]
+                tail = line[end:]
                 if tail.startswith((">", "->")):
-                    line = tail[1 if tail.startswith(">") else 2 :]
+                    position = end + (1 if tail.startswith(">") else 2)
                     continue
-                # Unlike block comments, inline comments require a terminator.
-                # Without one in this inline scope, the opener is literal
-                # prose. Scope boundaries are collected before this pass.
+                # Inline comments require a terminator in this inline scope.
                 if "-->" not in tail and not has_later_close:
                     parts.append(token.group())
-                    line = tail
+                    position = end
                     continue
                 if not "".join(parts).strip():
                     parts.append(" ")
                 in_comment = True
-            line = line[token.end() :]
+            position = end
     return "".join(parts), in_comment
 
 
@@ -531,7 +555,18 @@ def _without_cell_comments(row: str) -> str:
 
 def prose_links(markdown: str) -> str:
     """Ignore code examples and comments when deriving explicit prose links."""
-    return re.sub(r"(`+).*?\1", "", prose_blocks(markdown), flags=re.DOTALL)
+    text = prose_blocks(markdown)
+    parts: list[str] = []
+    position = 0
+    # This retains the existing cross-line projection; paragraph-scope parsing
+    # is deliberately outside this code-delimiter correction.
+    for start, end in sorted(_code_span_ends(text).items()):
+        if start < position:
+            continue
+        parts.append(text[position:start])
+        position = end
+    parts.append(text[position:])
+    return "".join(parts)
 
 
 def _markdown_escaped(text: str, position: int) -> bool:
