@@ -55,6 +55,104 @@ for (const width of [390, 1440]) {
   });
 }
 
+
+for (const width of [390, 1440]) {
+  test(`galaxy display caps preserve grapheme boundaries (${width})`, async ({ page, request }, info) => {
+    const group = `grapheme-label-${randomUUID()}`;
+    const ids = [0, 1, 2].map(index => `${group}-${index}`);
+    // Exactly 24 ASCII graphemes before each multi-code-point 25th grapheme.
+    // A code-point slice drops the accent, modifier/ZWJ tail, or second flag half.
+    const prefix = "Synthetic " + "i".repeat(14);
+    const clusters = ["e\u0301", "👩🏽‍🚀", "🇺🇳"];
+    const titles = clusters.map(cluster => `${prefix}${cluster} beyond the synthetic horizon`);
+    const haloTitle = "Synthetic " + clusters.join("").repeat(6);
+    const owned: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const [index, id] of ids.entries()) {
+        const response = await request.post(`/api/wiki/pages/${id}`, { data: {
+          markdown: `---\ngalaxy_group: ${group}\ngalaxy_label: ${haloTitle}\n${index === 0 ? "galaxy_anchor: true\n" : ""}---\n# ${titles[index]}\n\n[[${ids[(index + 1) % ids.length]}]]\n`,
+          base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true); owned.push(id);
+      }
+      const fixtureGraph = async () => {
+        const response = await request.get("/api/wiki/graph");
+        expect(response.ok()).toBe(true);
+        const graph = await response.json();
+        return {
+          nodes: graph.nodes.filter((node: { id: string }) => ids.includes(node.id)),
+          edges: graph.edges.filter((edge: { source: string; target: string }) => ids.includes(edge.source) || ids.includes(edge.target)),
+        };
+      };
+      const originalGraph = await fixtureGraph();
+      expect(originalGraph.nodes).toHaveLength(3);
+      expect(originalGraph.edges).toHaveLength(3);
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/galaxy?page=${ids[0]}`);
+      const stars = page.locator(".galaxy-star");
+      await expect(stars).toHaveCount(3);
+      const positions = () => stars.evaluateAll(elements => elements.map(element => element.getAttribute("transform")));
+      const originalPositions = await positions();
+      const halo = page.locator(".galaxy-neighborhood text:not(.galaxy-count)");
+      await expect(halo).toHaveAttribute("data-label", haloTitle);
+      await expect(halo).toBeVisible();
+      // Pixel fitting retains both ends of the label. Check the actual painted
+      // text against independent browser grapheme boundaries, including its suffix.
+      const haloFit = await halo.evaluate(element => {
+        const source = (element as SVGTextElement).dataset.label!;
+        const Segmenter = (Intl as any).Segmenter;
+        const clusters = Array.from(new Segmenter(undefined, { granularity: "grapheme" }).segment(source), (part: any) => part.segment as string);
+        const text = element.textContent || "";
+        const [left, right, extra] = text.split("…");
+        return { shortened: text !== source, valid: text === source || (extra === undefined && right !== undefined &&
+          clusters.some((_, count) => clusters.slice(0, count).join("") === left) &&
+          clusters.some((_, count) => clusters.slice(clusters.length - count).join("") === right)) };
+      });
+      if (width === 390) expect(haloFit.shortened).toBe(true);
+      expect(haloFit.valid, "painted halo prefix and suffix must end at complete graphemes").toBe(true);
+      for (const [index, id] of ids.entries()) {
+        const star = page.locator(`.galaxy-star[data-node="${id}"]`);
+        await star.focus(); await page.keyboard.press("Enter");
+        await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(titles[index]);
+        await expect(star).toHaveAttribute("aria-label", new RegExp(titles[index]));
+        await expect(star.locator("title")).toHaveText(titles[index]);
+        const label = star.locator("text");
+        const expected = prefix + clusters[index] + "…";
+        await expect(label).toHaveAttribute("data-label", expected);
+        await expect(label).toBeVisible();
+        // This deliberately compact prefix fits at both widths, so checking
+        // painted text catches broken graphemes independently of data-label.
+        await expect(label).toHaveText(expected);
+        const inside = await label.evaluate(element => {
+          const label = element as SVGGraphicsElement;
+          const box = label.getBoundingClientRect(), bounds = label.ownerSVGElement!.getBoundingClientRect();
+          return box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom;
+        });
+        expect(inside).toBe(true);
+      }
+      expect(await positions()).toEqual(originalPositions);
+      expect(await fixtureGraph()).toEqual(originalGraph);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`grapheme-star-label-${width}.png`), fullPage: true });
+      await page.locator(".galaxy-selected-heading .galaxy-article").click();
+      await expect(page.locator("article > h1")).toHaveText(titles[2]);
+      await page.goBack();
+      await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(titles[2]);
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(`/api/wiki/pages/${id}`);
+        expect(current.ok()).toBe(true);
+        expect((await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBe(true);
+      }
+    }
+  });
+}
+
 for (const width of [390, 1440]) {
 test(`dense curated constellation shows direct links and keyboard zoom (${width})`, async ({ page, request }, info) => {
   test.setTimeout(180_000);

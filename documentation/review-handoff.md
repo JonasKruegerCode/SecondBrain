@@ -986,16 +986,25 @@ core-label recovery, unchanged star positions and article/history navigation.
 This bounds the two active star labels; it does not promise that labels avoid
 every other star or that a dense map becomes comfortable on a physical device.
 
-The star display cap counts Unicode codepoints before keeping its 25-character
-prefix and ellipsis. Previously UTF-16 slicing could cut an astral character in
-half and render a replacement glyph even though the full page title was valid.
-Two real-service narrow/wide regressions reproduce the old broken mathematical
-symbol and cover both a mathematical symbol and an emoji after correction.
-Full accessible names, SVG titles, selected-page headings, star positions,
-graph edges and article/history navigation are retained. This is codepoint-safe
-truncation; combining sequences and joined emoji are not grapheme-aware.
-The native Linux runner lacks some emoji glyphs: exact DOM codepoints and
-well-formed truncation do not prove font coverage or physical-device rendering.
+The three SVG title-shortening paths (star display cap, star pixel fit and
+constellation pixel fit) now keep complete graphemes with feature-detected
+[`Intl.Segmenter`](https://tc39.es/ecma402/#sec-intl.segmenter.prototype.segment).
+An accent, emoji modifier/joined sequence or flag is not split at the ellipsis.
+The previous 27/25 display thresholds now count graphemes; initial title scanning
+stops at 28 units. Browsers without Segmenter retain the previous codepoint-safe
+behavior, so grapheme handling is not promised for that compatibility fallback.
+TypeScript includes the Intl declaration library; emitted target remains ES2020.
+
+Two real-service narrow/wide regressions reproduce the old split accent and
+narrow constellation boundary. Corrected cases check combining accents, joined
+emoji and flags in actual painted text and data-labels, pixel-fitted halo
+prefix/suffix boundaries, full accessible names/SVG titles/sidebar headings,
+unchanged positions/graph and article/Back navigation. Existing astral-symbol
+cases remain. Two new native screenshots were inspected: accents are legible,
+but the native Linux runner still lacks some emoji/flag glyphs. Exact DOM text
+and complete grapheme boundaries do not establish font coverage, every locale's
+segmentation or physical-device rendering. Source Markdown, IDs, graph data,
+backend/index identity and the worker/update contract are unchanged.
 
 ## Native minimum text size
 

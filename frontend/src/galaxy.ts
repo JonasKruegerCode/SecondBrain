@@ -23,6 +23,19 @@ export interface GalaxyViewState {
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const compareId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const colors = ["#81e1d3", "#c5a5fa", "#f5c887", "#90baf8", "#f0a8c1", "#b8d787"];
+const segmenter = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+function displayUnits(text: string, limit = Infinity): string[] {
+  // Keep accents, modifiers, flags and joined emoji together. Older browsers
+  // retain the previous code-point behavior without making the map unusable.
+  const units: string[] = [];
+  const segments = segmenter ? segmenter.segment(text) : text;
+  for (const part of segments) {
+    units.push(typeof part === "string" ? part : part.segment);
+    if (units.length >= limit) break;
+  }
+  return units;
+}
 
 /**
  * Render a snapshot from /api/wiki/graph. onOpen receives a page ID, never a URL.
@@ -202,7 +215,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const full = label.dataset.label!;
       label.textContent = count && !active && 1100 / overviewColumns * unit < 200 ? full.split(" · ")[0] : full;
       const available = active ? stage.clientWidth - 24 : 1100 / overviewColumns * unit - 16;
-      const letters = [...label.textContent];
+      const letters = displayUnits(label.textContent);
       if (label.getComputedTextLength() * unit > available) {
         let low = 0, high = letters.length;
         while (low < high) {
@@ -248,7 +261,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
           label.style.visibility = visible ? "visible" : "hidden";
           // Labels stay screen-sized while the map zooms. Fit their text and
           // offset within the SVG without moving stars, hit circles or links.
-          const letters = [...(label.dataset.label || label.textContent || "")];
+          const letters = displayUnits(label.dataset.label || label.textContent || "");
           label.textContent = letters.join("");
           while (letters.length > 1 && label.getComputedTextLength() * unit > bounds.width - 12) {
             letters.pop(); label.textContent = letters.join("") + "…";
@@ -376,7 +389,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
       const related = selectedNode && (id === selectedNode || adjacency.get(selectedNode)!.has(id));
       const dimmed = !matching(id) || (selectedNode !== null && !related);
-      const titleLetters = [...name(id)];
+      const titleLetters = displayUnits(name(id), 28);
       const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
       return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
