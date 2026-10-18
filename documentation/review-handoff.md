@@ -365,7 +365,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v20`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v21`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -376,10 +376,32 @@ backlinks, excerpt text or page titles. Paragraph/list text continuations,
 invalid definitions and GFM table cells remain prose. Version v20 invalidates
 older derived receipts without rewriting Markdown, IDs or history; a configured
 vector rebuild may incur embedding costs. This is bounded block-definition
-coverage, not complete Markdown parity. Inline link destinations can still
-contribute apparent wiki targets; image metadata remains unverified. Synthetic CRLF/store/history and
+coverage, not complete Markdown parity. Synthetic CRLF/store/history and
 real-service article/galaxy regressions retain visible links and check that a
 later explicit prose link does create its expected backlink.
+
+Valid inline Markdown link/image destinations and optional titles are likewise
+excluded from graph/backlink and excerpt projections, including balanced or
+escaped destination parentheses, angle destinations and multiline titles.
+Visible labels, code and escaped/invalid syntax retain their existing scopes.
+The actual frontend wikilink extension takes priority over ordinary links;
+whitespace-only targets fall through to Marked's normal link grammar. Twenty-eight
+syntax/context controls were compared with installed Marked12; the preceding
+store disagreed on twenty. Image alt text remains readable in excerpts without its outer
+image brackets inventing a wikilink. Separate CRLF source/history, excerpt labels,
+older-index receipt and real API/Vite article/galaxy cases cover the correction.
+Version v21 requires rebuilding older derived receipts, potentially incurring
+configured embedding costs, without changing Markdown, IDs or history. This is
+not full lexer/sanitizer parity: bare URL/autolink syntax and other image/label
+forms remain outside this bounded correction.
+
+The browser CI job now has a 20-minute budget, preserving every profile,
+assertion and per-test timeout. On the preceding revision all six harness
+records passed, but the job was cancelled roughly 23ms after its final success
+log near the previous 15-minute deadline. Timeout is an inference, not a
+recorded cancellation reason. Complete artifact evidence does not make that
+cancelled GitHub workflow green; require a successful current-head workflow.
+
 
 Quoted code now follows quote containers before deriving titles, excerpts and
 explicit links. The projection retains visible quote links, nested quotes,

@@ -33,6 +33,14 @@ _DEFINITION_RE = re.compile(
     r"""(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\)))?"""
     r" *(?:\n+|$)"
 )
+# Marked12's bounded inline link grammar. Labels remain prose; destinations
+# and titles are metadata. Balanced destination parentheses are handled below.
+_INLINE_LINK_RE = re.compile(
+    r"!?\[((?:\[(?:\\.|[^\[\]\\])*\]|\\.|`[^`]*`|[^\[\]\\`])*?)\]"
+    r"\(\s*(<(?:\\.|[^\n<>\\])+>|[^\s\x00-\x1f]*)"
+    r"""(?:\s+("(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)))?"""
+    r"\s*\)"
+)
 FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
 
@@ -567,7 +575,9 @@ def _prose_segments(
         if for_links and indices:
             # Inline code can cross soft line breaks, but never another block.
             # Preserve line boundaries so typed links cannot become new lines.
-            projected = _without_code_spans("\n".join(str(lines[index]) for index in indices))
+            projected = _without_inline_link_metadata(
+                "\n".join(str(lines[index]) for index in indices)
+            )
             for index, text in zip(indices, projected.split("\n"), strict=True):
                 lines[index] = text
     for index, columns in table_lines.items():
@@ -602,7 +612,7 @@ def _without_cell_comments(row: str, columns: int, *, for_links: bool = False) -
     parts: list[str] = []
     for cell in _table_cells(row)[:columns]:
         text = _without_comments(cell, False, has_later_close=False)[0]
-        parts.append(_without_code_spans(text) if for_links else text)
+        parts.append(_without_inline_link_metadata(text) if for_links else text)
     # A leading pipe also keeps cell text from becoming a new ATX title or
     # typed relation in the projection. Source bytes are never rewritten.
     # A raw pipe can also look like a wiki alias separator. Keep cells on
@@ -614,8 +624,74 @@ def _without_cell_comments(row: str, columns: int, *, for_links: bool = False) -
 
 
 def prose_links(markdown: str) -> str:
-    """Ignore code examples and comments when deriving explicit prose links."""
+    """Ignore literal examples, comments and inline link metadata for navigation."""
     return prose_blocks(markdown, for_links=True)
+
+
+def _without_inline_link_metadata(text: str) -> str:
+    """Project valid inline links in source order within one block/cell.
+
+    The frontend extension consumes a wikilink before ordinary link syntax.
+    Code spans likewise shield their contents. Mask with spaces to preserve
+    line boundaries and avoid manufacturing typed relations or new links.
+    """
+    parts: list[str] = []
+    code_ends = _code_span_ends(text)
+    position = 0
+    while position < len(text):
+        code_end = code_ends.get(position)
+        if code_end is not None:
+            parts.append(re.sub(r"[^\n]", " ", text[position:code_end]))
+            position = code_end
+            continue
+        if text[position] in "[!" and not _markdown_escaped(text, position):
+            wiki = LINK_RE.match(text, position) if text.startswith("[[", position) else None
+            if wiki is not None and wiki.group(1).strip():
+                parts.append(wiki.group())
+                position = wiki.end()
+                continue
+            match = _INLINE_LINK_RE.match(text, position)
+            if match is not None:
+                href = match.group(2).strip()
+                valid = True
+                end = match.end()
+                if href.startswith("<"):
+                    slashes = len(href[:-1]) - len(href[:-1].rstrip("\\"))
+                    valid = href.endswith(">") and slashes % 2 == 0
+                else:
+                    level = 0
+                    offset = 0
+                    destination = match.group(2)
+                    while offset < len(destination):
+                        char = destination[offset]
+                        if char == "\\":
+                            offset += 2
+                            continue
+                        if char == "(":
+                            level += 1
+                        elif char == ")":
+                            level -= 1
+                            if level < 0:
+                                end = match.start(2) + offset + 1
+                                break
+                        offset += 1
+                if valid:
+                    label_end = match.end(1) + 1
+                    if text[position] == "!":
+                        # Image alt is plain text. Drop the image's outer
+                        # brackets so ![[alt]] cannot invent a wikilink.
+                        parts.append(" " + match.group(1) + " ")
+                        parts.append(re.sub(r"[^\n]", " ", text[label_end:end]))
+                    else:
+                        # Keep wrapper syntax for existing excerpt formatting.
+                        parts.append(text[position:label_end] + "(")
+                        parts.append(re.sub(r"[^\n]", " ", text[label_end + 1 : end - 1]))
+                        parts.append(")")
+                    position = end
+                    continue
+        parts.append(text[position])
+        position += 1
+    return _without_code_spans("".join(parts))
 
 
 def _without_code_spans(text: str) -> str:

@@ -70,6 +70,76 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [390, 1440]) {
+  test(`inline destinations stay out of graph evidence at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const source = `inline-source-${randomUUID()}`;
+    const shown = `inline-shown-${randomUUID()}`;
+    const hidden = `inline-hidden-${randomUUID()}`;
+    const markdown = ["# Inline destination source", "",
+      `[external source](https://example.test/[[${hidden}]] "Metadata [[${hidden}]]")`, "",
+      `[balanced source](https://example.test/path(a)/[[${hidden}]])`, "",
+      `[angle source](<https://example.test/[[${hidden}]]>)`, "",
+      `![Map illustration](/app-icon-192.png?target=[[${hidden}]] "Metadata [[${hidden}]]")`, "",
+      `![[${hidden}]](/app-icon-192.png "Metadata [[${hidden}]]")`, "",
+      `[[${shown}|Visible companion]]`, "",
+      `> [quoted source](relative/[[${hidden}]] "Metadata [[${hidden}]]")`, ">", `> [[${shown}|Quoted companion]]`, "",
+      `- [listed source](relative/[[${hidden}]]) [[${shown}|Listed companion]]`, "",
+      `Source | Companion`, `--- | ---`,
+      `[table source](relative/[[${hidden}]]) | [[${shown}]]`, "",
+    ].join("\r\n");
+    const endpoint = (id: string) => `/api/wiki/pages/${id}`;
+    const created: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const [id, body] of [[shown, "# Reference companion"], [hidden, "# Metadata companion"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: { markdown: body, base_revision: null, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true); created.push(id);
+      }
+      const original = await (await request.get(endpoint(source))).json();
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Inline destination source");
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(4);
+      await expect(page.locator(`.prose a[data-wiki-target='${shown}']`)).toHaveCount(4);
+      await expect(page.locator(`.prose a[href*='example.test']`)).toHaveCount(3);
+      await expect(page.locator(".prose")).not.toContainText("Metadata");
+      const graph = await (await request.get("/api/wiki/graph")).json();
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === source)
+        .map((edge: { target: string }) => edge.target)).toEqual([shown]);
+      expect((await (await request.get(`${endpoint(hidden)}/backlinks`)).json()).total).toBe(0);
+      expect(original.excerpt).toContain(`[${hidden}]`);
+      expect(original.excerpt).not.toContain("https://");
+      expect(original.excerpt).not.toContain("Metadata");
+      await page.screenshot({ path: info.outputPath(`inline-destinations-${width}.png`), fullPage: true });
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown.replace(/\r\n/g, "\n"));
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      const current = await (await request.get(endpoint(source))).json();
+      expect(current.markdown).toBe(markdown); expect(current.revision).toBe(original.revision);
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await expect(page.locator(`.galaxy-evidence a[data-open='${shown}']`)).toHaveCount(1);
+      await expect(page.locator(`.galaxy-evidence a[data-open='${hidden}']`)).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath(`inline-destinations-galaxy-${width}.png`), fullPage: true });
+      const saved = await request.post(endpoint(source), { data: {
+        markdown: markdown + `\r\n[[${hidden}]]`, base_revision: original.revision, request_id: randomUUID(),
+      } });
+      expect(saved.ok()).toBe(true);
+      expect((await (await request.get(`${endpoint(hidden)}/backlinks`)).json()).total).toBe(1);
+      expect((await (await request.get(`${endpoint(source)}/history`)).json()).history).toHaveLength(2);
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await request.get(endpoint(id)); expect(current.ok()).toBe(true);
+        const response = await request.delete(endpoint(id), { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
 for (const method of ["keyboard", "wheel", "touch-emulation"] as const) {
   test(`narrow demo table reveals its linked third column with ${method}`, async ({ browser, browserName }, info) => {
     test.skip(method === "touch-emulation" && browserName !== "chromium", "CDP touch input is Chromium emulation, not a physical device");
