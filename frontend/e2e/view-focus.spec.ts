@@ -41,10 +41,21 @@ for (const width of [390, 1440]) {
           ? page.getByRole("link", { name: /Open Lantern Bay/ })
           : page.locator("article > h1");
         await expect(start).toBeVisible();
-        if (failure === "quota exceeded") await expect(start).toHaveText("Lantern Bay field atlas");
+        if (failure === "quota exceeded") {
+          await expect(start).toHaveText("Lantern Bay field atlas");
+          // The heading precedes asynchronous link hydration. Finish the last
+          // real batch before replacing this document, so the check observes
+          // storage recovery rather than native teardown-cancelled fetches.
+          await expect(page.locator('.prose a[data-wiki-target="field-notebook"]'))
+            .toHaveAttribute("href", "/wiki/field-notebook");
+        }
         await page.reload();
         await expect(start).toBeVisible();
-        if (failure === "quota exceeded") await expect(start).toHaveText("Lantern Bay field atlas");
+        if (failure === "quota exceeded") {
+          await expect(start).toHaveText("Lantern Bay field atlas");
+          await expect(page.locator('.prose a[data-wiki-target="field-notebook"]'))
+            .toHaveAttribute("href", "/wiki/field-notebook");
+        }
         await page.goto(`/wiki/${fixture.id}`);
         await page.getByRole("button", { name: "Edit page" }).click();
         const editor = page.getByRole("textbox", { name: /Markdown/ });
@@ -77,6 +88,9 @@ for (const width of [390, 1440]) {
         await expect(page.locator(".prose")).toContainText("The published article stays unchanged.");
         await page.goto("/");
         await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
+        // Automatic start-page navigation replaces the URL before the article
+        // read completes. Reload only after the saved destination is displayed.
+        await expect(page.locator("article > h1")).toHaveText("Synthetic storage recovery");
         await page.reload();
         await expect(page.locator("article > h1")).toHaveText("Synthetic storage recovery");
         expect(errors).toEqual([]);

@@ -177,6 +177,14 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   already handled these states; this adds regression coverage, not new behavior.
   Injected failures do not establish actual disk-quota, browser-policy or
   physical-device behavior. No model calls are involved.
+  The storage probe waits for the last Home link-resolution batch and the
+  actual saved article before hard reload/navigation; a heading or replaced
+  URL alone can precede those reads. The initial WebKit run completed all
+  behavior assertions but reported native access-control errors for page/link
+  reads in three cases, consistent with unfinished reads being cancelled by
+  document replacement. The regression now waits
+  for semantic completion while retaining the full page-error assertion; this
+  sequencing correction needs WebKit validation and changes no product code.
 - An empty wiki alias (`[[page-id|]]`) uses the target label and the same
   resolution, missing-target and backlink behavior as an unaliased reference.
   Safe HTTP(S) anchor schemes are case-insensitive and keep external-tab
