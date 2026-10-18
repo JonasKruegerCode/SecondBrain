@@ -237,6 +237,19 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 - Article contents links retain the browser's modified-click behavior. Ctrl/Cmd
   opens the section URL in another tab; the original article stays in place.
   Ordinary click/Enter focuses and scrolls its section within the current visit.
+  An intermittent local Chromium 153 run observed a trusted, unprevented click
+  without a new Context page; its cause remains unknown despite green Chromium
+  156 CI. The native regression now records down/up/click targets, connected
+  anchor URLs, modifiers, focus/visibility and a pre-gesture rectangle, plus PWA
+  notice transitions. Chromium CDP target creation is observed separately from
+  Playwright's page event. Protocol setup precedes navigation; unavailable CDP
+  diagnostics do not replace the original gesture/assertion outcome. Listeners,
+  observers, temporary globals and the CDP session are cleaned on exit. Event
+  listeners do not force per-event layout or hit-test reads. The native gesture,
+  8-second page-event timeout and arrival/reload/source assertions are unchanged.
+  A passing instrumented pair identifies only those measured activations; it
+  neither explains the earlier absence nor establishes that instrumentation is
+  timing-neutral. No product workaround or full browser-parity claim is made.
 - Search normalizes submitted queries while retaining the current URL fragment;
   direct fragment destinations, reload and history remain usable. Later form
   submissions keep their input focus, including a new or empty query.

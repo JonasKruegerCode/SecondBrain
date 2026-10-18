@@ -1,4 +1,4 @@
-import { expect, Page, TestInfo } from "@playwright/test";
+import { expect, Page, TestInfo, type CDPSession } from "@playwright/test";
 import { test } from "./reading-test";
 
 async function arrival(page: Page, title: string, info: TestInfo, width: number, step: string) {
@@ -19,74 +19,148 @@ async function arrival(page: Page, title: string, info: TestInfo, width: number,
 
 for (const width of [390, 1440]) {
   test(`keyboard article arrivals retain a useful reading destination (${width})`, async ({ page, context }, info) => {
-    await page.setViewportSize({ width, height: 844 });
-    await page.goto("/?overview=1");
-    const open = page.getByRole("link", { name: /Open Lantern Bay field atlas/ });
-    await expect(open).toBeVisible();
-    await open.focus();
-    await page.keyboard.press("Enter");
-    await arrival(page, "Lantern Bay field atlas", info, width, "home");
-    // Follow the actual native new-tab gesture, rather than assigning window.open
-    // or scripting a click event whose browser default would never run.
-    const contentsLink = page.locator(".article-toc a").first();
-    const fragment = await contentsLink.getAttribute("href");
-    expect(fragment).toBe("#section-1");
-    await contentsLink.scrollIntoViewIfNeeded();
-    const source = await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }));
-    await page.evaluate(() => {
-      window.addEventListener("click", event => {
-        (window as any).__tocActivation = { button: event.button, ctrl: event.ctrlKey,
-          meta: event.metaKey, prevented: event.defaultPrevented, trusted: event.isTrusted };
-      }, { once: true });
-    });
-    // A browser-created tab need not retain an opener/popup association.
-    const [opened] = await Promise.all([
-      context.waitForEvent("page", { timeout: 8000 }),
-      contentsLink.click({ modifiers: ["ControlOrMeta"] }),
-    ]).catch(async error => {
-      console.log(`[toc-tab-diagnostic] ${JSON.stringify({ width, pages: context.pages().length,
-        activation: await page.evaluate(() => (window as any).__tocActivation), sourceUrl: page.url() })}`);
-      throw error;
-    });
+    const browser = context.browser();
+    let cdp: CDPSession | null = null;
+    let cdpUnavailable = false;
+    const targets: { type: string; url: string; opener: boolean }[] = [];
+    // Setup precedes navigation so protocol round trips do not delay the
+    // first native gesture. Optional diagnostics cannot replace its outcome.
+    if (browser?.browserType().name() === "chromium") {
+      try {
+        cdp = await browser.newBrowserCDPSession();
+        const known = new Set((await cdp.send("Target.getTargets")).targetInfos.map(target => target.targetId));
+        cdp.on("Target.targetCreated", ({ targetInfo }) => {
+          if (targetInfo.type === "page" && !known.has(targetInfo.targetId)) targets.push({ type: targetInfo.type,
+            url: targetInfo.url, opener: Boolean(targetInfo.openerId) });
+        });
+        await cdp.send("Target.setDiscoverTargets", { discover: true });
+      } catch {
+        cdpUnavailable = true;
+        await cdp?.detach().catch(() => {});
+        cdp = null;
+      }
+    }
     try {
-      await opened.bringToFront();
-      await opened.setViewportSize({ width, height: 844 });
-      expect(await page.evaluate(() => (window as any).__tocActivation))
-        .toMatchObject({ button: 0, prevented: false, trusted: true });
-      await expect(opened).toHaveURL(source.url + fragment);
-      await expect(opened.locator("article > h1")).toHaveText("Lantern Bay field atlas");
-      await expect(opened.locator(fragment!)).toBeFocused();
-      await opened.reload();
-      await expect(opened).toHaveURL(source.url + fragment);
-      await expect(opened.locator(fragment!)).toBeFocused();
-      await expect(opened.locator(fragment!)).toHaveText("Three routes into the atlas");
-      await opened.screenshot({ path: info.outputPath(`toc-native-tab-${width}.png`) });
-      expect(await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }))).toEqual(source);
-      await expect(page.locator(fragment!)).not.toBeFocused();
-      console.log(`[toc-native-tab] ${JSON.stringify({ width, sourceUnchanged: true, fragment, targetReloaded: true })}`);
-    } finally { await opened.close(); }
-    // Ordinary keyboard activation still focuses the section in this visit,
-    // without changing the established TOC URL/history behavior.
-    await contentsLink.focus();
-    await page.keyboard.press("Enter");
-    await expect(page.locator(fragment!)).toBeFocused();
-    await expect(page).toHaveURL(source.url);
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/?overview=1");
+      const open = page.getByRole("link", { name: /Open Lantern Bay field atlas/ });
+      await expect(open).toBeVisible();
+      await open.focus();
+      await page.keyboard.press("Enter");
+      await arrival(page, "Lantern Bay field atlas", info, width, "home");
+      // Follow the actual native new-tab gesture, rather than assigning window.open
+      // or scripting a click event whose browser default would never run.
+      const contentsLink = page.locator(".article-toc a").first();
+      const fragment = await contentsLink.getAttribute("href");
+      expect(fragment).toBe("#section-1");
+      await contentsLink.scrollIntoViewIfNeeded();
+      const source = await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }));
+      await page.evaluate(() => {
+        window.addEventListener("click", event => {
+          (window as any).__tocActivation = { button: event.button, ctrl: event.ctrlKey,
+            meta: event.metaKey, prevented: event.defaultPrevented, trusted: event.isTrusted };
+        }, { once: true });
+        const link = document.querySelector<HTMLAnchorElement>(".article-toc a");
+        const events: unknown[] = [], notices: unknown[] = [];
+        const box = link?.getBoundingClientRect();
+        const initialBox = box ? { x: box.x, y: box.y, width: box.width, height: box.height } : null;
+        const describe = (element: Element | null) => {
+          const anchor = element?.closest("a");
+          return { tag: element?.tagName ?? null, id: element?.id ?? null,
+            anchorHref: anchor?.getAttribute("href") ?? null,
+            anchorUrl: anchor instanceof HTMLAnchorElement ? anchor.href : null,
+            connected: element?.isConnected ?? false, anchorConnected: anchor?.isConnected ?? false,
+            tocAnchor: anchor === link };
+        };
+        const record = (event: MouseEvent) => {
+          // Native event targets discriminate down/up drift without forcing a
+          // synchronous layout/hit-test read inside each event listener.
+          events.push({ type: event.type, at: performance.now(), target: describe(event.target instanceof Element ? event.target : null),
+            x: event.clientX, y: event.clientY, button: event.button, buttons: event.buttons, detail: event.detail,
+            ctrl: event.ctrlKey, meta: event.metaKey, shift: event.shiftKey, alt: event.altKey,
+            trusted: event.isTrusted, prevented: event.defaultPrevented,
+            focused: document.hasFocus(), visibility: document.visibilityState });
+        };
+        const types = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+        for (const type of types) window.addEventListener(type, record as EventListener);
+        const notice = document.querySelector<HTMLElement>(".pwa-notice");
+        const noticeState = () => notices.push({ at: performance.now(), hidden: notice?.hidden,
+          kind: notice?.dataset.kind ?? null });
+        noticeState();
+        const observer = new MutationObserver(noticeState);
+        if (notice) observer.observe(notice, { attributes: true, attributeFilter: ["hidden", "data-kind"] });
+        (window as any).__tocTrace = { initialBox, events, notices };
+        (window as any).__stopTocTrace = () => {
+          for (const type of types) window.removeEventListener(type, record as EventListener);
+          observer.disconnect();
+        };
+      });
+      targets.length = 0;
+      // A browser-created tab need not retain an opener/popup association.
+      const [opened] = await Promise.all([
+        context.waitForEvent("page", { timeout: 8000 }),
+        contentsLink.click({ modifiers: ["ControlOrMeta"] }),
+      ]).catch(async error => {
+        console.log(`[toc-tab-diagnostic] ${JSON.stringify({ width, pages: context.pages().length,
+          activation: await page.evaluate(() => (window as any).__tocActivation), sourceUrl: page.url() })}`);
+        throw error;
+      }).finally(async () => {
+        const dom = await page.evaluate(() => {
+          (window as any).__stopTocTrace?.();
+          const trace = (window as any).__tocTrace;
+          delete (window as any).__stopTocTrace;
+          delete (window as any).__tocTrace;
+          return trace;
+        }).catch(() => ({ unavailable: true }));
+        console.log(`[toc-activation-trace] ${JSON.stringify({ width, cdp: Boolean(cdp), cdpUnavailable, targets, dom })}`);
+      });
+      try {
+        await opened.bringToFront();
+        await opened.setViewportSize({ width, height: 844 });
+        expect(await page.evaluate(() => (window as any).__tocActivation))
+          .toMatchObject({ button: 0, prevented: false, trusted: true });
+        await expect(opened).toHaveURL(source.url + fragment);
+        await expect(opened.locator("article > h1")).toHaveText("Lantern Bay field atlas");
+        await expect(opened.locator(fragment!)).toBeFocused();
+        await opened.reload();
+        await expect(opened).toHaveURL(source.url + fragment);
+        await expect(opened.locator(fragment!)).toBeFocused();
+        await expect(opened.locator(fragment!)).toHaveText("Three routes into the atlas");
+        await opened.screenshot({ path: info.outputPath(`toc-native-tab-${width}.png`) });
+        expect(await page.evaluate(() => ({ url: location.href, scrollY, title: document.title }))).toEqual(source);
+        await expect(page.locator(fragment!)).not.toBeFocused();
+        console.log(`[toc-native-tab] ${JSON.stringify({ width, sourceUnchanged: true, fragment, targetReloaded: true })}`);
+      } finally { await opened.close(); }
+      // Ordinary keyboard activation still focuses the section in this visit,
+      // without changing the established TOC URL/history behavior.
+      await contentsLink.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(fragment!)).toBeFocused();
+      await expect(page).toHaveURL(source.url);
 
-    const survey = page.locator(".prose").getByRole("link", { name: "night sky survey", exact: true });
-    await survey.focus();
-    await page.keyboard.press("Enter");
-    await arrival(page, "Night sky survey", info, width, "wikilink");
-    const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
-    await search.focus();
-    await page.keyboard.press("Enter");
-    const input = page.getByRole("textbox", { name: "Search pages" });
-    await input.fill("sheltered garden");
-    await page.keyboard.press("Enter");
-    const result = page.locator('#results a[href="/wiki/night-sky-survey"]');
-    await expect(result).toBeVisible();
-    await result.focus();
-    await page.keyboard.press("Enter");
-    await arrival(page, "Night sky survey", info, width, "search");
+      const survey = page.locator(".prose").getByRole("link", { name: "night sky survey", exact: true });
+      await survey.focus();
+      await page.keyboard.press("Enter");
+      await arrival(page, "Night sky survey", info, width, "wikilink");
+      const search = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Search", exact: true });
+      await search.focus();
+      await page.keyboard.press("Enter");
+      const input = page.getByRole("textbox", { name: "Search pages" });
+      await input.fill("sheltered garden");
+      await page.keyboard.press("Enter");
+      const result = page.locator('#results a[href="/wiki/night-sky-survey"]');
+      await expect(result).toBeVisible();
+      await result.focus();
+      await page.keyboard.press("Enter");
+      await arrival(page, "Night sky survey", info, width, "search");
+    } finally {
+      await page.evaluate(() => {
+        (window as any).__stopTocTrace?.();
+        delete (window as any).__stopTocTrace;
+        delete (window as any).__tocTrace;
+      }).catch(() => {});
+      await cdp?.detach().catch(() => {});
+    }
   });
 }
 
