@@ -85,9 +85,8 @@ def _without_comments(line: str, in_comment: bool, *, has_later_close: bool) -> 
                     line = tail[1 if tail.startswith(">") else 2 :]
                     continue
                 # Unlike block comments, inline comments require a terminator.
-                # Without one anywhere in this remaining container, the opener
-                # is literal prose. A later terminator is only a conservative
-                # guard: full inline block/cell scope parsing is separate.
+                # Without one in this inline scope, the opener is literal
+                # prose. Scope boundaries are collected before this pass.
                 if "-->" not in tail and not has_later_close:
                     parts.append(token.group())
                     line = tail
@@ -245,7 +244,6 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
     )
     lines: list[str | _ProseContainer] = []
     fence = ""
-    in_comment = False
     block_comment = False
     raw_html = ""
     delimited_html = ""
@@ -255,9 +253,24 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
     table = False
     previous_prose = ""
     source_lines = markdown.splitlines()
-    last_comment_close = max(
-        (number for number, text in enumerate(source_lines) if "-->" in text), default=-1
-    )
+    # Block structure is read from raw source before inline tokenization. An
+    # inline comment cannot swallow a heading/fence/container in another block.
+    scopes: list[list[int]] = []
+    scope: list[int] = []
+    table_lines: set[int] = set()
+    last_prose_line = -2
+
+    def append_prose(text: str, *, separate: bool = False) -> None:
+        nonlocal scope, last_prose_line
+        if separate or not paragraph or last_prose_line != line_number - 1:
+            scope = []
+            scopes.append(scope)
+        scope.append(len(lines))
+        if table:
+            table_lines.add(len(lines))
+        lines.append(text)
+        last_prose_line = line_number
+
     skip_until = 0
     for line_number, line in enumerate(source_lines):
         if line_number < skip_until:
@@ -298,7 +311,6 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         html_consumed = False
         while delimited_html or (
             not fence
-            and not in_comment
             and not table
             and (not top or not paragraph)
             and re.match(r"^ {0,3}(?:<\?|<![A-Z]|<!\[CDATA\[)", line, re.I | re.ASCII)
@@ -327,7 +339,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         expanded = line if html_consumed else line.expandtabs(4)
         indent = len(expanded) - len(expanded.lstrip(" "))
         relative = expanded
-        comment_open = re.match(r"^ {0,3}<!--", line) if not fence and not in_comment else None
+        comment_open = re.match(r"^ {0,3}<!--", line) if not fence else None
         if comment_open and ((not table and (not top or not paragraph)) or line.startswith("<!--")):
             body = line[comment_open.end() :]
             block_comment = not (body.startswith((">", "->")) or "-->" in body)
@@ -336,7 +348,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             table = False
             previous_prose = ""
             continue
-        if not fence and not in_comment and _QUOTE_PREFIX.match(relative):
+        if not fence and _QUOTE_PREFIX.match(relative):
             paragraph = False
             skip_until, inner = _quote_end(
                 source_lines, line_number, 0, markdown.endswith(("\r", "\n"))
@@ -352,9 +364,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
                 if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", quoted_line):
                     fence = ""
                 continue
-            match = (
-                re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", quoted_line) if not in_comment else None
-            )
+            match = re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", quoted_line)
             if match:
                 paragraph = False
                 fence = match.group(1)
@@ -362,7 +372,7 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         else:
             # Fence info is literal, including comment markers. Removing a
             # comment must not create a fence delimiter.
-            match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative) if not in_comment else None
+            match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative)
             if match:
                 paragraph = False
                 marker = match.group(1)
@@ -378,16 +388,15 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             if fence:
                 paragraph = False
                 continue
-        if not in_comment:
-            terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
-            html_line = relative + ("\n" if terminated else "")
-            html = re.match(r"^ {0,3}<(?ai:(script|pre|style|textarea))[\s>]", html_line)
-            if html:
-                paragraph = False
-                tag = html.group(1).lower()
-                if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
-                    raw_html = tag
-                continue
+        terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
+        html_line = relative + ("\n" if terminated else "")
+        html = re.match(r"^ {0,3}<(?ai:(script|pre|style|textarea))[\s>]", html_line)
+        if html:
+            paragraph = False
+            tag = html.group(1).lower()
+            if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
+                raw_html = tag
+            continue
         # Marked's HTML start grammar differs from its paragraph/table
         # interrupters: only column-zero type-6 tags interrupt existing prose.
         # List contents use block text (top=False), not top-level paragraphs.
@@ -408,9 +417,8 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         html_interrupt = bool(block_html and line.startswith("<"))
         if table and (indent >= 4 or html_interrupt):
             table = False
-        if not in_comment and (
-            (block_html and (not top or not paragraph or html_interrupt) and not table)
-            or (standalone_html and not table and (not top or not paragraph))
+        if (block_html and (not top or not paragraph or html_interrupt) and not table) or (
+            standalone_html and not table and (not top or not paragraph)
         ):
             blank_html = True
             paragraph = False
@@ -430,13 +438,17 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             paragraph = False
         if table_rule:
             table = True
-            lines.append(line)
+            # The preceding prose line becomes the table header only after
+            # this delimiter row has been recognized.
+            if lines and isinstance(lines[-1], str):
+                table_lines.add(len(lines) - 1)
+            append_prose(line, separate=True)
             continue
 
         # Parse list contents before quote/fence contents on the next pass.
         # Keeping a projection-only prefix prevents a nested H1 becoming the
         # page identity while allowing ordinary list prose into excerpts.
-        list_item = _LIST_START.match(line) if not in_comment else None
+        list_item = _LIST_START.match(line)
         if (
             list_item
             and top
@@ -459,25 +471,15 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
             lines.append(_ProseContainer(inner, " " * content_indent, False, True))
             continue
 
-        if in_comment or indent < 4:
-            # A fence marker inside a comment cannot open/close a code block.
-            # Indented code cannot start a prose comment either.
-            line, in_comment = _without_comments(
-                line, in_comment, has_later_close=line_number < last_comment_close
-            )
-            expanded = line if html_consumed else line.expandtabs(4)
-            indent = len(expanded) - len(expanded.lstrip(" "))
-            relative = expanded
-
         if not expanded.strip():
             paragraph = False
             paragraph_barrier = False
             table = False
             previous_prose = ""
-            lines.append(line)
+            append_prose(line, separate=True)
             continue
         if indent < 4:
-            lines.append(line)
+            append_prose(line, separate=bool(re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", expanded)))
             setext = paragraph and re.fullmatch(r" {0,3}(?:=+|-+) *", expanded)
             paragraph = not bool(
                 paragraph_barrier
@@ -490,8 +492,41 @@ def _prose_segments(markdown: str, *, quoted: bool, top: bool) -> list[str | _Pr
         elif paragraph:
             # Marked merges indented code candidates into existing paragraph
             # text. Preserve indentation so literal headings stay non-titles.
-            lines.append(line)
+            append_prose(line)
+
+    for indices in scopes:
+        indices = [index for index in indices if index not in table_lines]
+        last_close = max(
+            (offset for offset, index in enumerate(indices) if "-->" in str(lines[index])),
+            default=-1,
+        )
+        in_inline_comment = False
+        for offset, index in enumerate(indices):
+            text = lines[index]
+            assert isinstance(text, str)
+            lines[index], in_inline_comment = _without_comments(
+                text, in_inline_comment, has_later_close=offset < last_close
+            )
+    for index in table_lines:
+        text = lines[index]
+        assert isinstance(text, str)
+        lines[index] = _without_cell_comments(text)
     return lines
+
+
+def _without_cell_comments(row: str) -> str:
+    """Each unescaped GFM pipe starts a new inline scope, even inside code."""
+    parts: list[str] = []
+    start = 0
+    slashes = 0
+    for offset, char in enumerate(row):
+        if char == "|" and slashes % 2 == 0:
+            parts.append(_without_comments(row[start:offset], False, has_later_close=False)[0])
+            parts.append("|")
+            start = offset + 1
+        slashes = slashes + 1 if char == "\\" else 0
+    parts.append(_without_comments(row[start:], False, has_later_close=False)[0])
+    return "".join(parts)
 
 
 def prose_links(markdown: str) -> str:

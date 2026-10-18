@@ -21,7 +21,6 @@ from second_brain.wiki.store import WikiError, WikiStore
         "~~~html <!--\n# Example heading\n~~~\n\n",
         "<!-- comment -->```\n",
         "<!-- comment --># Example heading\n\n",
-        "An introduction <!--\n~~~~\n# Example heading\n-->\n\n",
         "    # Example heading\n\n",
         "    <!-- code, not an open prose comment\n\n",
         "---\nlabel: example\n# Example heading\n---\n\n",
@@ -54,6 +53,23 @@ def test_page_title_ignores_non_prose_headings(tmp_path: Path, prefix: str) -> N
     assert graph["missing_targets"] == [{"source": "source", "target": "Example heading"}]
     assert store.backlinks("article")["total"] == 1
     assert len(store.history("article")) == 1
+
+
+def test_inline_comment_cannot_hide_an_unclosed_code_fence(tmp_path: Path) -> None:
+    # Installed Marked lexes the incomplete inline opener as literal text and
+    # the following unclosed fence through EOF, including the apparent H1s.
+    store = WikiStore(tmp_path)
+    markdown = (
+        "An introduction <!--\n~~~~\n# Example heading\n-->\n\n"
+        "# Actual heading\nA fictional article.\n"
+    )
+    saved = store.save_page("article", markdown, None, "article")
+    assert saved["title"] == "article"
+    assert saved["excerpt"] == "An introduction <!--"
+    assert saved["markdown"] == markdown
+    reopened = WikiStore(store.path)
+    assert reopened.get_page("article") == store.get_page("article")
+    assert reopened._git("show", "HEAD:pages/article.md") == markdown.encode()
 
 
 def test_code_only_heading_falls_back_to_id_and_inline_title_bytes_remain(tmp_path: Path) -> None:

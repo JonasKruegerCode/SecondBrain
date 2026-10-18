@@ -3047,6 +3047,63 @@ for (const width of [390, 1440]) {
 
 
 for (const width of [390, 1440]) {
+  test(`inline comment scopes preserve visible block and cell links (${width})`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    const token = randomUUID(), source = `scope-source-${token}`;
+    const target = `scope-target-${token}`, hidden = `scope-hidden-${token}`;
+    const created: string[] = [];
+    const save = async (id: string, markdown: string) => {
+      const response = await request.post(`/api/wiki/pages/${id}`, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+      expect(response.ok()).toBe(true); created.push(id); return response.json();
+    };
+    let markdown = `# Synthetic scoped annotation\n\nProse<!-- unfinished [[${target}|Before heading]].\n## Boundary heading [[${target}|Heading destination]]\n-->[[${target}|After heading]].\n\n| Topic | Context |\n| --- | --- |\n| cell<!-- [[${target}]] | -->[[${target}]] |\n\nProse<!-- [[${target}|Before code]].\n\`\`\`html\n-->[[${hidden}|Code example]]\n\`\`\`\n[[${target}|After code]].\n\nValid<!-- [[${hidden}|Hidden annotation]]\ncontinued --> ending.\n`;
+    try {
+      await save(target, "# Synthetic scope destination");
+      await save(hidden, "# Synthetic literal destination");
+      await save(source, markdown);
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Synthetic scoped annotation");
+      const check = async () => {
+        await expect(page.locator(`.prose [data-wiki-target="${target}"]`)).toHaveCount(7);
+        for (const label of ["Before heading", "Heading destination", "After heading", "Before code", "After code"]) {
+          await expect(page.locator(".prose").getByRole("link", { name: label, exact: true })).toHaveCount(1);
+        }
+        await expect(page.locator(`.prose [data-wiki-target="${hidden}"]`)).toHaveCount(0);
+        const current = await (await request.get(`/api/wiki/pages/${source}`)).json();
+        expect(current.markdown).toBe(markdown);
+        expect(current.excerpt).toContain("Before heading");
+        expect(current.excerpt).toContain("After heading");
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: any) => edge.source === source)).toEqual([{ source, target, type: "wikilink" }]);
+        expect(graph.missing_targets.filter((edge: any) => edge.source === source)).toEqual([]);
+        const backlinks = await (await request.get(`/api/wiki/pages/${target}/backlinks`)).json();
+        expect(backlinks.backlinks.some((item: any) => item.id === source)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await check();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      markdown += "\nAn intentional synthetic edit.\n";
+      await page.locator("#editor").fill(markdown);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".notice")).toContainText("Saved locally");
+      await check(); await page.reload(); await check();
+      expect((await (await request.get(`/api/wiki/pages/${source}/history`)).json()).history).toHaveLength(2);
+      await page.screenshot({ path: info.outputPath(`inline-comment-scopes-${width}.png`), fullPage: true });
+      await page.locator(".prose").getByRole("link", { name: "Before heading", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Synthetic scope destination");
+      await page.goBack(); await check();
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await (await request.get(`/api/wiki/pages/${id}`)).json();
+        const response = await request.delete(`/api/wiki/pages/${id}`, { data: { base_revision: current.revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`unclosed inline comments preserve visible prose (${width})`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 900 });
     const token = randomUUID(), source = `unclosed-source-${token}`;
