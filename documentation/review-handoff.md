@@ -167,6 +167,16 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->
   galaxy -> optional chat.
+- A denied start-page storage read falls back to the overview; failed preference
+  writes report the failure without replacing the editor or losing its draft
+  and selection. After storage recovers, setting the preference succeeds and
+  survives navigation/reload. Four 390/1440px real-service browser cases inject
+  `SecurityError`/`QuotaExceededError` at the Storage API boundary and verify the
+  old preference, original textarea, unchanged published Markdown/revision,
+  error recovery, durable successful choice and fixture cleanup. The product
+  already handled these states; this adds regression coverage, not new behavior.
+  Injected failures do not establish actual disk-quota, browser-policy or
+  physical-device behavior. No model calls are involved.
 - An empty wiki alias (`[[page-id|]]`) uses the target label and the same
   resolution, missing-target and backlink behavior as an unaliased reference.
   Safe HTTP(S) anchor schemes are case-insensitive and keep external-tab

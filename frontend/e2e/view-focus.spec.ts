@@ -3,6 +3,92 @@ import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
 
 for (const width of [390, 1440]) {
+  for (const failure of ["storage denied", "quota exceeded"] as const) {
+    test(`start preference storage failure preserves the editor and recovers (${failure}, ${width})`, async ({ page, request }, info) => {
+      const fixture = await create(request, "# Synthetic storage recovery\n\nThe published article stays unchanged.");
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      try {
+        await page.setViewportSize({ width, height: 844 });
+        // Explicit Storage API fault injection, not a real browser permission or
+        // disk-quota experiment. All page reads/history use the running service.
+        await page.addInitScript(({ failure }) => {
+          const storage = window.localStorage;
+          const key = "secondbrain.startpage";
+          const recoveryKey = "synthetic.start-storage-recovered";
+          let blocked = sessionStorage.getItem(recoveryKey) !== "yes";
+          const set = Storage.prototype.setItem;
+          if (!storage.getItem(key)) set.call(storage, key, "home");
+          Object.defineProperty(window, "localStorage", { configurable: true, get() {
+            if (blocked && failure === "storage denied")
+              throw new DOMException("Synthetic storage denial", "SecurityError");
+            return storage;
+          }});
+          Storage.prototype.setItem = function(name, value) {
+            if (blocked && this === storage && name === key)
+              throw new DOMException("Synthetic full storage", "QuotaExceededError");
+            return set.call(this, name, value);
+          };
+          window.addEventListener("synthetic-start-storage-ready", () => {
+            blocked = false;
+            sessionStorage.setItem(recoveryKey, "yes");
+          });
+        }, { failure });
+        await page.goto("/");
+        // A denied read falls back to the overview; quota failures still allow
+        // reading the saved Home preference. Both survive a real reload.
+        const start = failure === "storage denied"
+          ? page.getByRole("link", { name: /Open Lantern Bay/ })
+          : page.locator("article > h1");
+        await expect(start).toBeVisible();
+        if (failure === "quota exceeded") await expect(start).toHaveText("Lantern Bay field atlas");
+        await page.reload();
+        await expect(start).toBeVisible();
+        if (failure === "quota exceeded") await expect(start).toHaveText("Lantern Bay field atlas");
+        await page.goto(`/wiki/${fixture.id}`);
+        await page.getByRole("button", { name: "Edit page" }).click();
+        const editor = page.getByRole("textbox", { name: /Markdown/ });
+        const handle = await editor.elementHandle();
+        const draft = fixture.markdown + "\n\nAn unsaved synthetic draft.";
+        await editor.fill(draft);
+        await editor.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(4, 13));
+        await page.getByRole("button", { name: "Set as start page" }).click();
+        await expect(page.locator(".notice.error")).toContainText("could not remember this preference");
+        await expect(editor).toHaveValue(draft);
+        expect(await editor.evaluate((node, original) => node === original, handle)).toBe(true);
+        expect(await editor.evaluate(node => [(node as HTMLTextAreaElement).selectionStart,
+          (node as HTMLTextAreaElement).selectionEnd])).toEqual([4, 13]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: info.outputPath(`start-storage-${failure === "storage denied" ? "denied" : "quota"}-${width}.png`) });
+        await page.evaluate(() => window.dispatchEvent(new Event("synthetic-start-storage-ready")));
+        expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe("home");
+        await page.getByRole("button", { name: "Set as start page" }).click();
+        await expect(page.locator(".notice")).toHaveText("This is now your start page.");
+        await expect(page.locator(".notice")).not.toHaveClass(/error/);
+        await expect(editor).toHaveValue(draft);
+        expect(await editor.evaluate((node, original) => node === original, handle)).toBe(true);
+        const current = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+        expect(current.markdown).toBe(fixture.markdown);
+        expect(current.revision).toBe(fixture.revision);
+        // Cancel deliberately discards only the draft, then the saved preference
+        // survives a document navigation and reload to the real article.
+        page.once("dialog", dialog => dialog.accept());
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.locator(".prose")).toContainText("The published article stays unchanged.");
+        await page.goto("/");
+        await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
+        await page.reload();
+        await expect(page.locator("article > h1")).toHaveText("Synthetic storage recovery");
+        expect(errors).toEqual([]);
+      } finally {
+        await deleteReadingPages(request, [fixture.id]);
+        expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
+      }
+    });
+  }
+}
+
+for (const width of [390, 1440]) {
   for (const failure of ["deleted after listing", "transport unavailable"] as const) {
     test(`saved start falls back without changing direct URLs (${failure}, ${width})`, async ({ page, request }, info) => {
       const fixture = await create(request, "# Synthetic saved start\n\nA recoverable starting point.");
