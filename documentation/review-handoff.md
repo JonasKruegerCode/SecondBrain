@@ -432,8 +432,17 @@ scanner correction was rejected because actual Marked12 counterprobes exposed
 visible links it would wrongly suppress, including `*HTTPS://example.test/[[x]]**!`
 and `~*HTTPS://example.test/[[x]]~*`. A remaining example is
 `prefix **HTTPS://example.test/[[x]]**`: it can still produce a backend phantom
-edge. Complete inline-token parity remains open; do not generalize this bounded
-whole-block correction to other formatting scopes.
+edge on v23. Version v24 extends only this full-block shortcut to surrounding
+plain Unicode words separated by spaces/tabs, so the prefix example and its
+plain-word suffix variants no longer create phantom edges. Prefix/suffix bytes,
+visible excerpts, CRLF source and history remain intact; an explicit later prose
+link still creates its backlink. The installed Marked12 extension was compared
+against 240 independent delimiter/URL/context combinations without a newly
+suppressed visible link. This is a bounded matrix, not complete grammar parity:
+punctuation/markup outside that grammar, intraword, single/triple emphasis,
+escaping and complex siblings remain outside the correction. V24 invalidates
+older derived receipts including v23, with the same embedding-cost caveat; it
+does not rewrite Markdown, IDs, history or API/MCP contracts.
 
 The browser CI job now has a 20-minute budget, preserving every profile,
 assertion and per-test timeout. On the preceding revision all six harness

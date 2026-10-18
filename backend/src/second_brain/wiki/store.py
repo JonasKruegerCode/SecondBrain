@@ -45,12 +45,13 @@ _INLINE_LINK_RE = re.compile(
 _ANCHOR_TAG_RE = re.compile(r"</?a(?:\s[^<>]*?)?\s*/?>", re.I)
 _AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
 _URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
-# A whole prose block containing only a simple emphasized URL has its own
-# inline-token scope. Do not extend this shortcut to surrounding inline text:
-# delimiter runs, escapes and nested formatting change Marked's token boundaries.
+# A simple emphasized URL starts its own inline-token scope. Surrounding plain
+# words separated by spaces/tabs do not change that boundary. Keep this a full
+# block match: punctuation, escapes and nested markup require different scopes.
 _EMPHASIS_URL_RE = re.compile(
-    r"(?P<delimiter>\*\*|__)(?P<url>(?:ftp://|https?://|www\.)"
-    r"[^\s<*_`\\~]+?)(?P=delimiter)",
+    r"(?P<prefix>(?:[^\W_]+[ \t]+)*)(?P<delimiter>\*\*|__)"
+    r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+?)(?P=delimiter)"
+    r"(?P<suffix>(?:[ \t]+[^\W_]+)*)",
     re.I,
 )
 _URL_BACKPEDAL_RE = re.compile(
@@ -689,7 +690,14 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
         end = _autolink_end(inner, 0)
         if end is not None:
             delimiter = emphasis.group("delimiter")
-            text = delimiter + " " * end + inner[end:] + delimiter
+            text = (
+                emphasis.group("prefix")
+                + delimiter
+                + " " * end
+                + inner[end:]
+                + delimiter
+                + emphasis.group("suffix")
+            )
     parts: list[str] = []
     code_ends = _code_span_ends(text)
     position = 0

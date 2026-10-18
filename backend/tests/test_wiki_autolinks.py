@@ -44,6 +44,14 @@ from second_brain.wiki.store import (
         ("prefix HTTPS://example.test/[[shown]]", {"shown"}),
         ("**HTTPS://example.test/[[hidden]]**", set()),
         ("__HTTPS://example.test/[[hidden]]__", set()),
+        ("prefix **HTTPS://example.test/[[hidden]]**", set()),
+        ("prefix __HTTPS://example.test/[[hidden]]__ suffix", set()),
+        ("**HTTPS://example.test/[[hidden]]** suffix", set()),
+        ("mehr Wörter\t**HTTPS://example.test/[[hidden]]** nächste Wörter", set()),
+        ("prefix **HTTPS://example.test/(unclosed/[[shown]]**", {"shown"}),
+        ("prefix **HTTPS://example.test/[[shown]]**word", {"shown"}),
+        ("prefix <a href='/'>**HTTPS://example.test/[[shown]]**</a>", {"shown"}),
+        (r"prefix \**HTTPS://example.test/[[shown]]**", {"shown"}),
         ("**HTTPS://example.test/(unclosed/[[shown]]**", {"shown"}),
         ("word__HTTPS://example.test/[[shown]]__", {"shown"}),
         ("__HTTPS://example.test/[[shown]]__word", {"shown"}),
@@ -88,3 +96,25 @@ def test_urls_remain_excerpt_text_without_becoming_graph_edges(tmp_path: Path) -
 
 def test_excerpt_keeps_visible_url_text() -> None:
     assert "https://example.test/" in plain_text_excerpt("https://example.test/[[visible]]")
+
+
+def test_surrounding_words_keep_source_history_and_excerpts(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    for target in ("hidden", "shown"):
+        store.save_page(target, f"# {target}", None, target)
+    markdown = (
+        "# Surrounding words\r\n\r\n"
+        "prefix **HTTPS://example.test/[[hidden]]** suffix\r\n\r\n"
+        "prefix HTTPS://example.test/[[shown]]\r\n"
+    )
+    saved = store.save_page("source", markdown, None, "source")
+    assert "prefix HTTPS://example.test/" in saved["excerpt"]
+    assert "suffix" in saved["excerpt"]
+    reopened = WikiStore(tmp_path)
+    assert reopened.backlinks("hidden")["total"] == 0
+    assert reopened.backlinks("shown")["total"] == 1
+    assert reopened._git("show", "HEAD:pages/source.md") == markdown.encode()
+    reopened.save_page("source", markdown + "\r\n[[hidden]]", saved["revision"], "next")
+    assert reopened.backlinks("hidden")["total"] == 1
+    assert len(reopened.history("source")) == 2
+    assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
