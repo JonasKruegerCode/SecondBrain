@@ -45,6 +45,7 @@ def setup_vault(
             raise WikiError("invalid_setup", "Choose an explicit clean local Git source.")
         store = WikiStore(path)
         if mode == "empty":
+            store.check_health()
             if store.list_pages():
                 raise WikiError("setup_not_empty", "This wiki already contains pages.")
             result = {"status": "ready", "pages": 0}

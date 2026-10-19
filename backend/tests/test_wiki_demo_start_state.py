@@ -48,6 +48,67 @@ def snapshot(vault: Path) -> dict[str, bytes]:
     return {str(p.relative_to(vault)): p.read_bytes() for p in vault.rglob("*") if p.is_file()}
 
 
+@pytest.mark.parametrize("mode", [[], ["--empty"], ["--scale-pages", "251"]])
+@pytest.mark.parametrize("target_exists", [False, True])
+def test_symlink_vault_is_refused_before_seeding_or_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: list[str],
+    target_exists: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "outside"
+    if target_exists:
+        target.mkdir()
+    link = tmp_path / "vault-link"
+    link.symlink_to(target, target_is_directory=True)
+    main, processes = launcher(tmp_path, monkeypatch)
+    # Exercise the real seeder: a pre-resolved link would otherwise write pages.
+    monkeypatch.setitem(main.__globals__, "seed_vault", demo.seed_vault)
+    with pytest.raises(SystemExit) as caught:
+        main(["--vault", str(link), *mode])
+    assert caught.value.code == 2
+    assert "symbolic link" in capsys.readouterr().err
+    processes.assert_not_called()
+    assert link.is_symlink()
+    assert target.exists() == target_exists
+    assert not target.exists() or not any(target.iterdir())
+
+
+def test_default_demo_vault_symlink_is_also_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = tmp_path / "outside"
+    target.mkdir()
+    demo_root = tmp_path / ".demo"
+    demo_root.mkdir()
+    (demo_root / "vault").symlink_to(target, target_is_directory=True)
+    main, processes = launcher(tmp_path, monkeypatch)
+    monkeypatch.setitem(main.__globals__, "seed_vault", demo.seed_vault)
+    with pytest.raises(SystemExit) as caught:
+        main([])
+    assert caught.value.code == 2
+    assert "symbolic link" in capsys.readouterr().err
+    processes.assert_not_called()
+    assert not any(target.iterdir())
+
+
+def test_fresh_scale_profile_does_not_use_default_demo_vault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "outside"
+    target.mkdir()
+    demo_root = tmp_path / ".demo"
+    demo_root.mkdir()
+    (demo_root / "vault").symlink_to(target, target_is_directory=True)
+    main, processes = launcher(tmp_path, monkeypatch)
+    assert main(["--scale-pages", "251"]) == 1  # Simulated service exit.
+    assert processes.call_count == 2
+    assert not any(target.iterdir())
+    scale = next(demo_root.glob("scale-vault-*/vault"))
+    assert len(WikiStore(scale).list_pages()) == 251
+
+
 @pytest.mark.parametrize("empty", [False, True])
 def test_partial_seed_requires_explicit_resume_before_any_service(
     tmp_path: Path,

@@ -11,6 +11,12 @@ Install the locked dependencies using the [main setup instructions](../README.md
 From the repository root, select Poetry's actual Python executable and a new
 destination:
 
+The destination itself must not be a symbolic link, including when using the
+demo launcher. Empty setup verifies that local Git history is readable before
+reporting readiness; an existing invalid `.wiki.git` directory is refused rather
+than treated as an empty wiki. Inspect or recover that directory without deleting
+it to force a fresh start.
+
 ```sh
 export PYTHONPATH="$PWD/backend/src"
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"

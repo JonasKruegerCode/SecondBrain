@@ -16,6 +16,14 @@ the actual results for the reviewed revision before relying on that evidence.
 
 ## Architecture and data flow
 
+First-start guards refuse a symbolic-link vault before the demo launcher resolves
+it or creates any template/scale content. Empty setup checks the local authority
+before reporting readiness, so a partial or invalid Git directory is not reported
+as a ready empty wiki. Synthetic filesystem regressions cover existing and
+dangling links, default/explicit destinations, template/empty/scale launch modes,
+unchanged outside targets and invalid-history refusal. Subprocess launches are
+test doubles in these boundary cases; they are not another browser or device run.
+
 Markdown stored in a local bare Git repository is authoritative. A save validates
 the revision read by the caller, writes page content plus its retry receipt into
 one candidate snapshot, then publishes that snapshot with a compare-and-swap ref

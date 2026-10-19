@@ -50,6 +50,17 @@ def test_empty_persistence_and_populated_refusal(tmp_path: Path) -> None:
     assert store._head() == before
 
 
+def test_empty_setup_does_not_report_invalid_history_ready(tmp_path: Path) -> None:
+    path = tmp_path / "managed"
+    repository = path / ".wiki.git"
+    repository.mkdir(parents=True)
+    with pytest.raises(WikiError) as caught:
+        setup_vault(path, "empty")
+    assert caught.value.code == "storage_unavailable"
+    assert list(path.iterdir()) == [repository]
+    assert not any(repository.iterdir())
+
+
 def test_template_repeat_preserves_edited_pages(tmp_path: Path) -> None:
     path = tmp_path / "managed"
     first = setup_vault(path, "template")

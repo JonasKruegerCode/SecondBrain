@@ -125,6 +125,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--with-openrouter requires OPENROUTER_API_KEY")
     if args.scale_pages is not None and not 251 <= args.scale_pages <= 2_000:
         parser.error("--scale-pages must be between 251 and 2000")
+    requested_vault = args.vault
+    if requested_vault is None and args.scale_pages is None:
+        requested_vault = root / ".demo" / "vault"
+    if requested_vault is not None and requested_vault.is_symlink():
+        parser.error("A demo vault must not be a symbolic link.")
     if args.scale_pages is not None:
         scale_root = root / ".demo"
         scale_root.mkdir(parents=True, exist_ok=True)
