@@ -174,6 +174,15 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 
 ## User and operator paths
 
+- Keyboard selection of a saved chat now retains focus on the selected history
+  button after rendering and persistence reorder the list. Previously Enter
+  left focus on the document body, so the next Tab restarted at New. Restoration
+  occurs only when the original button owned focus; pointer-only activation
+  does not acquire focus. The full-history regression checks native Enter,
+  Tab/Shift+Tab and reload at 390, 1024 and 1440px. All three focus assertions
+  failed on the preceding source and passed after the correction in native
+  Chromium. These synthetic saved transcripts involve no model calls and do
+  not establish screen-reader or physical-device behavior.
 - At short 844x390 and 390x450 viewports, ordinary scrolling keeps a full local
   chat history, input/Send/Retry and Editor Save/Cancel reachable. Two native
   Chromium cases retain a failed question without inventing an assistant

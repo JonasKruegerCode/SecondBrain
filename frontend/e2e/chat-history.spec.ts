@@ -107,6 +107,15 @@ for (const width of [1440, 1024, 390]) {
     await page.keyboard.press("Enter");
     await expect(page.locator(".chat-message.user")).toContainText("Synthetic saved question 20.");
     await expect(page.locator(".chat-history-list button.active")).toContainText("Synthetic conversation 20");
+    // Selecting history replaces the list and moves the active item first.
+    // Keep the keyboard at that item rather than restarting at New/body.
+    const active = page.locator(".chat-history-list button.active");
+    await expect(active).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator(".chat-history-list button").nth(1)).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(active).toBeFocused();
+    await page.screenshot({ path: testInfo.outputPath(`chat-history-selected-focus-${width}.png`) });
     await page.reload();
     await expect(page.locator(".chat-message.user")).toContainText("Synthetic saved question 20.");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();

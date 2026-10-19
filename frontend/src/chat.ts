@@ -304,12 +304,17 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     </section>`;
     main.querySelectorAll<HTMLButtonElement>("[data-conversation]").forEach(button => {
       button.onclick = () => {
+        const restoreFocus = document.activeElement === button;
         activeId = button.dataset.conversation!;
         error = "";
         conversationNotice = "";
         contextNotice = "";
         persist(); // Keep the selected conversation when leaving or reloading Chat.
         render(false);
+        // The history DOM is replaced and persist can reorder it. Retain a
+        // keyboard selection without taking focus from pointer-only activation.
+        if (restoreFocus)
+          main.querySelector<HTMLButtonElement>(".chat-history-list button.active")?.focus();
       };
     });
     main.querySelector<HTMLButtonElement>('[data-action="new"]')!.onclick = () => {
