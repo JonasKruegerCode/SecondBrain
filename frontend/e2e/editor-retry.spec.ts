@@ -2,6 +2,86 @@ import { expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
+for (const width of [320, 390, 1440]) {
+  for (const trigger of ["pointer", "keyboard"] as const) {
+    for (const failure of ["transport", "conflict"] as const) {
+      test(`save feedback stays beside its control (${failure}, ${trigger}, ${width})`, async ({ page, request }, info) => {
+        const initial = "# Save feedback fixture\nAn independently invented observation.";
+        const fixture = await create(request, initial);
+        const payloads: unknown[] = [];
+        let offline = failure === "transport";
+        try {
+          await page.setViewportSize({ width, height: width === 320 ? 568 : 844 });
+          await page.goto(`/wiki/${fixture.id}`);
+          await page.getByRole("button", { name: "Edit page" }).click();
+          const editor = page.getByRole("textbox", { name: /Markdown/ });
+          const identity = await editor.elementHandle();
+          const draft = initial + "\nA synthetic unsaved correction.";
+          await editor.fill(draft);
+          await editor.evaluate((e: HTMLTextAreaElement) => e.setSelectionRange(2, 8, "backward"));
+          const foreign = initial + "\nA separate fictional agent edit.";
+          if (failure === "conflict") {
+            expect((await request.post(`/api/wiki/pages/${fixture.id}`, { data: {
+              markdown: foreign, base_revision: fixture.revision, request_id: randomUUID(),
+            } })).ok()).toBeTruthy();
+          }
+          await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+            if (route.request().method() === "POST") {
+              payloads.push(route.request().postDataJSON());
+              if (offline) return route.abort("failed");
+            }
+            await route.continue();
+          });
+          const save = page.getByRole("button", { name: "Save changes" });
+          if (trigger === "pointer") await save.click();
+          else { await save.focus(); await page.keyboard.press("Enter"); }
+          const notice = page.locator(".notice");
+          await expect(notice).toContainText(failure === "conflict" ? "Conflict" : "Try saving again");
+          // No scroll/reveal helper: this is the viewport produced by Save.
+          await expect(notice).toBeInViewport({ ratio: 1 });
+          await expect(save).toBeInViewport({ ratio: 1 });
+          await expect(notice).toHaveAttribute("role", "status");
+          await expect(notice).toHaveAttribute("aria-atomic", "true");
+          await expect(editor).toBeFocused();
+          await expect(editor).toHaveValue(draft);
+          expect(await identity!.evaluate(e => e === document.querySelector("#editor"))).toBe(true);
+          expect(await editor.evaluate((e: HTMLTextAreaElement) => [e.selectionStart, e.selectionEnd, e.selectionDirection])).toEqual([2, 8, "backward"]);
+          const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+          expect(stored.markdown).toBe(failure === "conflict" ? foreign : initial);
+          if (failure === "transport") expect(stored.revision).toBe(fixture.revision);
+          await page.screenshot({ path: info.outputPath(`save-feedback-${failure}-${trigger}-${width}.png`) });
+          expect(payloads).toHaveLength(1);
+          // Preference feedback belongs back near the toolbar, including
+          // after a failed save. Moving its live region must retain the draft.
+          const start = page.getByRole("button", { name: "Set as start page" });
+          await start.click();
+          await expect(notice).toContainText("This is now your start page.");
+          await expect(notice).not.toHaveClass(/error/);
+          await expect(notice).toBeInViewport({ ratio: 1 });
+          await expect(start).toBeFocused();
+          await expect(editor).toHaveValue(draft);
+          expect(await identity!.evaluate(e => e === document.querySelector("#editor"))).toBe(true);
+          if (failure === "transport") {
+            offline = false;
+            await save.click();
+            await expect(notice).toContainText("Saved locally");
+            expect(payloads).toHaveLength(2);
+            expect(payloads[1]).toEqual(payloads[0]);
+            expect((await (await request.get(`/api/wiki/pages/${fixture.id}`)).json()).markdown).toBe(draft);
+          }
+          expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+        } finally {
+          const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+          expect(current.ok()).toBeTruthy();
+          expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+            base_revision: (await current.json()).revision, request_id: randomUUID(),
+          } })).ok()).toBeTruthy();
+        }
+      });
+    }
+  }
+}
+
 // Both engines exercise these same real Git-backed writes. WebKit inherits
 // the worker-blocked reading profile so the held response is observable.
 async function create(request: APIRequestContext, markdown: string) {
@@ -11,6 +91,54 @@ async function create(request: APIRequestContext, markdown: string) {
   });
   expect(response.ok()).toBeTruthy();
   return { id, ...(await response.json()) };
+}
+
+for (const width of [390, 1440]) {
+  test(`pending Save feedback retains later preference focus (${width})`, async ({ page, request }) => {
+    const initial = "# Pending feedback fixture\nAn independently invented note.";
+    const fixture = await create(request, initial);
+    let release!: () => void, entered!: () => void, drained!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const pending = new Promise<void>(r => { entered = r; });
+    const finished = new Promise<void>(r => { drained = r; });
+    let holding = false;
+    try {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/wiki/${fixture.id}`);
+      await page.getByRole("button", { name: "Edit page" }).click();
+      const editor = page.getByRole("textbox", { name: /Markdown/ });
+      const draft = initial + "\nA synthetic draft retained during a delayed request.";
+      await editor.fill(draft);
+      await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+        if (route.request().method() !== "POST") return route.continue();
+        holding = true;
+        try { entered(); await gate; await route.abort("failed"); }
+        finally { drained(); }
+      });
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await pending;
+      const start = page.getByRole("button", { name: "Set as start page" });
+      await start.click();
+      await expect(page.locator(".notice")).toContainText("This is now your start page.");
+      await expect(page.locator(".notice")).toBeInViewport({ ratio: 1 });
+      const top = await page.evaluate(() => scrollY);
+      release(); await finished;
+      await expect(page.locator(".editor-feedback .notice")).toContainText("Try saving again");
+      await expect(page.locator(".notice")).toHaveCount(1);
+      await expect(start).toBeFocused();
+      expect(Math.abs(await page.evaluate(() => scrollY) - top)).toBeLessThanOrEqual(1);
+      await expect(editor).toBeEditable();
+      await expect(editor).toHaveValue(draft);
+      expect(await (await request.get(`/api/wiki/pages/${fixture.id}`)).json()).toMatchObject({ markdown: initial, revision: fixture.revision });
+    } finally {
+      release(); if (holding) await finished;
+      const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+      expect(current.ok()).toBeTruthy();
+      expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+        base_revision: (await current.json()).revision, request_id: randomUUID(),
+      } })).ok()).toBeTruthy();
+    }
+  });
 }
 
 for (const width of [390, 1440]) {

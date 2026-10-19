@@ -87,6 +87,7 @@ let page: Page | null = null,
   saving = false,
   notice = "",
   noticeError = false,
+  noticeAtSave = false,
   deliveryNotice = "",
   generation = 0,
   deliveryGeneration = 0,
@@ -522,6 +523,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
   saveAttempt = null;
   notice = "";
   noticeError = false;
+  noticeAtSave = false;
   deliveryNotice = "";
   if (reuseShell) {
     // Resolving a link or a saved start page normalizes the URL within this
@@ -716,7 +718,8 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
   historyState?: { open: boolean; focused: boolean }) {
   if (!page) return;
   const main = app.querySelector("main")!;
-  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1><p class="notice ${noticeError ? "error" : ""}" role="status">${esc(notice)}</p>${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><span>Your draft stays here if saving fails.</span><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : '<div class="article-toc"></div><div class="prose"></div>'}<div class="delivery-status"><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p><button id="check-delivery" class="subtle" type="button">Check sync status</button></div><details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
+  const feedback = `<p class="notice ${noticeError ? "error" : ""}" role="status" aria-atomic="true">${esc(notice)}</p>`;
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1>${editing && noticeAtSave ? "" : feedback}${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><div class="editor-feedback"><span>Your draft stays here if saving fails.</span>${noticeAtSave ? feedback : ""}</div><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : `<div class="article-toc"></div><div class="prose"></div>`}<div class="delivery-status"><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p><button id="check-delivery" class="subtle" type="button">Check sync status</button></div><details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
   if (!editing) {
     const connections = document.createElement("a");
     connections.className = "article-connections";
@@ -878,6 +881,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
       notice = "Your browser could not remember this preference.";
       noticeError = true;
     }
+    noticeAtSave = false;
     // Saving or setting a preference must not replace an active editor and
     // destroy the browser's native selection/undo history.
     if (editing) updateEditorState();
@@ -970,6 +974,14 @@ function updateEditorState(restoreSaveFocus = false) {
   button.textContent = saving ? "Saving…" : "Save changes →";
   main.querySelector<HTMLButtonElement>("#edit")!.disabled = saving;
   const message = main.querySelector<HTMLElement>(".notice")!;
+  // Keep one live region. Save feedback belongs beside Save; preference
+  // feedback stays above the draft near the toolbar that produced it.
+  const saveFeedback = main.querySelector<HTMLElement>(".editor-feedback")!;
+  if (noticeAtSave) {
+    if (message.parentElement !== saveFeedback) saveFeedback.append(message);
+  } else if (message.parentElement === saveFeedback) {
+    main.querySelector('label[for="editor"]')!.before(message);
+  }
   message.textContent = notice;
   message.classList.toggle("error", noticeError);
   main.querySelector<HTMLElement>(".delivery-notice")!.textContent = deliveryNotice;
@@ -993,6 +1005,7 @@ async function save() {
   saving = true;
   notice = "";
   noticeError = false;
+  noticeAtSave = true;
   updateEditorState();
   try {
     const result = await api("/pages/" + encodeURIComponent(page.id), {
@@ -1014,6 +1027,7 @@ async function save() {
     // A rejected newer edit did not publish. Keep an earlier lost-ack receipt
     // recoverable if the user restores that submitted draft after the conflict.
     if ((e as any).status === 409) saveAttempt = previousAttempt;
+    noticeAtSave = true;
     noticeError = true;
     notice =
       (e as any).status === 409

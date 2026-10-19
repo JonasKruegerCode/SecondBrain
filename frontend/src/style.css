@@ -588,7 +588,14 @@ textarea {
   margin-top: 20px;
   gap: 15px;
 }
-.editor-footer > span {
+.editor-feedback {
+  flex: 1;
+  min-width: 0;
+}
+.editor-feedback .notice {
+  margin: 8px 0 0;
+}
+.editor-feedback > span {
   font-size: 10px;
   color: var(--muted-surface-text);
 }

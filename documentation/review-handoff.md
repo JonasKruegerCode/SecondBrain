@@ -231,17 +231,50 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-**Browser-suite registration, 19 October 2026:**
-The f989da7 archive showed that the explicit Chromium/full and WebKit/reading
-lists omitted the new `galaxy-search.spec.ts` file. Both profiles now select it
-once; scale, first-start and worker-only profiles retain their existing scope.
-The existing orchestration contract failed on the missing selection before the
-runner correction; all 59 runner cases and scoped Ruff checks pass afterward.
-An actual Chromium acceptance-runner diagnostic selects and passes both search
-cases against the real demo API, with clean service/vault receipts and inspected
-screenshots. This filtered run is not a full suite or a WebKit browser result.
-Independent review confirms both profile additions and the separate overrides.
-New-head hosted execution still needs inspection. Application code is unchanged.
+**Save error feedback, 19 October 2026:**
+A real built-asset/real-API check at 390×844 cut browser transport before POST.
+The draft and identical retry were correct, but the sole error notice was fully
+above the viewport (top −69px, bottom −28.2px). Save feedback now stays in the
+editor footer beside Save; start-page preference feedback remains near the
+toolbar. The same atomic status region moves without replacing the textarea,
+resetting its selection/undo history or taking focus from a later user choice.
+A delayed Save failure returns feedback to Save even after a pending preference
+change. No write/API/storage/index contract changes.
+
+The narrow pointer/transport viewport regression fails before the correction.
+Twelve small/narrow/desktop pointer/keyboard transport/conflict cases check the actual
+viewport without reveal helpers, then switch to preference feedback and retry
+identical payloads. Two delayed-request cases retain chosen preference focus,
+scroll and draft. These use explicit route failures and the real Git-backed API;
+the separate built-asset transport probe uses actual CDP offline emulation.
+Neither proves physical-device or screen-reader announcement behavior.
+Local Chromium validation passed 79 selected Save/cancel/status/related cases
+plus four additional 320×568 cases (not a full suite); both TypeScript
+configurations, production build and proxy 5/access 2/PWA 5 checks passed.
+The independent review found and resolved preference placement and pending-save
+ownership issues before final verification. In the built 390×844 rerun, the
+error notice was visible at y=488–528.8px beside the visible Save control;
+the identical retry produced exactly one content commit. Services and owned
+synthetic vaults were cleaned. Linux WebKit and hosted current-head validation
+remain separate from these local Chromium checks.
+
+**Browser-suite registration, 19 October 2026 (base 2a0b528):**
+The f989da7 archive showed that explicit Chromium/full and WebKit/reading lists
+omitted `galaxy-search.spec.ts`. Both corrected profiles select it once without
+grep/repeat filters. Actual logs and archive records at test merge 43a7069
+(identical tree and verified main+head parents) now pass Chromium 300, WebKit
+reading 185, first-start 2, Git-import 3, scale 2 and workers 8: 500 successful
+phase executions/14 skips. Four new search screenshots and selection records
+support those cases; the dot reporter gives aggregate totals, not named case
+verdicts. All six CI areas were inspected, including logs and stack/browser
+archives. This certifies the stated base revision, not later UI changes.
+Browser artifact 12207302363 SHA256
+`d5895479844c552ea9191b25120ad65cce77cb3e80cd3244bd40180e4b551422`:
+186,998,268 bytes, 748 safe unique regular paths/CRCs and API/upload digest
+checked, all six result records/cleanup accepted, no model calls. Narrow WebKit
+and desktop Chromium search images were personally inspected. Original artifacts
+expire 26 October; hashes do not guarantee availability after expiry. The new
+Save feedback change needs its own current-head hosted evidence.
 
 **Galaxy search rendering, 19 October 2026:**
 Trusted sequential typing in a real synthetic 320-page/648-link wiki exposed
