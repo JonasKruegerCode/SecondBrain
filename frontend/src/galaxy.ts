@@ -155,6 +155,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const clusterName = (cluster: Cluster) => cluster.label || name(cluster.core);
   const article = (id: string, label = "Open article ↗") => `<a class="galaxy-article" data-open="${escape(id)}" href="/wiki/${encodeURIComponent(id)}">${escape(label)}</a>`;
   const matching = (id: string) => !query || `${name(id)} ${id}`.toLowerCase().includes(query);
+  const dimmed = (id: string) => !matching(id) ||
+    (selectedNode !== null && id !== selectedNode && !adjacency.get(selectedNode)!.has(id));
   const color = (c: Cluster) => c.isolated ? "#a6afc2" : colors[c.id % colors.length];
   const button = (id: string) => `<button type="button" class="galaxy-page${selectedNode === id ? " is-selected" : ""}" data-node="${escape(id)}" aria-pressed="${selectedNode === id}"><i style="--cluster-color:${color(clusters[membership.get(id)!])}"></i><span>${escape(name(id))}<small>${adjacency.get(id)!.size} neighbor${adjacency.get(id)!.size === 1 ? "" : "s"}</small></span><b>→</b></button>`;
   main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: list view opens first. Map view shows one core per constellation and counts only real links between them; choose a constellation to expand its pages.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button><button type="button" data-action="list" aria-pressed="${listOnly}">${listOnly ? "Map view" : "List view"}</button></div></div><p class="galaxy-density-note" hidden aria-live="polite"></p><div class="galaxy-stage"></div><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag to pan · Focus a star and press + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
@@ -387,11 +389,9 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     }).join("");
     const stars = [...positions].map(([id, p]) => {
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
-      const related = selectedNode && (id === selectedNode || adjacency.get(selectedNode)!.has(id));
-      const dimmed = !matching(id) || (selectedNode !== null && !related);
       const titleLetters = displayUnits(name(id), 28);
       const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
-      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
+      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
     stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${Math.max(340, rows * 300) + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
     stage.hidden = listOnly;
@@ -399,11 +399,17 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
     setView();
   }
+  let searchMarkup: string | null = null;
   function renderSidebar() {
     if (query) {
       const hits = nodes.filter(n => matching(n.id));
-      sidebar.innerHTML = `<div class="galaxy-panel-heading"><h2>Matching pages</h2><span>${hits.length}</span></div>${hits.map(n => button(n.id)).join("") || '<p class="galaxy-muted">No title or page ID matches.</p>'}`;
+      const markup = `<div class="galaxy-panel-heading"><h2>Matching pages</h2><span>${hits.length}</span></div>${hits.map(n => button(n.id)).join("") || '<p class="galaxy-muted">No title or page ID matches.</p>'}`;
+      // Consecutive prefixes often have identical results. Keep those buttons
+      // mounted; replacing hundreds of identical rows still incurs layout work.
+      if (markup !== searchMarkup) sidebar.innerHTML = markup;
+      searchMarkup = markup;
     } else if (selectedNode !== null) {
+      searchMarkup = null;
       const id = selectedNode, c = clusters[membership.get(id)!];
       const evidence = edges.filter(e => e.source === id || e.target === id);
       const problems = [
@@ -412,10 +418,12 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       ];
       sidebar.innerHTML = `<button type="button" class="galaxy-back" data-action="cluster">← Neighborhood pages</button><div class="galaxy-selected-heading"><div class="galaxy-eyebrow">${c.isolated ? "UNLINKED PAGE" : c.core === id ? "NEIGHBORHOOD CORE" : "SELECTED PAGE"}</div><h2>${escape(name(id))}</h2><code>${escape(id)}</code>${article(id)}</div><div class="galaxy-panel-heading"><h3>Link evidence</h3><span>${evidence.length}</span></div><p class="galaxy-muted">Arrows show the source page and its declared link target.</p>${evidence.length ? `<ul class="galaxy-evidence">${evidence.map(e => `<li><div>${article(e.source, name(e.source))}<span aria-label="links to">→</span>${article(e.target, name(e.target))}</div><small>${escape(e.rel ? `Declared relation: ${e.rel}` : "Explicit wikilink")}${membership.get(e.source) !== membership.get(e.target) ? " · across neighborhoods" : ""}</small>${e.source !== e.target ? `<button type="button" data-node="${escape(e.source === id ? e.target : e.source)}">Inspect neighbor →</button>` : '<small>Self-link</small>'}</li>`).join("")}</ul>` : '<p class="galaxy-muted">No resolved links. This page is placed separately.</p>'}${problems.length ? `<details class="galaxy-problems"><summary>${problems.length} unresolved link${problems.length === 1 ? "" : "s"}</summary><ul>${problems.join("")}</ul></details>` : ""}`;
     } else if (selectedCluster !== null) {
+      searchMarkup = null;
       const c = clusters[selectedCluster];
       const crossing = bridges.filter(e => membership.get(e.source) === c.id || membership.get(e.target) === c.id);
       sidebar.innerHTML = `<div class="galaxy-panel-heading"><h2>${escape(clusterName(c))}</h2><span>${c.members.length} pages</span></div><p class="galaxy-muted">${c.isolated ? "This page has no resolved links to other pages." : c.curated ? "Curated in Markdown frontmatter. Select a page to inspect the actual links." : "Grouped by shortest link paths to this core. Select a page to inspect actual links."}</p>${c.members.map(button).join("")}${crossing.length ? `<details class="galaxy-bridge-list"><summary>${crossing.length} links across constellations</summary>${crossing.map(e => `<p>${article(e.source, name(e.source))} → ${article(e.target, name(e.target))}<small>${escape(e.rel || "wikilink")}</small></p>`).join("")}</details>` : ""}`;
     } else {
+      searchMarkup = null;
       sidebar.innerHTML = `<div class="galaxy-panel-heading"><h2>Choose a constellation</h2><span>${linked.length}</span></div><p class="galaxy-muted">Curated groups come from page metadata. Uncurated groups describe link topology only.</p>${linked.map(c => `<button type="button" class="galaxy-cluster" data-cluster="${c.id}" style="--cluster-color:${color(c)}"><i></i><span>${escape(clusterName(c))}<small>${c.members.length} pages · ${c.curated ? "curated" : "link topology"} · ${bridges.filter(e => membership.get(e.source) === c.id || membership.get(e.target) === c.id).length} cross-links</small></span><b>↗</b></button>`).join("")}${isolated.length ? `<div class="galaxy-panel-heading galaxy-unlinked-heading"><h3>Unlinked pages</h3><span>${isolated.length}</span></div><p class="galaxy-muted">These pages have no links to other pages.</p>${isolated.map(c => button(c.core)).join("")}` : ""}`;
     }
     // New list/detail content starts at its heading. Keyboard return handling
@@ -536,7 +544,14 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   };
   const focusin = (event: FocusEvent) => revealStar(event.target as SVGGraphicsElement);
   const input = () => {
-    query = root.querySelector<HTMLInputElement>("input")!.value.trim().toLowerCase(); render();
+    query = root.querySelector<HTMLInputElement>("input")!.value.trim().toLowerCase();
+    // Searching changes highlights, not the snapshot geometry. Preserve the
+    // mounted map and its pan/zoom instead of rebuilding and measuring every
+    // SVG label on each keystroke. Selection still uses the full render path.
+    stage.querySelectorAll<SVGElement>(".galaxy-star").forEach(star => {
+      star.classList.toggle("is-dimmed", dimmed(star.dataset.node!));
+    });
+    renderSidebar();
   };
   let drag: { x: number; y: number; px: number; py: number; pointerId: number } | null = null;
   const pointerdown = (event: PointerEvent) => {

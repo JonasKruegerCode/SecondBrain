@@ -80,7 +80,8 @@ evidence. List/search/keyboard paths remain available. Article entry focuses the
 matching current page or explains that it is missing from a stale snapshot.
 Map/list changes preserve the selected page's expanded diagnostic; changing the
 selected page starts fresh details. List and map layouts do not promise identical
-inner scroll positions.
+inner scroll positions. Search updates highlights on the mounted map and reuses
+identical result markup, preserving geometry and avoiding repeated layout work.
 
 Markdown source, IDs and history are preserved. Rendered prose, safe HTML,
 wikilinks and graph projection have separate regression coverage. The v26 bounded
@@ -230,7 +231,36 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-**Latest UI correction, 19 October 2026:**
+**Galaxy search rendering, 19 October 2026:**
+Trusted sequential typing in a real synthetic 320-page/648-link wiki exposed
+repeated SVG reconstruction and identical result-list replacement. Search now
+updates existing star classes and only replaces changed result markup. Selection
+still rebuilds its actual neighborhood and fresh link diagnostics. Two browser
+regressions at 390/1440px check SVG identity, viewBox/positions, exact search and
+selection highlights, focus, clearing, a different result selection, unchanged
+result controls and unchanged server revision. The selected 390px identity case
+failed before correction; both pass afterward against built assets and real API.
+The final built-assets run passes all 21 related article/galaxy browser cases on
+the isolated 14-page demo. Both TypeScript configurations, production build and
+independent review pass. Current-head hosted CI remains to be inspected; the
+older hosted evidence below does not certify this change.
+
+The bounded built-asset probe used Chromium153, Vite preview with the real API
+proxy, no HMR, no worker/provider calls and no network throttling. Each of three
+profiles (390/1440px native CPU and 390px emulated 4x CPU) had three navigations
+and typed `scale-0319` at 50ms between keys.
+At 390px with emulated 4x CPU, all 30 keypresses were reported by Event Timing:
+observed median duration was 144ms before and 32ms after; maximum 264/176ms.
+This small sequential comparison is not INP, a controlled benchmark, a physical
+device result or a deployed Nginx/auth/HTTPS measurement. Native-width event
+entries below the 16ms observation threshold are missing, not zero. Initial list
+creation and occasional long tasks remain; no general capacity claim follows.
+Narrow/desktop screenshots were personally inspected. A separate final-probe
+attempt timed out expecting eight cluster buttons (zero observed); a diagnostic
+repeat passed without timeout changes, but the first failure's cause is not
+isolated. Do not erase it or infer that timing variability is solved.
+
+**Previous UI correction:**
 A failed sync-status request no longer claims that saved content is safe locally.
 The browser states that local storage and remote delivery could not be verified.
 A native malformed-ref outage reproduced the old assurance at 390/1440px; after
