@@ -328,7 +328,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       persist();
       render(true);
     };
-    main.querySelector<HTMLButtonElement>('[data-action="delete"]')!.onclick = () => {
+    const deleteButton = main.querySelector<HTMLButtonElement>('[data-action="delete"]')!;
+    deleteButton.onclick = () => {
+      const restoreFocus = document.activeElement === deleteButton;
       const removed = current();
       deletedIds.set(removed.id, Math.max(Date.now(), removed.updated + 1));
       dirtyIds.delete(removed.id);
@@ -340,6 +342,10 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       contextNotice = "";
       persist();
       render(false);
+      if (restoreFocus) {
+        const target = current().messages.length ? ".chat-history-list button.active" : "#chat-input";
+        main.querySelector<HTMLElement>(target)?.focus();
+      }
     };
     const form = main.querySelector<HTMLFormElement>(".chat-composer")!;
     const composer = form.querySelector<HTMLTextAreaElement>("textarea")!;

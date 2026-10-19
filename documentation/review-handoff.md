@@ -174,6 +174,15 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 
 ## User and operator paths
 
+- Deleting a conversation by keyboard now focuses the selected remaining chat,
+  or its composer when no messages remain. Previously the removed Delete
+  button left focus on body and Tab restarted at New. Focus is restored only
+  when Delete owned it; an unfocused activation leaves unrelated navigation
+  focus alone. Four native Chromium cases cover one/two saved chats at390/1440px,
+  visible targets, Enter/Tab/Shift+Tab, persisted deletion and reload, with no
+  chat requests. All four focus assertions failed before the fix; all25 related
+  history/concurrency cases pass afterward. The unfocused activation is a
+  programmatic boundary control, not a physical touch or screen-reader test.
 - Keyboard selection of a saved chat now retains focus on the selected history
   button after rendering and persistence reorder the list. Previously Enter
   left focus on the document body, so the next Tab restarted at New. Restoration

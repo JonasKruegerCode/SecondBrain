@@ -123,6 +123,66 @@ for (const width of [1440, 1024, 390]) {
   });
 }
 
+for (const width of [390, 1440]) {
+  for (const count of [1, 2]) {
+    test(`keyboard chat deletion keeps a usable focus target (${width}, ${count} saved)`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      const errors: string[] = [];
+      let chatRequests = 0;
+      page.on("pageerror", error => errors.push(error.message));
+      page.on("request", request => {
+        if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") chatRequests++;
+      });
+      await page.goto("/chat");
+      await page.evaluate(count => localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+        Array.from({ length: count }, (_, i) => ({ id: `synthetic-delete-${i}`, title: `Synthetic saved chat ${i + 1}`,
+          updated: 100 - i, messages: [{ role: "user", content: `Synthetic deletion question ${i + 1}.` }] })),
+      )), count);
+      await page.reload();
+      await expect(page.locator(".chat-message.user p")).toHaveText("Synthetic deletion question 1.");
+      const remove = page.getByRole("button", { name: "Delete conversation", exact: true });
+      await remove.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator('[data-conversation="synthetic-delete-0"]')).toHaveCount(0);
+      const target = count === 1 ? page.getByLabel("Message", { exact: true })
+        : page.locator(".chat-history-list button.active");
+      if (count === 1) {
+        await expect(page.getByRole("heading", { name: "Start with a real question.", exact: true })).toBeVisible();
+        await expect(remove).toBeDisabled();
+      } else {
+        await expect(page.locator(".chat-message.user p")).toHaveText("Synthetic deletion question 2.");
+      }
+      await expect(target).toBeFocused();
+      const bounds = (await target.boundingBox())!;
+      expect(bounds.y).toBeGreaterThanOrEqual(-1);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(901);
+      await page.keyboard.press("Tab");
+      await expect(count === 1 ? page.getByRole("button", { name: /^Send/ }) : remove).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(target).toBeFocused();
+      await page.screenshot({ path: info.outputPath(`chat-delete-focus-${width}-${count}.png`) });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)
+        .some((item: { id: string }) => item.id === "synthetic-delete-0"))).toBeFalsy();
+      await page.reload();
+      await expect(page.locator('[data-conversation="synthetic-delete-0"]')).toHaveCount(0);
+      await expect(page.locator(".chat-message.user")).toHaveCount(count === 1 ? 0 : 1);
+      if (count === 2) {
+        // An activation without button focus must leave the user's unrelated
+        // navigation focus alone. This is an adapter control, not a touch test.
+        const search = page.getByRole("navigation", { name: "Primary", exact: true })
+          .getByRole("link", { name: "Search", exact: true });
+        await search.focus();
+        await remove.evaluate(button => (button as HTMLButtonElement).click());
+        await expect(page.getByRole("heading", { name: "Start with a real question.", exact: true })).toBeVisible();
+        await expect(search).toBeFocused();
+      }
+      expect(chatRequests).toBe(0);
+      expect(errors).toEqual([]);
+    });
+  }
+}
+
 for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 450 }]) {
   test(`short viewport preserves chat questions and failed editor drafts (${viewport.width}x${viewport.height})`, async ({ page, request }, info) => {
     const { randomUUID } = await import("node:crypto");
