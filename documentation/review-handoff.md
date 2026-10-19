@@ -230,7 +230,19 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-**Latest local correction, 19 October 2026:**
+**Latest UI correction, 19 October 2026:**
+A failed sync-status request no longer claims that saved content is safe locally.
+The browser states that local storage and remote delivery could not be verified.
+A native malformed-ref outage reproduced the old assurance at 390/1440px; after
+correction the same real-service paths preserve the draft and editor and recover
+when the ref is restored. Cold article retry also recovers without changing the
+content head. Four response/transport-injected browser regressions cover both
+widths, keyboard focus, same editor, unchanged server content/revision and real
+status retry. The selected storage390 case failed before correction; all four
+pass afterward. Both TypeScript configurations, production build and independent
+review pass. These local checks are not a new full browser or device acceptance.
+
+**Publication-ref correction:**
 [Publication-ref regressions](../backend/tests/test_wiki_ref_readiness.py) reproduce
 seven damaged-ref states that previously appeared empty. Twelve cases now pass
 with native Git 2.51.1 and 2.43.0, including healthy unborn/packed-only controls;
@@ -238,25 +250,25 @@ abnormal process exits and inaccessible-path errors use explicit injections.
 The related store/API/setup suite passes 82 cases. The full ordinary local
 backend suite, Ruff and MyPy (118 files) pass. API failures preserve existing
 storage after app initialization. Independent source/contract review found no
-blocking issue. New hosted CI, service/image/browser acceptance and production
-recovery are not inferred from these local checks.
+blocking issue. Hosted evidence for that revision is recorded below; production
+recovery is not inferred from local checks.
 
 **Implementation examined:**
-`2a0b4fd3f16c0d9548de2d10945feaeaf03eb9cd`, tree
-`591d0cb868490f2da67a6b939b90987cac9c03fb`, tested at merge
-`76047ee4a525d6d67e3d25053f17bcf140708bb2` with identical tree and verified
+`278f9025aee1e3258a8e80722d353ba1fba03aab`, tree
+`03555a8135f2bd343107b2e9fabd5fb43561af0e`, tested at merge
+`202dc4c05725e866d64c178ab6174e708b97e154` with identical tree and verified
 main+implementation parents. The following logs/archives were actually inspected
 on 19 October 2026. They remain tied to that implementation; later documentation
 or code commits need their own applicable checks.
 
 | Area | Examined run | Result and scope |
 | --- | --- | --- |
-| Frontend | [39236323997](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323997) | Both TypeScript configurations, five proxy, two access and five PWA cases, Vite6.4.4 production/image build |
-| Backend | [39236323942](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323942) | Ruff/MyPy on 117 files, 1121 passed/12 skipped, image build |
-| SSH | [39236323944](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323944) | Five native fixture cases |
-| Indexes | [39236324427](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236324427) | Seven real disposable provider cases with synthetic vectors |
-| Stack | [39236324022](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236324022) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth and independent 14-page restore |
-| Browser | [39236323982](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323982) | Six Passed/Cleanup records, nine successful phases, 488 successful phase executions/14 explicit skips |
+| Frontend | [39251505317](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505317) | Both TypeScript configurations, five proxy, two access and five PWA cases, Vite6.4.4 production/image build |
+| Backend | [39251505143](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505143) | Ruff/MyPy on 118 files, 1133 passed/12 skipped, image build |
+| SSH | [39251505526](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505526) | Five native fixture cases |
+| Indexes | [39251505445](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505445) | Seven real disposable provider cases with synthetic vectors |
+| Stack | [39251505238](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505238) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth and independent 14-page restore |
+| Browser | [39251505497](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505497) | Six Passed/Cleanup records, nine successful phases, 488 successful phase executions/14 explicit skips |
 
 Both image builds used `push:false/load:false`; no image publication or deployment
 is inferred. Browser profiles contain Chromium 294, first-start 2, Git-import 3,
@@ -264,13 +276,13 @@ scale320 2, WebKit reading 179 and workers 8. All six records identify the exact
 merge, report no model calls/failure and confirm service cleanup. The opt-in
 installation diagnosis was skipped.
 
-Browser artifact 12179868018 is 184,407,301 bytes, SHA256
-`658baa92530319edbc2c7af8ea13982b9b663da36b7a50e60a84af7adbcaab07`.
+Browser artifact 12185859317 is 184,397,678 bytes, SHA256
+`d2ae6262f880c8401412bf24e77f543be4caaebb64f0f6b4f0a14a2d5474f685`.
 API/upload digest, 736 safe unique regular paths and ZIP CRCs were checked; no
 error-context was present. Four narrow/desktop first-start history and Git-import
-restart Home images were personally inspected. Stack artifact 12179076886 is
-707,129 bytes, SHA256
-`6516367958e9bffbf9d1ab339a6066cdb04e9d4eee2c9d74327ccfac9cc25f4f`;
+restart Home images were personally inspected. Stack artifact 12184859146 is
+706,895 bytes, SHA256
+`678742e41c9bffb1c358bd8e05ab78d6450a2cf24a3eb16cb41aa315f7cde0fb`;
 its records/log, six safe paths/CRCs and desktop/mobile Home images were
 previously inspected, including cleanup of both isolated projects and volumes.
 Artifact retention ends on 26 October; the links and hashes do not guarantee

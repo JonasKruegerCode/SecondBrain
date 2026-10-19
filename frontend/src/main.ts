@@ -953,7 +953,7 @@ async function refreshDelivery(run: number, token: number, attempt = 0) {
     }
   } catch {
     if (run !== generation || token !== deliveryGeneration) return;
-    deliveryNotice = "Saved content is safe locally. Workspace delivery status is temporarily unavailable.";
+    deliveryNotice = "Workspace status is unavailable. Local storage and remote delivery could not be verified. Try again.";
     const el = app.querySelector(".delivery-notice");
     if (el) el.textContent = deliveryNotice;
   }

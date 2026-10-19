@@ -13,6 +13,61 @@ async function create(request: APIRequestContext, markdown: string) {
   return { id, ...(await response.json()) };
 }
 
+for (const width of [390, 1440]) {
+  for (const failure of ["storage", "network"] as const) {
+    test(`unavailable workspace status avoids storage assurances and retries (${failure}, ${width})`, async ({ page, request }, info) => {
+      const initial = "# Status fixture\nAn independently invented storage observation.";
+      const fixture = await create(request, initial);
+      try {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`/wiki/${fixture.id}`);
+        await page.getByRole("button", { name: "Edit page" }).click();
+        const editor = page.locator("#editor");
+        const draft = initial + "\nAn unsaved synthetic note.";
+        await editor.fill(draft);
+        const identity = await editor.elementHandle();
+        let unavailable = true;
+        // Explicit transport/response injections; the page and recovery read
+        // still use the real content store. No native disk-failure claim.
+        await page.route("**/api/wiki/delivery-status", async route => {
+          if (!unavailable) return route.continue();
+          if (failure === "network") return route.abort("failed");
+          await route.fulfill({ status: 503, json: {
+            error: "storage_unavailable", message: "Local Git operation failed.",
+          } });
+        });
+        const check = page.getByRole("button", { name: "Check sync status", exact: true });
+        await check.focus();
+        await page.keyboard.press("Enter");
+        const notice = page.locator(".delivery-notice");
+        await expect(notice).toContainText("Local storage and remote delivery could not be verified.");
+        await expect(notice).not.toContainText("safe locally");
+        await expect(check).toBeEnabled();
+        await expect(check).toBeFocused();
+        await expect(editor).toHaveValue(draft);
+        expect(await identity!.evaluate(el => el === document.querySelector("#editor"))).toBe(true);
+        await notice.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: info.outputPath(`status-unavailable-${failure}-${width}.png`), fullPage: true });
+        unavailable = false;
+        await check.focus();
+        await page.keyboard.press("Enter");
+        await expect(notice).toContainText("Workspace indexing:");
+        await expect(check).toBeEnabled();
+        await expect(check).toBeFocused();
+        await expect(editor).toHaveValue(draft);
+        expect(await identity!.evaluate(el => el === document.querySelector("#editor"))).toBe(true);
+        const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+        expect(current.ok()).toBeTruthy();
+        expect(await current.json()).toMatchObject({ markdown: initial, revision: fixture.revision });
+      } finally {
+        expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+          base_revision: fixture.revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+      }
+    });
+  }
+}
+
 test("cancel after a real deletion shows the missing page on the same visit", async ({ page, request }, info) => {
   const fixture = await create(request, "# Deleted editor fixture\nAn independently invented old article.");
   let deleted = false, writes = 0;
