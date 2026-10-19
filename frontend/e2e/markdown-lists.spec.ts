@@ -156,6 +156,10 @@ for (const width of [390, 1440]) {
       `prefix __HTTPS://example.test/[[${hidden}]]__ suffix`, "",
       `**HTTPS://example.test/[[${hidden}]]** suffix`, "",
       `mehr Wörter\t**HTTPS://example.test/[[${hidden}]]** nächste Wörter`, "",
+      ...["*", "_", "***", "___"].flatMap(delimiter => [
+        `${delimiter}HTTPS://example.test/[[${hidden}]]${delimiter}`, "",
+        `prefix ${delimiter}HTTPS://example.test/[[${hidden}]]${delimiter} suffix`, "",
+      ]),
       `prefix HTTPS://example.test/[[${shown}]]`, "",
       `[[${shown}|Visible companion]]`, "",
       `> https://example.test/[[${hidden}]]`, ">", `> [[${shown}|Quoted companion]]`, "",
@@ -177,7 +181,7 @@ for (const width of [390, 1440]) {
       await expect(page.locator("article > h1")).toHaveText("URL boundary source");
       await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(5);
       await expect(page.locator(`.prose a[data-wiki-target='${shown}']`)).toHaveCount(5);
-      await expect(page.locator(`.prose a[href*='example.test']`)).toHaveCount(12);
+      await expect(page.locator(`.prose a[href*='example.test']`)).toHaveCount(20);
       const graph = await (await request.get("/api/wiki/graph")).json();
       expect(graph.edges.filter((edge: { source: string }) => edge.source === source)
         .map((edge: { target: string }) => edge.target)).toEqual([shown]);

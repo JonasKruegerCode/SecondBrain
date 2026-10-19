@@ -376,7 +376,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v23`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v25`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -439,10 +439,25 @@ visible excerpts, CRLF source and history remain intact; an explicit later prose
 link still creates its backlink. The installed Marked12 extension was compared
 against 240 independent delimiter/URL/context combinations without a newly
 suppressed visible link. This is a bounded matrix, not complete grammar parity:
-punctuation/markup outside that grammar, intraword, single/triple emphasis,
-escaping and complex siblings remain outside the correction. V24 invalidates
+punctuation/markup outside that grammar, intraword, escaping and complex
+siblings remain outside the correction. V24 invalidates
 older derived receipts including v23, with the same embedding-cost caveat; it
 does not rewrite Markdown, IDs, history or API/MCP contracts.
+
+Version v25 extends the same bounded full-block grammar to single and triple
+`*`/`_` emphasis. Those wrappers also start an inner Marked URL scope; uppercase
+URLs containing wiki-shaped brackets no longer create phantom backlinks there.
+Sixteen new backend cases fail on the preceding store, then cover visible
+excerpts, exact CRLF source/history and later deliberate links. The existing
+390/1440px real-service article/galaxy regression now checks all six wrapper
+forms against rendered external links and exact graph evidence. An independent
+4,460-context comparison with the installed Marked12 extension found 252 changed
+target projections, all matching the frontend; no newly suppressed visible
+wikilink in that bounded matrix. This is not general Markdown parity: mixed or
+four/five delimiter runs, punctuation/HTML wrappers, escaping, intraword and
+complex siblings remain outside the shortcut. V25 invalidates older derived
+receipts including v24; configured embedding rebuilds can incur provider costs.
+Markdown, IDs, history and REST/MCP/mutation contracts are unchanged.
 
 The browser CI job now has a 20-minute budget, preserving every profile,
 assertion and per-test timeout. On the preceding revision all six harness

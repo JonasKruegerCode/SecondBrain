@@ -47,9 +47,9 @@ _AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
 _URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
 # A simple emphasized URL starts its own inline-token scope. Surrounding plain
 # words separated by spaces/tabs do not change that boundary. Keep this a full
-# block match: punctuation, escapes and nested markup require different scopes.
+# block match: punctuation, escapes and mixed/nested markup require different scopes.
 _EMPHASIS_URL_RE = re.compile(
-    r"(?P<prefix>(?:[^\W_]+[ \t]+)*)(?P<delimiter>\*\*|__)"
+    r"(?P<prefix>(?:[^\W_]+[ \t]+)*)(?P<delimiter>\*{1,3}|_{1,3})"
     r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+?)(?P=delimiter)"
     r"(?P<suffix>(?:[ \t]+[^\W_]+)*)",
     re.I,

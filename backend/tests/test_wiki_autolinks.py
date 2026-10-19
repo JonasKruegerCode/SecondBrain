@@ -118,3 +118,38 @@ def test_surrounding_words_keep_source_history_and_excerpts(tmp_path: Path) -> N
     assert reopened.backlinks("hidden")["total"] == 1
     assert len(reopened.history("source")) == 2
     assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
+
+
+@pytest.mark.parametrize("delimiter", ["*", "_", "***", "___"])
+@pytest.mark.parametrize(
+    "prefix,suffix", [("", ""), ("prefix ", ""), ("mehr Wörter\t", " nächste Wörter")]
+)
+def test_single_and_triple_emphasis_urls_are_not_wiki_edges(
+    delimiter: str, prefix: str, suffix: str
+) -> None:
+    markdown = f"{prefix}{delimiter}HTTPS://example.test/[[hidden]]{delimiter}{suffix}"
+    prose = prose_links(markdown)
+    assert not list(LINK_RE.finditer(prose))
+    assert "HTTPS://example.test/" in plain_text_excerpt(markdown)
+
+
+@pytest.mark.parametrize("delimiter", ["*", "_", "***", "___"])
+def test_emphasis_url_projection_preserves_content_and_deliberate_link(
+    tmp_path: Path, delimiter: str
+) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("target", "# Target", None, "target")
+    markdown = (
+        f"# Emphasized URL\r\n\r\nwords {delimiter}"
+        f"HTTPS://example.test/[[target]]{delimiter} remain\r\n"
+    )
+    saved = store.save_page("source", markdown, None, "source")
+    assert store.backlinks("target")["total"] == 0
+    assert "HTTPS://example.test/" in saved["excerpt"]
+    assert store._git("show", "HEAD:pages/source.md") == markdown.encode()
+    revised = markdown + "\r\n[[target|Deliberate connection]]"
+    store.save_page("source", revised, saved["revision"], "edit")
+    reopened = WikiStore(tmp_path)
+    assert reopened.backlinks("target")["total"] == 1
+    assert len(reopened.history("source")) == 2
+    assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
