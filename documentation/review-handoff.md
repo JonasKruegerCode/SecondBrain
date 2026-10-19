@@ -174,6 +174,20 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 
 ## User and operator paths
 
+- At short 844x390 and 390x450 viewports, ordinary scrolling keeps a full local
+  chat history, input/Send/Retry and Editor Save/Cancel reachable. Two native
+  Chromium cases retain a failed question without inventing an assistant
+  answer, and preserve an exact editor draft after an injected HTTP503. The
+  existing discard confirmation remains explicit; API source and revision stay
+  unchanged. These are resized CSS viewports and scripted failure boundaries,
+  not physical soft-keyboard, Safari or provider evidence. Controls need not all
+  fit simultaneously; the checks require each actual rectangle to become fully
+  reachable without horizontal document overflow.
+  A save error response without a server message previously reused the reader's
+  "Unable to open this page" fallback. It now says "The save response could not
+  be confirmed." Server messages, status codes, timeout text, request identity
+  and mutation behavior are unchanged. The fallback deliberately does not claim
+  the server failed to publish the write.
 - First start explicitly chooses an empty wiki, the fictional template or a
   reviewed local Git import. A nonempty destination is never seeded implicitly.
 - The main user flow is Home -> article and wikilinks -> search/history/editor ->

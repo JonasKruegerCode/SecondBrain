@@ -141,18 +141,20 @@ async function api(path: string, options?: RequestInit) {
     timedOut = true;
     controller.abort();
   }, path === "/chat" ? 120_000 : 30_000);
+  const savingPage = options?.method === "POST" && path.startsWith("/pages/");
   try {
     const r = await fetch("/api/wiki" + path, { ...options, signal: controller.signal });
     const b = await r.json();
     if (!r.ok)
-      throw Object.assign(new Error(b.message || "Unable to open this page."), {
+      throw Object.assign(new Error(b.message || (savingPage
+        ? "The save response could not be confirmed."
+        : "Unable to open this page.")), {
         status: r.status,
       });
     return b;
   } catch (error) {
     if (timedOut) {
       // Aborting the response does not establish whether the server published a write.
-      const savingPage = options?.method === "POST" && path.startsWith("/pages/");
       throw new Error(savingPage
         ? "The save response timed out. The change may already be saved. Retry the unchanged draft to check."
         : "Request timed out. Check your connection and try again.");

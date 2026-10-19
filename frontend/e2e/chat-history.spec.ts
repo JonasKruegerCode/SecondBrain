@@ -113,3 +113,104 @@ for (const width of [1440, 1024, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`chat-history-${width}.png`), fullPage: true });
   });
 }
+
+for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 450 }]) {
+  test(`short viewport preserves chat questions and failed editor drafts (${viewport.width}x${viewport.height})`, async ({ page, request }, info) => {
+    const { randomUUID } = await import("node:crypto");
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.setViewportSize(viewport);
+    const reachable = async (target: ReturnType<typeof page.locator>) => {
+      await target.scrollIntoViewIfNeeded();
+      await expect(target).toBeVisible();
+      const box = (await target.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(-1);
+      expect(box.y).toBeGreaterThanOrEqual(-1);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    };
+    const id = `short-viewport-${randomUUID()}`;
+    const endpoint = `/api/wiki/pages/${id}`;
+    const markdown = "# Synthetic short viewport\n\nOriginal synthetic source.\n";
+    let created = false;
+    try {
+      await page.goto("/chat");
+      await page.evaluate(() => localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+        Array.from({ length: 20 }, (_, i) => ({ id: `short-history-${i}`, title: `Synthetic conversation ${i + 1}`,
+          updated: 100 - i, messages: [{ role: "user", content: `Synthetic saved question ${i + 1}.` }] })),
+      )));
+      await page.reload();
+      const history = page.locator("[data-conversation]");
+      await expect(history).toHaveCount(20);
+      await reachable(history.last());
+      await history.last().click();
+      await expect(page.locator(".chat-message.user").last()).toContainText("Synthetic saved question 20.");
+      const question = "Synthetic short viewport follow-up.";
+      const input = page.getByLabel("Message", { exact: true });
+      await input.fill(question);
+      await reachable(input);
+      await expect(input).toHaveValue(question);
+      await page.screenshot({ path: info.outputPath("short-chat-input.png") });
+      let attempts = 0;
+      await page.route("**/api/wiki/chat", route => {
+        attempts++;
+        return route.fulfill({ status: 503, contentType: "application/json",
+          body: JSON.stringify({ message: "Synthetic short viewport provider failure." }) });
+      });
+      const send = page.getByRole("button", { name: "Send", exact: false });
+      await reachable(send);
+      await send.click();
+      await expect(page.locator(".chat-error")).toContainText("Synthetic short viewport provider failure.");
+      const retry = page.getByRole("button", { name: "Retry", exact: true });
+      await reachable(retry);
+      await page.screenshot({ path: info.outputPath("short-chat-retry.png") });
+      await retry.click();
+      await expect.poll(() => attempts).toBe(2);
+      await expect(page.locator(".chat-error")).toContainText("Synthetic short viewport provider failure.");
+      await expect(page.locator(".chat-message.user").last()).toContainText(question);
+      await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!));
+      expect(stored.find((item: { id: string }) => item.id === "short-history-19").messages.at(-1).content).toBe(question);
+
+      const response = await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+      expect(response.ok()).toBeTruthy();
+      created = true;
+      const revision = (await response.json()).revision;
+      await page.goto(`/wiki/${id}`);
+      await page.locator("#edit").click();
+      const draft = markdown + "\nSynthetic unsaved short viewport draft.";
+      await page.locator("#editor").fill(draft);
+      await page.route(`**${endpoint}`, route => route.request().method() === "POST"
+        ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic save failure." }) })
+        : route.continue());
+      await reachable(page.locator("#save"));
+      await page.screenshot({ path: info.outputPath("short-editor-save.png") });
+      await page.locator("#save").click();
+      await expect(page.locator(".notice")).toHaveText("The save response could not be confirmed. Your draft is preserved. Try saving again.");
+      await expect(page.locator("#editor")).toHaveValue(draft);
+      await reachable(page.locator("#edit"));
+      await page.screenshot({ path: info.outputPath("short-editor-cancel.png") });
+      const dialog = page.waitForEvent("dialog");
+      const cancel = page.locator("#edit").click();
+      const confirmation = await dialog;
+      expect(confirmation.message()).toBe("Discard unsaved changes?");
+      await confirmation.accept();
+      await cancel;
+      await expect(page.locator("#editor")).toHaveCount(0);
+      const unchanged = await (await request.get(endpoint)).json();
+      expect(unchanged.markdown).toBe(markdown);
+      expect(unchanged.revision).toBe(revision);
+      expect(errors).toEqual([]);
+    } finally {
+      if (created) {
+        const current = await request.get(endpoint);
+        expect(current.ok()).toBeTruthy();
+        expect((await request.delete(endpoint, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+        expect((await request.get(endpoint)).status()).toBe(404);
+      }
+    }
+  });
+}
