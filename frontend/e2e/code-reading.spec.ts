@@ -2,6 +2,62 @@ import { randomUUID } from "node:crypto";
 import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 
+for (const width of [320, 1440]) {
+  test(`inline HTML metadata stays out of graph navigation at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    const source = `html-metadata-${randomUUID()}`, shown = `html-shown-${randomUUID()}`;
+    const hidden = `html-hidden-${randomUUID()}`, missing = `html-missing-${randomUUID()}`;
+    const endpoint = (id: string) => `/api/wiki/pages/${id}`;
+    const markdown = `# Synthetic HTML metadata\n\nSee <a href="https://example.test/docs" title="[[${hidden}]] > [[${missing}]]">documentation</a> and <em title='[[${hidden}]]'>[[${shown}|Companion]]</em>.\n`;
+    const owned: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(String(error)));
+    try {
+      for (const [id, body] of [[shown, "# Visible companion\n"], [hidden, "# Metadata companion\n"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: { markdown: body, base_revision: null, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+        owned.push(id);
+      }
+      const assertReading = async () => {
+        await expect(page.locator(".prose a")).toHaveText(["documentation", "Companion"]);
+        await expect(page.locator(".prose a").first()).toHaveAttribute("href", "https://example.test/docs");
+        await expect(page.locator(".prose [title]")).toHaveCount(0);
+        await expect(page.locator(".prose a[data-wiki-target]")).toHaveAttribute("data-wiki-target", shown);
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: { source: string }) => edge.source === source))
+          .toEqual([{ source, target: shown, type: "wikilink" }]);
+        expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === source)).toEqual([]);
+        expect((await (await request.get(endpoint(hidden) + "/backlinks")).json()).total).toBe(0);
+      };
+      await page.goto(`/wiki/${source}`);
+      await assertReading();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.reload();
+      await assertReading();
+      await page.screenshot({ path: info.outputPath(`inline-html-metadata-${width}.png`) });
+      const original = await (await request.get(endpoint(source))).json();
+      expect(original.markdown).toBe(markdown);
+      const edited = markdown + `\n[[${hidden}|Deliberate connection]]\n`;
+      const update = await request.post(endpoint(source), { data: { markdown: edited, base_revision: original.revision, request_id: randomUUID() } });
+      expect(update.ok()).toBe(true);
+      expect((await (await request.get(endpoint(hidden) + "/backlinks")).json()).total).toBe(1);
+      expect((await (await request.get(endpoint(source) + "/history")).json()).history).toHaveLength(2);
+      await page.reload();
+      await expect(page.getByRole("link", { name: "Deliberate connection", exact: true })).toBeVisible();
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(endpoint(id));
+        expect(current.ok()).toBe(true);
+        const response = await request.delete(endpoint(id), { data: { base_revision: (await current.json()).revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
 for (const width of [390, 1440]) {
   test(`generic HTML boundaries agree with graph navigation at ${width}px`, async ({ page, request }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -844,3 +900,4 @@ for (const width of [390, 1440]) {
     }
   });
 }
+

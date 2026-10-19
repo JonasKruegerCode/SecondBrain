@@ -231,6 +231,50 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
+**Inline HTML metadata and graph agreement, 20 October 2026:**
+A real source such as `See <a href="https://example.test/docs"
+title="[[setup]]">documentation</a>` created an invisible graph edge:
+Marked12 consumes the attribute as HTML metadata and the sanitizer drops it.
+Valid inline tag tokens are now masked in derived link/excerpt prose; visible
+body wikilinks remain navigable. The grammar keeps JavaScript's ASCII names and
+whitespace rules. CR/CRLF normalization replaces Python's broader splitlines
+behavior so control characters cannot manufacture valid tags. Original Markdown,
+IDs, revisions, history, renderer and mutation contracts are unchanged.
+
+The earlier 21-case red run had15 actual failures on the parent store.
+The final regression contains25 Marked-compared inline cases plus native
+Git/source/history/backlink coverage. Independent review caught a draft Unicode
+name mismatch and checked the final25 cases against installed Marked12.
+Two draft expectations for unquoted control characters were corrected only after
+both native implementations agreed; those draft failures are not product fixes.
+This is bounded token coverage, not general Markdown/parser parity.
+
+Local selected verification:422 synchronous backend cases passed across link,
+code, comment, HTML, title, snapshot, index and REST checks, plus two async MCP/
+coordinator checks under the project's async mode. The latter initially did not
+execute when a local CLI override dropped `asyncio-mode=auto`; rerunning those
+two with the project mode passed. Ruff/format and MyPy for the changed modules,
+frontend application/E2E TypeScript configurations on the selected source
+snapshot and Vite production build passed. This reused the available development
+environment, not a fresh full lock/environment installation.
+
+Two committed reading cases at320/1440px passed against real built assets/API
+and an isolated fictional320-page vault. They compare visible links, graph,
+missing targets, backlinks, reload, exact editor bytes, a deliberate later link
+and two-entry history. Viewport images were personally inspected; the owned
+supervisor exited and fixture vault was absent afterward. Local Chromium153
+with workers blocked is not new WebKit, provider, hosted-index, production,
+physical-device or screen-reader acceptance. Existing full/WebKit profile
+selection already includes `code-reading.spec.ts`; hosted results for this
+change remain pending.
+
+Derived index identity advances fromv26 tov27 so an old ready receipt cannot
+advertise the previous projection as current. Rebuild may invoke configured
+embedding providers; no Markdown migration or automatic production deployment.
+The six accepted hosted CI areas on parentcab3e7d remain parent evidence,
+not results for this new change.
+
+
 **Save feedback at the viewport edge, 19 October 2026:**
 Hosted Browser39310367572 on 1546d6c/test merge366bd989 actually failed:
 Chromium310 passed/four failed, all four desktop pointer/keyboard
@@ -440,3 +484,4 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
+

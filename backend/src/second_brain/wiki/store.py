@@ -42,7 +42,17 @@ _INLINE_LINK_RE = re.compile(
     r"\s*\)"
 )
 # Marked12 URL/autolink token boundaries; punctuation trimming runs to a fixpoint.
-_ANCHOR_TAG_RE = re.compile(r"</?a(?:\s[^<>]*?)?\s*/?>", re.I)
+# Marked12 consumes a valid inline HTML tag as one token. Attribute values
+# are metadata, even when they contain brackets or quoted angle brackets.
+_INLINE_HTML_SPACE = r"[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]"
+_INLINE_HTML_TAG_RE = re.compile(
+    rf"</[a-zA-Z][A-Za-z0-9_:-]*{_INLINE_HTML_SPACE}*>"
+    rf"|<[a-zA-Z][A-Za-z0-9_-]*(?:{_INLINE_HTML_SPACE}+[a-zA-Z:_][A-Za-z0-9_.:-]*"
+    rf'''(?:{_INLINE_HTML_SPACE}*={_INLINE_HTML_SPACE}*"[^"]*"'''
+    rf"|{_INLINE_HTML_SPACE}*={_INLINE_HTML_SPACE}*'[^']*'"
+    rf"""|{_INLINE_HTML_SPACE}*={_INLINE_HTML_SPACE}*(?:(?!{_INLINE_HTML_SPACE})[^"'=<>`])+)?)*?"""
+    rf"{_INLINE_HTML_SPACE}*/?>"
+)
 _AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
 _URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
 # A single emphasized URL starts its own inline-token scope. Bound the whole
@@ -318,7 +328,12 @@ def _prose_segments(
     paragraph_barrier = False
     table = 0
     previous_prose = ""
-    source_lines = markdown.splitlines()
+    # Marked normalizes CR/CRLF only. splitlines() would turn e.g. U+0085
+    # inside an invalid tag into valid HTML whitespace before tokenization.
+    markdown = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    source_lines = markdown.split("\n")
+    if source_lines[-1] == "":
+        source_lines.pop()
     # One normalized source and line offsets avoid repeatedly joining the tail
     # for a document with many reference definitions. HTML suffix parsing can
     # shorten the current line; account for that without changing source bytes.
@@ -686,13 +701,10 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     line boundaries and avoid manufacturing typed relations or new links.
     """
     emphasis = _EMPHASIS_URL_RE.fullmatch(text) if mask_urls else None
-    if (
-        emphasis is not None
-        and not (
-            emphasis.group("delimiter").startswith("_")
-            and emphasis.group("prefix")
-            and not emphasis.group("prefix")[-1].isspace()
-        )
+    if emphasis is not None and not (
+        emphasis.group("delimiter").startswith("_")
+        and emphasis.group("prefix")
+        and not emphasis.group("prefix")[-1].isspace()
     ):
         inner = emphasis.group("url")
         end = _autolink_end(inner, 0)
@@ -717,14 +729,14 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
             position = code_end
             continue
         if text[position] == "<" and not _markdown_escaped(text, position):
-            anchor = _ANCHOR_TAG_RE.match(text, position)
+            anchor = _INLINE_HTML_TAG_RE.match(text, position)
             if anchor is not None:
                 tag = anchor.group().lower()
                 if tag.startswith("<a "):
                     in_anchor = True
                 elif tag.startswith("</a>"):
                     in_anchor = False
-                parts.append(anchor.group())
+                parts.append(re.sub(r"[^\n]", " ", anchor.group()))
                 position = anchor.end()
                 continue
         if mask_urls:
