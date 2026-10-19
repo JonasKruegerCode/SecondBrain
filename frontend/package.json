@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.e2e.json",
     "test:browser": "playwright test",
     "test:pwa": "node --test tests/pwa.test.mjs",
-    "test:proxy": "node --test tests/chat-proxy.test.mjs"
+    "test:proxy": "node --test tests/chat-proxy.test.mjs",
+    "test:dev-security": "node --test tests/dev-security.test.mjs"
   },
   "dependencies": {
     "cytoscape": "^3.28.1",
@@ -21,6 +22,6 @@
     "@types/marked": "^6.0.0",
     "@types/node": "^20.19.43",
     "typescript": "^5.4.0",
-    "vite": "^5.2.0"
+    "vite": "^6.4.4"
   }
 }

@@ -463,12 +463,29 @@ A compatible frontend lock refresh updates build-only `nanoid` 3.3.12→3.3.20,
 `postcss` 8.5.14→8.5.31 and `source-map-js` 1.2.1→1.2.2. Package manifest,
 Node engines and Vite/esbuild versions are unchanged. A fresh npm audit on
 19 October 2026 drops from five package findings (four high, one moderate) to
-two (Vite high, esbuild moderate). This does not establish a vulnerability-free
-release: the remaining dev/build tool advisories need a separately evaluated
-Vite/esbuild upgrade. The production frontend image serves built static assets
-with Nginx; that distinction is not a complete exploitability assessment.
-Fresh locked installation, both typechecks, PWA/proxy tests, production build
-and selected real-service reading/galaxy/table/PWA paths pass after the update.
+two (Vite high, esbuild moderate). That first refresh did not establish a
+vulnerability-free release. Fresh locked installation, both typechecks,
+PWA/proxy tests, production build and selected real-service browser paths passed.
+
+The subsequent evaluated upgrade uses Vite 6.4.4 and esbuild 0.25.12. The official
+[v5→v6 migration](https://v6.vite.dev/guide/migration) was checked against this
+configuration: no SSR, Sass, custom conditions, library mode or WebSocket bypass
+is configured; the existing proxy configure/proxyReq cancellation path remains.
+Node20 CI and the Node20 Alpine builder satisfy these package engines. This is
+a bounded one-major upgrade, not an adoption of Vite7/8 or a new rendering stack.
+A fresh npm audit on 19 October 2026 reports zero known package findings; that is
+not a complete security assessment or proof of production exploitability.
+
+`npm run test:dev-security` starts the real Vite/configuration against only
+synthetic temporary files. It serves an allowed control map, denies an outside
+map requested via both direct filesystem and raw optimized-dependency traversal
+paths, and checks denied .env content and an untrusted Host header. The same
+traversal probe on Vite5.4.21 actually returns the outside synthetic map with
+HTTP200; Vite6 refuses it. This tests a Linux HTTP boundary, not the separate
+Windows UNC/NTLM advisory or a physical-device scenario. Both tests run in
+frontend CI, which now installs with `npm ci` against the lockfile. No backend
+content/index/API/MCP contract changes. Production continues to serve built
+static files with Nginx; Vite is a development/build dependency.
 
 The browser CI job now has a 20-minute budget, preserving every profile,
 assertion and per-test timeout. On the preceding revision all six harness
