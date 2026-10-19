@@ -174,6 +174,15 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 
 ## User and operator paths
 
+- Restoring focus after Delete now explicitly reveals the whole control with
+  nearest-block/inline scrolling. The preceding native WebKit run focused the
+  empty composer but left its bottom at937.17px in a900px viewport. The original
+  rectangle assertion is retained; the exact native scrolling cause is not
+  isolated. A separate390px boundary control keeps native focus but disables its
+  automatic scrolling: it failed on the preceding product and passes with the
+  explicit reveal. This control is not WebKit emulation or physical-keyboard
+  evidence. Existing deletion cases also type into the restored composer and
+  record focus/viewport metrics and a screenshot before rectangle assertions.
 - Deleting a conversation by keyboard now focuses the selected remaining chat,
   or its composer when no messages remain. Previously the removed Delete
   button left focus on body and Tab restarted at New. Focus is restored only

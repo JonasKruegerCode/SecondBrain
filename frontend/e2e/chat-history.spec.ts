@@ -124,9 +124,22 @@ for (const width of [1440, 1024, 390]) {
 }
 
 for (const width of [390, 1440]) {
-  for (const count of [1, 2]) {
-    test(`keyboard chat deletion keeps a usable focus target (${width}, ${count} saved)`, async ({ page }, info) => {
+  for (const { count, preventNativeScroll } of [
+    { count: 1, preventNativeScroll: false }, { count: 2, preventNativeScroll: false },
+    ...(width === 390 ? [{ count: 1, preventNativeScroll: true }] : []),
+  ]) {
+    test(`keyboard chat deletion keeps a usable focus target (${width}, ${count} saved${preventNativeScroll ? ", focus without scrolling" : ""})`, async ({ page }, info) => {
       await page.setViewportSize({ width, height: 900 });
+      if (preventNativeScroll) {
+        // A boundary control: focus remains native but cannot reveal the input
+        // by itself. This does not emulate WebKit or a physical keyboard.
+        await page.addInitScript(() => {
+          const focus = HTMLElement.prototype.focus;
+          HTMLElement.prototype.focus = function (options?: FocusOptions) {
+            focus.call(this, this.id === "chat-input" ? { ...options, preventScroll: true } : options);
+          };
+        });
+      }
       const errors: string[] = [];
       let chatRequests = 0;
       page.on("pageerror", error => errors.push(error.message));
@@ -154,8 +167,17 @@ for (const width of [390, 1440]) {
       }
       await expect(target).toBeFocused();
       const bounds = (await target.boundingBox())!;
+      console.info("[chat-delete-viewport] " + JSON.stringify({ width, count, preventNativeScroll,
+        ...await target.evaluate(element => ({ focused: document.activeElement === element,
+          rect: element.getBoundingClientRect().toJSON(), scrollY,
+          visualHeight: visualViewport?.height, visualOffset: visualViewport?.offsetTop })) }));
+      await page.screenshot({ path: info.outputPath(`chat-delete-restored-${width}-${count}.png`) });
       expect(bounds.y).toBeGreaterThanOrEqual(-1);
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(901);
+      if (count === 1) {
+        await page.keyboard.type("Synthetic unsent question after deletion.");
+        await expect(target).toHaveValue("Synthetic unsent question after deletion.");
+      }
       await page.keyboard.press("Tab");
       await expect(count === 1 ? page.getByRole("button", { name: /^Send/ }) : remove).toBeFocused();
       await page.keyboard.press("Shift+Tab");

@@ -344,7 +344,11 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       render(false);
       if (restoreFocus) {
         const target = current().messages.length ? ".chat-history-list button.active" : "#chat-input";
-        main.querySelector<HTMLElement>(target)?.focus();
+        const element = main.querySelector<HTMLElement>(target);
+        element?.focus();
+        // Native focus can reveal only a caret or part of the input. Keep the
+        // whole restored control visible without moving an unrelated focus.
+        element?.scrollIntoView({ block: "nearest", inline: "nearest" });
       }
     };
     const form = main.querySelector<HTMLFormElement>(".chat-composer")!;
