@@ -231,6 +231,18 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
+**Browser-suite registration, 19 October 2026:**
+The f989da7 archive showed that the explicit Chromium/full and WebKit/reading
+lists omitted the new `galaxy-search.spec.ts` file. Both profiles now select it
+once; scale, first-start and worker-only profiles retain their existing scope.
+The existing orchestration contract failed on the missing selection before the
+runner correction; all 59 runner cases and scoped Ruff checks pass afterward.
+An actual Chromium acceptance-runner diagnostic selects and passes both search
+cases against the real demo API, with clean service/vault receipts and inspected
+screenshots. This filtered run is not a full suite or a WebKit browser result.
+Independent review confirms both profile additions and the separate overrides.
+New-head hosted execution still needs inspection. Application code is unchanged.
+
 **Galaxy search rendering, 19 October 2026:**
 Trusted sequential typing in a real synthetic 320-page/648-link wiki exposed
 repeated SVG reconstruction and identical result-list replacement. Search now
@@ -241,9 +253,10 @@ selection highlights, focus, clearing, a different result selection, unchanged
 result controls and unchanged server revision. The selected 390px identity case
 failed before correction; both pass afterward against built assets and real API.
 The final built-assets run passes all 21 related article/galaxy browser cases on
-the isolated 14-page demo. Both TypeScript configurations, production build and
-independent review pass. Current-head hosted CI remains to be inspected; the
-older hosted evidence below does not certify this change.
+the isolated fictional demo (12 seeded pages, with extra owned test pages where
+needed). Both TypeScript configurations, production build and independent
+review pass. The f989da7 hosted evidence below passes its selected suites but
+does not include the two new cases; registration is corrected above.
 
 The bounded built-asset probe used Chromium153, Vite preview with the real API
 proxy, no HMR, no worker/provider calls and no network throttling. Each of three
@@ -284,37 +297,37 @@ blocking issue. Hosted evidence for that revision is recorded below; production
 recovery is not inferred from local checks.
 
 **Implementation examined:**
-`278f9025aee1e3258a8e80722d353ba1fba03aab`, tree
-`03555a8135f2bd343107b2e9fabd5fb43561af0e`, tested at merge
-`202dc4c05725e866d64c178ab6174e708b97e154` with identical tree and verified
+`f989da729267c8791683c95e0bdb8fa41c6e0d37`, tree
+`af3deb814d401f5644df373ab7096e36d3be62d3`, tested at merge
+`94486466565e290638ead6a875c5ba7b042f7a94` with identical tree and verified
 main+implementation parents. The following logs/archives were actually inspected
 on 19 October 2026. They remain tied to that implementation; later documentation
 or code commits need their own applicable checks.
 
 | Area | Examined run | Result and scope |
 | --- | --- | --- |
-| Frontend | [39251505317](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505317) | Both TypeScript configurations, five proxy, two access and five PWA cases, Vite6.4.4 production/image build |
-| Backend | [39251505143](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505143) | Ruff/MyPy on 118 files, 1133 passed/12 skipped, image build |
-| SSH | [39251505526](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505526) | Five native fixture cases |
-| Indexes | [39251505445](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505445) | Seven real disposable provider cases with synthetic vectors |
-| Stack | [39251505238](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505238) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth and independent 14-page restore |
-| Browser | [39251505497](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39251505497) | Six Passed/Cleanup records, nine successful phases, 488 successful phase executions/14 explicit skips |
+| Frontend | [39284722377](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722377) | Both TypeScript configurations, five proxy, two access and five PWA cases, Vite6.4.4 production/image build |
+| Backend | [39284722378](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722378) | Ruff/MyPy on 118 files, 1133 passed/12 skipped, image build |
+| SSH | [39284722480](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722480) | Five native fixture cases |
+| Indexes | [39284722855](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722855) | Seven real disposable provider cases with synthetic vectors |
+| Stack | [39284722384](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722384) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth and independent 14-page restore |
+| Browser | [39284722598](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722598) | Six Passed/Cleanup records, nine successful phases, 496 successful phase executions/14 explicit skips; new search suite absent |
 
 Both image builds used `push:false/load:false`; no image publication or deployment
-is inferred. Browser profiles contain Chromium 294, first-start 2, Git-import 3,
-scale320 2, WebKit reading 179 and workers 8. All six records identify the exact
+is inferred. Browser profiles contain Chromium 298, first-start 2, Git-import 3,
+scale320 2, WebKit reading 183 and workers 8. All six records identify the exact
 merge, report no model calls/failure and confirm service cleanup. The opt-in
 installation diagnosis was skipped.
 
-Browser artifact 12185859317 is 184,397,678 bytes, SHA256
-`d2ae6262f880c8401412bf24e77f543be4caaebb64f0f6b4f0a14a2d5474f685`.
-API/upload digest, 736 safe unique regular paths and ZIP CRCs were checked; no
-error-context was present. Four narrow/desktop first-start history and Git-import
-restart Home images were personally inspected. Stack artifact 12184859146 is
-706,895 bytes, SHA256
-`678742e41c9bffb1c358bd8e05ab78d6450a2cf24a3eb16cb41aa315f7cde0fb`;
-its records/log, six safe paths/CRCs and desktop/mobile Home images were
-previously inspected, including cleanup of both isolated projects and volumes.
+Browser artifact 12202984092 is 186,001,632 bytes, SHA256
+`1148bcb716f60f9a56e8b1076f15945ab1a35130d096273f6631fbce357fb246`.
+API/upload digest, 744 safe unique regular paths and ZIP CRCs were checked; no
+error-context was present. Narrow WebKit and desktop Chromium galaxy diagnostic
+images were personally inspected. Stack artifact 12203650521 is
+707,207 bytes, SHA256
+`fca8b5ddc712b6bbd9aace5c081f78893dfd3b96f5e10c75e87c074775041948`;
+its records/log, six safe paths/CRCs and narrow Home image were inspected,
+including cleanup of both isolated projects and volumes.
 Artifact retention ends on 26 October; the links and hashes do not guarantee
 download availability afterward.
 
