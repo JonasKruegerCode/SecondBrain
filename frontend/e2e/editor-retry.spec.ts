@@ -2,16 +2,16 @@ import { expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
-for (const width of [320, 390, 1440]) {
+for (const [width, height, placement] of [[320, 568, "normal"], [390, 844, "normal"], [1440, 844, "normal"], [1440, 844, "bottom"]] as const) {
   for (const trigger of ["pointer", "keyboard"] as const) {
     for (const failure of ["transport", "conflict"] as const) {
-      test(`save feedback stays beside its control (${failure}, ${trigger}, ${width})`, async ({ page, request }, info) => {
+      test(`save feedback stays beside its control (${failure}, ${trigger}, ${width}${placement === "bottom" ? "-bottom" : ""})`, async ({ page, request }, info) => {
         const initial = "# Save feedback fixture\nAn independently invented observation.";
         const fixture = await create(request, initial);
         const payloads: unknown[] = [];
         let offline = failure === "transport";
         try {
-          await page.setViewportSize({ width, height: width === 320 ? 568 : 844 });
+          await page.setViewportSize({ width, height });
           await page.goto(`/wiki/${fixture.id}`);
           await page.getByRole("button", { name: "Edit page" }).click();
           const editor = page.getByRole("textbox", { name: /Markdown/ });
@@ -33,10 +33,28 @@ for (const width of [320, 390, 1440]) {
             await route.continue();
           });
           const save = page.getByRole("button", { name: "Save changes" });
+          if (placement === "bottom") {
+            // A real wheel gesture can leave Save visible near the lower edge.
+            // The later error must fit without any test-side reveal after Save.
+            const box = await save.boundingBox();
+            expect(box).not.toBeNull();
+            await page.mouse.move(10, 200);
+            await page.mouse.wheel(0, box!.y + box!.height - (height - 4));
+            await expect.poll(async () => Math.abs(await save.evaluate(e => e.getBoundingClientRect().bottom) - (height - 4))).toBeLessThanOrEqual(2);
+            await expect(save).toBeInViewport({ ratio: 1 });
+          }
           if (trigger === "pointer") await save.click();
           else { await save.focus(); await page.keyboard.press("Enter"); }
           const notice = page.locator(".notice");
           await expect(notice).toContainText(failure === "conflict" ? "Conflict" : "Try saving again");
+          console.info("[save-feedback-viewport] " + JSON.stringify(await page.evaluate(() => ({
+            viewport: { width: innerWidth, height: innerHeight }, scrollY,
+            active: document.activeElement?.id,
+            notice: document.querySelector(".notice")!.getBoundingClientRect().toJSON(),
+            save: document.querySelector("#save")!.getBoundingClientRect().toJSON(),
+          }))));
+          // Capture before the assertion so a clipped failure has real pixels.
+          await page.screenshot({ path: info.outputPath(`save-feedback-${failure}-${trigger}-${width}.png`) });
           // No scroll/reveal helper: this is the viewport produced by Save.
           await expect(notice).toBeInViewport({ ratio: 1 });
           await expect(save).toBeInViewport({ ratio: 1 });
@@ -49,7 +67,6 @@ for (const width of [320, 390, 1440]) {
           const stored = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
           expect(stored.markdown).toBe(failure === "conflict" ? foreign : initial);
           if (failure === "transport") expect(stored.revision).toBe(fixture.revision);
-          await page.screenshot({ path: info.outputPath(`save-feedback-${failure}-${trigger}-${width}.png`) });
           expect(payloads).toHaveLength(1);
           // Preference feedback belongs back near the toolbar, including
           // after a failed save. Moving its live region must retain the draft.

@@ -231,32 +231,52 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-**Save error feedback, 19 October 2026:**
-A real built-asset/real-API check at 390×844 cut browser transport before POST.
-The draft and identical retry were correct, but the sole error notice was fully
-above the viewport (top −69px, bottom −28.2px). Save feedback now stays in the
-editor footer beside Save; start-page preference feedback remains near the
-toolbar. The same atomic status region moves without replacing the textarea,
-resetting its selection/undo history or taking focus from a later user choice.
-A delayed Save failure returns feedback to Save even after a pending preference
-change. No write/API/storage/index contract changes.
+**Save feedback at the viewport edge, 19 October 2026:**
+Hosted Browser39310367572 on 1546d6c/test merge366bd989 actually failed:
+Chromium310 passed/four failed, all four desktop pointer/keyboard
+transport/conflict cases clipped the notice (viewport ratios0.7847/0.3923).
+First-start/import/scale/WebKit/worker steps were skipped. The failed CI cases
+stopped before their screenshot line; four error contexts are evidence, not
+failed-case screenshots. Artifact12216975182:112,286,951bytes/SHA256
+`f915eebf27191061b98a760f09453cae1777cf8dd833a84415ed0a6249be3116`,
+API/upload/download match and416 safe unique paths/CRCs checked. The result
+records service cleanup and retained failed inputs; those vault/process inputs
+are not in the uploaded archive. Original artifact expiry is26 October.
 
-The narrow pointer/transport viewport regression fails before the correction.
-Twelve small/narrow/desktop pointer/keyboard transport/conflict cases check the actual
-viewport without reveal helpers, then switch to preference feedback and retry
-identical payloads. Two delayed-request cases retain chosen preference focus,
-scroll and draft. These use explicit route failures and the real Git-backed API;
-the separate built-asset transport probe uses actual CDP offline emulation.
-Neither proves physical-device or screen-reader announcement behavior.
-Local Chromium validation passed 79 selected Save/cancel/status/related cases
-plus four additional 320×568 cases (not a full suite); both TypeScript
-configurations, production build and proxy 5/access 2/PWA 5 checks passed.
-The independent review found and resolved preference placement and pending-save
-ownership issues before final verification. In the built 390×844 rerun, the
-error notice was visible at y=488–528.8px beside the visible Save control;
-the identical retry produced exactly one content commit. Services and owned
-synthetic vaults were cleaned. Linux WebKit and hosted current-head validation
-remain separate from these local Chromium checks.
+A real pre-Save wheel gesture places the visible button near the desktop bottom
+edge. Four unchanged strict visibility assertions fail on1546d6c; a captured
+conflict failure shows notice y825–865.8 in an844px viewport. Error restoration
+now reveals the editor footer only while restoring Save-owned focus. A12px
+scroll margin avoids fractional-pixel clipping by integer scroll rounding.
+A later deliberately focused control keeps its focus and scroll; this is not a
+general manual-scroll-intent guarantee. No API/storage/index contract changes.
+The same textarea, atomic status, draft/selection/undo and retry identity remain.
+
+The existing matrix retains its twelve small/narrow/desktop cases and adds four
+bottom-edge cases, with two delayed-preference cases unchanged. Pre-assertion
+viewport captures and rectangle diagnostics now preserve pixels on failure.
+No post-Save test reveal, ratio/timeout/gesture relaxation or profile expansion.
+Both existing Chromium/full and WebKit/reading registrations select this file.
+
+Final local Chromium regression20261019T202128Z passed31 selected Save,
+pending-preference, unknown-result retry, conflict, scrolled-draft and unavailable
+status cases; both TypeScript configurations and production build passed.
+Actual desktop bottom-edge and320px viewport images were personally inspected.
+An intermediate JS-only run remains failed84/87: two fractional-pixel cases
+motivated the margin; a separate Git-delivery case exhausted30s during its
+first graph control read, after the local save and before recovery. One isolated
+unchanged1440px delivery retry20261019T202419Z passed. That does not explain or
+erase the original deadline failure; no general infrastructure cause established.
+
+Fresh built-assets/real-API Chromium153 also passed actual CDP offline-before-POST
+and manual reconnect/retry on a fictional320-page/648-link vault at1440×844,
+with150ms latency parameter,200,000/93,750B/s and4xCPU emulation. A pre-Save
+wheel gesture and strict final geometry show visible notice and Save; the same
+editor/draft and an independent unchanged-source read precede identical request
+ID/payload retry, exactly one content commit and history2→3. Worker/provider/
+remote delivery were disabled. The owned supervisor exited and vault was absent
+at completion. These local checks do not certify the new hosted full/WebKit
+matrix, physical installation, screen-reader announcements or real-model quality.
 
 **Browser-suite registration, 19 October 2026 (base 2a0b528):**
 The f989da7 archive showed that explicit Chromium/full and WebKit/reading lists

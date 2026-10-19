@@ -989,6 +989,9 @@ function updateEditorState(restoreSaveFocus = false) {
   // to the draft, but don't steal focus if the user chose another control.
   if (restoreSaveFocus && (document.activeElement === button || document.activeElement === document.body)) {
     editor.focus({ preventScroll: true });
+    // Error text can expand the row beyond a previously visible Save button.
+    // Reveal both only while restoring our own focus, not a later user choice.
+    if (noticeError && noticeAtSave) saveFeedback.parentElement!.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   renderPwaState();
 }
