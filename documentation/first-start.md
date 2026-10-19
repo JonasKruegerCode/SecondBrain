@@ -15,7 +15,12 @@ The destination itself must not be a symbolic link, including when using the
 demo launcher. Empty setup verifies that local Git history is readable before
 reporting readiness; an existing invalid `.wiki.git` directory is refused rather
 than treated as an empty wiki. Inspect or recover that directory without deleting
-it to force a fresh start.
+it to force a fresh start. An absent publication ref is a valid unborn wiki;
+malformed loose or packed refs, dangling symbolic refs and ref directories are
+storage errors. Page and graph reads and health checks return
+`503 storage_unavailable` instead of reporting empty content, and writes are
+refused. Valid packed-only refs remain supported. This check does not repair refs or replace a full Git
+integrity check and backup/recovery procedure.
 
 ```sh
 export PYTHONPATH="$PWD/backend/src"

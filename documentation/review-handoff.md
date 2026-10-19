@@ -23,6 +23,13 @@ local bare Git repository, `.wiki.git`, inside the explicitly selected managed
 vault. It is not a loose Markdown folder to edit directly. Browser, REST and
 direct MCP use the same `WikiStore`; chat and indexes are not writers.
 
+An absent publication ref is a healthy unborn wiki. A failed Git lookup alone
+cannot establish absence: malformed loose/packed refs, dangling symbolic refs,
+ref directories and abnormal Git exits are refused as `storage_unavailable`.
+Page and graph reads and health return HTTP 503, empty setup refuses readiness,
+and mutations cannot publish over that state. Valid packed-only refs remain
+usable. These read-only probes do not repair corruption or replace full Git integrity checks.
+
 Page saves require the page's `base_revision` and a stable `request_id`.
 Publication uses a compare-and-swap ref update and includes the retry receipt in
 the same snapshot. A page revision and the whole-wiki snapshot HEAD are different
@@ -222,6 +229,17 @@ attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
+
+**Latest local correction, 19 October 2026:**
+[Publication-ref regressions](../backend/tests/test_wiki_ref_readiness.py) reproduce
+seven damaged-ref states that previously appeared empty. Twelve cases now pass
+with native Git 2.51.1 and 2.43.0, including healthy unborn/packed-only controls;
+abnormal process exits and inaccessible-path errors use explicit injections.
+The related store/API/setup suite passes 82 cases. The full ordinary local
+backend suite, Ruff and MyPy (118 files) pass. API failures preserve existing
+storage after app initialization. Independent source/contract review found no
+blocking issue. New hosted CI, service/image/browser acceptance and production
+recovery are not inferred from these local checks.
 
 **Implementation examined:**
 `2a0b4fd3f16c0d9548de2d10945feaeaf03eb9cd`, tree

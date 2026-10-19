@@ -878,6 +878,17 @@ class WikiStore:
         env: dict[str, str] | None = None,
         check: bool = True,
     ) -> bytes:
+        result = self._git_result(*args, data=data, env=env)
+        if check and result.returncode:
+            raise WikiError("storage_unavailable", "Local Git operation failed.")
+        return result.stdout
+
+    def _git_result(
+        self,
+        *args: str,
+        data: bytes | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
         process_env = {
             **os.environ,
             "GIT_AUTHOR_NAME": "Managed Wiki",
@@ -887,19 +898,33 @@ class WikiStore:
             "GIT_LITERAL_PATHSPECS": "1",
             **(env or {}),
         }
-        result = subprocess.run(
+        return subprocess.run(
             ["git", "--git-dir", str(self.repo), *args],
             input=data,
             capture_output=True,
             env=process_env,
             check=False,
         )
-        if check and result.returncode:
-            raise WikiError("storage_unavailable", "Local Git operation failed.")
-        return result.stdout
 
     def _head(self) -> str:
-        return self._git("rev-parse", "--verify", REF, check=False).decode().strip()
+        result = self._git_result("rev-parse", "--verify", REF)
+        if result.returncode == 0:
+            return result.stdout.decode().strip()
+        # A failed revision lookup is not proof of an unborn wiki. Git's quiet
+        # symbolic-ref probe distinguishes malformed packed/loose refs from a
+        # missing direct ref; lstat also rejects dangling refs and directories.
+        # Only --verify's missing-ref exit qualifies, never an abnormal exit.
+        if (
+            result.returncode == 128
+            and self._git_result("symbolic-ref", "--quiet", REF).returncode == 1
+        ):
+            try:
+                (self.repo / REF).lstat()
+            except FileNotFoundError:
+                return ""
+            except OSError:
+                pass
+        raise WikiError("storage_unavailable", "Local Git operation failed.")
 
     def check_health(self) -> None:
         """Fail when the local content authority is no longer readable.
