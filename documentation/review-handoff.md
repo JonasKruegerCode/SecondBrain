@@ -459,6 +459,17 @@ complex siblings remain outside the shortcut. V25 invalidates older derived
 receipts including v24; configured embedding rebuilds can incur provider costs.
 Markdown, IDs, history and REST/MCP/mutation contracts are unchanged.
 
+A compatible frontend lock refresh updates build-only `nanoid` 3.3.12→3.3.20,
+`postcss` 8.5.14→8.5.31 and `source-map-js` 1.2.1→1.2.2. Package manifest,
+Node engines and Vite/esbuild versions are unchanged. A fresh npm audit on
+19 October 2026 drops from five package findings (four high, one moderate) to
+two (Vite high, esbuild moderate). This does not establish a vulnerability-free
+release: the remaining dev/build tool advisories need a separately evaluated
+Vite/esbuild upgrade. The production frontend image serves built static assets
+with Nginx; that distinction is not a complete exploitability assessment.
+Fresh locked installation, both typechecks, PWA/proxy tests, production build
+and selected real-service reading/galaxy/table/PWA paths pass after the update.
+
 The browser CI job now has a 20-minute budget, preserving every profile,
 assertion and per-test timeout. On the preceding revision all six harness
 records passed, but the job was cancelled roughly 23ms after its final success
