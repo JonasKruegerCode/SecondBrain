@@ -174,6 +174,17 @@ unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy beh
 
 ## User and operator paths
 
+Galaxy display changes preserve the currently expanded unresolved-link
+diagnostic. Switching between map and list changes the map presentation without
+rebuilding the unchanged page/evidence sidebar. Selecting a different page still
+starts a fresh detail view. Two real-API browser cases at 390/1440px reproduce
+the former collapse on the preceding source, then check both mode directions,
+keyboard focus, unchanged selection/link evidence, fresh selection state,
+search-query retention and complete owned-fixture cleanup. List mode deliberately
+uses document height instead of an inner scroll container; no identical inner
+scroll position across modes is promised. These synthetic Chromium checks do
+not establish native WebKit, physical touch or screen-reader behavior.
+
 - Restoring focus after Delete now explicitly reveals the whole control with
   nearest-block/inline scrolling. The preceding native WebKit run focused the
   empty composer but left its bottom at937.17px in a900px viewport. The original

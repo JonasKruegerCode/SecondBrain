@@ -483,7 +483,14 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       case "zoom-in": scale = Math.min(selectedCluster === null ? 2.5 : 4, scale + .25); setView(); break;
       case "zoom-out": scale = Math.max(.75, scale - .25); setView(); break;
       case "reset": scale = 1; panX = panY = 0; setView(); break;
-      case "list": listOnly = !listOnly; target.setAttribute("aria-pressed", String(listOnly)); target.textContent = listOnly ? "Map view" : "List view"; render(); break;
+      case "list":
+        listOnly = !listOnly;
+        target.setAttribute("aria-pressed", String(listOnly));
+        target.textContent = listOnly ? "Map view" : "List view";
+        // Display mode changes no selection, query or link evidence. Keep the
+        // sidebar mounted so expanded diagnostics remain available to read.
+        renderMap();
+        break;
     }
   };
   const keydown = (event: KeyboardEvent) => {

@@ -6,6 +6,70 @@ const contextualURL = "/galaxy?page=field-notebook";
 const primary = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 
 for (const width of [390, 1440]) {
+  test(`galaxy display changes preserve expanded link diagnostics (${width})`, async ({ page, request }, info) => {
+    const group = `display-state-${randomUUID()}`;
+    const ids = [`${group}-core`, `${group}-neighbor`];
+    const owned: string[] = [];
+    const baseline = await (await request.get("/api/wiki/graph")).json();
+    try {
+      for (const [index, id] of ids.entries()) {
+        const response = await request.post(`/api/wiki/pages/${id}`, { data: {
+          markdown: `---\ngalaxy_group: ${group}\ngalaxy_label: Synthetic display constellation\n${index === 0 ? "galaxy_anchor: true\n" : ""}---\n# Synthetic display page ${index}\n\n[[${ids[1 - index]}]]\n${index === 0 ? `[[missing-${group}]]` : ""}`,
+          base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true); owned.push(id);
+      }
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/galaxy?page=${ids[0]}`);
+      const sidebar = page.locator(".galaxy-sidebar-content");
+      const problems = sidebar.locator(".galaxy-problems");
+      const toggle = page.locator('[data-action="list"]');
+      await problems.locator("summary").click();
+      await expect(problems).toHaveJSProperty("open", true);
+      const evidence = await sidebar.locator(".galaxy-evidence").innerText();
+      for (const listOnly of [true, false]) {
+        await toggle.focus(); await page.keyboard.press("Enter");
+        await expect(toggle).toBeFocused();
+        await expect(toggle).toHaveAttribute("aria-pressed", String(listOnly));
+        await expect(page.locator(".galaxy-stage")).toBeVisible({ visible: !listOnly });
+        await expect(problems).toHaveJSProperty("open", true);
+        await expect(problems).toContainText(`missing-${group}`);
+        await expect(page.locator(".galaxy-selected-heading code")).toHaveText(ids[0]);
+        expect(await sidebar.locator(".galaxy-evidence").innerText()).toBe(evidence);
+        // Reveal the diagnostic only after its state/focus assertions. A
+        // mobile mode button can otherwise leave it below the screenshot.
+        await problems.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: info.outputPath(`galaxy-diagnostics-${listOnly ? "list" : "map"}-${width}.png`) });
+      }
+      // A real selection still starts a fresh detail view; only display mode
+      // changes preserve the open diagnostic for the same selected page.
+      await sidebar.locator(".galaxy-evidence button[data-node]").first().click();
+      await expect(page.locator(".galaxy-selected-heading code")).toHaveText(ids[1]);
+      await expect(problems).toHaveCount(0);
+      await sidebar.locator(".galaxy-evidence button[data-node]").first().click();
+      await expect(page.locator(".galaxy-selected-heading code")).toHaveText(ids[0]);
+      await expect(problems).toHaveJSProperty("open", false);
+      const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
+      await search.fill(group);
+      await expect(sidebar.locator(".galaxy-page")).toHaveCount(2);
+      await toggle.focus(); await page.keyboard.press("Enter");
+      await expect(search).toHaveValue(group);
+      await expect(sidebar.locator(".galaxy-page")).toHaveCount(2);
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(`/api/wiki/pages/${id}`); expect(current.ok()).toBe(true);
+        const response = await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(response.ok(), `cleanup owned page ${id}`).toBe(true);
+      }
+      const restored = await (await request.get("/api/wiki/graph")).json();
+      expect(restored.nodes).toEqual(baseline.nodes); expect(restored.edges).toEqual(baseline.edges);
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`late contextual graph cannot replace a newer article neighborhood (${width})`, async ({ page }, info) => {
     const pattern = "**/api/wiki/graph";
     let release!: () => void;
