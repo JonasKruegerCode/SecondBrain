@@ -72,9 +72,11 @@ receipt. Independent graph and search receipts let one backend recover without
 claiming the other is ready. The configuration fingerprint is shared across enabled backends:
 changing graph or vector configuration invalidates both receipts until rebuilt.
 
-Snapshot derivation version `managed-snapshots-v3` excludes block-code and comment
-headings from page titles and their title-resolved graph edges. Upgrading from v1 or v2
-invalidates old ready receipts even if the Markdown/Git revision is unchanged.
+The current snapshot derivation identity is `managed-snapshots-v26`, defined in
+`backend/src/second_brain/wiki/index_config.py`. It projects titles, excerpts and
+explicit links with bounded Markdown code, comment, container, HTML and link
+metadata rules. This is not complete renderer/parser parity. An older derivation
+identity invalidates ready receipts even if the Markdown/Git revision is unchanged.
 The startup delivery worker, or the explicit one-shot command below, builds fresh
 generations before derived retrieval becomes current again. The fingerprint is
 shared, so both configured backends rebuild; enabled vector indexing can make

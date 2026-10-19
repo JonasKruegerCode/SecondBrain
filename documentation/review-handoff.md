@@ -1,1328 +1,316 @@
 # SecondBrain 2.0 review handoff
 
-This page is the high-level handoff for the `secondbrain-2.0` branch. It is a
-review aid, not a production approval. Update its evidence snapshot only after
-running the named checks on the exact published commit.
+This is the current review entry point for the `secondbrain-2.0` branch.
+[PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18) remains **Draft**.
+The managed wiki, editor/history, galaxy, read-only chat, PWA and isolated
+operator paths are implemented. Real provider quality, private migration,
+production operation and physical-device acceptance remain open. It is not yet
+release- or merge-ready.
 
-## Current status
-
-The branch is a coherent local development preview: the managed wiki, direct
-MCP, article UI/editor/history, knowledge galaxy, bounded read-only chat, PWA,
-first-start/import/export, recoverable indexing and guarded Git delivery are
-implemented. It is **not yet release- or merge-ready** because real model/hosted
-provider, production HTTPS, private migration and physical-device gates remain open.
-Disposable Docker/nginx/volume acceptance now runs separately in CI; require
-the actual results for the reviewed revision before relying on that evidence.
+Start with the [fictional demo](demo-start.md), then use the contracts and
+verification map below. The
+[full earlier handoff at 2a0b4fd](https://github.com/JonasKruegerCode/SecondBrain/blob/2a0b4fd3f16c0d9548de2d10945feaeaf03eb9cd/documentation/review-handoff.md)
+preserves detailed reproductions, historical failures and regression matrices.
+It is historical evidence, not a claim about a later revision. This document
+consolidates that material instead of accumulating another run log.
 
 ## Architecture and data flow
 
-First-start guards refuse a symbolic-link vault before the demo launcher resolves
-it or creates any template/scale content. Empty setup checks the local authority
-before reporting readiness, so a partial or invalid Git directory is not reported
-as a ready empty wiki. Synthetic filesystem regressions cover existing and
-dangling links, default/explicit destinations, template/empty/scale launch modes,
-unchanged outside targets and invalid-history refusal. Subprocess launches are
-test doubles in these boundary cases; they are not another browser or device run.
+### One content authority
 
-Markdown stored in a local bare Git repository is authoritative. A save validates
-the revision read by the caller, writes page content plus its retry receipt into
-one candidate snapshot, then publishes that snapshot with a compare-and-swap ref
-update. REST, the browser and direct managed MCP all use the same `WikiStore`;
-there is no second loose-file writer.
+Markdown, page revisions and durable mutation receipts live in snapshots of a
+local bare Git repository, `.wiki.git`, inside the explicitly selected managed
+vault. It is not a loose Markdown folder to edit directly. Browser, REST and
+direct MCP use the same `WikiStore`; chat and indexes are not writers.
 
-Legacy page IDs beginning with ASCII hyphens are retained without renaming.
-The same bounded ID contract applies to import, reads, edits, export and saved
-chat sources. Synthetic option-shaped IDs exercise literal Git/file handling;
-leading dots, traversal, separators, whitespace and oversized IDs stay invalid.
-This compatibility fix does not establish a complete private-vault migration.
+Page saves require the page's `base_revision` and a stable `request_id`.
+Publication uses a compare-and-swap ref update and includes the retry receipt in
+the same snapshot. A page revision and the whole-wiki snapshot HEAD are different
+values. A lost acknowledgement is resolved by replaying the **identical** request
+ID and payload. Reusing an ID for changed content is refused; a revision conflict
+requires a fresh read and deliberate reconciliation. A cancelled request can
+already have published, so Cancel is not an undo operation. Subsequent index or
+remote failure does not turn a published save into a lost write.
 
-The store regression also terminates an owned child process at controlled
-boundaries immediately before and after the real Git ref update. Reopening the
-store and retrying the exact request must recover one publication and its
-receipt, without an extra history entry. This covers process loss at those
-boundaries; it does not emulate power loss or interrupt Git's ref transaction.
+### Derived retrieval and delivery
 
-The demo launcher defers SIGINT/SIGTERM during child creation, registration and
-process-receipt publication, then stops before launching another child. Twelve
-native supervision cases run its actual main with real ephemeral socket
-children: both signals at either child/receipt boundary, repeated stop signals
-during cleanup and controlled receipt-write errors. They check closed sockets,
-reaped direct children and accurate receipts. Only the service commands are
-substituted; this is a process-boundary fixture, not another API/browser pass.
-SIGKILL in the creation/receipt gap remains outside this guarantee.
+Exact page reads, lexical search, local history and explicit Markdown graph
+navigation work without Neo4j, Qdrant or a model. Optional graph/vector adapters
+build separate immutable generations and publish separate receipts for the exact
+content revision, configuration and generation. Pending, stale, failed or missing
+generations cannot be served as current. A lost provider generation requires
+repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
+not prove that provider storage exists.
 
-Four separate native hard-loss cases kill the real supervisor after its complete
-receipt or before either Popen returns, then call the actual acceptance cleanup.
-Recorded sockets close; the unrecorded child stays live until independent
-test-owner cleanup. The actual acceptance failure path writes failed evidence
-and retains the vault, controlled phase inputs and process records. No browser
-is launched in that fixture. Linux adopts and reaps only ledger-owned orphans
-inside a restored process-local subreaper scope; other POSIX systems check
-socket closure. These cases validate the explicit failure contract and do not
-extend the launcher's SIGKILL recovery guarantee.
+The current derivation identity is `managed-snapshots-v26`, defined in
+[index_config.py](../backend/src/second_brain/wiki/index_config.py).
+An older identity invalidates both configured backend receipts. Rebuilding
+changes derived data, not Markdown or history; configured vector rebuilding can
+make paid embedding requests. Retention is explicit, dry-run first and scoped to
+ledger-owned generations. Full snapshots/embeddings are materialized in memory;
+the synthetic scale checks are not a production capacity claim.
 
-Neo4j, Qdrant/embeddings and remote Git are recoverable derived services. Their
-generation or delivery receipts remain separate from the Markdown publication
-receipt, so a pending or failed provider cannot be reported as current. The wiki
-continues to provide exact reads, lexical search, local history and explicit
-Markdown graph navigation without those providers.
+The automatic delivery worker performs configured index work and outbound Git
+publication. It does not silently pull, merge, force-push or adopt a changed
+remote. Explicit import/pull APIs are separately guarded. Remote acknowledgements
+are cached historical receipts, not assertions that a remote branch is still
+current. Conflicts require reviewed local and remote heads. See
+[delivery](managed-delivery.md), [Git sync](managed-git-sync.md) and
+[index operations](managed-indexes.md).
 
-Portable backup has two deterministic live-write regressions. A real REST save
-before Git bundle creation causes `backup_changed`, no published archive and
-no temporary debris; an explicit retry captures the completed edit. A save
-after bundle capture leaves a valid earlier snapshot. Both restore through the
-real API with exact page/history/graph checks and original-request replay
-without a new revision. The live source retains its newer edit. This covers
-local Git/SQLite/ASGI concurrency, not off-host recovery or a common snapshot
-of external providers. The [backup guide](backup-restore.md) explains the retry.
+### Browser experience
 
-Long chat page reads now expose bounded character chunks with `offset`,
-`total_chars`, `next_offset` and the page revision. A continuation must provide
-`expected_revision`; a changed snapshot returns an explicit conflict instead of
-silently combining different revisions. The next cursor is calculated from the
-actual Markdown delivered after JSON escaping and envelope budgeting, so no
-characters are skipped. Oversized metadata returns a bounded error rather than
-an empty, non-advancing continuation. Tool results stay within 8,000 characters;
-the existing eight-call/five-round limits are unchanged. Synthetic service/API
-regressions cover exact reconstruction, late evidence, malformed cursors,
-revision changes and metadata-budget boundaries. Scripted providers establish
-this protocol contract, not real-model answer quality.
+The bright wiki-first UI provides a browser-local saved start page with fallback,
+direct URLs, search, safe Markdown/wikilinks, backlinks, history and a direct
+editor. Navigation preserves deliberate keyboard focus and bounded tab-local
+reading positions. Save/conflict/unknown-acknowledgement states retain the draft;
+index and remote status are shown separately.
 
-The non-streaming OpenRouter tool-chat boundary requires an explicit completed
-`stop` or `tool_calls` finish reason. Token-limit, filtered, failed, missing or
-unknown completion states return the existing sanitized unavailable error;
-partial text is not saved as a successful reply and unfinished tool batches do
-not execute. There is no automatic new generation for this condition. The
-question remains available for a deliberate Retry. Normal completed messages,
-the 1,200-token limit and transport retries remain unchanged. Synthetic HTTP
-transport/API cases verify this boundary and retry recovery, not live model
-quality. The normalized finish reasons are documented in the
-[OpenRouter API reference](https://openrouter.ai/docs/api_reference/overview#finish-reason).
+The galaxy derives stars, curated constellations, cores and bridges from actual
+page/link evidence. Missing or ambiguous targets remain explicit diagnostics.
+Dense maps limit drawn incident edges without deleting API edges or directional
+evidence. List/search/keyboard paths remain available. Article entry focuses the
+matching current page or explains that it is missing from a stale snapshot.
+Map/list changes preserve the selected page's expanded diagnostic; changing the
+selected page starts fresh details. List and map layouts do not promise identical
+inner scroll positions.
 
-Chat text uses strict Unicode scalar validation without normalization. Escaped
-unpaired surrogates in client context return `400 invalid_payload` before a
-provider invocation. Malformed Unicode anywhere in a model reply rejects the
-whole batch before a wiki tool executes; escaped tool arguments are checked
-again after JSON decoding and return a recoverable `invalid_arguments` result.
-Previously invalid client text could reach the provider, and malformed model
-strings could survive until a later request or response encoding failure.
-Valid astral, combining and multilingual text remains exact. Synthetic REST and
-provider cases prove these boundaries, not real-model answer quality.
+Markdown source, IDs and history are preserved. Rendered prose, safe HTML,
+wikilinks and graph projection have separate regression coverage. The v26 bounded
+760-context Marked comparison improves 123 mismatches to 54 without a new mismatch
+in that matrix. Escapes, mixed delimiters and HTML-anchor contexts still limit
+general parity; do not claim complete Marked/sanitizer/graph equivalence or an
+absence of all phantom-link cases.
 
-The local Vite proxy now closes the outgoing chat request when its browser
-disconnects before the API has sent response headers. A fully uploaded POST
-does not emit the incoming-request abort event, so the previous development
-proxy could leave the provider running after Stop reply. The hook is scoped to
-chat POSTs, preserves completed responses and removes its close listener after
-upstream completion; it also handles an already disconnected request waiting
-for an upstream socket. Native HTTP/Vite regressions check cancellation,
-concurrent isolation, the queued-socket race, normal/error completion and the
-unchanged page-write boundary. A held synthetic provider through the real
-ASGI app and browser establishes development-path cancellation, not live model
-billing or production reverse-proxy behavior.
+### Read-only chat and PWA
 
-The optional chat is a bounded OpenRouter function-calling loop over search,
-exact page reads and graph neighbors. It has no write tool and no backend
-conversation archive. Visible sources contain only pages the model actually
-read. Browser-local conversations are bounded and deletable; each write merges
-the current store, and bounded deletion tombstones prevent a stale tab from
-losing or resurrecting independent conversations. Before submitting from a stale
-view, the composer adopts the latest saved transcript without discarding unsaved
-storage-fallback messages. Retry first displays a newer saved transcript instead
-of resending an already answered question. If another tab changes the transcript
-while an answer is pending, the answer is retained in a separate conversation
-with its original request context; the newer stored conversation is preserved.
-Recovery from failed browser writes also keeps a divergent unsaved branch in a
-separate conversation before any persistence action, including Send, Retry, New
-and history selection. Recovery compares the current stored transcript with an
-immutable known persisted base, rather than assuming older messages remain a
-prefix after the 24-message bound trims history. Normal long conversations keep
-their original ID without a false concurrent-edit notice. Known bases survive
-quota failure and SPA navigation in document memory only; successful writes
-refresh them from the bounded saved messages. Identical already-saved messages
-do not need a duplicate branch. The persisted storage format and provider
-context limits are unchanged. Deletion still wins over an in-flight reply. These guards compare transcript
-content rather than timestamps. Browser storage is not a transactional multiwriter
-database: simultaneous cross-document writes and eviction beyond the bounded
-history remain outside this guarantee.
+Chat uses server-side OpenRouter and bounded iterative search/page/neighbor tool
+calls: eight calls and five rounds, explicit limits/errors and cancellation.
+Only actually delivered page content counts as a read source. Long-page
+continuation uses offsets and the expected page revision; changed snapshots
+require reading again. Incomplete/truncated provider completion cannot become a
+successful answer. Scripted providers verify contracts, not real answer quality.
 
-The concurrency regression uses a real unconfigured chat error for stale
-submission/retry and a held synthetic answer adapter for the late-reply race;
-it does not establish real model quality. Both browser reading profiles run
-these cases, including 390px and 1440px stale-view notices and reload persistence.
-Additional synthetic cases cover 24-message follow-ups at both widths, real
-concurrent branch preservation during injected quota failure, and quota recovery
-after leaving and returning to Chat through SPA navigation. Mocked provider
-responses and injected quota errors are adapter checks, not model-quality or
-physical storage-exhaustion evidence.
+Conversations are bounded, deletable browser-local data; there is no backend chat
+archive or wiki-write tool. Ordinary trimming retains identity, while actual
+concurrent branches are preserved. Browser storage is not a transactional
+multiwriter database. An unsent draft is not promised to survive reload or route
+changes. Credentials remain server-side.
 
-A full browser-local history scrolls within the desktop conversation list instead
-of stretching the whole workspace and pushing the composer below the viewport.
-All twenty entries remain reachable by native keyboard focus, selection and
-reload; narrow screens retain their horizontal conversation strip. Rendering
-regressions use only synthetic saved transcripts, not generated model answers.
-The update backup command resolves the active vault inside the container,
-including an explicitly retained restored-vault override; it must not assume
-the volume root remains the active vault after recovery.
+The PWA is online-first. Its worker does not provide a private wiki/chat/API
+offline cache. An update requires changed worker bytes, including a deliberate
+`RELEASE` change; a frontend-only asset change does not create a waiting worker.
+Updates protect each tab's unsaved editor/chat and pending requests from reload,
+including when another tab activates the worker. Offline, quota, worker and provider failures are explicit.
+Browser emulation and native Linux-WebKit are separate from installed mobile
+apps, Safari, soft keyboards and screen readers.
 
-OpenRouter failure diagnostics retain attempt number, exception class and HTTP
-status, without raw exception messages, response excerpts or chained provider
-tracebacks. Automatic HTTPX tracing is suppressed around these requests; bounded
-client spans still expose timing and status. Synthetic transport regressions
-exercise HTTP/transport/JSON failures, successful retry and cancellation during
-request/backoff. They do not establish real-provider delivery or billing behavior.
-HTTPX INFO and HTTPcore DEBUG transport logs are suppressed only in the provider
-task's context because they can include peer-controlled reason phrases, response
-headers and exception text. Filters attach to HTTPcore's actual emitting loggers;
-a parent-logger filter would not intercept child records. Real loopback HTTP/1.1
-tests with the default HTTPX transport verify success, HTTP/JSON failure and
-cancellation, positive-control DEBUG output, concurrent ordinary logging, same-task
-restoration and client closure. Ordinary requests retain their logs; levels are
-unchanged. These checks do not establish live-provider, HTTP/2, TLS or proxy behavior.
+### Authentication and compatibility
+
+Managed REST lives under `/api/wiki`; direct managed MCP exposes ten tools and
+`wiki://guidance`. Read guidance before editing. The primary managed profile
+excludes `remember/recall`; the optional
+[legacy profile](legacy-memory-profile.md) remains isolated. Never point legacy
+and managed writers at the same vault.
+
+Private responses use `no-store`. The browser uses same-origin proxy
+authentication; it does not receive the MCP Bearer key. MCP has a separate static
+Bearer/Host/Origin boundary, not an OAuth server. Remote credentials require TLS.
+Preserve and verify the actual authenticated proxy rather than exposing an
+unkeyed upstream. See [MCP setup and network limits](managed-mcp.md).
 
 ## User and operator paths
 
-Galaxy display changes preserve the currently expanded unresolved-link
-diagnostic. Switching between map and list changes the map presentation without
-rebuilding the unchanged page/evidence sidebar. Selecting a different page still
-starts a fresh detail view. Two real-API browser cases at 390/1440px reproduce
-the former collapse on the preceding source, then check both mode directions,
-keyboard focus, unchanged selection/link evidence, fresh selection state,
-search-query retention and complete owned-fixture cleanup. List mode deliberately
-uses document height instead of an inner scroll container; no identical inner
-scroll position across modes is promised. These synthetic Chromium checks do
-not establish native WebKit, physical touch or screen-reader behavior.
+A short fictional demo is Home → linked article/search → galaxy → chat with a
+follow-up question when a real provider is configured. The atlas identifies its
+pages as invented; public fixtures, logs and screenshots must contain no private
+wiki content, conversation details or credentials.
 
-- Restoring focus after Delete now explicitly reveals the whole control with
-  nearest-block/inline scrolling. The preceding native WebKit run focused the
-  empty composer but left its bottom at937.17px in a900px viewport. The original
-  rectangle assertion is retained; the exact native scrolling cause is not
-  isolated. A separate390px boundary control keeps native focus but disables its
-  automatic scrolling: it failed on the preceding product and passes with the
-  explicit reveal. This control is not WebKit emulation or physical-keyboard
-  evidence. Existing deletion cases also type into the restored composer and
-  record focus/viewport metrics and a screenshot before rectangle assertions.
-- Deleting a conversation by keyboard now focuses the selected remaining chat,
-  or its composer when no messages remain. Previously the removed Delete
-  button left focus on body and Tab restarted at New. Focus is restored only
-  when Delete owned it; an unfocused activation leaves unrelated navigation
-  focus alone. Four native Chromium cases cover one/two saved chats at390/1440px,
-  visible targets, Enter/Tab/Shift+Tab, persisted deletion and reload, with no
-  chat requests. All four focus assertions failed before the fix; all25 related
-  history/concurrency cases pass afterward. The unfocused activation is a
-  programmatic boundary control, not a physical touch or screen-reader test.
-- Keyboard selection of a saved chat now retains focus on the selected history
-  button after rendering and persistence reorder the list. Previously Enter
-  left focus on the document body, so the next Tab restarted at New. Restoration
-  occurs only when the original button owned focus; pointer-only activation
-  does not acquire focus. The full-history regression checks native Enter,
-  Tab/Shift+Tab and reload at 390, 1024 and 1440px. All three focus assertions
-  failed on the preceding source and passed after the correction in native
-  Chromium. These synthetic saved transcripts involve no model calls and do
-  not establish screen-reader or physical-device behavior.
-- At short 844x390 and 390x450 viewports, ordinary scrolling keeps a full local
-  chat history, input/Send/Retry and Editor Save/Cancel reachable. Two native
-  Chromium cases retain a failed question without inventing an assistant
-  answer, and preserve an exact editor draft after an injected HTTP503. The
-  existing discard confirmation remains explicit; API source and revision stay
-  unchanged. These are resized CSS viewports and scripted failure boundaries,
-  not physical soft-keyboard, Safari or provider evidence. Controls need not all
-  fit simultaneously; the checks require each actual rectangle to become fully
-  reachable without horizontal document overflow.
-  A save error response without a server message previously reused the reader's
-  "Unable to open this page" fallback. It now says "The save response could not
-  be confirmed." Server messages, status codes, timeout text, request identity
-  and mutation behavior are unchanged. The fallback deliberately does not claim
-  the server failed to publish the write.
-- First start explicitly chooses an empty wiki, the fictional template or a
-  reviewed local Git import. A nonempty destination is never seeded implicitly.
-- The main user flow is Home -> article and wikilinks -> search/history/editor ->
-  galaxy -> optional chat.
-- A denied start-page storage read falls back to the overview; failed preference
-  writes report the failure without replacing the editor or losing its draft
-  and selection. After storage recovers, setting the preference succeeds and
-  survives navigation/reload. Four 390/1440px real-service browser cases inject
-  `SecurityError`/`QuotaExceededError` at the Storage API boundary and verify the
-  old preference, original textarea, unchanged published Markdown/revision,
-  error recovery, durable successful choice and fixture cleanup. The product
-  already handled these states; this adds regression coverage, not new behavior.
-  Injected failures do not establish actual disk-quota, browser-policy or
-  physical-device behavior. No model calls are involved.
-  The storage probe waits for the last Home link-resolution batch and the
-  actual saved article before hard reload/navigation; a heading or replaced
-  URL alone can precede those reads. The initial WebKit run completed all
-  behavior assertions but reported native access-control errors for page/link
-  reads in three cases, consistent with unfinished reads being cancelled by
-  document replacement. The regression now waits
-  for semantic completion while retaining the full page-error assertion; this
-  sequencing correction subsequently passed the complete Chromium/WebKit and
-  separate worker CI profiles, without changing product code. This supports the
-  bounded test correction, not a universal cancellation or CORS diagnosis.
-- An empty wiki alias (`[[page-id|]]`) uses the target label and the same
-  resolution, missing-target and backlink behavior as an unaliased reference.
-  Safe HTTP(S) anchor schemes are case-insensitive and keep external-tab
-  isolation; executable schemes remain inert. The narrow/desktop browser
-  regression checks article navigation, graph evidence and unchanged
-  editor/reload Markdown. This renderer correction does not change graph or
-  index semantics.
-- Backslash-escaped wiki examples remain literal article text and do not create
-  graph edges, backlinks, missing targets or ambiguous targets. Odd/even opening
-  escape counts match the article renderer; paired backslashes still permit a
-  real link. Raw Markdown and the existing typed-relation grammar are preserved.
-  Index identity v6 invalidates earlier derived receipts so refresh cannot retain
-  the old false links.
-- Raw HTML `pre`, `script`, `style` and `textarea` blocks keep their Markdown
-  examples literal through the closing-tag line. Their apparent headings and
-  wiki references do not become titles, excerpts, graph edges or backlinks;
-  prose after the block retains normal navigation. The same index upgrade
-  invalidates v5 receipts without changing source Markdown, IDs or history.
-- Article lists retain Markdown meaning: continued numbered lists keep their
-  starting number (including zero), and task markers keep checked/unchecked
-  state as disabled native checkboxes. Other form inputs remain stripped;
-  no task toggle writes to the wiki. Raw editor Markdown remains authoritative.
-  Long unbroken article titles wrap inside the reading surface instead of
-  widening the document; the same narrow/desktop regression checks this.
-- Preformatted code has an explicit Tab stop and visible focus, so keyboard
-  readers can scroll long lines horizontally and continue to the next link.
-  The native regression also preserves literal script/wikilink syntax and
-  whitespace through reload/editor reads; it performs no wiki write.
-- Article image acceptance loads a synthetic 2400-by-600 SVG through the real
-  server at narrow and wide viewports. It checks proportional containment,
-  lazy loading, alternative text, real missing-resource failure and unchanged
-  editor/reload Markdown. Rejected sources and source event/style/size
-  attributes stay inert. This is same-origin browser evidence, not an external
-  image-host, production proxy or screen-reader acceptance.
-- With forced contrast colors, the galaxy SVG uses the active system palette
-  for labels, stars and links; current navigation and selected controls retain
-  visible outlines. The normal wiki/space palettes remain unchanged. The real
-  Chromium regression checks light/dark contrast media at 390/1440px, keyboard
-  selection/article entry, no overflow and an unchanged graph snapshot. This is
-  browser media emulation, not a physical Windows contrast-theme or screen-reader
-  acceptance; WebKit is not claimed to support this emulation profile.
-- Browser Back/Forward returns to the preceding Galaxy visit's selected page,
-  constellation, query, map/list choice, zoom, pan and sidebar offset. These
-  bounded visit states stay only in tab memory; the graph is fetched again and
-  deleted page IDs cannot restore a stale selection. Explicit new visits and
-  refresh open the overview unless the URL requests a specific page; contextual
-  URLs reselect that page from the fresh snapshot. Reload does not persist
-  Galaxy exploration state.
-- A continuous fictional-atlas browser rehearsal follows Home -> article ->
-  wikilink -> real search -> constellation/star/link evidence -> article ->
-  Chat. With the demo's unconfigured provider it verifies the actual unavailable
-  response, retry, local question reload/deletion and conversation-specific unsent
-  drafts at narrow and wide viewports, never a fabricated answer. Drafts stay only
-  in the open Chat view; Retry sends submitted messages and preserves composer
-  text. Switching conversations restores their separate drafts, deletion removes
-  them, and Send clears only the submitted draft. This
-  automated path is not the final real-model demo rehearsal.
-- Explicit navigation focuses the destination title for articles, Home, Search,
-  Galaxy, Chat, link choices and route errors, so the next Tab continues within
-  the view. Chat arrival leaves the composer unfocused. Fresh document loads retain the skip-link path;
-  fragments take precedence. A header/main focus deliberately chosen while a
-  read is pending is preserved, including internal saved-start/link redirects.
-- An article reload from incoming-link revision mismatch retains the history
-  panel's latest open state and a deliberately chosen history summary focus.
-  The panel is recreated and fetches current history through its normal listener;
-  detached old replies remain ignored. This does not promise focus preservation
-  for every possible node inside replaced article content.
-- Article contents links retain the browser's modified-click behavior. Ctrl/Cmd
-  opens the section URL in another tab; the original article stays in place.
-  Ordinary click/Enter focuses and scrolls its section within the current visit.
-  Section labels include image alternatives as well as visible inline text.
-  Previously an image-only heading produced an empty contents link and could
-  not be reached through its named fragment. The contents list and named
-  arrival now share an inert text projection, including promoted article titles;
-  a heading without text or alternative text uses "Untitled section". Numeric
-  section IDs and original Markdown/history stay unchanged. Duplicate named
-  labels still select the first matching heading; numeric fragments distinguish
-  them. Real narrow/desktop tests cover image-only, mixed and empty-alt headings,
-  direct/reload arrival, keyboard focus and unchanged source snapshots.
-  An intermittent local Chromium 153 run observed a trusted, unprevented click
-  without a new Context page; its cause remains unknown despite green Chromium
-  156 CI. The native regression now records down/up/click targets, connected
-  anchor URLs, modifiers, focus/visibility and a pre-gesture rectangle, plus PWA
-  notice transitions. Chromium CDP target creation is observed separately from
-  Playwright's page event. Protocol setup precedes navigation; unavailable CDP
-  diagnostics do not replace the original gesture/assertion outcome. Listeners,
-  observers, temporary globals and the CDP session are cleaned on exit. Event
-  listeners do not force per-event layout or hit-test reads. The native gesture,
-  8-second page-event timeout and arrival/reload/source assertions are unchanged.
-  A passing instrumented pair identifies only those measured activations; it
-  neither explains the earlier absence nor establishes that instrumentation is
-  timing-neutral. No product workaround or full browser-parity claim is made.
-  The retained native failure also created a blank CDP page target, as did a
-  successful activation; target creation alone therefore does not distinguish
-  arrival. The bounded diagnostic now records target changes/destruction and
-  Playwright context-page arrival on one elapsed-time axis (at most 32 events,
-  16 new targets), plus the final context page list. It makes no new protocol
-  calls during the gesture, changes no timeout/assertion, and removes its context
-  listener on exit. This narrows a future failure's observation boundary; it is
-  not a renderer/worker cause or proof that instrumentation is timing-neutral.
-- Search normalizes submitted queries while retaining the current URL fragment;
-  direct fragment destinations, reload and history remain usable. Later form
-  submissions keep their input focus, including a new or empty query.
-  A stable polite status region reports loading, result count, no matches and
-  retryable errors for the submitted query, independently of the next input
-  draft. Older replies cannot replace that status. Result cards stay outside
-  the live region; focus is not moved to announce a response. Browser DOM/ARIA
-  checks do not substitute for a physical screen-reader session.
-- Reopening local Git history reads current commits, including newer agent saves.
-  Reopening during a pending read shares that request; late history replies after
-  leaving the article cannot replace the next article's history.
-- Incoming-link refresh/retry and revision-mismatch replies restore their lost
-  button focus only while it remains unclaimed. Reloading a changed article
-  also respects a header control deliberately focused during its pending read,
-  on success or failure. Uninterrupted keyboard reload still arrives at the
-  article heading. Reload replaces main content, so this does not promise to
-  preserve a focused node inside that replaced subtree.
-- Save conflicts preserve the local draft and require a fresh read plus deliberate
-  reconciliation. Lost acknowledgements are retried with the same request ID and
-  payload, including an edit followed by restoring the exact submitted draft,
-  or a newer edit rejected with a conflict before that restoration.
-  Retry identity belongs to the submitted page/revision/content, so a
-  different payload remains a distinct attempt and cannot silently overwrite
-  a concurrent revision. One unresolved attempt is retained in this view's memory;
-  a definitive conflict does not replace an earlier lost-ack receipt.
-- Backup/restore includes Git history, durable local ledgers and demo metadata.
-  Content-only export is separate and is not a full operational backup.
-- Remote Git delivery requires reviewed local and remote heads. It never performs
-  an automatic pull, merge, force-push or conflict adoption.
+For first start choose **empty**, **template** or **Git import** deliberately.
+Nothing auto-seeds a nonempty vault. Restart the launcher to reopen later edits;
+rerunning template setup instead verifies the original template and refuses
+changed content. Interrupted seeding requires explicit `--resume` with the same
+template; `--empty` is not recovery. The launcher refuses a symbolic-link vault
+before resolution or writes, and empty setup verifies local Git health before
+reporting readiness. This is not a guarantee against concurrent filesystem path
+replacement or every ancestor symlink.
 
-Background PWA update checks keep the active worker when the native update
-operation rejects after an unavailable worker-script fetch. A later visibility check can retry;
-this does not change worker activation, draft protection or private-cache policy.
-The regression uses real workers and a forwarding observer of native outcomes;
-the server's one-shot HTTP 503 and visibility event are synthetic. Offline UI
-and successful reconnection are checked separately; offline emulation alone did
-not establish a native update rejection. It does not explain the separate intermittent
-first-install update notice or establish physical-device behavior.
+Import requires a clean, complete local Git working repository; shallow/partial
+sources are refused. It flattens filenames into page IDs and refuses collisions.
+An import replaces the **whole managed page set**; a source prefix is not a
+partial destination update. Content bytes and source ancestry are retained,
+including committed history outside the selected prefix. Review that history
+before exporting or sharing a migrated vault. A filename inventory is not a
+complete content/history/client migration audit.
 
-A native two-tab PWA regression opens a new document while an update's install
-event is held by an owned loopback response. After release, the arriving tab
-must offer and apply the waiting version without private caches. The browser
-may serialize its registration behind that update; no application fix follows
-from an observer that incorrectly waits for settlement before release. Both
-viewport cases are included in normal Chromium and WebKit worker acceptance.
-This leaves the intermittent first-install notice and physical devices open.
+Flat Markdown export preserves selected current bytes, not managed history or
+retry receipts. It refuses IDs that cannot fit the destination filename-byte
+limit rather than silently renaming them. Portable backup preserves managed Git
+history and local ledgers, not credentials or external provider data. Restore is
+create-only into a new path/volume. A concurrent save at bundle capture can
+produce `backup_changed`; retry after the write rather than overwriting source.
+A process-boundary save test does not establish power-loss or disk-failure
+durability.
 
-Application lifecycle inspection now observes an already-installing worker as
-well as future `updatefound` events. It captures the older active/controller
-worker before installation completes, so a first worker claiming the document
-does not turn itself into an update notice merely because callback delivery is
-late. Existing waiting updates, explicit activation and dirty-tab reload
-protection keep their previous contracts.
+For Compose, retain the installation project name, environment, proxy aliases
+and volume mapping. Record actual image IDs and archive current content before
+an update. PR image builds do not publish deployable branch images. Do not use
+`down --volumes` as an update or restore over the live vault. Inspect an independent
+recovery before cutover; switching to an old image does not undo later edits.
 
-`npm run test:pwa` transpiles the actual PWA module and checks five deterministic
-event-state cases. Two fail on the preceding source: missed observation of an
-already-installing update and a false first-install update under an explicitly
-synthetic callback ordering. The fixtures model application events; they do not
-prove that a browser produces that ordering or diagnose the historical WebKit
-failure. Native worker/update browser acceptance remains separate, including
-the two-tab held installation described above. Its final hidden-notice assertion
-is preserved. No worker script, offline/private-data caching or installation
-permission policy changes.
-
-The acceptance runner passes its actual Python executable to nested delivery
-fixtures unless `WIKI_PYTHON` is explicitly set. This supports Poetry or other
-virtual environments outside `backend/.venv`, as used by the documented Make
-commands. Browser/service orchestration tests cover the default and override
-for Chromium and WebKit; real local delivery cases exercise the default.
-
-## Public interfaces
-
-Derived article titles, excerpts and explicit links respect a top-level or
-list-continuation fenced code block until a matching closing fence with only
-trailing spaces/tabs. A line
-such as three backticks followed by text or a comment remains literal code;
-it cannot introduce a wiki link or hide the prose after the real closing fence.
-The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v26`
-also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
-Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
-rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
-
-Reference definitions follow the installed Marked12 block grammar: destinations
-and optional titles, including multiline metadata, do not create graph links,
-backlinks, excerpt text or page titles. Paragraph/list text continuations,
-invalid definitions and GFM table cells remain prose. Version v20 invalidates
-older derived receipts without rewriting Markdown, IDs or history; a configured
-vector rebuild may incur embedding costs. This is bounded block-definition
-coverage, not complete Markdown parity. Synthetic CRLF/store/history and
-real-service article/galaxy regressions retain visible links and check that a
-later explicit prose link does create its expected backlink.
-
-Valid inline Markdown link/image destinations and optional titles are likewise
-excluded from graph/backlink and excerpt projections, including balanced or
-escaped destination parentheses, angle destinations and multiline titles.
-Visible labels, code and escaped/invalid syntax retain their existing scopes.
-The actual frontend wikilink extension takes priority over ordinary links;
-whitespace-only targets fall through to Marked's normal link grammar. Twenty-eight
-syntax/context controls were compared with installed Marked12; the preceding
-store disagreed on twenty. Image alt text remains readable in excerpts without its outer
-image brackets inventing a wikilink. Separate CRLF source/history, excerpt labels,
-older-index receipt and real API/Vite article/galaxy cases cover the correction.
-Version v21 requires rebuilding older derived receipts, potentially incurring
-configured embedding costs, without changing Markdown, IDs or history. This is
-not full lexer/sanitizer parity; other image/label forms remain outside this
-bounded correction.
-
-URL/autolink navigation projection now follows bounded Marked12 token rules:
-ordinary protocol/www URLs, angle-scheme links, punctuation backpedaling,
-code/extension precedence and separate bare-URL versus angle-link anchor state.
-A URL containing wiki-shaped brackets stays visible as an external URL, without
-inventing a wiki edge or backlink. Excerpts use their own prose projection so
-visible URL text is retained; existing excerpt formatting is not a raw-URL
-fidelity guarantee. Twenty-nine syntax/context controls match the actual
-installed frontend extension; the preceding store disagrees on nineteen.
-CRLF/store/history, excerpt, receipt and real-service article/galaxy cases cover
-the change. Version v22 invalidates earlier derived receipts including v21;
-rebuilding configured vectors may incur embedding costs. Source Markdown, IDs,
-history and REST/MCP/mutation contracts remain unchanged. Coverage does not
-establish complete inline HTML/escape behavior, every uppercase-scheme token
-position, or a general parser complexity guarantee.
-
-Version v23 additionally excludes a URL in a whole prose block consisting only
-of a simple `**URL**` or `__URL__` wrapper. The wrapper's inner URL starts its own
-Marked token scope, so uppercase schemes there are external links too. Source
-bytes, visible excerpt text and later deliberate prose links remain unchanged;
-older derived receipts including v22 require a rebuild with the same configured
-embedding-cost caveat. This shortcut deliberately does not handle surrounding
-inline text, nested/escaped formatting or arbitrary delimiter runs. A broader
-scanner correction was rejected because actual Marked12 counterprobes exposed
-visible links it would wrongly suppress, including `*HTTPS://example.test/[[x]]**!`
-and `~*HTTPS://example.test/[[x]]~*`. A remaining example is
-`prefix **HTTPS://example.test/[[x]]**`: it can still produce a backend phantom
-edge on v23. Version v24 extends only this full-block shortcut to surrounding
-plain Unicode words separated by spaces/tabs, so the prefix example and its
-plain-word suffix variants no longer create phantom edges. Prefix/suffix bytes,
-visible excerpts, CRLF source and history remain intact; an explicit later prose
-link still creates its backlink. The installed Marked12 extension was compared
-against 240 independent delimiter/URL/context combinations without a newly
-suppressed visible link. This is a bounded matrix, not complete grammar parity:
-punctuation/markup outside that grammar, intraword, escaping and complex
-siblings remain outside the correction. V24 invalidates
-older derived receipts including v23, with the same embedding-cost caveat; it
-does not rewrite Markdown, IDs, history or API/MCP contracts.
-
-Version v25 extends the same bounded full-block grammar to single and triple
-`*`/`_` emphasis. Those wrappers also start an inner Marked URL scope; uppercase
-URLs containing wiki-shaped brackets no longer create phantom backlinks there.
-Sixteen new backend cases fail on the preceding store, then cover visible
-excerpts, exact CRLF source/history and later deliberate links. The existing
-390/1440px real-service article/galaxy regression now checks all six wrapper
-forms against rendered external links and exact graph evidence. An independent
-4,460-context comparison with the installed Marked12 extension found 252 changed
-target projections, all matching the frontend; no newly suppressed visible
-wikilink in that bounded matrix. This is not general Markdown parity: mixed or
-four/five delimiter runs, punctuation/HTML wrappers, escaping, intraword and
-complex siblings remain outside the shortcut. V25 invalidates older derived
-receipts including v24; configured embedding rebuilds can incur provider costs.
-Markdown, IDs, history and REST/MCP/mutation contracts are unchanged.
-
-Version v26 also recognizes one emphasized URL beside punctuation and a
-whitespace-separated deliberate wikilink, and an asterisk opener attached to a
-plain word. For example, `word**HTTPS://example.test/[[hidden]]**` and
-`*HTTPS://example.test/[[hidden]]*! [[shown]]` retain the visible external URL
-without inventing a `hidden` graph edge; `shown` remains a real connection.
-Intraword underscore, malformed/mixed delimiters, escaped markup and HTML
-anchors retain their existing treatment. The shortcut still requires a bounded
-whole-block grammar, not a general replacement for the frontend inline parser.
-Twenty-two new backend cases cover these boundaries, visible excerpts and
-exact CRLF source/history through reopening and a deliberate later link.
-A 760-context installed-Marked comparison reduces mismatches from123 to54,
-with no new mismatch in that matrix; the remaining cases are outside this
-grammar. Long invalid suffix probes exercise the new pattern without relying
-on timing assertions in the regression suite. Two additional 390/1440px
-real-service browser cases check rendered controls, navigation and galaxy
-evidence; their actual execution must be verified separately for the reviewed
-revision. V26 invalidates older derived receipts, including v25; configured
-embedding rebuilds can incur provider costs. Original Markdown, IDs, history,
-renderer/sanitizer and REST/MCP/mutation contracts remain unchanged.
-
-A compatible frontend lock refresh updates build-only `nanoid` 3.3.12→3.3.20,
-`postcss` 8.5.14→8.5.31 and `source-map-js` 1.2.1→1.2.2. Package manifest,
-Node engines and Vite/esbuild versions are unchanged. A fresh npm audit on
-19 October 2026 drops from five package findings (four high, one moderate) to
-two (Vite high, esbuild moderate). That first refresh did not establish a
-vulnerability-free release. Fresh locked installation, both typechecks,
-PWA/proxy tests, production build and selected real-service browser paths passed.
-
-The subsequent evaluated upgrade uses Vite 6.4.4 and esbuild 0.25.12. The official
-[v5→v6 migration](https://v6.vite.dev/guide/migration) was checked against this
-configuration: no SSR, Sass, custom conditions, library mode or WebSocket bypass
-is configured; the existing proxy configure/proxyReq cancellation path remains.
-Node20 CI and the Node20 Alpine builder satisfy these package engines. This is
-a bounded one-major upgrade, not an adoption of Vite7/8 or a new rendering stack.
-A fresh npm audit on 19 October 2026 reports zero known package findings; that is
-not a complete security assessment or proof of production exploitability.
-
-`npm run test:dev-security` starts the real Vite/configuration against only
-synthetic temporary files. It serves an allowed control map, denies an outside
-map requested via both direct filesystem and raw optimized-dependency traversal
-paths, and checks denied .env content and an untrusted Host header. The same
-traversal probe on Vite5.4.21 actually returns the outside synthetic map with
-HTTP200; Vite6 refuses it. This tests a Linux HTTP boundary, not the separate
-Windows UNC/NTLM advisory or a physical-device scenario. Both tests run in
-frontend CI, which now installs with `npm ci` against the lockfile. No backend
-content/index/API/MCP contract changes. Production continues to serve built
-static files with Nginx; Vite is a development/build dependency.
-
-The browser CI job now has a 20-minute budget, preserving every profile,
-assertion and per-test timeout. On the preceding revision all six harness
-records passed, but the job was cancelled roughly 23ms after its final success
-log near the previous 15-minute deadline. Timeout is an inference, not a
-recorded cancellation reason. Complete artifact evidence does not make that
-cancelled GitHub workflow green; require a successful current-head workflow.
-
-
-Quoted code now follows quote containers before deriving titles, excerpts and
-explicit links. The projection retains visible quote links, nested quotes,
-lazy lines without a `>` prefix, exact closing markers and the boundaries at
-blank lines, headings and outdented list continuations. Quoted headings remain
-excluded from page identity. An iterative work stack avoids Python recursion;
-a synthetic 150-level quote control covers that boundary. Original Markdown,
-page IDs and Git history are unchanged. Indentation is interpreted separately from content: tabs inside targets and
-prose stay unchanged, and a tab after a quoted fence is not a spaces-only close.
-Old v1–v14 index receipts rebuild with
-v19; configured vector rebuilds can incur embedding costs.
-
-List items now enter the same iterative container projection before quote/code
-classification, including a quote on the marker's first line (`- > ~~~`).
-Ordered, nested, empty and outdented item boundaries retain visible links after
-code. Leading indentation tabs are expanded per container; tabs inside targets
-remain literal. Item indentation prevents a nested H1 from becoming the page
-title while preserving ordinary list prose for excerpts.
-
-The focused corpus has 33 quote and 31 list/quote cases. Expected links were
-checked against installed Marked 12; backend tests use real stores, backlinks,
-raw Git bytes, reload/history, comment boundaries and depth-150 controls without
-requiring Node in backend CI. Both new 390/1440px real-service browser cases
-fail against the exact prior store's phantom edge. The corrected browser path
-checks visible title-resolved links, code, graph/backlinks and direct-editor
-mutation/restoration, then inspects the galaxy's directional evidence.
-
-A single whitespace character after a list marker no longer creates a list
-container: native Marked treats that line as a paragraph, and indented content
-after the blank remains code. A bare marker and a marker followed by two spaces
-remain distinct valid list controls. Paragraph state also retains indented lazy
-continuations, including inside wide ordered items. Original indentation is kept
-so literal continuation headings cannot become the page title. Blank lines and
-recognized code/quote/list/heading boundaries terminate paragraph continuation.
-Definitions and GFM table delimiters still conservatively block newly admitting
-indented rows; this is not complete reference/inline-HTML parsing.
-
-The paragraph-boundary corpus includes actual Git bytes/history, graph/backlinks,
-titles and excerpts, plus contrastive setext/table/definition/HTML and inline
-prose controls. Both new real-service 390/1440px cases fail against the exact
-prior store, then check code versus visible lazy links, two-space list markers,
-editor save/restoration and directional galaxy evidence after correction.
-
-Generic type-6/type-7 HTML blocks now keep their entire body literal until a
-blank line, including a closing-tag line and list-deindented body text. An
-inline standalone tag does not terminate an existing top-level paragraph;
-list block text and active GFM table rows have distinct boundaries. Recognition
-preserves internal tabs and follows the installed Marked 12 tag/attribute and
-column-zero interruption rules, rather than treating every tag-shaped line
-as a block. Only ASCII-space/tab blank lines release the block; a non-breaking
-space is still literal HTML content. Non-1 ordered markers and empty items
-cannot interrupt an existing top-level paragraph. Thirty-six native-checked literal cases
-and a real Git/history/backlink control cover these distinctions; 24 literals fail on the preceding
-store. An independent 396-case bounded comparison found no new mismatches
-after correcting internal-tab recognition. Delimited HTML block cases are now
-covered separately below; no complete Markdown parity is claimed.
-
-Two additional actual-service narrow/desktop browser cases use a supported
-inert EM wrapper, literal HTML-list content, editor mutation/restoration and
-galaxy evidence. Unknown custom elements are deliberately flattened to text
-by the separate sanitizer, so a native lexer wikilink inside such an element
-does not by itself prove a clickable browser link. The first diagnostic fixture
-exposed this boundary; the security filter is not loosened by this change.
-
-Delimited processing instructions (`<?…?>`), declarations (`<!A…>`) and CDATA
-blocks now exclude their literal body from title, excerpt and graph derivation.
-Previously a literal `#` line and `[[target]]` inside such a block could become
-the page identity and a phantom relationship, despite not being Markdown in the
-article renderer. Block eligibility respects paragraphs, tables, lists and quotes;
-an unterminated block remains literal through EOF. The closing delimiter ends
-the block immediately, so genuine same-line suffix prose stays available. Tabs
-that were internal before that delimiter are not re-expanded into code indentation.
-The frontend also avoids duplicating the real article H1 after these literal blocks;
-the sanitizer and allowed HTML surface are unchanged.
-
-Thirty-nine focused backend cases cover closed/EOF/CRLF/container/suffix boundaries,
-paragraph/table and code controls, exact source bytes, history and backlinks.
-Twenty-one of the original thirty cases failed on the unchanged preceding store.
-A bounded independent 117-case comparison against installed Marked found no new
-block-scope mismatch after the suffix-tab correction; preexisting inline/comment
-and reference differences remain outside this change. Two real-service browser
-cases (390/1440px) each exercise all three forms, same-line link navigation,
-editor mutation, reload, graph and two Git history entries. Both fail on the
-preceding product's literal title. Derived provider receipts must rebuild under
-v19; this can incur configured embedding costs without rewriting Markdown/history.
-
-Block comments now keep their entire type-2 HTML token out of derived links and
-excerpts, including the complete closing line. Previously `<!-- note -->[[target]]`
-could publish a graph edge even though Marked never invoked its wikilink tokenizer
-there. That suffix can remain visible as literal text in the sanitized DOM; this
-change does not hide or rewrite article content. Normal inline comments still
-retain genuine links after their terminator. Block eligibility distinguishes
-column-zero paragraph/table interruption from indented inline continuation, and
-handles comment blocks inside lists/quotes, short block closers and EOF.
-
-Twenty-seven focused backend cases preserve exact CRLF Markdown, Git history,
-backlinks and missing-target evidence; fifteen fail on the unchanged preceding
-store. Independent installed-Marked comparisons agree for 200 additional bounded
-comment/context cases and all117 earlier delimiter cases, including the nine
-former block-comment suffix differences. Two real-service 390/1440px browser
-regressions fail on the old phantom edge and pass with actual editor mutation,
-reload, history, normal inline-link navigation and preserved source bytes.
-The current index identity is v19, requiring older receipts to rebuild, with
-possible configured embedding costs. No frontend rendering/sanitizer, mutation
-or API contract is changed.
-
-
-Short inline comment tokens `<!-->` and `<!--->` now terminate immediately in
-derived prose, matching installed Marked. Following visible links, excerpt text
-and heading suffixes remain available; line-start block-comment and code rules
-stay separate. Previously an immediate short terminator could be treated as an
-open comment and hide real links from graph/backlinks or search text, while the
-article already rendered them. Thirty focused backend cases cover paragraph,
-heading, table/list/quote, normal multiline/block/code controls and exact CRLF
-source/history; sixteen fail on the unchanged preceding store. A bounded
-independent 44-case comparison agrees with installed Marked. Two real-service
-390/1440px browser cases compare actual anchors, graph/backlinks, excerpts,
-editor save, reload/Back and history. The current fingerprint is v19; older
-provider receipts rebuild without rewriting Markdown, potentially incurring
-configured embedding costs. No article renderer/sanitizer or API mutation change.
-An inline `<!--` without any `-->` in its remaining projection container is
-now preserved as literal prose, matching Marked's requirement for a complete
-inline comment token. Previously such an opener could suppress following titles,
-excerpts and real graph links through EOF although the article rendered them.
-The scope pass below records the last possible closing line per inline scope;
-the line scanner also checks its remaining tail, so an earlier same-line closed
-comment does not hide a later literal opener. Block comments still permit EOF,
-and fenced/inline code stays separate. Twenty-one focused backend cases cover
-these boundaries plus exact CRLF source/history, graph/backlinks and reopening;
-nine of the initial twenty fail on the unchanged preceding store. A bounded
-independent 64-case comparison agrees with installed Marked. Two real-service
-390/1440px browser cases compare actual anchors/headings with graph/backlinks,
-excerpt text, editor save/reload/Back and two Git history entries. The current
-index fingerprint is v19; old receipts rebuild without rewriting Markdown,
-potentially incurring configured embedding costs. Renderer/sanitizer and mutation
-contracts are unchanged.
-
-Inline comment removal now follows the existing raw block-structure pass. A
-later closing delimiter in a heading, separate paragraph, list/quote container,
-fence, or another GFM table cell cannot terminate an earlier inline opener.
-Consecutive paragraph lines share a scope, preserving valid multiline comments;
-table cells split only at unescaped pipes. A fenced example following an
-unterminated inline opener remains code, rather than creating false graph links.
-Added scope classification uses linear passes over emitted lines/cells; the
-shared code-delimiter correction below is separate. No whole-scanner complexity
-claim is made.
-
-Eighteen focused backend cases cover eleven former cross-scope failures, six
-valid-comment controls and exact CRLF title/excerpt/graph/backlinks/Git history,
-reopening and real mutation. The initial eleven boundary cases fail on the
-unchanged preceding store, while six controls already pass. An independent
-136-case comparison agrees with installed Marked 12.0.2 across eight contexts.
-Two real-service 390/1440px browser cases check seven actual visible links,
-code/valid-comment exclusions, graph/backlinks, exact editor save, reload/Back,
-no overflow and two Git history entries. This changes derived projections only;
-original Markdown, IDs, history, rendering/sanitizer and REST/MCP mutation
-contracts are unchanged. Index identity v19 rebuilds older receipts; configured
-embedding costs may apply. General Markdown/escaping/reference semantics and
-existing table column-count approximations remain separate limits.
-
-An escaped first backtick now remains literal when deriving links and excerpts;
-any remaining ticks in that run may still open code.
-Backtick runs close only on an equally long maximal run; a backslash inside code
-does not escape its closing delimiter. Comment scanning uses the same delimiter
-index in source order, so backticks inside comments do not capture later prose.
-Original Markdown, IDs, history, renderer/sanitizer and mutation contracts are
-unchanged. Current fingerprint v19 rebuilds older provider receipts, potentially
-incurring configured embedding costs. General Markdown/reference semantics and
-excerpt backslash presentation remain separate limits. Fifteen focused backend cases include exact CRLF source,
-graph/backlink changes after a real revision, reopening and original Git bytes.
-Six of fourteen delimiter cases fail on the preceding store; all fourteen agree
-with installed Marked 12.0.2. A separate bounded 1,024-case comparison of run
-lengths, opening/closing backslashes and surrounding comments/code also agrees.
-Two real-service narrow/wide cases check visible anchors against graph/backlinks
-and excerpts, direct editor save, reload/Back, history and page overflow.
-
-Inline code now stays within one Markdown block or GFM cell when deriving
-links/excerpts. Previously a backtick in an earlier paragraph, heading, list item,
-quote paragraph or table cell could hide a later visible wikilink. The existing
-block/container projection now scopes delimiter matching; soft line breaks within
-one paragraph still belong to one code span. Masking retains newlines and spaces
-to avoid concatenating link syntax. Default title projection is unchanged.
-Nine CRLF Git-store regressions cover graph/backlinks, source, revision and history;
-a bounded 72-variant comparison with installed Marked 12.0.2 agrees. Two real-service
-390/1440px cases cover three visible-link boundaries plus same-paragraph code,
-raw editor/cancel/reload, navigation/Back and source/history preservation. Both
-fail against the preceding store on the missing graph edge and pass with the fix.
-Three new screenshots were personally inspected (narrow table and code control,
-wide heading). This is scoped evidence, not full Markdown/reference parity.
-Fingerprint v19 invalidates older derived receipts; rebuilding configured vectors
-may incur embedding costs. Markdown, IDs, Git history, rendering and REST/MCP
-mutation contracts are unchanged.
-
-The existing synthetic Git-interruption test now atomically publishes its PID
-handshake after writing it. An observed race allowed cancellation between file
-creation and the PID write, causing an empty-file parse failure rather than
-testing transport cleanup. Transport behavior and cleanup assertions are unchanged.
-
-Imported page history follows Git-detected source renames before combining
-those commits with managed history. A real nested-source rename regression
-checks the original creation, rename and later update, exact CRLF content,
-retained source objects and an unchanged clean source repository. This uses
-Git rename detection, not a claim to reconstruct arbitrary copies or rewrites.
-
-The managed REST surface under `/api/wiki` covers health, page
-list/read/save/delete, link resolution and explicit incoming links,
-lexical/semantic/GraphRAG search, graph,
-history, index/delivery status and bounded chat. Mutation requests carry
-`base_revision` and `request_id`.
-
-REST rejects invalid authentication with a sanitized 401 response and `no-store`,
-including non-ASCII header bytes. Browser writes and chat reject malformed
-Origins with sanitized 403 responses before content or model dispatch. Origin
-validation rejects invalid authorities, user information, paths, queries,
-fragments, whitespace and control bytes; it compares the proxy-visible Host
-authority so HTTPS reverse proxies keep working. Authenticated nonbrowser
-requests without Origin remain supported. These are application boundary
-regressions, not production reverse-proxy or physical-browser acceptance.
-
-Managed MCP exposes ten deterministic tools: page read/list/search/save/delete,
-graph/neighbors, history, index status and delivery status. The
-`wiki://guidance` resource documents the editorial and retry contract.
-`remember` and `recall` remain only in the separately configured legacy
-profile.
-
-### GFM table columns and graph evidence
-
-Derived prose now checks delimiter/header column counts and the renderer's
-pipe-or-colon delimiter gate. Only rendered body cells participate in graph,
-backlinks and excerpts; surplus cells cannot invent connections. Pipes escaped
-with an odd backslash count remain within a cell, and their escaping backslash
-is removed before inline processing, matching installed Marked 12.0.2. A wiki
-alias inside a table therefore uses `[[target\|Label]]`. Apparent links split
-across two cells stay literal instead of becoming a graph edge. Cell boundaries
-also retain independent comment/code scopes and cannot create a page title or
-new typed relation.
-
-Synthetic counterexamples fail against the preceding store, including actual
-390/1440px browser graph checks. The corrected real-service cases compare
-rendered anchors and table cells, graph/backlinks, galaxy evidence, CRLF editor
-and reload bytes/revision, deliberate later linking and revision-safe cleanup.
-Backend cases retain exact Git history and include column, escaping, setext,
-code, title and typed-relation controls. A preexisting excerpt fixture used an
-unescaped alias pipe and actually rendered three cells; the fixture now escapes
-that pipe while retaining its expected readable summary. No article renderer,
-Markdown bytes, IDs, history or mutation/API contract is changed. Current index
-identity v19 invalidates older derived receipts; configured vector rebuilds can
-incur embedding costs. These are bounded table regressions, not general Markdown,
-reference or inline-HTML parity, production migration or physical-device proof.
-
-The full native profile exposed unescaped table aliases in two demo articles:
-the old graph had counted links that were not clickable in the article. The
-festival and calendar fixtures now escape their alias pipes. The existing
-galaxy counts remain unchanged; the regression additionally checks all nine
-rendered table links and their column counts at both widths. No existing vault
-is reseeded or rewritten. The full profile also reproduced the separately
-documented native modified-click timeout; isolated success does not explain it.
-
-The narrow festival table also has a focused reading regression: reach the
-scroll region with native Tab, reveal its third-column link with ArrowRight or
-horizontal wheel input, and open the fully visible link. Chromium additionally
-uses an emulated CDP touch swipe in a touch-enabled context; WebKit skips this
-CDP-only case. All methods preserve source/revision, prevent page-wide overflow
-and retain page-error checks. The viewport screenshots show the revealed column,
-not merely an offscreen DOM link. This is not physical touch/device acceptance.
-Reproduce with the acceptance runner's `--browser-grep 'narrow demo table'`.
+| Task | Operational guide |
+| --- | --- |
+| Local demo, short tour and manual presentation | [Demo](demo-start.md) |
+| Empty/template/Git choice and interrupted seed | [First start](first-start.md) |
+| Private source selection, replacement and audit | [Import](wiki-import.md) |
+| Content-only copy and filesystem limits | [Export](wiki-export.md) |
+| Archive, concurrent save and create-only recovery | [Backup/restore](backup-restore.md) |
+| Compose installation, image update and rollback boundaries | [Install/update](install-update.md) |
+| MCP tools, editing guidance and auth | [Managed MCP](managed-mcp.md) |
+| Optional indexes, delivery and remote credentials | [Indexes](managed-indexes.md), [delivery](managed-delivery.md), [Git](managed-git-sync.md) |
+| Worker privacy, installation and updates | [PWA](pwa.md) |
 
 ## Reproduce the demo and checks
 
-Use Linux or WSL with Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. From the
-repository root (the subshells keep the terminal there):
+Use Linux or WSL, Python 3.12, Poetry 2.1.3, Git, Make and Node 20+. Managed
+locking uses `fcntl`; atomic flat export requires Linux `renameat2`. Native
+Windows has not been accepted. From a clean source checkout, remain at its root:
 
 ```sh
 (cd backend && poetry sync --no-interaction)
-(cd frontend && npm ci && npx playwright install --with-deps chromium)
+(cd frontend && npm ci && npx playwright install --with-deps chromium webkit)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
+export PYTHONPATH="$PWD/backend/src"
 SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
-SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"
-SECOND_BRAIN_WIKI_API_KEY= make acceptance-first-start PYTHON="$WIKI_PYTHON"
-SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"
-make check
 ```
 
-The backend suite also includes a native mixed-transport regression. To run just
-that boundary from the repository root:
+Open <http://127.0.0.1:5173>. This foreground launcher uses an isolated demo vault,
+disables inherited hosted index/remote delivery targets and clears OpenRouter
+access. The explicit empty API key is a loopback preview choice, not a change to
+another installation's proxy password. Ctrl+C stops the services. Stop it before
+running another profile on the same 8000/5173 ports. Do not use the older Make
+`dev-start-infra`, `infra` or `prod` targets for this isolated preview; they can
+operate on other containers.
 
-```sh
-"$WIKI_PYTHON" -m pytest backend/tests/test_wiki_transport_processes.py
-```
+Run only checks relevant to the change; these commands are separate invocations:
 
-It starts separate authenticated REST and Streamable HTTP MCP Uvicorn processes
-on owned dynamic loopback sockets with one synthetic Git authority. Synchronized
-client submissions check competing same-base writes, identical request receipts
-and refusal of a reused ID with changed content. After a later edit and restart
-of both services, replay through each transport returns the original receipt
-without adding a commit or reverting current content; reads/history agree. The
-fixture disables delivery/index/model providers, stops and reaps its owned
-processes, and never uses a personal vault. Client synchronization does not force
-a particular server-side CAS interleaving; this complements the lower-level
-publication-race tests. It is not browser, proxy, provider or crash-durability
-acceptance.
+| Check | Command from repository root | Boundary |
+| --- | --- | --- |
+| Backend lint/types/local tests and frontend types/build | `make check` | Excludes integration tests and legacy Git-sync test |
+| Frontend proxy/access/PWA unit contracts | `(cd frontend && npm run test:proxy && npm run test:dev-security && npm run test:pwa)` | Additional to Make check |
+| Real API/Vite and full Chromium | `SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"` | New fictional vault, no model |
+| Empty start and actual service restart | `SECOND_BRAIN_WIKI_API_KEY= make acceptance-first-start PYTHON="$WIKI_PYTHON"` | Owned empty vault |
+| Complete local synthetic Git import/retry | `SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"` | Three browser phases, source preservation |
+| Synthetic320 graph/mutation/history | `SECOND_BRAIN_WIKI_API_KEY= make acceptance-scale PYTHON="$WIKI_PYTHON"` | Bounded dataset |
+| Native WebKit reading/navigation | `SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit` | Workers blocked |
+| Native WebKit worker updates | `SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers` | Separate workers-allowed profile |
 
-With a local Docker Engine and Compose v2, `make acceptance-stack` builds and
-exercises disposable managed containers, the nginx boundary, shared REST/MCP
-writes, restart persistence and independent-volume backup/restore. See the
-[stack acceptance guide](managed-stack-acceptance.md) for isolation and CI
-evidence. Adding the runner does not itself establish a passing Docker gate.
+Docker Engine/Compose v2 are needed for
+`SECOND_BRAIN_STACK_BROWSER=1 make acceptance-stack PYTHON="$WIKI_PYTHON"`.
+The [stack guide](managed-stack-acceptance.md),
+[index acceptance](managed-index-acceptance.md) and
+[SSH acceptance](managed-ssh-acceptance.md) describe their explicit isolated
+service/credential fixtures. A scripted failure, deterministic embedding or
+loopback SSH key is not a real provider or production credential result.
 
-The [managed index acceptance](managed-index-acceptance.md) runs Neo4j and Qdrant
-Testcontainers with real adapters and deterministic synthetic embeddings. It
-covers shared reads, freshness, generation loss/rebuild, server restart,
-retention and a bounded 320-page snapshot. This does not establish real-model
-quality, hosted providers or production load behavior.
-
-The opt-in [SSH Git acceptance](managed-ssh-acceptance.md) uses an owned agent,
-fresh keys and a loopback OpenSSH server to exercise authenticated snapshot
-delivery and refusal of missing/changed host trust or unauthorized client keys.
-Its independent CI result must be checked; it does not validate hosted deploy-key
-permissions or operator credential mounts.
-
-The normal demo and acceptance commands use the public fictional Lantern Bay
-fixture. The first-start check begins empty and creates separate fictional
-pages through real REST services. Its two browser phases surround an actual
-API/Vite stop and restart on the same owned vault, checking exact revisions,
-content, saved start page and navigation. Delayed real graph responses and
-scripted transport aborts check loading/error/stale-route handling; they do not
-establish real outage behavior. Browser profile/page receipts are local phase
-inputs and are never uploaded; successful runs remove them and the vault.
-The acceptance runner starts the real API and Vite frontend, runs the
-normal Playwright suite and writes an ignored structural record below
-`.demo/acceptance/`. It clears inherited OpenRouter access.
-Every invocation now owns an explicit Playwright output directory beneath that
-record: `browser-chromium` for the full suite, the existing named outputs for
-diagnostic/WebKit/scale profiles, and separate `browser-create`/`browser-restart`
-directories for first start. A later run cannot clear an earlier failure's
-screenshots, error context or structural attachments. Direct `npm run test:browser`
-still uses its ordinary shared default; the managed runner supplies the isolation.
-CI includes synthetic error contexts and the existing allowlisted galaxy
-attachments from these run directories, alongside screenshots and result/log
-records. Vaults and browser-state/page receipts remain excluded. Retention
-regressions simulate Playwright clearing each selected output; native browser
-acceptance separately checks actual output generation and application behavior.
-`make acceptance-scale PYTHON="$WIKI_PYTHON"` runs the existing scale suite
-against a fresh owned 320-page synthetic Git vault. The fixed `--scale` profile
-rejects other profiles, filters and repeats; its structural record identifies
-the scale fixture and cleanup, and screenshots stay under that run's
-`browser-scale` output. Browser CI runs this bounded graph/mutation/history gate
-separately from the fictional-atlas suite. It is a local-browser fixture check,
-not a production load or physical-device guarantee.
-For a concrete intermittent failure, `--browser-grep PATTERN --repeat-each N`
-selects a bounded diagnostic run against the same real services. Its structural
-record includes the filter and repetition count; a filtered pass is not full
-acceptance. First-start phases reject these options. The save-body test records
-monotonic phase timings and runner fixture/hook timings, including final status.
-The 30-second timeout reproduced with timing on `8f3b0d3`: assertions completed
-in under a second, but closing the owned proxy waited about 29.4 seconds after
-page closure. It completed only as the runner closed the context after timeout.
-The test now closes its whole owned browser context before the proxy, preserving
-the real held-body/save/receipt checks and the existing deadlines. A provisional
-`passed` inside cleanup does not prove runner completion. Five earlier isolated
-passes on `6394004` did not establish a fix; use the current revision's actual
-normal and bounded-diagnostic results to assess the corrected cleanup order.
-The normal suite includes focused history checks against actual Git-backed REST
-responses: keyboard loading, pending-read deduplication, refreshed agent edits,
-transport failure/retry and late success/failure after article navigation.
-The history module is selected once in both Chromium and WebKit reading profiles.
-Four same-article cases also hold an actual Git history reply through editor
-entry, then release success or a scripted transport failure during editing or
-after a real UI save. They compare the current commit list with REST history,
-check editor identity/selection or saved-article focus, and retain the same visit
-at desktop and narrow widths. Successful history payloads are never fabricated.
-Four Cancel cases perform the whole interaction at 390px or 1440px: an independent
-REST writer commits while a draft and old history reply are held. Cancel must
-reread the current article without a browser write; late history success/failure
-must leave its revision, commit list, focus and visit intact. Paired viewport and
-full-page images distinguish offscreen skip-link geometry from capture effects.
-Transport delays/aborts are explicitly scripted, not claims of real API outages.
-
-Rapid canceled browser traversal also preserves the native visit stack. Two
-queued Back actions could previously suppress the immediate correction; the
-one-second fallback then replaced an earlier article entry with the editor's
-URL. The draft survived, but subsequent Back skipped articles. Recovery now
-defers its correction, reads the actual current history position and coalesces
-additional traversal events. A suppressed correction retries a known position
-instead of replacing that visit; untracked entries retain their separate
-fallback. Eight real-service Chromium cases cover double Back, another Back
-during recovery, double Back followed by Forward and a two-entry jump at
-390/1440px. They compare the original visit identity, exact draft and history
-length across the timeout window, then discard and traverse every original
-entry in both directions. No History methods or successful API replies are
-substituted. This is native desktop-browser evidence, not physical mobile
-Back gestures, Safari or arbitrary external changes to history state.
-
-The delivery recovery suite owns a separate loopback API, forwarding proxy,
-temporary vault and local bare Git target. It saves real Markdown while its Git
-target is renamed out of reach, runs actual delivery to observe an error, then
-restores the target and runs delivery again without another content commit.
-The article's read-only **Check sync status** action exposes the recovered cached
-acknowledgement. Both browser profiles exercise desktop and narrow paths; local
-reads, history, lexical search and explicit links remain available throughout.
-The fixture disables inherited hosted providers and uses no fabricated status
-responses. It is not a hosted Git, SSH, index-provider or production acceptance.
-The same owned fixture also advances its bare target with an independent normal
-Git commit/push. Two subsequent local browser saves remain available while
-delivery and the read-only status action keep reporting conflict. Actual remote
-Markdown/head, local revisions/history/search/links and exactly two browser
-writes before operator review are checked; a repeated delivery attempt cannot
-adopt or overwrite the independent revision. No automatic reconciliation is
-exercised or authorized.
-An explicit scripted operator review then reads both actual Markdown snapshots
-and retains the independent paragraph through a third browser save. Actual CLI
-calls reject stale local and remote guards separately. Reviewed reconciliation
-only prepares pending delivery without changing either content/head/history;
-the next ordinary delivery publishes the merged text on top of the independent
-remote commit. The read-only UI refresh shows the recovered acknowledgement,
-with exactly three browser writes and no extra local content commit. This is a
-synthetic operator rehearsal, not automated conflict resolution or private migration.
-
-The shared `editor-retry.spec.ts` suite is selected once by both the full Chromium
-profile and the WebKit reading/navigation profile. Its six timeout cases withhold an
-actual successful save response and advance the client clock: unchanged retry,
-a different draft's real conflict, restored content, and restoration after a
-rejected intermediate edit, plus keyboard input → undo → redo → undo before
-receipt replay, plus preservation of pre-save keyboard history and selection.
-A seventh case checks pre-save undo/redo and selection after a real conflict
-with an intervening agent write. The editor remains the same textarea during
-saving and failure, read-only while saving; status and preferences update in
-place. A failure returns focus from Save to the draft without overriding another
-control chosen meanwhile. Success closes the editor. These browser editing
-commands do not establish physical keyboard input or mobile virtual keyboards.
-Two longer synthetic drafts additionally check internal textarea scroll,
-backward selection and deliberately chosen History/toolbar focus across timeout,
-then native undo/redo and either receipt replay or dismissed/accepted Cancel.
-Cancel closes the local editing view; it cannot roll back a save already
-committed despite a lost acknowledgement. Accepted Cancel reads the current
-article on the same visit before offering Edit again; unavailable reads use
-the existing error/retry view instead of presenting the older snapshot.
-API/history readback verifies that distinction before and after reload.
-Three real-conflict cases also check current content before re-editing, an
-unavailable refresh with same-visit retry, and a late read after navigation.
-They preserve deliberately chosen header focus and verify no additional write.
-Cancel after a real deletion shows the missing-page view without recreating the
-article. Section URLs retain their fragment and visit; delayed reads preserve
-chosen header focus. A newer native fragment starts a newer read, and a header
-choice during that read still takes precedence over automatic section focus.
-Those section cases pair actual viewport captures with full-page images and
-record the unfocused Skip link's viewport geometry before and after capture.
-An offscreen fixed element can appear in a full-page image; that image alone
-does not establish visibility over the article in the current viewport.
-Paired real graph reads at 390/1440 pixels also check a text-only edit with
-unchanged title/topology: curated core/world positions and directed bridge
-evidence remain equal while the actual snapshot revision advances. SVG world
-coordinates and viewport fitting are recorded separately; this bounded check
-does not establish stability after arbitrary added/deleted links, groups or pages.
-A separate directed-link mutation checks two existing fixture groups with retained
-anchors at 390/1440 pixels: a real save adds exactly one leaf-to-leaf link to an existing bridge,
-the UI refresh reads the current graph, core world positions and unrelated bridges
-stay unchanged, and the evidence panel retains the actual source/target direction.
-World positions and viewport fitting are recorded separately. Ordinary stars may
-reorder with their degree rank; this bounded check does not promise fixed positions
-for every star or topology-derived group. File attachments preserve both snapshots.
-The source fixture has three initially tied ordinary stars. Promoting the last
-one with the new link exercises their degree-ranked slot rotation while every
-other star, including the retained unique anchors, stays in place. This expected
-local reorder is distinguished from a global layout jump. Focused evidence views
-also pair viewport/full-page images with before/after Skip-link geometry, page
-scroll and actual article focus; captures must not change that state.
-These desktop/narrow cases are not arbitrary-size performance benchmarks.
-They inspect real request payloads, receipts and Git history, then remove only
-their owned UUID page using its current revision; no save response is fabricated.
-WebKit keeps service workers blocked
-for observable held routes, while the separate worker gate keeps them enabled.
-For a focused check, add
-`--browser-engine webkit --browser-grep 'a timed-out save preserves'`
-to the acceptance runner. A filtered pass is not the entire WebKit
-profile and Linux WebKit does not establish physical Safari/iOS acceptance.
-
-Two skip-link cases compare actual viewport geometry and keyboard behavior at
-390 and 1440 pixels. First Tab reveals the navigation bypass; Enter focuses the
-main content, and the next Tab enters its first control. The same-fragment path
-is checked too. A scrolled full-page Chromium capture can include the unfocused
-fixed link even though its rectangle remains entirely above the real viewport.
-The paired viewport images and before/after geometry distinguish that capture
-artifact from the interface. Do not infer a visible overlay from full-page
-pixels alone or from Playwright's offscreen `toBeVisible()` result.
-
-The local Git-import runner uses the actual setup CLI and three browser phases:
-empty Git without seeding, the public atlas with two original source commits,
-and restart after a browser edit and saved start page. It compares every page's
-exact content/revision, real source history and the full graph; checks links,
-search and galaxy at desktop and narrow widths; and refuses new first-start or
-template requests over the edited wiki. An identical import retry retains its
-original receipt while reporting the newer content revision. The source remains
-unchanged. Owned source repositories, vaults, browser state and page receipts are
-not uploaded. This gate does not establish a private or remote Git migration.
-
-For the opt-in tall-map probe, create an isolated vault with
-`"$WIKI_PYTHON" -m second_brain.wiki.scale_demo --vault .demo/tall-vault --pages 320 --groups 24`,
-start `SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-demo.py --vault .demo/tall-vault`, then run
-`PLAYWRIGHT_TALL=1 npm run test:browser -- e2e/tall.spec.ts` from `frontend`.
-Use the selected Poetry Python from the setup above and export
-`PYTHONPATH="$PWD/backend/src"` from the repository root before the Python
-commands. This uses real Markdown/Git and graph services, with no model
-calls; it is separate from the normal browser CI suite.
-
-For the human presentation route and its evidence checklist, use the
-[manual demo rehearsal](demo-start.md#manual-presentation-rehearsal). It includes
-readability, actual saved content/history, galaxy link evidence, two related
-questions with source inspection, local deletion and restart. It is a recipe,
-not a claim that real-model or physical-device acceptance has passed.
-
-With explicit approval for paid external calls and a real key:
-
-```sh
-OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON="$WIKI_PYTHON"
-```
-
-With a real configured provider this is a structural OpenRouter check, not an
-answer-quality review. Its schema-2 evidence distinguishes attempted/completed
-client invocations and chat turns, and records vault integrity as unknown if
-not checked. Reading the required pages does not prove correct interpretation;
-the record explicitly keeps `answer_quality_reviewed=false`. Inspect the actual
-answers and cited pages through the manual tour before closing that gate.
-Client counts do not establish HTTP delivery, internal retry counts or billing.
-Hosted index, deployment and device behavior remain separate.
-
-For direct agent maintenance, use the separate nine-page
-[editorial rehearsal](editorial-rehearsal.md). Its dated controlled result covers
-source-based corrections, knowledge-preserving consolidation, meaningful links
-and real MCP conflict/retry/restart behavior. It is author-aware and establishes
-neither a comparative quality score nor real-provider answer quality.
+The ordinary acceptance runner creates a fresh vault and isolated Playwright
+output under `.demo/acceptance/`, then records revision, selected profile,
+phase exit codes and cleanup. A successful run removes owned vault/phase inputs;
+a failure retains them and its evidence. Never publish a retained vault or
+browser storage receipt. CI allowlists synthetic screenshots, structural
+attachments, logs and result records; originals expire after seven days.
+A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-Verified published implementation baseline `fc136028244134112d0dbb29acf6576bf9740b92`
-(tree `585501d90a5ad32aeb35b69ea0fc3340c971c94d`, 2026-10-12).
-These results identify that exact baseline; for later commits inspect the
-current [draft PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18)
-and its matching CI runs rather than treating these counts as current.
+**Implementation examined:**
+`2a0b4fd3f16c0d9548de2d10945feaeaf03eb9cd`, tree
+`591d0cb868490f2da67a6b939b90987cac9c03fb`, tested at merge
+`76047ee4a525d6d67e3d25053f17bcf140708bb2` with identical tree and verified
+main+implementation parents. The following logs/archives were actually inspected
+on 19 October 2026. They remain tied to that implementation; later documentation
+or code commits need their own applicable checks.
 
-- The real CI API/Vite/Chromium acceptance passed 75/75 in 63.505 seconds with
-  services, including fresh history and both skip-link viewport/keyboard cases.
-  Existing empty-first-start/restart phases passed in 7.787 seconds; the three
-  local-Git import phases passed in 11.522 seconds. Their two/six phase skips are
-  intentional. Native import/skip-link browser execution was unavailable because
-  the temporary Chromium environment expired and its replacement download was
-  blocked; do not describe the CI browser pass as a native local pass.
-- All three structural records show `external_model_calls=false`,
-  `vault_retained=false` and `phase_inputs_retained=false`; the import source is
-  removed too. Artifact `11770743390`, ZIP SHA256
-  `e3467f74f3fb5a16decd9981387478f85e7db58906fc11aeac915c7a80daaba3`,
-  was downloaded and matched GitHub's digest. Paired viewport/full-page/focused
-  images were opened and inspected. No source repositories, vaults, browser
-  state or page receipts are archived. This is not a real-model/device check.
-- All six workflows passed: [Backend #111](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38302838040),
-  Frontend #90, [Managed stack #53](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38302837894),
-  Managed index #51, Managed SSH #40 and
-  [Managed browser #36](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/38302837865).
-  Backend Ruff and strict MyPy over 88 files passed with 328 tests and 12
-  explicit opt-in skips (64.05 seconds); backend and frontend image builds pass.
-- Managed index passed 7/7 against real isolated Neo4j/Qdrant with synthetic
-  embeddings. Managed SSH passed 5/5 with its owned agent and loopback OpenSSH.
-  The managed stack passed its built HTTPS/auth, controlled address-change and
-  independent-volume recovery checks, including six Chromium proxy checks.
-- Browser coverage includes revision conflicts/retries, real link/graph refresh,
-  article reload, nested-list/code rendering boundaries, bounded local chat
-  storage/recovery/deletion across stale tabs, and PWA save/update coordination.
-  Scripted chat transport checks do not establish real-model quality.
-- Narrow-screen galaxy pointer navigation reveals a chosen constellation's map
-  or the selected page's article and exact link evidence. Touch-emulation checks
-  include selecting a neighbor after scrolling the evidence panel, opening its
-  article, and keeping the map hidden in list view. Keyboard focus and desktop
-  layout remain separate paths. Focused maps fit the available aspect ratio and
-  keep label size stable across zoom/resize. Spaced stars use 44-pixel hit circles;
-  up to 120 stars, actual spacing caps targets to prevent overlap. Larger
-  constellations use a conservative elliptical-ring spacing bound without a
-  quadratic scan, retaining disjoint targets and the precise page-list path.
-  Dense 40- and 128-page maps have rendered-spacing and selection checks; small
-  nonoverlapping targets do not establish comfortable physical touch usability.
-  Overview titles/counts and bridge numbers use screen-scaled font sizes;
-  narrow maps use two columns with measured middle ellipsis, preserving full
-  names in constellation details and tooltips. Counts avoid nearby labels or
-  defer to the exact link title/details when no local placement fits. Resize
-  retains the focused keyboard star across column changes. If fitting every
-  row would crowd readable labels, an explicitly labeled overview window opens
-  on the full retained map. Panning and keyboard focus can reach its final row;
-  small overviews still fit all rows. A separate real 320-page/24-constellation
-  probe checks retained cores/bridges, 320/390/1440-pixel layouts, pan, zoom,
-  reset and distant keyboard selection. Real group changes and core deletion
-  also check fresh revisions, deterministic replacement cores, missing-target
-  evidence, list membership and article navigation. The old snapshot reports
-  a deleted article as missing until refresh; the scale probe restores and
-  compares the original nodes and edges after its mutations. Very dense maps and
-  physical touch ergonomics remain separate QA concerns; emulated taps do not
-  establish device usability.
-- Expanded constellations with more than 800 internal drawable links show only
-  links incident to the selected page, or the core before selection. A visible
-  notice names that scope. Every star, API edge and directional evidence item
-  remains available; overview bundling and sparse maps keep their existing
-  behavior. A real REST fixture creates 51 linked pages and retains all 2,550
-  directed internal edges plus two real external links while checking 100
-  incident map lines, 102 complete directional evidence items, keyboard
-  selection, sparse-mode return and article entry at a narrow viewport. The old map
-  visibly drew the dense mesh; the new path passes without replacing graph
-  responses. Chromium and WebKit reading acceptance include this regression.
-- CI artifacts contain only synthetic structural/browser evidence and expire
-  under the workflows' seven-day retention. They are browser emulation and
-  synthetic infrastructure, not physical-device or production evidence.
-- Hosted index configuration, production load and private Git permissions remain
-  open despite the isolated provider and SSH fixtures.
-- A read-only merge-tree comparison against `main 1f0cd1e` had no conflicts.
-  The earlier intermittent ordinary restart failure remains unexplained;
-  controlled address-change recovery is independently verified.
+| Area | Examined run | Result and scope |
+| --- | --- | --- |
+| Frontend | [39236323997](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323997) | Both TypeScript configurations, five proxy, two access and five PWA cases, Vite6.4.4 production/image build |
+| Backend | [39236323942](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323942) | Ruff/MyPy on 117 files, 1121 passed/12 skipped, image build |
+| SSH | [39236323944](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323944) | Five native fixture cases |
+| Indexes | [39236324427](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236324427) | Seven real disposable provider cases with synthetic vectors |
+| Stack | [39236324022](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236324022) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth and independent 14-page restore |
+| Browser | [39236323982](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39236323982) | Six Passed/Cleanup records, nine successful phases, 488 successful phase executions/14 explicit skips |
 
-## Article-to-galaxy entry
+Both image builds used `push:false/load:false`; no image publication or deployment
+is inferred. Browser profiles contain Chromium 294, first-start 2, Git-import 3,
+scale320 2, WebKit reading 179 and workers 8. All six records identify the exact
+merge, report no model calls/failure and confirm service cleanup. The opt-in
+installation diagnosis was skipped.
 
-Read-mode articles provide an **Explore connections** link to
-`/galaxy?page=<encoded-page-id>`. The fresh graph resolves the exact stable ID
-and its existing constellation; no title inference or invented relation is
-added. Large snapshots still open in list mode. The global Galaxy link remains
-an overview. A missing/deleted target gets an explicit snapshot notice without
-echoing untrusted URL input. An existing visit restores its exploration on
-Back/Forward; a new snapshot refresh or full reload resolves the URL's page
-again. This state is still bounded, in-memory and not a graph copy or persisted
-exploration archive.
+Browser artifact 12179868018 is 184,407,301 bytes, SHA256
+`658baa92530319edbc2c7af8ea13982b9b663da36b7a50e60a84af7adbcaab07`.
+API/upload digest, 736 safe unique regular paths and ZIP CRCs were checked; no
+error-context was present. Four narrow/desktop first-start history and Git-import
+restart Home images were personally inspected. Stack artifact 12179076886 is
+707,129 bytes, SHA256
+`6516367958e9bffbf9d1ab339a6066cdb04e9d4eee2c9d74327ccfac9cc25f4f`;
+its records/log, six safe paths/CRCs and desktop/mobile Home images were
+previously inspected, including cleanup of both isolated projects and volumes.
+Artifact retention ends on 26 October; the links and hashes do not guarantee
+download availability afterward.
 
-`article-galaxy.spec.ts` joins both real-service Chromium and WebKit reading
-profiles; the existing synthetic320 suite covers contextual entry with list
-mode. A separate 390/1440px case edits an owned synthetic page through the real
-Markdown editor in another tab: title, curated group and explicit link change
-while its ID stays stable. The existing map retains its shown snapshot until
-navigation/refresh; history return reads the new graph and resolves the same ID
-to its new title, real constellation and evidence. Cleanup checks restored graph
-nodes/edges. These are automated browser checks, not physical-device or manual
-demo acceptance.
-
-The same profiles inject one contextual graph-read transport failure and then
-retry against the actual service. An intervening owned-page mutation checks
-that recovery retains the URL/history visit while resolving current content;
-no successful response is fabricated.
-
-A further 390/1440px regression holds an actual fetched graph response while
-the user follows Search to another article and opens its connections. Releasing
-the abandoned response must retain the current context, deliberate exploration,
-history visit, focus and reading position. Search/Back then verifies that the
-current visit still owns its exploration cleanup. The gate delays delivery only;
-both graph payloads come from the content service.
-
-## Focused galaxy keyboard zoom
-
-With a map star focused, `+` (or `=`) and `-` use the existing zoom limits and
-keep that star inside the visible map. Shortcuts are local to stars: literal
-search text, document controls, and Ctrl/Meta/Alt browser chords are preserved.
-The real REST-backed dense-constellation regression now runs at 390 and 1440px,
-including zoom limits, focused-star visibility, search input, complete link
-evidence and article return. A large sparse map still opens in list view;
-closely spaced stars do not become large touch targets merely by adding keys.
-
-## Expanded galaxy labels at the viewport edge
-
-A synthetic 1,000-page import exposed a clipped selected-star label in a
-125-page expanded constellation at 390px. Expanded-map labels now retain their
-screen-sized font while their baseline and horizontal offset stay within the
-actual SVG bounds. Text is fitted only when necessary; full names remain in
-the selected-page panel, accessible label and SVG title. Stars, hit circles,
-link endpoints and graph evidence do not move. Offscreen stars do not leave
-floating edge labels, and each view update restores the original display text
-before fitting it again.
-
-The real-service dense-constellation regression selects the rightmost star,
-checks containment and font size through 320/390/1440px resizes, then zooms and
-resets. Both narrow/desktop cases fail on the preceding UI and pass with this
-correction. Screenshots include the selected edge star and its full-name panel.
-This fixes viewport clipping; physical touch selection in dense maps remains
-a separate concern and the complete page list remains available.
-
-Expanded maps can show a core label and a selected-page label on the same
-horizontal diameter. Both fitted inside the SVG but could paint over each
-other. When their screen rectangles collide, the selected label now takes
-priority and the unselected core label temporarily hides. Every view update
-restores and rechecks it, so zooming apart restores the core name. No star,
-hit circle, link endpoint, accessible name or full-name detail changes.
-Two real-service 33-page regressions reproduce the old overlap at 390/1440px
-and check separation through 320/390/800/1440px resizes, keyboard zoom/reset,
-core-label recovery, unchanged star positions and article/history navigation.
-This bounds the two active star labels; it does not promise that labels avoid
-every other star or that a dense map becomes comfortable on a physical device.
-
-The three SVG title-shortening paths (star display cap, star pixel fit and
-constellation pixel fit) now keep complete graphemes with feature-detected
-[`Intl.Segmenter`](https://tc39.es/ecma402/#sec-intl.segmenter.prototype.segment).
-An accent, emoji modifier/joined sequence or flag is not split at the ellipsis.
-The previous 27/25 display thresholds now count graphemes; initial title scanning
-stops at 28 units. Browsers without Segmenter retain the previous codepoint-safe
-behavior, so grapheme handling is not promised for that compatibility fallback.
-TypeScript includes the Intl declaration library; emitted target remains ES2020.
-
-Two real-service narrow/wide regressions reproduce the old split accent and
-narrow constellation boundary. Corrected cases check combining accents, joined
-emoji and flags in actual painted text and data-labels, pixel-fitted halo
-prefix/suffix boundaries, full accessible names/SVG titles/sidebar headings,
-unchanged positions/graph and article/Back navigation. Existing astral-symbol
-cases remain. Two new native screenshots were inspected: accents are legible,
-but the native Linux runner still lacks some emoji/flag glyphs. Exact DOM text
-and complete grapheme boundaries do not establish font coverage, every locale's
-segmentation or physical-device rendering. Source Markdown, IDs, graph data,
-backend/index identity and the worker/update contract are unchanged.
-
-## Native minimum text size
-
-Native Chromium minimum text size is checked separately from narrow viewports.
-The 24-pixel Blink minimum previously pushed the chat's **New** button outside
-its sidebar and extended middle-width navigation beyond the page. Header rows,
-chat heading labels and the read-only badge now wrap when text needs room.
-The purely decorative Home artwork is hidden through the tablet breakpoint:
-its transformed absolute children otherwise overflowed the page at 600/800px.
-Five real-browser cases at 390/600/800/1024/1440 pixels check the enlarged label,
-Home overflow, control bounds, pointer/keyboard New actions with distinct unsent
-drafts and navigation without model calls.
-This is a renderer text-setting check, not browser-zoom equivalence, physical
-installation, Safari behavior or complete accessibility acceptance.
+The first-start change had eight reproducible failing boundary cases before
+correction and 101 related passing cases afterward; real filesystem/Git/seed
+operations are distinguished from substituted service commands. Earlier UI and
+transport reproductions remain in the pinned handoff and source history. Do not
+replace a failed run with a later green result or compare phase execution totals
+as though they were unique product requirements.
 
 ## Known release gates
 
-- real OpenRouter multi-turn result and answer-quality inspection
-- hosted Neo4j, Qdrant and embedding-provider integration and retention under load
-- production authenticated reverse-proxy/HTTPS operation and off-host restore;
-  disposable Compose build/start/restart and independent-volume recovery have
-  separate CI evidence
-- reviewed Git credentials and migration of the selected private legacy vault
-- physical Android/iOS installation, standalone launch, icons, updates, touch and
-  screen-reader inspection
-- final end-to-end demo rehearsal followed by an updated evidence snapshot and
-  review decision
+- Real OpenRouter multi-turn answers with human inspection of the actual answers
+  and read sources. `make acceptance-openrouter PYTHON="$WIKI_PYTHON"` requires an
+  explicitly supplied server key and opts into paid calls against the fictional
+  vault. Its result is structural and sets `answer_quality_reviewed:false`.
+  Invocation counts do not measure HTTP retries or billing. Ordinary CI fake
+  providers do not satisfy this gate.
+- Hosted graph/vector/embedding configuration, retention and load. Full-snapshot
+  builds and a bounded 320 fixture do not establish hosted capacity.
+- Actual authenticated production proxy/HTTPS, reviewed published images and
+  off-host restore. The disposable stack is independent evidence.
+- Reviewed private Git credentials, full clean source/history audit and legacy
+  client migration. Keep the previous deployment/vault available until accepted.
+- Physical Android/iOS installation, standalone launch, touch, updates,
+  soft-keyboard and screen-reader checks.
+- Complete human presentation rehearsal: Home → articles → galaxy → a short real
+  multi-turn chat, followed by an explicit review decision.
 
-Do not describe the branch as production-cut-over, release-ready or fully
-accepted while any material gate above remains open.
+## Unresolved observations and practical limits
 
-## Pull-request summary
+Later passing CI does not diagnose earlier intermittent failures. Preserve the
+original assertion, gesture and timing when investigating a new occurrence.
 
-SecondBrain 2.0 replaces the primary experience with an agent-maintained,
-Git-backed wiki while retaining optional graph, GraphRAG and vector retrieval.
-It adds one revision-safe content authority shared by the browser, REST and MCP;
-a bright responsive article/editor/history interface; a curated evidence-based
-galaxy; bounded read-only chat; explicit first-start, migration, backup and
-delivery workflows; and an online-first PWA that does not cache private data.
+- A native 390px modified-click sometimes failed to create an observable new page.
+  A blank CDP target alone is not page arrival; isolated and subsequent full
+  passes do not establish its cause.
+- A WebKit first installation once showed an unexpected update notice after
+  offline→online. Bounded event-order diagnostics did not reproduce the native
+  failure; script-URL equality is not a first-install classification.
+- An ordinary stack restart failed intermittently. The separate controlled
+  backend-address/DNS-change gate demonstrates recovery, not its historical cause.
+- A completed browser test run once failed cleanup with `ENOTEMPTY`; owned inputs
+  also reappeared after reported deletion. Process/file metadata must be retained
+  if it recurs; no product or environment cause is established.
+- The earlier b1401d1 native WebKit chat input was focused but exceeded its
+  viewport visibility limit. The cfa304e explicit reveal correction passed that
+  unchanged limit; its synthetic preventScroll control does not isolate the
+  older native scroll mechanism. The failed run remains failed.
+- SIGKILL between child creation and receipt publication can leave an unrecorded
+  process. Complete receipts allow cleanup of recorded groups; incomplete
+  receipts do not guarantee shutdown. Resolve retained owned processes before
+  rerunning on the same ports. This is not power-loss recovery.
+- Renderer minimum-text-size, reduced-motion/forced-colors, SVG focus and
+  touch-emulated checks have bounded coverage. Native font/glyph coverage,
+  very dense maps, real devices and complete accessibility remain separate.
 
-The implementation keeps the legacy memory profile isolated, treats external
-indexes and remote Git as recoverable derivatives, and makes conflicts, retries
-and partial states visible. Public fixtures are synthetic. The local regression
-and demo paths are reproducible, while the provider, production infrastructure,
-private migration and physical-device gates listed above remain explicitly open.
+No merge, auto-merge, production cutover, private migration or deployment is
+authorized by this document.
