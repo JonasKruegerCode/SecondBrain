@@ -376,7 +376,7 @@ trailing spaces/tabs. A line
 such as three backticks followed by text or a comment remains literal code;
 it cannot introduce a wiki link or hide the prose after the real closing fence.
 The fence correction introduced index identity v4, and v5 excludes escaped wiki
-examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v25`
+examples. Version v6 excludes literal raw HTML blocks; current `managed-snapshots-v26`
 also rebuilds projections using quote, list-item, generic and delimited HTML block boundaries.
 Earlier receipts require a rebuild without rewriting Markdown. Native REST/browser regressions compare
 rendered code with graph/backlinks and preserved editor bytes at 390/1440px.
@@ -458,6 +458,26 @@ four/five delimiter runs, punctuation/HTML wrappers, escaping, intraword and
 complex siblings remain outside the shortcut. V25 invalidates older derived
 receipts including v24; configured embedding rebuilds can incur provider costs.
 Markdown, IDs, history and REST/MCP/mutation contracts are unchanged.
+
+Version v26 also recognizes one emphasized URL beside punctuation and a
+whitespace-separated deliberate wikilink, and an asterisk opener attached to a
+plain word. For example, `word**HTTPS://example.test/[[hidden]]**` and
+`*HTTPS://example.test/[[hidden]]*! [[shown]]` retain the visible external URL
+without inventing a `hidden` graph edge; `shown` remains a real connection.
+Intraword underscore, malformed/mixed delimiters, escaped markup and HTML
+anchors retain their existing treatment. The shortcut still requires a bounded
+whole-block grammar, not a general replacement for the frontend inline parser.
+Twenty-two new backend cases cover these boundaries, visible excerpts and
+exact CRLF source/history through reopening and a deliberate later link.
+A 760-context installed-Marked comparison reduces mismatches from123 to54,
+with no new mismatch in that matrix; the remaining cases are outside this
+grammar. Long invalid suffix probes exercise the new pattern without relying
+on timing assertions in the regression suite. Two additional 390/1440px
+real-service browser cases check rendered controls, navigation and galaxy
+evidence; their actual execution must be verified separately for the reviewed
+revision. V26 invalidates older derived receipts, including v25; configured
+embedding rebuilds can incur provider costs. Original Markdown, IDs, history,
+renderer/sanitizer and REST/MCP/mutation contracts remain unchanged.
 
 A compatible frontend lock refresh updates build-only `nanoid` 3.3.12→3.3.20,
 `postcss` 8.5.14→8.5.31 and `source-map-js` 1.2.1→1.2.2. Package manifest,

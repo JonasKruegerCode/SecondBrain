@@ -216,6 +216,65 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [390, 1440]) {
+  test(`emphasized URL boundaries retain deliberate wiki navigation at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const source = `boundary-source-${randomUUID()}`;
+    const shown = `boundary-shown-${randomUUID()}`;
+    const hidden = `boundary-hidden-${randomUUID()}`;
+    const markdown = ["# Emphasized URL boundaries", "",
+      `word**HTTPS://example.test/[[${hidden}]]**`, "",
+      `*HTTPS://example.test/[[${hidden}]]*!`, "",
+      `**HTTPS://example.test/[[${hidden}]]** [[${shown}|Deliberate companion]]`, "",
+      `prefix HTTPS://example.test/[[${shown}]]`, "",
+      `word__HTTPS://example.test/[[${shown}]]__`, "",
+    ].join("\r\n");
+    const endpoint = (id: string) => `/api/wiki/pages/${id}`;
+    const created: string[] = [];
+    const errors: string[] = [];
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const [id, body] of [[shown, "# Deliberate companion"], [hidden, "# URL metadata"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: { markdown: body, base_revision: null, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true); created.push(id);
+      }
+      const original = await (await request.get(endpoint(source))).json();
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Emphasized URL boundaries");
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(3);
+      await expect(page.locator(`.prose a[data-wiki-target='${shown}']`)).toHaveCount(3);
+      await expect(page.locator(".prose a[href*='example.test']")).toHaveCount(3);
+      const graph = await (await request.get("/api/wiki/graph")).json();
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === source)
+        .map((edge: { target: string }) => edge.target)).toEqual([shown]);
+      expect((await (await request.get(`${endpoint(hidden)}/backlinks`)).json()).total).toBe(0);
+      await page.screenshot({ path: info.outputPath(`emphasized-url-boundaries-${width}.png`), fullPage: true });
+      await page.getByRole("link", { name: "Deliberate companion", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Deliberate companion");
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator("article > h1")).toHaveText("Emphasized URL boundaries");
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown.replace(/\r\n/g, "\n"));
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      const current = await (await request.get(endpoint(source))).json();
+      expect(current.markdown).toBe(markdown); expect(current.revision).toBe(original.revision);
+      await page.getByRole("link", { name: "Explore connections", exact: true }).click();
+      await expect(page.locator(`.galaxy-evidence a[data-open='${shown}']`)).toHaveCount(1);
+      await expect(page.locator(`.galaxy-evidence a[data-open='${hidden}']`)).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath(`emphasized-url-galaxy-${width}.png`), fullPage: true });
+      expect(errors).toEqual([]);
+    } finally {
+      for (const id of created.reverse()) {
+        const current = await request.get(endpoint(id)); expect(current.ok()).toBe(true);
+        const response = await request.delete(endpoint(id), { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}
+
 for (const method of ["keyboard", "wheel", "touch-emulation"] as const) {
   test(`narrow demo table reveals its linked third column with ${method}`, async ({ browser, browserName }, info) => {
     test.skip(method === "touch-emulation" && browserName !== "chromium", "CDP touch input is Chromium emulation, not a physical device");

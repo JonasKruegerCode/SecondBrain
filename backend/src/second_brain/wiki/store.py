@@ -45,13 +45,14 @@ _INLINE_LINK_RE = re.compile(
 _ANCHOR_TAG_RE = re.compile(r"</?a(?:\s[^<>]*?)?\s*/?>", re.I)
 _AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
 _URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
-# A simple emphasized URL starts its own inline-token scope. Surrounding plain
-# words separated by spaces/tabs do not change that boundary. Keep this a full
-# block match: punctuation, escapes and mixed/nested markup require different scopes.
+# A single emphasized URL starts its own inline-token scope. Bound the whole
+# block to plain words, punctuation and deliberate wikilinks around that scope;
+# mixed/nested markup requires a real inline parser. Underscore flanking is
+# checked below because only asterisk emphasis can open inside a word.
 _EMPHASIS_URL_RE = re.compile(
-    r"(?P<prefix>(?:[^\W_]+[ \t]+)*)(?P<delimiter>\*{1,3}|_{1,3})"
+    r"(?P<prefix>(?:[^\W_]+[ \t]+)*[^\W_]*)(?P<delimiter>\*{1,3}|_{1,3})"
     r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+?)(?P=delimiter)"
-    r"(?P<suffix>(?:[ \t]+[^\W_]+)*)",
+    r"(?P<suffix>[!.,?;:]*(?:[ \t]+(?:[^\W_]+|\[\[[^\]\r\n]+\]\])[!.,?;:]*)*[ \t]*)",
     re.I,
 )
 _URL_BACKPEDAL_RE = re.compile(
@@ -685,7 +686,14 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     line boundaries and avoid manufacturing typed relations or new links.
     """
     emphasis = _EMPHASIS_URL_RE.fullmatch(text) if mask_urls else None
-    if emphasis is not None:
+    if (
+        emphasis is not None
+        and not (
+            emphasis.group("delimiter").startswith("_")
+            and emphasis.group("prefix")
+            and not emphasis.group("prefix")[-1].isspace()
+        )
+    ):
         inner = emphasis.group("url")
         end = _autolink_end(inner, 0)
         if end is not None:

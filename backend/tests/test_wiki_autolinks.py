@@ -153,3 +153,38 @@ def test_emphasis_url_projection_preserves_content_and_deliberate_link(
     assert reopened.backlinks("target")["total"] == 1
     assert len(reopened.history("source")) == 2
     assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
+
+
+@pytest.mark.parametrize("delimiter", ["*", "**", "***", "_", "__", "___"])
+@pytest.mark.parametrize("suffix", ["!", " [[shown]]", "! [[shown]] suffix."])
+def test_bounded_emphasis_url_punctuation_and_wiki_suffix(delimiter: str, suffix: str) -> None:
+    markdown = f"prefix {delimiter}HTTPS://example.test/[[hidden]]{delimiter}{suffix}"
+    expected = {"shown"} if "[[shown]]" in suffix else set()
+    assert {m.group(1) for m in LINK_RE.finditer(prose_links(markdown))} == expected
+    assert "HTTPS://example.test/" in plain_text_excerpt(markdown)
+
+
+@pytest.mark.parametrize("delimiter", ["*", "**", "***"])
+def test_asterisk_url_emphasis_can_open_inside_word(delimiter: str) -> None:
+    markdown = f"word{delimiter}HTTPS://example.test/[[hidden]]{delimiter} [[shown]]"
+    assert {m.group(1) for m in LINK_RE.finditer(prose_links(markdown))} == {"shown"}
+
+
+def test_emphasis_url_suffix_preserves_exact_source_and_deliberate_edges(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    for target in ("hidden", "shown"):
+        store.save_page(target, f"# {target}", None, target)
+    markdown = (
+        "# Scoped URL\r\n\r\nword**HTTPS://example.test/[[hidden]]**\r\n\r\n"
+        "*HTTPS://example.test/[[hidden]]*! [[shown|Visible]]\r\n"
+    )
+    saved = store.save_page("source", markdown, None, "first")
+    assert "HTTPS://example.test/" in saved["excerpt"]
+    reopened = WikiStore(tmp_path)
+    assert reopened.backlinks("hidden")["total"] == 0
+    assert reopened.backlinks("shown")["total"] == 1
+    assert reopened._git("show", "HEAD:pages/source.md") == markdown.encode()
+    reopened.save_page("source", markdown + "\r\n[[hidden]]", saved["revision"], "next")
+    assert reopened.backlinks("hidden")["total"] == 1
+    assert len(reopened.history("source")) == 2
+    assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
