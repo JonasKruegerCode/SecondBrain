@@ -68,6 +68,7 @@ _EMPHASIS_URL_RE = re.compile(
 _URL_BACKPEDAL_RE = re.compile(
     r"""(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![A-Za-z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+"""
 )
+_COMMENT_TOKEN_RE = re.compile(r"`+|<!--")
 FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
 
@@ -125,6 +126,8 @@ def _without_comments(line: str, in_comment: bool, *, has_later_close: bool) -> 
     parts: list[str] = []
     code_ends = _code_span_ends(line)
     position = 0
+    last_close = line.rfind("-->")
+    has_visible = False
     while position < len(line):
         if in_comment:
             if not parts:
@@ -135,31 +138,34 @@ def _without_comments(line: str, in_comment: bool, *, has_later_close: bool) -> 
             position = closing + 3
             in_comment = False
         else:
-            token = re.search(r"`+|<!--", line[position:])
+            token = _COMMENT_TOKEN_RE.search(line, position)
             if token is None:
                 parts.append(line[position:])
                 break
-            start = position + token.start()
-            end = position + token.end()
-            parts.append(line[position:start])
+            start = token.start()
+            end = token.end()
+            prefix = line[position:start]
+            parts.append(prefix)
+            has_visible = has_visible or bool(prefix.strip())
             if token.group().startswith("`"):
                 # Consume comments in source order: a tick inside a comment
                 # must never steal a later prose code opener.
                 code_end = code_ends.get(start, code_ends.get(start + 1))
                 end = code_end if code_end is not None else end
                 parts.append(line[start:end])
+                has_visible = True
             else:
                 # Marked accepts these two complete inline comment tokens.
-                tail = line[end:]
-                if tail.startswith((">", "->")):
-                    position = end + (1 if tail.startswith(">") else 2)
+                if line.startswith((">", "->"), end):
+                    position = end + (1 if line.startswith(">", end) else 2)
                     continue
                 # Inline comments require a terminator in this inline scope.
-                if "-->" not in tail and not has_later_close:
+                if last_close < end and not has_later_close:
                     parts.append(token.group())
+                    has_visible = True
                     position = end
                     continue
-                if not "".join(parts).strip():
+                if not has_visible:
                     parts.append(" ")
                 in_comment = True
             position = end
@@ -670,6 +676,32 @@ def prose_links(markdown: str) -> str:
     return prose_blocks(markdown, for_links=True)
 
 
+def _trim_url_tail(url: str) -> str:
+    """Skip suffixes the Marked backpedal fixpoint would remove one at a time.
+
+    A trailing entity-like ``&name;`` must disappear as a whole: dropping only
+    its semicolon would change the regex's entity-sensitive ampersand branch.
+    A contiguous closing-parenthesis suffix can retain at most its first ``)``
+    via the balanced-parenthesis branch. Leave that one to the original regex.
+    """
+    end = len(url)
+    while end and url[end - 1] in "?!.,:;*_'\"~":
+        if url[end - 1] == ";":
+            start = end - 1
+            while start and url[start - 1].isascii() and url[start - 1].isalnum():
+                start -= 1
+            if start < end - 1 and start and url[start - 1] == "&":
+                end = start - 1
+                continue
+        end -= 1
+    if end and url[end - 1] == ")":
+        start = end - 1
+        while start and url[start - 1] == ")":
+            start -= 1
+        end = start + 1
+    return url[:end]
+
+
 def _autolink_end(text: str, position: int, *, bare: bool = True) -> int | None:
     if text[position] == "<" and not _markdown_escaped(text, position):
         angle = _AUTOLINK_RE.match(text, position)
@@ -686,6 +718,7 @@ def _autolink_end(text: str, position: int, *, bare: bool = True) -> int | None:
         return None
     url = match.group()
     while True:
+        url = _trim_url_tail(url)
         backpedal = _URL_BACKPEDAL_RE.match(url)
         shortened = backpedal.group() if backpedal is not None else ""
         if shortened == url:

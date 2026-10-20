@@ -49,7 +49,7 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v26`, defined in
+The current derivation identity is `managed-snapshots-v27`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -230,6 +230,30 @@ attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
+
+### Bounded Markdown projection work
+
+Long URL punctuation/closing-parenthesis suffixes previously caused repeated
+whole-prefix regex work; repeated comments copied the remaining source suffix.
+The parser now removes eventual URL suffixes in one backward pass (preserving
+the entity-sensitive `&name;` boundary) and scans comment tokens by absolute
+position. Content, source bytes, graph syntax and the v27 index contract are
+intended to remain unchanged. This is a backend projection optimization, not a
+replacement for Marked or a browser rendering complexity guarantee.
+
+Synthetic operation-count regressions cover URL suffixes and original-string
+comment searches; source/history/backlink tests preserve intentional mutations.
+Selected local projection regressions passed398 cases. Independent comparisons
+matched80000 comment-state and30000 URL cases against the previous parser; an
+additional20000 URL cases matched the installed Marked12 tokenizer. Isolated
+four-second probes that previously timed out completed at262KB in about0.109s
+(periods) /0.068s (parentheses), and at1MB in about0.131s (short comments),0.085s
+(ordinary comments after whitespace) and0.482s (mixed punctuation). These are
+single local samples, not capacity guarantees or complete parser equivalence.
+No derived-index identity bump is required for this output-preserving change.
+The browser regression uses ordinary-size synthetic source, real API mutations,
+editor read/cancel, reload, backlinks and history at320/1440px; it does not claim
+fast browser rendering of a one-megabyte URL or a new UI-save acceptance result.
 
 **Inline HTML metadata and graph agreement, 20 October 2026:**
 A real source such as `See <a href="https://example.test/docs"
