@@ -97,7 +97,9 @@ def test_escape_url_keeps_source_history_and_deliberate_links(tmp_path: Path) ->
     reopened = WikiStore(tmp_path)
     assert reopened.backlinks("hidden")["total"] == 0
     assert reopened.backlinks("shown")["total"] == 1
-    assert reopened.get_page("source")["markdown"] == markdown
+    page = reopened.get_page("source")
+    assert page is not None
+    assert page["markdown"] == markdown
     assert reopened._git("show", "HEAD:pages/source.md") == markdown.encode()
     changed = markdown + "\r\n[[hidden|Deliberate connection]]\r\n"
     reopened.save_page("source", changed, saved["revision"], "deliberate")

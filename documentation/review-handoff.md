@@ -890,3 +890,12 @@ snapshot, Chromium153 and synthetic Git/API fixtures. The first broader Python
 invocation omitted async auto mode and left one async test unexecuted; rerunning
 with the explicit project mode succeeds. Complete new-head hosted/native WebKit,
 container/index and production acceptance remains separate.
+
+
+The first hosted backend follow-up39499565295 fails at MyPy before running the
+backend tests: the new history assertion indexed an optional page without an
+explicit presence check. A follow-up adds that assertion; local MyPy on all four
+changed Python files, Ruff and all64 new tests then pass. Runtime source and
+browser expectations are unchanged. The failed hosted run remains failed and
+its image job was skipped; a complete hosted result for the corrected head is
+still required.
