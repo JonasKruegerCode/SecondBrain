@@ -720,12 +720,23 @@ def _autolink_end(text: str, position: int, *, bare: bool = True) -> int | None:
             return angle.end()
     if not bare:
         return None
-    # Marked's inline-text lookahead is case-sensitive even though its URL
-    # tokenizer is not. Embedded uppercase schemes remain ordinary prose.
-    if position and not text.startswith(("http://", "https://", "ftp://", "www."), position):
-        return None
     match = _URL_RE.match(text, position)
     if match is None:
+        return None
+    # An escaped ASCII punctuation token ends Marked's current text run.
+    # Its following URL gets a fresh, case-insensitive tokenizer attempt.
+    escaped_prefix = (
+        position > 1
+        and text[position - 1] in r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
+        and _markdown_escaped(text, position - 1)
+    )
+    # Otherwise its case-sensitive text lookahead keeps embedded uppercase
+    # schemes in ordinary prose, despite the URL tokenizer being insensitive.
+    if (
+        position
+        and not escaped_prefix
+        and not text.startswith(("http://", "https://", "ftp://", "www."), position)
+    ):
         return None
     url = match.group()
     while True:

@@ -49,7 +49,7 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v30`, defined in
+The current derivation identity is `managed-snapshots-v32`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -860,3 +860,33 @@ personally inspected. The initial integrated run remains74passed/two failed:
 one assertion expected the old New-at-scroll-zero behavior; the other needed
 the existing one-CSS-pixel tolerance for native scroll rounding (844.17 versus
 844). Initial route scroll-zero remains asserted separately.
+
+
+**Escaped-punctuation URL boundary, 20 October 2026 (base725cba2):**
+A literal escaped marker such as `\\*HTTPS://example.test/[[target]]*`
+ends Marked12's preceding text token. The following URL is external in the
+article, but the previous graph projection invented a wiki edge. Recognize this
+fresh URL position only after escaped ASCII punctuation, with existing code,
+HTML-anchor, raw-link and ordinary uppercase-prose boundaries preserved. Check
+for a URL before inspecting the escape prefix, so non-URL backslash runs do not
+repeatedly scan their prefixes. The derivation identity becomes v32; old receipts,
+including v31, require rebuilding. Markdown and Git history stay unchanged;
+configured vector rebuilding can invoke paid embeddings.
+
+The actual preceding source fails both new320/1440 Chromium regressions at the
+phantom graph edge after the article correctly renders one external link. The
+corrected source passes all46 code-reading cases, including real editor save,
+reload, graph/backlinks and history. After the equivalent early-URL guard was
+added, the two focused browser cases pass again. Both fullpage screenshots were
+personally inspected for readable wrapping; they are not physical-device or
+native-zoom evidence. Both TypeScript configurations, Ruff and MyPy on the two
+changed runtime modules pass. The final selected Python regression passes577
+cases, including64 new escape/history/work-budget cases and v31 receipt
+invalidation. A local bounded259-case independent Marked12
+comparison improves164 parent mismatches to zero, with no newly mismatching
+case; this is a new escape-focused matrix, not a rerun of the earlier250-case
+matrix or general nested-Markdown parity. Local tests use the current source
+snapshot, Chromium153 and synthetic Git/API fixtures. The first broader Python
+invocation omitted async auto mode and left one async test unexecuted; rerunning
+with the explicit project mode succeeds. Complete new-head hosted/native WebKit,
+container/index and production acceptance remains separate.
