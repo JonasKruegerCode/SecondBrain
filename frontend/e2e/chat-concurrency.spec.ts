@@ -293,3 +293,171 @@ for (const finish of ["send", "retry", "new", "select"] as const) {
     await other.close();
   });
 }
+
+const deletedKey = "secondbrain.chat.deleted.v1";
+const storageLock = "secondbrain.chat.storage.v1";
+
+test("a queued chat save reads the peer publication after its native storage lock releases", async ({ page, context }) => {
+  await page.goto("/chat");
+  await page.evaluate(({ key, deletedKey }) => {
+    localStorage.setItem(key, JSON.stringify([
+      { id: "shared", title: "Synthetic previous question", updated: 1,
+        messages: [{ role: "user", content: "Synthetic previous question." }] },
+    ]));
+    localStorage.removeItem(deletedKey);
+  }, { key, deletedKey });
+  await page.reload();
+  const peer = await context.newPage();
+  await peer.goto("/chat");
+  // A native same-origin lock holds a peer publication in progress. This is
+  // scheduling/storage evidence, with no simulated provider response.
+  await peer.evaluate(({ storageLock, key, deletedKey }) => {
+    const state = window as unknown as {
+      releaseChatStorage?: () => void; chatStorageHeld?: boolean; chatStorageDone?: boolean;
+    };
+    const hold = new Promise<void>(resolve => { state.releaseChatStorage = resolve; });
+    void navigator.locks.request(storageLock, async () => {
+      state.chatStorageHeld = true;
+      await hold;
+      localStorage.setItem(deletedKey, JSON.stringify([{ id: "shared", deleted: 2 }]));
+      localStorage.setItem(key, JSON.stringify([
+        { id: "peer", title: "Synthetic peer question", updated: 3,
+          messages: [{ role: "user", content: "Synthetic peer question." }] },
+      ]));
+      state.chatStorageDone = true;
+    });
+  }, { storageLock, key, deletedKey });
+  await peer.waitForFunction(() => (window as unknown as { chatStorageHeld?: boolean }).chatStorageHeld);
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New", exact: true })).toBeDisabled();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).map((item: { id: string }) => item.id), key))
+    .toEqual(["shared"]);
+  await peer.evaluate(() => (window as unknown as { releaseChatStorage: () => void }).releaseChatStorage());
+  await peer.waitForFunction(() => (window as unknown as { chatStorageDone?: boolean }).chatStorageDone);
+  await expect(page.getByRole("button", { name: "New", exact: true })).toBeEnabled();
+  const active = await page.locator("[data-conversation].active").getAttribute("data-conversation");
+  const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  expect(saved.map((item: { id: string }) => item.id).sort()).toEqual([active, "peer"].sort());
+  expect(await page.evaluate(deletedKey => JSON.parse(localStorage.getItem(deletedKey)!), deletedKey))
+    .toEqual([{ id: "shared", deleted: 2 }]);
+  await page.reload();
+  await expect(page.locator('[data-conversation="shared"]')).toHaveCount(0);
+  await expect(page.locator('[data-conversation="peer"]')).toHaveCount(1);
+  await peer.close();
+});
+
+for (const operation of ["new", "delete"] as const) {
+  test(`overlapping native tab ${operation} and new actions retain saved chats and deletion intent`, async ({ page, context }) => {
+    const peer = await context.newPage();
+    let providerRequests = 0;
+    context.on("request", request => {
+      if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") providerRequests++;
+    });
+    await Promise.all([page.goto("/chat"), peer.goto("/chat")]);
+    for (let trial = 0; trial < 20; trial++) {
+      await page.evaluate(({ key, deletedKey, operation }) => {
+        localStorage.removeItem(deletedKey);
+        localStorage.setItem(key, JSON.stringify(operation === "new" ? [] : [
+          { id: "shared", title: "Synthetic saved question", updated: 1,
+            messages: [{ role: "user", content: "Synthetic saved question." }] },
+        ]));
+      }, { key, deletedKey, operation });
+      await Promise.all([page.reload(), peer.reload()]);
+      await Promise.all([
+        page.locator('[data-action="new"]').waitFor(), peer.locator('[data-action="new"]').waitFor(),
+      ]);
+      // Dispatch the real UI handlers in separate native pages together; do
+      // not replace Storage, defer its methods or route provider responses.
+      await Promise.all([
+        page.evaluate(operation => document.querySelector<HTMLButtonElement>(`[data-action="${operation}"]`)!.click(), operation),
+        peer.evaluate(() => document.querySelector<HTMLButtonElement>('[data-action="new"]')!.click()),
+      ]);
+      await Promise.all([
+        expect(page.locator('[data-action="new"]')).toBeEnabled(),
+        expect(peer.locator('[data-action="new"]')).toBeEnabled(),
+      ]);
+      const ids = await Promise.all([
+        page.locator("[data-conversation].active").getAttribute("data-conversation"),
+        peer.locator("[data-conversation].active").getAttribute("data-conversation"),
+      ]);
+      const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+      if (operation === "new") {
+        expect(saved.map((item: { id: string }) => item.id).sort(), `trial ${trial}`).toEqual(ids.sort());
+      } else {
+        expect(saved.some((item: { id: string }) => item.id === "shared"), `trial ${trial}`).toBeFalsy();
+        expect(saved.some((item: { id: string }) => item.id === ids[1]), `trial ${trial}`).toBeTruthy();
+        expect(await page.evaluate(deletedKey => JSON.parse(localStorage.getItem(deletedKey)!).some(
+          (item: { id: string }) => item.id === "shared"), deletedKey), `trial ${trial}`).toBeTruthy();
+      }
+    }
+    expect(providerRequests).toBe(0);
+    await peer.close();
+  });
+}
+
+test("rejected chat storage coordination retains the unsent draft and can recover", async ({ page }) => {
+  await page.goto("/chat");
+  let requests = 0;
+  page.on("request", request => { if (request.url().endsWith("/api/wiki/chat")) requests++; });
+  await page.evaluate(() => {
+    const request = navigator.locks.request.bind(navigator.locks);
+    Object.defineProperty(navigator.locks, "request", {
+      configurable: true, value: () => Promise.reject(new DOMException("Synthetic coordination rejection", "SecurityError")),
+    });
+    window.addEventListener("synthetic-lock-recovered", () => {
+      Object.defineProperty(navigator.locks, "request", { configurable: true, value: request });
+    }, { once: true });
+  });
+  await page.getByLabel("Message").fill("Synthetic unsent question.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".chat-error")).toContainText("could not coordinate chat storage");
+  await expect(page.getByLabel("Message")).toHaveValue("Synthetic unsent question.");
+  await expect(page.getByLabel("Message")).toBeEnabled();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  expect(requests).toBe(0);
+  await page.evaluate(() => window.dispatchEvent(new Event("synthetic-lock-recovered")));
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.locator(".chat-error")).toHaveCount(0);
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).length, key)).toBeGreaterThan(0);
+});
+
+test("browsers without Web Locks explain the single-tab chat storage boundary", async ({ page }, info) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, "locks", { value: undefined }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/chat");
+  await expect(page.locator(".chat-lock-notice")).toContainText("Use one Chat tab at a time");
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.getByLabel("Message")).toBeEnabled();
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).length, key)).toBe(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: info.outputPath("chat-single-tab-fallback-390.png"), fullPage: true });
+  await page.reload();
+  await expect(page.locator(".chat-lock-notice")).toBeVisible();
+  await expect(page.locator("[data-conversation]")).toHaveCount(1);
+});
+
+test("leaving chat cancels a queued storage action before it can publish", async ({ page, context }) => {
+  await page.goto("/chat");
+  const peer = await context.newPage();
+  await peer.goto("/chat");
+  await peer.evaluate(storageLock => {
+    const state = window as unknown as { releaseChatStorage?: () => void; chatStorageHeld?: boolean };
+    const hold = new Promise<void>(resolve => { state.releaseChatStorage = resolve; });
+    void navigator.locks.request(storageLock, async () => {
+      state.chatStorageHeld = true;
+      await hold;
+    });
+  }, storageLock);
+  await peer.waitForFunction(() => (window as unknown as { chatStorageHeld?: boolean }).chatStorageHeld);
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New", exact: true })).toBeDisabled();
+  await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Home", exact: true }).click();
+  await expect(page.locator(".chat-page")).toHaveCount(0);
+  await peer.evaluate(() => (window as unknown as { releaseChatStorage: () => void }).releaseChatStorage());
+  await peer.evaluate(storageLock => navigator.locks.request(storageLock, () => undefined), storageLock);
+  expect(await peer.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New", exact: true })).toBeEnabled();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+  await peer.close();
+});

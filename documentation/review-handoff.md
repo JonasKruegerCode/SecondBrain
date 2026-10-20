@@ -663,3 +663,41 @@ adds the missing explicit non-null assertion and verifies MyPy on the changed
 runtime **and test** modules. Product behavior and the earlier local browser
 results are unchanged. The failed run remains a failed historical check; no
 full Hosted acceptance is inferred from other successful job statuses.
+
+## Concurrent local chat saves, 20 October
+
+Two current Chat tabs now serialize the complete local-storage read, merge and
+write through one same-origin Web Lock. This prevents an overlapping New action
+from replacing another tab's new conversation or its deletion marker. Submission,
+retry preflight, reply publication and deletion checks use the same boundary;
+provider requests never hold the lock. Waiting controls are disabled, an unmounted
+view cancels its queued action, and rejected coordination retains the unsent
+question with a recoverable error.
+
+The conversation/deletion storage keys and formats are unchanged. Coordination
+requires participating app versions and a browser with Web Locks (normally an
+HTTPS or localhost context). Close or reload older Chat tabs after an update;
+older scripts, manual storage writes and unrelated code do not honor this lock.
+Browsers without the capability retain best-effort local storage and explicitly
+ask the user to keep one Chat tab open. This is not cross-device synchronization,
+an unlimited archive, or a guarantee against clearing browser data.
+
+A bounded native Chromium probe reproduced both lost new conversations and
+revived deleted synthetic history on the old code, without Storage replacements
+or provider calls. Three added scheduling/concurrency cases fail against the
+exact parent chat source and pass after the change. The two overlap cases each
+exercise twenty pairs of actual native-page UI handlers. Further cases cover
+coordination rejection, the unsupported-browser notice and cancellation on
+navigation. Existing bounded-history, stale-tab, late-reply, quota-recovery,
+delete/retry and multi-turn adapter cases remain relevant. Synthetic adapter
+answers establish browser behavior, not real model quality. Hosted WebKit/full
+workflow results for this change must be checked separately from earlier green
+runs; no physical-device, native installation or production claim follows.
+
+Local validation: **31 Chromium cases passed in 22.5s** (the complete17-case
+chat-concurrency suite plus14 existing chat adapter/storage cases selected from
+wiki.spec.ts), with no skips/retries. Both TypeScript configurations and Vite
+build passed. The exact parent-source counterexample failed all three selected
+new scheduling cases. The390px fallback notice and1440/390px deletion notices
+were personally inspected in actual screenshots; these full-page images do not
+establish physical-device installation or viewport visibility of every control.

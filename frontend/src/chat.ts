@@ -191,13 +191,42 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   // Keep it out of saved transcripts and provider requests until Send.
   const drafts = new Map<string, string>();
   let busy = false;
+  let storagePending = false;
+  const lifetime = new AbortController();
+  const coordinatedStorage = typeof navigator.locks?.request === "function";
   let requestController: AbortController | undefined;
   let error = "";
   let conversationNotice = "";
   let contextNotice = "";
   let alive = true;
-  reloadBlocker = () => !alive ? undefined : busy ? "reply"
+  reloadBlocker = () => !alive ? undefined : busy || storagePending ? "reply"
     : drafts.size ? "draft" : undefined;
+
+  // Serialize the complete read/merge/write across tabs, never provider waits.
+  // Older browsers keep best-effort persistence with an explicit notice.
+  const storageTransaction = async (action: () => void): Promise<boolean> => {
+    if (!alive || storagePending) return false;
+    storagePending = true;
+    main.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>(
+      'button:not([data-action="stop"]), textarea',
+    ).forEach(control => { control.disabled = true; });
+    stateChanged();
+    const run = () => {
+      if (!alive) return false;
+      action();
+      return true;
+    };
+    try {
+      return coordinatedStorage
+        ? await navigator.locks.request("secondbrain.chat.storage.v1", { mode: "exclusive", signal: lifetime.signal }, run)
+        : run();
+    } catch {
+      if (alive) error = "The browser could not coordinate chat storage. Your action was not completed; retry when ready.";
+      return false;
+    } finally {
+      storagePending = false;
+    }
+  };
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
   const preserveUnsavedBranch = (item: Conversation, stored: ReturnType<typeof readPersistent>) => {
@@ -285,9 +314,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       ? "This question has no saved answer. You can retry it when ready." : "");
     main.innerHTML = `<section class="chat-page" aria-labelledby="chat-title">
       <aside class="chat-history" aria-label="Saved conversations">
-        <div class="chat-history-heading"><span>CONVERSATIONS</span><button type="button" data-action="new" ${busy ? "disabled" : ""}>New</button></div>
-        <div class="chat-history-list">${conversations.map(item => `<button type="button" data-conversation="${esc(item.id)}" class="${item.id === activeId ? "active" : ""}" ${busy ? "disabled" : ""}><span>${esc(item.title)}</span><small>${item.messages.length} message${item.messages.length === 1 ? "" : "s"}</small></button>`).join("")}</div>
-        <button type="button" class="chat-delete" data-action="delete" ${conversation.messages.length && !busy ? "" : "disabled"}>Delete conversation</button>
+        <div class="chat-history-heading"><span>CONVERSATIONS</span><button type="button" data-action="new" ${busy || storagePending ? "disabled" : ""}>New</button></div>
+        <div class="chat-history-list">${conversations.map(item => `<button type="button" data-conversation="${esc(item.id)}" class="${item.id === activeId ? "active" : ""}" ${busy || storagePending ? "disabled" : ""}><span>${esc(item.title)}</span><small>${item.messages.length} message${item.messages.length === 1 ? "" : "s"}</small></button>`).join("")}</div>
+        <button type="button" class="chat-delete" data-action="delete" ${conversation.messages.length && !busy && !storagePending ? "" : "disabled"}>Delete conversation</button>
       </aside>
       <div class="chat-workspace">
         <div class="chat-heading"><div><div class="eyebrow">READ-ONLY WIKI CHAT</div><h1 id="chat-title">Ask, then follow the evidence.</h1><p>The assistant searches and reads this wiki. It cannot change pages, and conversations stay in this browser.</p></div><span class="chat-boundary">No write tools</span></div>
@@ -295,21 +324,26 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
           ${conversation.messages.length ? conversation.messages.map(message => `<article class="chat-message ${message.role}"><div class="chat-role">${message.role === "user" ? "You" : "Wiki assistant"}</div><p>${esc(message.content)}</p>${message.activity?.length ? `<details><summary>${message.activity.length} wiki action${message.activity.length === 1 ? "" : "s"}</summary><ul>${message.activity.map(item => `<li>${esc(item)}</li>`).join("")}</ul></details>` : ""}${message.sources?.length ? `<div class="chat-sources"><span>Sources</span>${message.sources.map(source => `<a href="${pageUrl(source.id)}">${esc(source.title)} <small>${esc(source.evidence)}</small></a>`).join("")}</div>` : ""}</article>`).join("") : `<div class="chat-empty"><span>✳</span><h2>Start with a real question.</h2><p>Try asking where a project stands, then ask a follow-up about one source.</p></div>`}
           ${busy ? `<div class="chat-thinking"><i></i>Searching and reading… <button type="button" data-action="stop">Stop reply</button></div>` : ""}
         </div>
-        ${retryNotice ? `<div class="chat-error" role="alert"><span>${esc(retryNotice)}</span><button type="button" data-action="retry">Retry</button></div>` : ""}
+        ${retryNotice ? `<div class="chat-error" role="alert"><span>${esc(retryNotice)}</span><button type="button" data-action="retry" ${busy || storagePending ? "disabled" : ""}>Retry</button></div>` : ""}
         ${conversationNotice ? `<div class="chat-storage-notice chat-conversation-notice" role="status">${esc(conversationNotice)}</div>` : ""}
         ${contextNotice ? `<div class="chat-storage-notice chat-context-notice" role="status">${esc(contextNotice)}</div>` : ""}
         ${storageUnavailable ? `<div class="chat-storage-notice" role="status">Browser storage is unavailable. New messages stay only in this tab until it is reloaded; previously saved conversations may remain after deletion.</div>` : ""}
-        <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy ? "disabled" : ""}></textarea><button class="primary" ${busy ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
+        ${!coordinatedStorage ? `<div class="chat-storage-notice chat-lock-notice" role="status">This browser cannot coordinate chat storage across tabs. Use one Chat tab at a time to avoid losing changes.</div>` : ""}
+        <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy || storagePending ? "disabled" : ""}></textarea><button class="primary" ${busy || storagePending ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
       </div>
     </section>`;
     main.querySelectorAll<HTMLButtonElement>("[data-conversation]").forEach(button => {
-      button.onclick = () => {
+      button.onclick = async () => {
+        if (busy || storagePending) return;
         const restoreFocus = document.activeElement === button;
-        activeId = button.dataset.conversation!;
-        error = "";
-        conversationNotice = "";
-        contextNotice = "";
-        persist(); // Keep the selected conversation when leaving or reloading Chat.
+        await storageTransaction(() => {
+          activeId = button.dataset.conversation!;
+          error = "";
+          conversationNotice = "";
+          contextNotice = "";
+          persist(); // Keep the selected conversation when leaving or reloading Chat.
+        });
+        if (!alive) return;
         render(false);
         // The history DOM is replaced and persist can reorder it. Retain a
         // keyboard selection without taking focus from pointer-only activation.
@@ -317,30 +351,37 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
           main.querySelector<HTMLButtonElement>(".chat-history-list button.active")?.focus();
       };
     });
-    main.querySelector<HTMLButtonElement>('[data-action="new"]')!.onclick = () => {
-      const next = freshConversation();
-      conversations.unshift(next);
-      activeId = next.id;
-      dirtyIds.add(next.id);
-      error = "";
-      conversationNotice = "";
-      contextNotice = "";
-      persist();
-      render(true);
+    main.querySelector<HTMLButtonElement>('[data-action="new"]')!.onclick = async () => {
+      if (busy || storagePending) return;
+      await storageTransaction(() => {
+        const next = freshConversation();
+        conversations.unshift(next);
+        activeId = next.id;
+        dirtyIds.add(next.id);
+        error = "";
+        conversationNotice = "";
+        contextNotice = "";
+        persist();
+      });
+      if (alive) render(true);
     };
     const deleteButton = main.querySelector<HTMLButtonElement>('[data-action="delete"]')!;
-    deleteButton.onclick = () => {
+    deleteButton.onclick = async () => {
+      if (busy || storagePending) return;
       const restoreFocus = document.activeElement === deleteButton;
-      const removed = current();
-      deletedIds.set(removed.id, Math.max(Date.now(), removed.updated + 1));
-      dirtyIds.delete(removed.id);
-      conversations = conversations.filter(item => item.id !== activeId);
-      if (!conversations.length) conversations = [freshConversation()];
-      activeId = conversations[0].id;
-      error = "";
-      conversationNotice = "";
-      contextNotice = "";
-      persist();
+      await storageTransaction(() => {
+        const removed = current();
+        deletedIds.set(removed.id, Math.max(Date.now(), removed.updated + 1));
+        dirtyIds.delete(removed.id);
+        conversations = conversations.filter(item => item.id !== activeId);
+        if (!conversations.length) conversations = [freshConversation()];
+        activeId = conversations[0].id;
+        error = "";
+        conversationNotice = "";
+        contextNotice = "";
+        persist();
+      });
+      if (!alive) return;
       render(false);
       if (restoreFocus) {
         const target = current().messages.length ? ".chat-history-list button.active" : "#chat-input";
@@ -359,86 +400,100 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       else drafts.delete(activeId);
       stateChanged();
     };
-    form.onsubmit = event => {
+    form.onsubmit = async event => {
       event.preventDefault();
       const input = form.querySelector<HTMLTextAreaElement>("textarea")!;
       const content = input.value.trim();
-      if (!content || busy) return;
-      drafts.delete(activeId);
-      let item = current();
-      const stored = readPersistent();
-      if (stored.tombstones.some(deleted => deleted.id === item.id)) {
-        item = freshConversation();
-        conversations.unshift(item);
-        activeId = item.id;
-        conversationNotice = "The previous conversation was deleted in another tab. Your message started a new conversation.";
-      }
-      const latest = stored.conversations.find(saved => saved.id === item.id);
-      if (!stored.unavailable && !dirtyIds.has(item.id) && latest && transcript(latest) !== transcript(item)) {
-        conversations = conversations.map(saved => saved.id === item.id ? latest : saved);
-        item = latest;
-        conversationNotice = "This conversation was updated in another tab. Your message follows the latest saved messages.";
-      }
-      if (!stored.unavailable && !dirtyIds.has(item.id) && latest)
-        baselines.set(item.id, transcript(latest));
-      item = preserveUnsavedBranch(item, stored);
-      item.messages.push({ role: "user", content });
-      item.messages = item.messages.slice(-MAX_MESSAGES);
-      item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
-      item.updated = Math.max(Date.now(), item.updated + 1);
-      dirtyIds.add(item.id);
-      error = "";
-      persist();
-      void requestAnswer();
+      if (!content || busy || storagePending) return;
+      const submitted = await storageTransaction(() => {
+        drafts.delete(activeId);
+        let item = current();
+        const stored = readPersistent();
+        if (stored.tombstones.some(deleted => deleted.id === item.id)) {
+          item = freshConversation();
+          conversations.unshift(item);
+          activeId = item.id;
+          conversationNotice = "The previous conversation was deleted in another tab. Your message started a new conversation.";
+        }
+        const latest = stored.conversations.find(saved => saved.id === item.id);
+        if (!stored.unavailable && !dirtyIds.has(item.id) && latest && transcript(latest) !== transcript(item)) {
+          conversations = conversations.map(saved => saved.id === item.id ? latest : saved);
+          item = latest;
+          conversationNotice = "This conversation was updated in another tab. Your message follows the latest saved messages.";
+        }
+        if (!stored.unavailable && !dirtyIds.has(item.id) && latest)
+          baselines.set(item.id, transcript(latest));
+        item = preserveUnsavedBranch(item, stored);
+        item.messages.push({ role: "user", content });
+        item.messages = item.messages.slice(-MAX_MESSAGES);
+        item.title = item.messages.filter(message => message.role === "user")[0]?.content.slice(0, 54) || "New conversation";
+        item.updated = Math.max(Date.now(), item.updated + 1);
+        dirtyIds.add(item.id);
+        error = "";
+        persist();
+      });
+      if (!alive) return;
+      if (submitted) void requestAnswer();
+      else render(true);
     };
     const retry = main.querySelector<HTMLButtonElement>('[data-action="retry"]');
     if (retry) retry.onclick = () => void requestAnswer();
     const stop = main.querySelector<HTMLButtonElement>('[data-action="stop"]');
     if (stop) stop.onclick = () => requestController?.abort();
-    if (!busy && focusComposer)
+    if (!busy && !storagePending && focusComposer)
       main.querySelector<HTMLTextAreaElement>("#chat-input")?.focus({ preventScroll: true });
     main.querySelector(".chat-messages")?.scrollTo({ top: 1_000_000 });
     stateChanged();
   };
 
+
   const requestAnswer = async () => {
-    if (busy) return;
-    let conversation = current();
-    // Retry uses the same read boundary as a new submission. A transcript
-    // deleted in another tab must not be sent back to the provider.
-    if (readPersistent().tombstones.some(item => item.id === conversation.id)) {
+    if (!alive || busy || storagePending) return;
+    let prepared: { conversation: Conversation; requestSnapshot: string; messages: ReturnType<typeof chatContext>["messages"] } | undefined;
+    const ready = await storageTransaction(() => {
+      let conversation = current();
+      // A retry must not send a transcript deleted while this tab was stale.
+      if (readPersistent().tombstones.some(item => item.id === conversation.id)) {
+        error = "";
+        persist();
+        return;
+      }
+      const unsaved = conversation;
+      conversation = preserveUnsavedBranch(conversation, readPersistent());
+      if (conversation !== unsaved) persist();
+      const beforeRequest = readPersistent();
+      const savedBeforeRequest = beforeRequest.conversations.find(item => item.id === conversation.id);
+      const requestSnapshot = transcript(savedBeforeRequest);
+      if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id) && savedBeforeRequest &&
+          transcript(savedBeforeRequest) !== transcript(conversation)) {
+        conversations = conversations.map(item => item.id === conversation.id ? savedBeforeRequest : item);
+        error = "";
+        contextNotice = "";
+        conversationNotice = "This conversation was updated in another tab. Review the latest saved messages before sending again.";
+        persist();
+        return;
+      }
+      if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id))
+        baselines.set(conversation.id, requestSnapshot);
+      const { messages, limited } = chatContext(conversation.messages);
+      contextNotice = limited
+        ? "Only recent conversation text and shortened excerpts were sent for this reply. Your saved messages are unchanged."
+        : "";
+      prepared = { conversation, requestSnapshot, messages };
+      // Guard local actions before releasing the storage preflight lock.
+      busy = true;
       error = "";
-      persist();
+    });
+    if (!alive) return;
+    if (!ready || !prepared) {
       render(true);
       return;
     }
-    const unsaved = conversation;
-    conversation = preserveUnsavedBranch(conversation, readPersistent());
-    if (conversation !== unsaved) persist();
-    const beforeRequest = readPersistent();
-    const savedBeforeRequest = beforeRequest.conversations.find(item => item.id === conversation.id);
-    const requestSnapshot = transcript(savedBeforeRequest);
-    if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id) && savedBeforeRequest &&
-        transcript(savedBeforeRequest) !== transcript(conversation)) {
-      conversations = conversations.map(item => item.id === conversation.id ? savedBeforeRequest : item);
-      error = "";
-      contextNotice = "";
-      conversationNotice = "This conversation was updated in another tab. Review the latest saved messages before sending again.";
-      persist();
-      render(true);
-      return;
-    }
-    if (!beforeRequest.unavailable && !dirtyIds.has(conversation.id))
-      baselines.set(conversation.id, requestSnapshot);
+    let { conversation } = prepared;
+    const { requestSnapshot, messages } = prepared;
     const requestId = conversation.id;
     const controller = new AbortController();
     requestController = controller;
-    const { messages, limited } = chatContext(conversation.messages);
-    contextNotice = limited
-      ? "Only recent conversation text and shortened excerpts were sent for this reply. Your saved messages are unchanged."
-      : "";
-    busy = true;
-    error = "";
     render(false);
     try {
       const result = (await api("/chat", {
@@ -447,36 +502,39 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         body: JSON.stringify({ messages }),
         signal: controller.signal,
       })) as ChatResponse;
-      if (!alive || activeId !== requestId || controller.signal.aborted) return;
-      const afterRequest = readPersistent();
-      const latest = afterRequest.conversations.find(item => item.id === requestId);
-      // A late answer belongs to the context actually sent. Preserve both branches
-      // instead of overwriting another tab's newer messages or misattributing it.
-      if (!afterRequest.unavailable && !afterRequest.tombstones.some(item => item.id === requestId) &&
-          transcript(latest) !== requestSnapshot) {
-        dirtyIds.delete(requestId);
-        conversation = { ...conversation, id: crypto.randomUUID(), messages: [...conversation.messages] };
-        conversations.unshift(conversation);
-        activeId = conversation.id;
-        conversationNotice = "Another tab updated this conversation while the reply was pending. This reply was saved as a separate conversation; both versions are kept.";
-      }
-      conversation.messages.push({
-        role: "assistant",
-        content: result.answer,
-        sources: result.sources,
-        activity: result.activity,
-      });
-      conversation.updated = Math.max(Date.now(), conversation.updated + 1);
-      dirtyIds.add(conversation.id);
-      persist();
-    } catch (cause) {
-      if (!alive || activeId !== requestId) return;
-      if (readPersistent().tombstones.some(item => item.id === requestId)) {
+      await storageTransaction(() => {
+        if (activeId !== requestId || controller.signal.aborted) return;
+        const afterRequest = readPersistent();
+        const latest = afterRequest.conversations.find(item => item.id === requestId);
+        // A late answer belongs to the context actually sent. Preserve both branches.
+        if (!afterRequest.unavailable && !afterRequest.tombstones.some(item => item.id === requestId) &&
+            transcript(latest) !== requestSnapshot) {
+          dirtyIds.delete(requestId);
+          conversation = { ...conversation, id: crypto.randomUUID(), messages: [...conversation.messages] };
+          conversations.unshift(conversation);
+          activeId = conversation.id;
+          conversationNotice = "Another tab updated this conversation while the reply was pending. This reply was saved as a separate conversation; both versions are kept.";
+        }
+        conversation.messages.push({
+          role: "assistant",
+          content: result.answer,
+          sources: result.sources,
+          activity: result.activity,
+        });
+        conversation.updated = Math.max(Date.now(), conversation.updated + 1);
+        dirtyIds.add(conversation.id);
         persist();
-        return;
-      }
-      error = (controller.signal.aborted ? "Reply stopped." : (cause as Error).message)
-        + " Your question is still here; retry when ready.";
+      });
+    } catch (cause) {
+      await storageTransaction(() => {
+        if (activeId !== requestId) return;
+        if (readPersistent().tombstones.some(item => item.id === requestId)) {
+          persist();
+          return;
+        }
+        error = (controller.signal.aborted ? "Reply stopped." : (cause as Error).message)
+          + " Your question is still here; retry when ready.";
+      });
     } finally {
       if (requestController === controller) requestController = undefined;
       if (alive) {
@@ -489,6 +547,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   render(false);
   return () => {
     alive = false;
+    lifetime.abort();
     requestController?.abort();
     stateChanged();
   };
