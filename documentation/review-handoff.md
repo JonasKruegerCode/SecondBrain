@@ -100,10 +100,17 @@ require reading again. Incomplete/truncated provider completion cannot become a
 successful answer. Scripted providers verify contracts, not real answer quality.
 
 Conversations are bounded, deletable browser-local data; there is no backend chat
-archive or wiki-write tool. Ordinary trimming retains identity, while actual
-concurrent branches are preserved. Browser storage is not a transactional
-multiwriter database. An unsent draft is not promised to survive reload or route
-changes. Credentials remain server-side.
+archive or wiki-write tool. A versioned IndexedDB root stores conversations and
+deletion markers. Each storage action reads, merges and writes in one native
+transaction; only transaction completion confirms a save. Ordinary trimming
+retains identity, while actual concurrent branches are preserved.
+
+Legacy localStorage keys are imported only when the root is absent; an explicit
+empty root prevents reimport. Those keys remain backups without dual writes;
+current chat deletion does not erase those older copies. Failed commits can
+retain changes across SPA navigation in the current document, but that fallback
+does not survive reload. An unsent draft is not promised to survive reload or
+route changes. Credentials remain server-side.
 
 The PWA is online-first. Its worker does not provide a private wiki/chat/API
 offline cache. An update requires changed worker bytes, including a deliberate
@@ -899,3 +906,46 @@ changed Python files, Ruff and all64 new tests then pass. Runtime source and
 browser expectations are unchanged. The failed hosted run remains failed and
 its image job was skipped; a complete hosted result for the corrected head is
 still required.
+
+
+**Development acceptance inspected, 21 October 2026 (runtime1351647):**
+The current escaped-punctuation correction and its test-only Optional guard are
+fully inspected at test merge debae6e8ca7e5ff9523062858fb2352b7926f2c0,
+tree5a441436, with ordered parents main1f0cd1e7+1351647. Runtime source is the
+db54a85 fix; the failed Backend39499565295 remains failed.
+
+[Frontend39499864733](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864733)
+passes both type configurations, proxy5/access2/PWA5 and its production/image
+build. [Backend39499864718](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864718)
+passes Ruff/MyPy123 and1339 tests, with12 opt-in skips exercised separately by
+[SSH39499864714](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864714)
+(5 passed) and [Index39499864801](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864801)
+(7 passed). Both image logs show push:false/load:false and cleanup.
+
+[Browser39499864734](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864734)
+has seven passed records and ten zero-exit phases: native WebKit33 repeated
+storage executions, broad Chromium372, first-start2, Git-import3, scale2,
+broad Linux WebKit257 and worker8. The677 successful executions include33
+repeated diagnostics; they are not677 unique tests. Fourteen skip occurrences
+are eight complementary first-start/import selections and six known
+engine-specific exclusions. Both new320/1440 escaped-URL cases run in the broad
+engines; four actual fullpage images were personally inspected. The broad
+profiles retain no grep/retry relaxation; the storage and worker diagnostics
+retain their explicit selections.
+
+[Stack39499864808](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864808)
+has78 gate entries/76 unique, six built-browser gates and a separately restored
+14-page volume with history/retry receipts. Actual compose logs remove both
+projects' containers, networks and volumes. DNS changes.3 to.6 with the same
+frontend; backend diagnostics say starting in both snapshots, despite the
+HTTP-health gates passing. Proxy logs show the isolated499 and survivor/retry200;
+exact bodies/no-store/completion are runner assertions. Cleanup/retention and
+no-model statements are records and logs, not independent OS/network tracing.
+Archives are size/hash/CRC checked: browser203,881,696 bytes/840 regular entries,
+stack707,167 bytes/six regular entries.
+
+This is development acceptance with synthetic fixtures, vectors and HTTPS/SPKI.
+It establishes neither physical Safari/iOS/native200% zoom nor real model,
+private original-history migration or production acceptance. The storage prose
+correction above changes no runtime source, tests or configuration and was
+checked against the shared-root transaction and legacy-import code.
