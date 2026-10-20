@@ -774,3 +774,43 @@ real fictional vault and built frontend. Both TypeScript configurations and Vite
 build passed. The390/1440 readiness/focus images were personally inspected.
 The previous broad failure remains failed; the bounded WebKit gate is not a full
 cross-engine, device, model-quality or production acceptance.
+
+
+## Received answers during browser read outages, 20 October
+
+A successfully received answer previously disappeared when its publication could
+not open or read browser storage. The question stayed retryable, but retrying
+would ask the provider again. The answer now stays once, bounded, in the existing
+tab fallback with its original merge baseline. It survives SPA navigation and
+can be committed by a later storage action without another provider request.
+
+Recovery preserves a newer saved branch separately and respects concurrent
+canonical deletion markers. Stop and leaving Chat while answer publication is
+queued still cancel that answer. Provider waits remain outside native transactions;
+this adds neither a backend archive nor another storage authority. A tab reload
+still cannot preserve data that browser storage never accepted.
+
+Three new native browser outage cases fail on the earlier built client, proving
+actual missing answers. Five added cases cover same-ID recovery, divergent saved
+history, deletion, Stop and leaving after a reply but before publication. The
+concurrent fixture stays within the existing24-message bound; the first local
+attempt supplied25 messages and was corrected rather than changing that bound.
+
+Local validation:75 existing/added Chromium cases passed in the initial combined
+run; its one failing fixture oracle exceeded the history bound. After correcting
+that fixture, all five new outage/cancellation cases passed. Together these cover
+76 distinct local cases with no retry relaxation; the initial combined run remains
+failed rather than being relabeled. Both TypeScript configurations and Vite build
+passed. The early native WebKit gate now includes these five cases before the
+unchanged full profiles; its current-head results must be checked independently.
+
+The fully inspected earlier f0492ae browser run has seven passed records and ten
+zero-exit phases:644 successful executions including18 repeated diagnostic cases;
+Chromium363, first-start2, Git-import3, scale2, WebKit248 and workers8. Fourteen
+skip occurrences are eight complementary phase selections and six known
+engine-specific exclusions. That complete development baseline is separate from
+this received-answer change and from physical/model/production acceptance.
+
+The1440/390 session-only-answer screenshots were personally inspected after the
+new recovery case; the unavailable-storage notice remains visible and no
+horizontal overflow was observed. They are browser images, not device proof.

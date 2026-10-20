@@ -526,7 +526,20 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         body: JSON.stringify({ messages }),
         signal: controller.signal,
       })) as ChatResponse;
-      await storageTransaction(() => {
+      let appended = false;
+      const appendAnswer = () => {
+        if (appended) return;
+        appended = true;
+        conversation.messages = boundedMessages([...conversation.messages, {
+          role: "assistant",
+          content: result.answer,
+          sources: result.sources,
+          activity: result.activity,
+        }]);
+        conversation.updated = Math.max(Date.now(), conversation.updated + 1);
+        dirtyIds.add(conversation.id);
+      };
+      const published = await storageTransaction(() => {
         if (activeId !== requestId || controller.signal.aborted) return;
         const afterRequest = readPersistent();
         const latest = afterRequest.conversations.find(item => item.id === requestId);
@@ -539,16 +552,17 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
           activeId = conversation.id;
           conversationNotice = "Another tab updated this conversation while the reply was pending. This reply was saved as a separate conversation; both versions are kept.";
         }
-        conversation.messages.push({
-          role: "assistant",
-          content: result.answer,
-          sources: result.sources,
-          activity: result.activity,
-        });
-        conversation.updated = Math.max(Date.now(), conversation.updated + 1);
-        dirtyIds.add(conversation.id);
+        appendAnswer();
         persist();
       });
+      if (!published && alive && activeId === conversation.id && !controller.signal.aborted) {
+        // The provider has already answered, even if storage could not open or
+        // read. Keep that work with its existing baseline for later safe merge.
+        appendAnswer();
+        error = "";
+        storageUnavailable = true;
+        retainFallback(conversations, tombstones, dirtyIds, baselines);
+      }
     } catch (cause) {
       await storageTransaction(() => {
         if (activeId !== requestId) return;

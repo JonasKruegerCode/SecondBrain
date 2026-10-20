@@ -506,3 +506,131 @@ test("an answer survives native abort after put success across SPA navigation an
   await expect(page.locator(".chat-storage-notice").filter({ hasText: "Browser storage is unavailable" })).toHaveCount(0);
   expect(requests).toBe(1);
 });
+
+for (const recovery of ["same", "branch", "deleted"] as const) {
+  test(`a received answer survives a publication read outage (${recovery})`, async ({ page, context }, info) => {
+    await page.goto("/chat");
+    const peer = await context.newPage();
+    await peer.goto("/?overview=1");
+    const history = boundedHistory();
+    await seedChats(page, [{ id: "publication", title: "Synthetic publication history", updated: 1, messages: history }]);
+    await page.reload();
+    let arrived!: () => void;
+    let release!: () => void;
+    const requested = new Promise<void>(resolve => { arrived = resolve; });
+    const response = new Promise<void>(resolve => { release = resolve; });
+    let requests = 0;
+    await page.route("**/api/wiki/chat", async route => {
+      requests++;
+      arrived();
+      await response;
+      await route.fulfill({ json: { answer: "Synthetic received answer during read outage.", sources: [], activity: [] } });
+    });
+    await page.getByLabel("Message").fill("Synthetic publication question.");
+    await page.getByRole("button", { name: "Send" }).click();
+    await requested;
+    const before = await chatRoot(peer);
+    await page.evaluate(() => {
+      const original = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function (...args) {
+        if (this.name === "secondbrain.chat.v1") throw new DOMException("Synthetic publication read outage", "InvalidStateError");
+        return original.apply(this, args);
+      };
+      window.addEventListener("synthetic-storage-ready", () => { IDBDatabase.prototype.transaction = original; }, { once: true });
+    });
+    release();
+    await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic received answer during read outage.");
+    await expect(page.locator(".chat-error")).toHaveCount(0);
+    await expect(page.locator(".chat-storage-notice").filter({ hasText: "Browser storage is unavailable" })).toBeVisible();
+    expect(await chatRoot(peer)).toEqual(before);
+    if (recovery === "same") {
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: info.outputPath(`received-answer-session-${width}.png`), fullPage: true });
+      }
+    }
+    const navigation = page.getByRole("navigation", { name: "Primary", exact: true });
+    await navigation.getByRole("link", { name: "Home", exact: true }).click();
+    await navigation.getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(page.getByLabel("Message")).toBeEnabled();
+    await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic received answer during read outage.");
+    const expectedLocal = [...history.slice(2), { role: "user", content: "Synthetic publication question." },
+      { role: "assistant", content: "Synthetic received answer during read outage.", sources: [], activity: [] }];
+    if (recovery === "branch") {
+      before.conversations[0].messages = [...before.conversations[0].messages.slice(1),
+        { role: "user", content: "Synthetic concurrent saved question." }];
+      before.conversations[0].updated++;
+      await seedChats(peer, before.conversations);
+    } else if (recovery === "deleted") {
+      await seedChats(peer, [], [{ id: "publication", deleted: Date.now() }]);
+    }
+    await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
+    await page.getByRole("button", { name: "New", exact: true }).click();
+    await expect(page.getByLabel("Message")).toBeEnabled();
+    const saved = await chatRoot(peer);
+    if (recovery === "deleted") {
+      expect(saved.conversations).toHaveLength(1);
+      expect(saved.conversations[0].messages).toEqual([]);
+      expect(saved.conversations.some(item => item.id === "publication")).toBe(false);
+      expect(saved.tombstones.map(item => item.id)).toContain("publication");
+    } else {
+      expect(saved.conversations).toHaveLength(recovery === "same" ? 2 : 3);
+      const retained = saved.conversations.find(item => item.messages.at(-1)?.content === "Synthetic received answer during read outage.");
+      expect(retained.messages).toEqual(expectedLocal);
+      expect(retained.id === "publication").toBe(recovery === "same");
+      if (recovery === "branch") expect(saved.conversations.find(item => item.id === "publication").messages).toEqual(before.conversations[0].messages);
+      await page.reload();
+      await page.locator(`[data-conversation="${retained.id}"]`).click();
+      await expect(page.locator(".chat-message")).toHaveCount(24);
+      await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic received answer during read outage.");
+      await expect(page.locator(".chat-error")).toHaveCount(0);
+    }
+    expect(requests).toBe(1);
+    await peer.close();
+  });
+}
+
+for (const finish of ["stop", "leave"] as const) {
+  test(`a received answer waiting for storage respects ${finish}`, async ({ page, context }) => {
+    await page.goto("/chat");
+    const peer = await context.newPage();
+    await peer.goto("/?overview=1");
+    let arrived!: () => void;
+    let release!: () => void;
+    const requested = new Promise<void>(resolve => { arrived = resolve; });
+    const response = new Promise<void>(resolve => { release = resolve; });
+    let requests = 0;
+    await page.route("**/api/wiki/chat", async route => {
+      requests++;
+      arrived();
+      await response;
+      await route.fulfill({ json: { answer: "Synthetic answer cancelled before publication.", sources: [], activity: [] } });
+    });
+    await page.getByLabel("Message").fill("Synthetic queued publication question.");
+    await page.getByRole("button", { name: "Send" }).click();
+    await requested;
+    await holdChatWriter(peer);
+    await page.evaluate(() => {
+      (window as any).publicationStarted = false;
+      const original = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function (...args) {
+        const transaction = original.apply(this, args);
+        if (this.name === "secondbrain.chat.v1") (window as any).publicationStarted = true;
+        return transaction;
+      };
+    });
+    release();
+    await page.waitForFunction(() => (window as any).publicationStarted === true);
+    if (finish === "stop") await page.getByRole("button", { name: "Stop reply", exact: true }).click();
+    else await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Home", exact: true }).click();
+    await releaseChatWriter(peer);
+    const saved = await chatRoot(peer);
+    expect(saved.conversations.flatMap(item => item.messages).some(item => item.role === "assistant")).toBe(false);
+    if (finish === "leave") await page.getByRole("navigation", { name: "Primary", exact: true }).getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
+    expect(requests).toBe(1);
+    await peer.close();
+  });
+}
