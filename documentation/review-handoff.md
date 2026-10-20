@@ -747,3 +747,30 @@ commit and reload, with exactly one provider-adapter request (62 distinct local
 browser cases in total). A publication read/open failure before its action still
 leaves the question retryable but cannot retain the received answer; this existing
 boundary is distinct from commit-abort recovery.
+
+
+## Chat readiness and complete demo route, 20 October
+
+The first IndexedDB implementation passed its bounded native WebKit gate
+(18 executions: six storage/migration/abort cases repeated three times), but its
+broad Chromium run failed four cases. Two demo cases still inspected the retired
+localStorage key; their draft-exclusion assertion now reads the committed native
+IndexedDB root instead. The other two exposed a real keyboard entry regression:
+route completion focused a heading that asynchronous chat initialization replaced,
+or Tab skipped the still-disabled composer.
+
+Chat now displays an opening status until the initial transaction finishes, then
+renders its controls and completes the route. The existing router owns focus and
+reading-position decisions, including a header focus deliberately chosen while
+loading. Leaving Chat cancels completion for that departed view. Transaction and
+provider boundaries are unchanged.
+
+Local validation: both original keyboard-entry cases fail on the exact earlier
+built client, then pass after this change. Five added native-transaction-held
+cases cover heading/Tab readiness at390/1440, deliberate header focus, and leaving
+while initialization is queued. All71 relevant chat, accessibility, connected-demo,
+history and PWA update cases passed in1.0min, without skips or retries, using the
+real fictional vault and built frontend. Both TypeScript configurations and Vite
+build passed. The390/1440 readiness/focus images were personally inspected.
+The previous broad failure remains failed; the bounded WebKit gate is not a full
+cross-engine, device, model-quality or production acceptance.

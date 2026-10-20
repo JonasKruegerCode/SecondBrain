@@ -167,7 +167,8 @@ function freshConversation(): Conversation {
   return { id: crypto.randomUUID(), title: "New conversation", messages: [], updated: Date.now() };
 }
 
-export function renderChat(main: Element, api: Api, stateChanged: () => void = () => {}): () => void {
+export function renderChat(main: Element, api: Api, stateChanged: () => void = () => {},
+  onReady: () => void = () => {}): () => void {
   let conversations = tabConversations || [freshConversation()];
   let tombstones = tabTombstones || [];
   let storageUnavailable = !!tabConversations;
@@ -343,7 +344,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         <button type="button" class="chat-delete" data-action="delete" ${conversation.messages.length && !busy && !storagePending ? "" : "disabled"}>Delete conversation</button>
       </aside>
       <div class="chat-workspace">
-        <div class="chat-heading"><div><div class="eyebrow">READ-ONLY WIKI CHAT</div><h1 id="chat-title">Ask, then follow the evidence.</h1><p>The assistant searches and reads this wiki. It cannot change pages, and conversations stay in this browser.</p></div><span class="chat-boundary">No write tools</span></div>
+        <div class="chat-heading"><div><div class="eyebrow">READ-ONLY WIKI CHAT</div><h1 id="chat-title" tabindex="-1">Ask, then follow the evidence.</h1><p>The assistant searches and reads this wiki. It cannot change pages, and conversations stay in this browser.</p></div><span class="chat-boundary">No write tools</span></div>
         <div class="chat-messages" role="log" aria-live="polite">
           ${conversation.messages.length ? conversation.messages.map(message => `<article class="chat-message ${message.role}"><div class="chat-role">${message.role === "user" ? "You" : "Wiki assistant"}</div><p>${esc(message.content)}</p>${message.activity?.length ? `<details><summary>${message.activity.length} wiki action${message.activity.length === 1 ? "" : "s"}</summary><ul>${message.activity.map(item => `<li>${esc(item)}</li>`).join("")}</ul></details>` : ""}${message.sources?.length ? `<div class="chat-sources"><span>Sources</span>${message.sources.map(source => `<a href="${pageUrl(source.id)}">${esc(source.title)} <small>${esc(source.evidence)}</small></a>`).join("")}</div>` : ""}</article>`).join("") : `<div class="chat-empty"><span>✳</span><h2>Start with a real question.</h2><p>Try asking where a project stands, then ask a follow-up about one source.</p></div>`}
           ${busy ? `<div class="chat-thinking"><i></i>Searching and reading… <button type="button" data-action="stop">Stop reply</button></div>` : ""}
@@ -567,7 +568,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     }
   };
 
-  render(false);
+  // Announce the destination only once its storage-backed controls are usable.
+  main.innerHTML = '<p class="quiet" role="status">Opening your conversations…</p>';
   void storageTransaction(() => {
     const stored = readPersistent();
     if (!tabConversations) {
@@ -580,6 +582,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   }, true).then(() => {
     if (!alive) return;
     render(false);
+    onReady();
   });
   return () => {
     alive = false;

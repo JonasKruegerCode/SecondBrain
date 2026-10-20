@@ -1,3 +1,4 @@
+import { holdChatWriter, releaseChatWriter, seedChats } from "./chat-storage";
 import { expect, APIRequestContext, Page } from "@playwright/test";
 import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
@@ -1081,5 +1082,75 @@ test("direct views retain the skip-link and cross-route main fragments take prec
     expect((await request.delete(`/api/wiki/pages/${source.id}`, { data: {
       base_revision: source.revision, request_id: randomUUID(),
     }})).ok()).toBeTruthy();
+  }
+});
+
+// A real native transaction holds initialization; no timer substitutes for readiness.
+for (const width of [390, 1440]) {
+  for (const destination of ["heading", "header"] as const) {
+    test(`chat waits for native initialization before route focus (${width}, ${destination})`, async ({ page, context }, info) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/?overview=1");
+      const peer = await context.newPage();
+      await peer.goto("/?overview=1");
+      await seedChats(peer, []);
+      await holdChatWriter(peer);
+      let released = false;
+      try {
+        const navigation = page.getByRole("navigation", { name: "Primary", exact: true });
+        await navigation.getByRole("link", { name: "Chat", exact: true }).focus();
+        await page.keyboard.press("Enter");
+        await expect(page.locator("main h1")).toHaveCount(0);
+        await expect(page.locator("main [role=status]")).toContainText("Opening your conversations");
+        const header = navigation.getByRole("link", { name: "Search", exact: true });
+        if (destination === "header") await header.focus();
+        await releaseChatWriter(peer);
+        released = true;
+        await expect(page.getByLabel("Message", { exact: true })).toBeEnabled();
+        const heading = page.locator("#chat-title");
+        await expect(heading).toHaveAttribute("tabindex", "-1");
+        if (destination === "header") {
+          await expect(header).toBeFocused();
+          await expect(heading).not.toBeFocused();
+        } else {
+          await expect(heading).toBeFocused();
+          await expect(page.getByLabel("Message", { exact: true })).not.toBeFocused();
+          expect(await page.evaluate(() => scrollY)).toBe(0);
+          await page.keyboard.press("Tab");
+          await expect(page.getByLabel("Message", { exact: true })).toBeFocused();
+          await page.screenshot({ path: info.outputPath(`chat-ready-focus-${width}.png`), fullPage: true });
+        }
+      } finally {
+        if (!released) await releaseChatWriter(peer);
+        await peer.close();
+      }
+    });
+  }
+}
+
+test("leaving chat during native initialization cannot complete the departed route", async ({ page, context }) => {
+  await page.goto("/?overview=1");
+  const peer = await context.newPage();
+  await peer.goto("/?overview=1");
+  await seedChats(peer, []);
+  await holdChatWriter(peer);
+  let released = false;
+  try {
+    const navigation = page.getByRole("navigation", { name: "Primary", exact: true });
+    await navigation.getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(page.locator("main [role=status]")).toContainText("Opening your conversations");
+    await navigation.getByRole("link", { name: "Home", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "A growing collection", exact: true })).toBeVisible();
+    const before = await page.locator("main").innerHTML();
+    await releaseChatWriter(peer);
+    released = true;
+    // A subsequent native transaction establishes that the aborted queued read ran.
+    await seedChats(peer, []);
+    expect(await page.locator("main").innerHTML()).toBe(before);
+    await expect(page).toHaveURL(/\/\?overview=1$/);
+    await expect(page.locator("#chat-title")).toHaveCount(0);
+  } finally {
+    if (!released) await releaseChatWriter(peer);
+    await peer.close();
   }
 });

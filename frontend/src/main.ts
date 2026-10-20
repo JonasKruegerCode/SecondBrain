@@ -561,8 +561,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
   };
   try {
     if (location.pathname === "/chat") {
-      cleanupView = renderChat(main, api, renderPwaState);
-      complete("Chat");
+      cleanupView = renderChat(main, api, renderPwaState, () => complete("Chat"));
       return;
     }
     if (location.pathname === "/galaxy") {

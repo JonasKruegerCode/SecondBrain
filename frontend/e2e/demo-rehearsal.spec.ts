@@ -1,3 +1,4 @@
+import { chatRoot } from "./chat-storage";
 import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
@@ -198,7 +199,7 @@ test(`rehearse a connected atlas journey and preserve an unanswered question (${
     { messages: [{ role: "user", content: question }] }]);
   await expect(page.locator(".chat-message.user p")).toHaveText(question);
   await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
-  expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1")))
+  expect(JSON.stringify((await chatRoot(page)).conversations))
     .not.toContain("Unsent follow-up");
   await page.locator(".chat-history-list button").filter({ hasText: "New conversation" }).click();
   await expect(page.getByLabel("Message", { exact: true })).toHaveValue("A separate unsent conversation draft.");
