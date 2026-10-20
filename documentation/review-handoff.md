@@ -9,7 +9,7 @@ release- or merge-ready.
 
 Start with the [fictional demo](demo-start.md), then use the contracts and
 verification map below. The
-[full earlier handoff at 2a0b4fd](https://github.com/JonasKruegerCode/SecondBrain/blob/2a0b4fd3f16c0d9548de2d10945feaeaf03eb9cd/documentation/review-handoff.md)
+[full source and evidence history at f7da8a5](https://github.com/JonasKruegerCode/SecondBrain/blob/f7da8a519d4314a3950f6923d0e4c84ddd837cf5/documentation/review-handoff.md)
 preserves detailed reproductions, historical failures and regression matrices.
 It is historical evidence, not a claim about a later revision. This document
 consolidates that material instead of accumulating another run log.
@@ -236,333 +236,95 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Evidence snapshot
+## Current development evidence, inspected 21 October 2026
 
-### Indented ATX title identity (20 October)
-
-A real top-level H1 with one to three leading spaces now supplies the same
-article title to REST/MCP reads, search, title resolution, graph metadata and the
-browser. Empty H1s cannot consume a following line or block promotion of a later
-nonempty title. Separators after the hash are horizontal ASCII whitespace.
-List subtrees are excluded only from title projection: their two-space prefix
-must not make a nested heading look top-level. Quote/code/HTML/table boundaries,
-source bytes, page IDs and Git history remain protected. This is bounded ATX
-alignment, not complete Markdown parser parity.
-
-Identity v30 makes previous configured index receipts pending until rebuilt;
-a configured vector rebuild may call the embedding provider. No content migration
-or automatic production rebuild is performed by this change. Existing v29 receipts
-are explicitly covered along with older identities.
-
-Local validation uses the actual built client and managed API, with synthetic
-pages only. Six indented-title browser cases fail on d02fe06 while two unindented
-comparators pass. Two additional empty-heading cases fail on the intermediate
-frontend; the final predicate skips whitespace-only candidates. All **62** selected
-Chromium code-reading/title-identity/title-inline/title-promotion cases pass on the
-final source, including UI Save/reload, source/history assertions, TOC/fragment
-focus and container protection. Both TypeScript configurations and Vite build
-pass. Two new three-space-title images at320/1440 were personally inspected;
-services and the owned vault were removed.
-
-Backend validation covers **523 distinct local cases** across the selected wiki
-modules:495 synchronous projection/store/index cases, two async MCP cases rerun
-with the configured asyncio mode, and26 API cases. An initial harness override
-omitted asyncio auto mode; those two async failures were invocation failures,
-not accepted product results. Ruff passes; MyPy passes for the two changed runtime
-modules using the backend configuration. The title matrix also has67 failures
-against the parent and20 passes, including the expected v29 receipt mismatch.
-Cached dependencies were restored to repository-locked MCP/Qdrant/telemetry
-versions where needed; this is not a fresh full lock installation. A known
-Pydantic forward-reference warning and the legacy bundle-size warning remain.
-Current-head hosted regression and WebKit remain pending; the parent's complete
-hosted acceptance is separate. No real model, private migration, production or
-physical-device acceptance follows.
-
-### Leading source preservation (d02fe06 parent, 20 October)
-
-The reader no longer removes the first line of indented code as though it were
-an article title, or consumes the remaining article after a CR-only title line.
-Only a line-bounded ATX candidate confirmed by the existing title projection is
-removed. Unconfirmed headings remain in the article body; normal leading titles
-retain their existing section numbering. This does not expand backend title
-recognition or promise complete Markdown parity.
-
-Opening the editor now assigns its value after DOM construction. HTML textarea
-parsing otherwise discards one leading newline; stored source bytes remain exact
-until an explicit textarea edit publishes its normalized LF contents.
-Fourteen new built-client/API cases at 320/1440px failed on the parent: indented
-code (spaces, tab and mixed indentation), CR-only article text, leading LF/CRLF
-editor blanks and an unconfirmed indented H1. They pass with the correction,
-including exact source reads, actual UI Save, reload, history2 and no horizontal
-overflow. All 54 local code-reading/title-identity/title-inline/title-promotion cases,
-both TypeScript configurations and the production build passed. Four new
-viewport images were personally inspected; services and the test vault were
-removed. These checks remain separate from subsequent hosted acceptance. Fixtures are synthetic, workers
-blocked and Chromium native to the execution host; no physical-device, real-model
-or production acceptance follows. An early test draft incorrectly expected the
-backend to title a three-space-indented H1; the final regression instead preserves
-its existing ID fallback and asserts that the real heading remains visible.
-
-### Mixed emphasis URL scopes (20 October)
-
-Backend projection now recognizes a leading URL in a bounded simple emphasis
-scope at its source position, including surrounding independent markup and
-plain prose after the URL. It preserves delimiter flanking, Unicode/JavaScript
-whitespace, raw link/backtick/angle masking, code/HTML-anchor shielding and the distinction
-between an uppercase URL at a token start and one embedded after prose. Markdown
-source/history and rendering remain unchanged. Index identity v29 invalidates old
-ready receipts; configured embedding rebuilds can incur provider costs.
-
-The selected Marked12 matrix is a bounded comparison, not a complete inline
-parser or arbitrary nested-emphasis guarantee. Escaped delimiters and other
-previously documented mismatches remain outside the supported scope. The new
-built-app 320/1440 regression checks visible links against graph/backlinks, exact
-source reads, normalized textarea contents, real UI Save, reload and history.
-CRLF remains exact until the explicit textarea edit publishes its LF draft.
-A later literal-angle counterexample extends the guard to the renderer's full raw
-link/backtick/angle mask. Four new red cases precede that correction. Identityv29
-also invalidates the intermediatev28 receipts.
-The parent browser failed both graph assertions; the corrected cases pass.
-Local backend selection430 cases, scoped MyPy over four files, source/test
-Ruff/format, both TypeScript configurations and Vite production build passed.
-An attempted broader local API/MCP/index collection was blocked by the retained
-minimal environment (missing instrumentation/Qdrant and MCP2 versus project
-MCP1), so it supplies no API/MCP/provider acceptance. Hosted locked checks are
-still required. An extended independent292-case Marked comparison found zero new mismatches
-in that bounded matrix; existing delimiter/escape mismatches remain.
-Twelve isolated complexity samples on intermediate ce4a1ee, before the final
-literal-angle guard (unclosed prose, many short scopes, raw escaped-backtick
-pairs), up to950033 bytes completed below0.450s; single samples,
-not a general parser, API latency or capacity bound.
-
-
-### Previous output-preserving projection optimization (7602e6b)
-
-Long URL punctuation/closing-parenthesis suffixes previously caused repeated
-whole-prefix regex work; repeated comments copied the remaining source suffix.
-The parser now removes eventual URL suffixes in one backward pass (preserving
-the entity-sensitive `&name;` boundary) and scans comment tokens by absolute
-position. Content, source bytes, graph syntax and the v27 index contract are
-intended to remain unchanged. This is a backend projection optimization, not a
-replacement for Marked or a browser rendering complexity guarantee.
-
-Synthetic operation-count regressions cover URL suffixes and original-string
-comment searches; source/history/backlink tests preserve intentional mutations.
-Selected local projection regressions passed398 cases. Independent comparisons
-matched80000 comment-state and30000 URL cases against the previous parser; an
-additional20000 URL cases matched the installed Marked12 tokenizer. Isolated
-four-second probes that previously timed out completed at262KB in about0.109s
-(periods) /0.068s (parentheses), and at1MB in about0.131s (short comments),0.085s
-(ordinary comments after whitespace) and0.482s (mixed punctuation). These are
-single local samples, not capacity guarantees or complete parser equivalence.
-No derived-index identity bump is required for this output-preserving change.
-The browser regression uses ordinary-size synthetic source, real API mutations,
-editor read/cancel, reload, backlinks and history at320/1440px; it does not claim
-fast browser rendering of a one-megabyte URL or a new UI-save acceptance result.
-
-**Inline HTML metadata and graph agreement, 20 October 2026:**
-A real source such as `See <a href="https://example.test/docs"
-title="[[setup]]">documentation</a>` created an invisible graph edge:
-Marked12 consumes the attribute as HTML metadata and the sanitizer drops it.
-Valid inline tag tokens are now masked in derived link/excerpt prose; visible
-body wikilinks remain navigable. The grammar keeps JavaScript's ASCII names and
-whitespace rules. CR/CRLF normalization replaces Python's broader splitlines
-behavior so control characters cannot manufacture valid tags. Original Markdown,
-IDs, revisions, history, renderer and mutation contracts are unchanged.
-
-The earlier 21-case red run had15 actual failures on the parent store.
-The final regression contains25 Marked-compared inline cases plus native
-Git/source/history/backlink coverage. Independent review caught a draft Unicode
-name mismatch and checked the final25 cases against installed Marked12.
-Two draft expectations for unquoted control characters were corrected only after
-both native implementations agreed; those draft failures are not product fixes.
-This is bounded token coverage, not general Markdown/parser parity.
-
-Local selected verification:422 synchronous backend cases passed across link,
-code, comment, HTML, title, snapshot, index and REST checks, plus two async MCP/
-coordinator checks under the project's async mode. The latter initially did not
-execute when a local CLI override dropped `asyncio-mode=auto`; rerunning those
-two with the project mode passed. Ruff/format and MyPy for the changed modules,
-frontend application/E2E TypeScript configurations on the selected source
-snapshot and Vite production build passed. This reused the available development
-environment, not a fresh full lock/environment installation.
-
-Two committed reading cases at320/1440px passed against real built assets/API
-and an isolated fictional320-page vault. They compare visible links, graph,
-missing targets, backlinks, reload, exact editor bytes, a deliberate later link
-and two-entry history. Viewport images were personally inspected; the owned
-supervisor exited and fixture vault was absent afterward. Local Chromium153
-with workers blocked is not new WebKit, provider, hosted-index, production,
-physical-device or screen-reader acceptance. Existing full/WebKit profile
-selection already includes `code-reading.spec.ts`; hosted results for this
-change remain pending.
-
-Derived index identity advances fromv26 tov27 so an old ready receipt cannot
-advertise the previous projection as current. Rebuild may invoke configured
-embedding providers; no Markdown migration or automatic production deployment.
-The six accepted hosted CI areas on parentcab3e7d remain parent evidence,
-not results for this new change.
-
-
-**Save feedback at the viewport edge, 19 October 2026:**
-Hosted Browser39310367572 on 1546d6c/test merge366bd989 actually failed:
-Chromium310 passed/four failed, all four desktop pointer/keyboard
-transport/conflict cases clipped the notice (viewport ratios0.7847/0.3923).
-First-start/import/scale/WebKit/worker steps were skipped. The failed CI cases
-stopped before their screenshot line; four error contexts are evidence, not
-failed-case screenshots. Artifact12216975182:112,286,951bytes/SHA256
-`f915eebf27191061b98a760f09453cae1777cf8dd833a84415ed0a6249be3116`,
-API/upload/download match and416 safe unique paths/CRCs checked. The result
-records service cleanup and retained failed inputs; those vault/process inputs
-are not in the uploaded archive. Original artifact expiry is26 October.
-
-A real pre-Save wheel gesture places the visible button near the desktop bottom
-edge. Four unchanged strict visibility assertions fail on1546d6c; a captured
-conflict failure shows notice y825–865.8 in an844px viewport. Error restoration
-now reveals the editor footer only while restoring Save-owned focus. A12px
-scroll margin avoids fractional-pixel clipping by integer scroll rounding.
-A later deliberately focused control keeps its focus and scroll; this is not a
-general manual-scroll-intent guarantee. No API/storage/index contract changes.
-The same textarea, atomic status, draft/selection/undo and retry identity remain.
-
-The existing matrix retains its twelve small/narrow/desktop cases and adds four
-bottom-edge cases, with two delayed-preference cases unchanged. Pre-assertion
-viewport captures and rectangle diagnostics now preserve pixels on failure.
-No post-Save test reveal, ratio/timeout/gesture relaxation or profile expansion.
-Both existing Chromium/full and WebKit/reading registrations select this file.
-
-Final local Chromium regression20261019T202128Z passed31 selected Save,
-pending-preference, unknown-result retry, conflict, scrolled-draft and unavailable
-status cases; both TypeScript configurations and production build passed.
-Actual desktop bottom-edge and320px viewport images were personally inspected.
-An intermediate JS-only run remains failed84/87: two fractional-pixel cases
-motivated the margin; a separate Git-delivery case exhausted30s during its
-first graph control read, after the local save and before recovery. One isolated
-unchanged1440px delivery retry20261019T202419Z passed. That does not explain or
-erase the original deadline failure; no general infrastructure cause established.
-
-Fresh built-assets/real-API Chromium153 also passed actual CDP offline-before-POST
-and manual reconnect/retry on a fictional320-page/648-link vault at1440×844,
-with150ms latency parameter,200,000/93,750B/s and4xCPU emulation. A pre-Save
-wheel gesture and strict final geometry show visible notice and Save; the same
-editor/draft and an independent unchanged-source read precede identical request
-ID/payload retry, exactly one content commit and history2→3. Worker/provider/
-remote delivery were disabled. The owned supervisor exited and vault was absent
-at completion. These local checks do not certify the new hosted full/WebKit
-matrix, physical installation, screen-reader announcements or real-model quality.
-
-**Browser-suite registration, 19 October 2026 (base 2a0b528):**
-The f989da7 archive showed that explicit Chromium/full and WebKit/reading lists
-omitted `galaxy-search.spec.ts`. Both corrected profiles select it once without
-grep/repeat filters. Actual logs and archive records at test merge 43a7069
-(identical tree and verified main+head parents) now pass Chromium 300, WebKit
-reading 185, first-start 2, Git-import 3, scale 2 and workers 8: 500 successful
-phase executions/14 skips. Four new search screenshots and selection records
-support those cases; the dot reporter gives aggregate totals, not named case
-verdicts. All six CI areas were inspected, including logs and stack/browser
-archives. This certifies the stated base revision, not later UI changes.
-Browser artifact 12207302363 SHA256
-`d5895479844c552ea9191b25120ad65cce77cb3e80cd3244bd40180e4b551422`:
-186,998,268 bytes, 748 safe unique regular paths/CRCs and API/upload digest
-checked, all six result records/cleanup accepted, no model calls. Narrow WebKit
-and desktop Chromium search images were personally inspected. Original artifacts
-expire 26 October; hashes do not guarantee availability after expiry. The new
-Save feedback change needs its own current-head hosted evidence.
-
-**Galaxy search rendering, 19 October 2026:**
-Trusted sequential typing in a real synthetic 320-page/648-link wiki exposed
-repeated SVG reconstruction and identical result-list replacement. Search now
-updates existing star classes and only replaces changed result markup. Selection
-still rebuilds its actual neighborhood and fresh link diagnostics. Two browser
-regressions at 390/1440px check SVG identity, viewBox/positions, exact search and
-selection highlights, focus, clearing, a different result selection, unchanged
-result controls and unchanged server revision. The selected 390px identity case
-failed before correction; both pass afterward against built assets and real API.
-The final built-assets run passes all 21 related article/galaxy browser cases on
-the isolated fictional demo (12 seeded pages, with extra owned test pages where
-needed). Both TypeScript configurations, production build and independent
-review pass. The f989da7 hosted evidence below passes its selected suites but
-does not include the two new cases; registration is corrected above.
-
-The bounded built-asset probe used Chromium153, Vite preview with the real API
-proxy, no HMR, no worker/provider calls and no network throttling. Each of three
-profiles (390/1440px native CPU and 390px emulated 4x CPU) had three navigations
-and typed `scale-0319` at 50ms between keys.
-At 390px with emulated 4x CPU, all 30 keypresses were reported by Event Timing:
-observed median duration was 144ms before and 32ms after; maximum 264/176ms.
-This small sequential comparison is not INP, a controlled benchmark, a physical
-device result or a deployed Nginx/auth/HTTPS measurement. Native-width event
-entries below the 16ms observation threshold are missing, not zero. Initial list
-creation and occasional long tasks remain; no general capacity claim follows.
-Narrow/desktop screenshots were personally inspected. A separate final-probe
-attempt timed out expecting eight cluster buttons (zero observed); a diagnostic
-repeat passed without timeout changes, but the first failure's cause is not
-isolated. Do not erase it or infer that timing variability is solved.
-
-**Previous UI correction:**
-A failed sync-status request no longer claims that saved content is safe locally.
-The browser states that local storage and remote delivery could not be verified.
-A native malformed-ref outage reproduced the old assurance at 390/1440px; after
-correction the same real-service paths preserve the draft and editor and recover
-when the ref is restored. Cold article retry also recovers without changing the
-content head. Four response/transport-injected browser regressions cover both
-widths, keyboard focus, same editor, unchanged server content/revision and real
-status retry. The selected storage390 case failed before correction; all four
-pass afterward. Both TypeScript configurations, production build and independent
-review pass. These local checks are not a new full browser or device acceptance.
-
-**Publication-ref correction:**
-[Publication-ref regressions](../backend/tests/test_wiki_ref_readiness.py) reproduce
-seven damaged-ref states that previously appeared empty. Twelve cases now pass
-with native Git 2.51.1 and 2.43.0, including healthy unborn/packed-only controls;
-abnormal process exits and inaccessible-path errors use explicit injections.
-The related store/API/setup suite passes 82 cases. The full ordinary local
-backend suite, Ruff and MyPy (118 files) pass. API failures preserve existing
-storage after app initialization. Independent source/contract review found no
-blocking issue. Hosted evidence for that revision is recorded below; production
-recovery is not inferred from local checks.
-
-**Implementation examined:**
-`f989da729267c8791683c95e0bdb8fa41c6e0d37`, tree
-`af3deb814d401f5644df373ab7096e36d3be62d3`, tested at merge
-`94486466565e290638ead6a875c5ba7b042f7a94` with identical tree and verified
-main+implementation parents. The following logs/archives were actually inspected
-on 19 October 2026. They remain tied to that implementation; later documentation
-or code commits need their own applicable checks.
+Implementation `f7da8a519d4314a3950f6923d0e4c84ddd837cf5`, tree
+`561baa8481b86664b4b9f552d7df393eb9044e65`, was tested at merge
+`1fac0cbcf93f2f1fe281ccf79e328a5ed80f9907`. The merge has that identical tree
+and ordered parents main `1f0cd1e7` + implementation `f7da8a5`.
+The logs and downloaded result records below were inspected, rather than
+inferring acceptance from workflow badges. This handoff consolidation changes
+only documentation; it does not create another runtime acceptance result.
 
 | Area | Examined run | Result and scope |
 | --- | --- | --- |
-| Frontend | [39284722377](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722377) | Both TypeScript configurations, five proxy, two access and five PWA cases, Vite6.4.4 production/image build |
-| Backend | [39284722378](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722378) | Ruff/MyPy on 118 files, 1133 passed/12 skipped, image build |
-| SSH | [39284722480](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722480) | Five native fixture cases |
-| Indexes | [39284722855](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722855) | Seven real disposable provider cases with synthetic vectors |
-| Stack | [39284722384](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722384) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth and independent 14-page restore |
-| Browser | [39284722598](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39284722598) | Six Passed/Cleanup records, nine successful phases, 496 successful phase executions/14 explicit skips; new search suite absent |
+| Frontend | [39508028891](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028891) | Both TypeScript configurations, proxy 5/access 2/PWA 5, production and image builds |
+| Backend | [39508028925](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028925) | Ruff/MyPy on 124 files, 1,377 passed/12 opt-in skips, image build |
+| SSH | [39508028842](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028842) | Five native isolated SSH/Git cases |
+| Indexes | [39508028961](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028961) | Seven disposable provider cases with synthetic vectors; together with SSH exercises the 12 ordinary-suite opt-ins |
+| Browser | [39508028858](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028858) | Seven passed records/ten zero-exit phases; 681 successful executions including 33 repeated diagnostics, 14 skip occurrences |
+| Stack | [39508028782](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028782) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth, independent 14-page restore |
 
-Both image builds used `push:false/load:false`; no image publication or deployment
-is inferred. Browser profiles contain Chromium 298, first-start 2, Git-import 3,
-scale320 2, WebKit reading 183 and workers 8. All six records identify the exact
-merge, report no model calls/failure and confirm service cleanup. The opt-in
-installation diagnosis was skipped.
+Both image logs show `push:false/load:false` and cleanup. No image was published.
+Browser phases contain native WebKit storage diagnostics 33, broad Chromium 374,
+first-start 2, Git import 3, scale 2, broad Linux WebKit 259 and worker updates 8.
+The broad profiles have no grep/repeat relaxation; diagnostics and worker profiles
+retain explicit selections. The 14 skips are eight complementary first-start/import
+phase selections and six known engine exclusions, not unexplained missing cases.
+The new trailing-strong 320/1440 cases run in both broad engines. Their four actual
+full-page images were personally inspected for readable wrapping.
 
-Browser artifact 12202984092 is 186,001,632 bytes, SHA256
-`1148bcb716f60f9a56e8b1076f15945ab1a35130d096273f6631fbce357fb246`.
-API/upload digest, 744 safe unique regular paths and ZIP CRCs were checked; no
-error-context was present. Narrow WebKit and desktop Chromium galaxy diagnostic
-images were personally inspected. Stack artifact 12203650521 is
-707,207 bytes, SHA256
-`fca8b5ddc712b6bbd9aace5c081f78893dfd3b96f5e10c75e87c074775041948`;
-its records/log, six safe paths/CRCs and narrow Home image were inspected,
-including cleanup of both isolated projects and volumes.
-Artifact retention ends on 26 October; the links and hashes do not guarantee
-download availability afterward.
+Stack logs show removal of both isolated projects' containers, networks and volumes.
+The controlled DNS test changes backend address `.3` to `.6` while retaining the
+frontend. Docker health remains `starting` in both diagnostic snapshots despite
+the passing HTTP-health gates. Proxy logs show the disconnected 499 and survivor/
+retry 200 responses; exact bodies, no-store and completed invocations are runner
+assertions. The restored page count is an explicit 14-page runner assertion.
+Cleanup, retention and no-model statements are records/logs, not independent
+OS or network tracing.
 
-The first-start change had eight reproducible failing boundary cases before
-correction and 101 related passing cases afterward; real filesystem/Git/seed
-operations are distinguished from substituted service commands. Earlier UI and
-transport reproductions remain in the pinned handoff and source history. Do not
-replace a failed run with a later green result or compare phase execution totals
-as though they were unique product requirements.
+Downloaded archives were size/hash/CRC and safe-path checked:
+
+| Artifact | Bytes / regular entries | SHA256 |
+| --- | --- | --- |
+| Browser 12305261215 | 204,779,355 / 844 | `d89ae394c06740f6b2ba1a3ed57469fd81fbe11b2f4e4ee8538356774b6dd60a` |
+| Stack 12304511916 | 706,527 / 6 | `959825a1c059aefb71538b2710f8b987e23b1fe1b56966d59f38d90abb842932` |
+
+Original CI artifacts expire 27 October 2026; links and hashes do not guarantee
+availability afterward. Historical failures remain in the pinned handoff and Git
+history, including Backend39499565295's Optional-page test error before pytest
+and the unsuccessful Web Lock storage attempt. A later green run does not explain
+an earlier intermittent failure or turn phase executions into unique requirements.
+
+### Current graph derivation and parser boundary
+
+The latest bounded correction recognizes one trailing strong segment of ASCII
+words inside outer single-star URL emphasis. For example,
+`*HTTPS://example.test/[[target]] **Field note***` is an external article link;
+the graph must not invent a wiki edge to `target`. Existing simple matching and
+code/anchor/escape/closing/flanking guards are retained. Markdown, history and
+API payloads are unchanged. The current derivation identity is **v33**: older
+configured receipts, including v32, become pending until rebuilt. A configured
+embedding rebuild can incur provider costs; this is not an automatic production
+rebuild or content migration.
+
+Both actual parent browser probes fail at the phantom edge. The corrected local
+selection passes 615 Python cases and all 48 article/code-reading cases, including
+UI Save, reload, backlinks and history. Ruff, MyPy on all four changed Python files
+and both TypeScript configurations pass. A bounded 336-case Marked12 diagnostic
+corrects 16 mismatches without a new one, retaining 92 other differences; the prior
+259-case escaped-punctuation matrix has zero mismatches. Arbitrary nesting,
+Unicode/punctuation inside that strong segment and malformed delimiter spacing
+remain outside this correction. These matrices do not establish complete Markdown
+parity. Earlier source/title, escaped-opener and inline-HTML corrections and their
+counterfactuals remain available in the pinned history.
+
+### Independent synthetic reader walk
+
+At 320×900 and 1440×900, a fresh real Chromium walk completed Home → curated
+article → search → article → Galaxy cluster/page selection → zoom/list → Open
+article → Chat against genuine content/index services. No document horizontal
+overflow or browser page error was observed. The narrow map truncates a long node
+title; the selected heading, evidence and Open article remain usable. Actual
+viewport and separately labeled full-page captures were inspected. A full-page
+image does not establish first-screen visibility.
+
+Chat returned the real not-configured 503, retained the question and offered Retry.
+No provider was mocked and no model call or answer-quality claim follows. Owned
+services terminated and the ephemeral vault was removed. This local walk and
+Linux WebKit CI do not establish physical installation, Safari/iOS, native zoom,
+production operation or private migration acceptance.
+
 
 ## Known release gates
 
@@ -613,364 +375,3 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
-
-
-## Escaped opening brackets and graph tokens, 20 October
-
-An escaped literal bracket before a real wiki token (`\[[[target]]]`) was
-clickable in the installed Marked12 reader but absent from graph/backlinks.
-The graph's nonoverlapping regex scan consumed the rejected escaped outer
-candidate and skipped the valid opener one character later. The bounded fix
-advances one character after an escaped rejected opener; accepted wiki tokens
-still consume their complete span. It does not expose nested targets inside
-accepted links or invent a typed relation after a literal bracket.
-
-The configured index schema is now **managed-snapshots-v31**. Existing v30
-(and older) ready receipts become pending even with unchanged Markdown;
-configured indexes must rebuild before being reported current. Content, page
-IDs and Git history are unchanged. A configured embedding rebuild can incur
-provider costs. No production rebuild or private migration was performed.
-
-Validation on the hash-verified cc0b36b runtime snapshot plus this change:
-
-- Final counterfactual selection on the parent: seven failures/94 passes,
-  comprising six escaped-opener graph/persistence failures and the v30 receipt
-  invalidation case. The parent's actual Python source was selected with the
-  pytest `pythonpath` override; an earlier environment-only invocation was
-  superseded because project configuration takes precedence.
-- 537 selected local backend wiki/projection/index/API/MCP cases passed; two
-  additional accepted-outer-token/missing-target controls passed separately,
-  for **539 distinct local cases**. New escaped-opener module:15 cases. Ruff
-  checks/format and MyPy for the two runtime modules passed. This is not a
-  new full locked-environment or hosted-provider acceptance.
-- Both new actual built-UI/API Chromium cases failed on the unchanged parent
-  graph, then the complete existing code-reading suite passed **44 cases in
-  45.2s**, without skips, retries or flakies. Existing suite registration is
-  retained. The new 320/1440px cases assert rendered labels, exact graph edges,
-  backlinks, absence of missing targets, click/back/reload, editor bytes and
-  unchanged revision/history; literal examples stay inert. Both new full-page
-  screenshots were personally inspected: readable, no horizontal overflow.
-- Actual frontend Marked12-tokenizer comparison and an independent read-only
-  review checked escaped prefixes, aliases/fragments, odd/even backslashes,
-  code/destination guards, malformed images and accepted outer tokens. The
-  malformed-image case is literal prose with a real visible inner link;
-  expectations were corrected before final parent/fixed comparison.
-
-The browser used the existing isolated local Chromium153/Playwright1.64 path
-with workers blocked and genuine app services; no API/browser mocks or model
-calls. Owned services stopped and the synthetic vault was absent at the final
-cleanup check. This is not WebKit, native mobile/zoom, production, model-quality
-or private migration acceptance. More complex Markdown differences remain.
-
-
-**Hosted follow-up:** Backend39420809923 on733234a failed MyPy in the new test:
-`get_page()` is optional and was indexed without first asserting a page exists.
-Ruff passed; pytest and the backend image build were skipped. The follow-up
-adds the missing explicit non-null assertion and verifies MyPy on the changed
-runtime **and test** modules. Product behavior and the earlier local browser
-results are unchanged. The failed run remains a failed historical check; no
-full Hosted acceptance is inferred from other successful job statuses.
-
-## Historical Web Lock attempt, 20 October
-
-The earlier implementation serialized the complete local-storage read, merge and
-write through one same-origin Web Lock. Local Chromium checks passed, but native WebKit subsequently lost a conversation
-even after independent reads and reloads. This attempt is not a successful
-cross-engine persistence repair. It aimed to prevent an overlapping New action
-from replacing another tab's new conversation or its deletion marker. Submission,
-retry preflight, reply publication and deletion checks use the same boundary;
-provider requests never hold the lock. Waiting controls are disabled, an unmounted
-view cancels its queued action, and rejected coordination retains the unsent
-question with a recoverable error.
-
-The conversation/deletion storage keys and formats are unchanged. Coordination
-requires participating app versions and a browser with Web Locks (normally an
-HTTPS or localhost context). Close or reload older Chat tabs after an update;
-older scripts, manual storage writes and unrelated code do not honor this lock.
-Browsers without the capability retain best-effort local storage and explicitly
-ask the user to keep one Chat tab open. This is not cross-device synchronization,
-an unlimited archive, or a guarantee against clearing browser data.
-
-A bounded native Chromium probe reproduced both lost new conversations and
-revived deleted synthetic history on the old code, without Storage replacements
-or provider calls. Three added scheduling/concurrency cases fail against the
-exact parent chat source and pass after the change. The two overlap cases each
-exercise twenty pairs of actual native-page UI handlers. Further cases cover
-coordination rejection, the unsupported-browser notice and cancellation on
-navigation. Existing bounded-history, stale-tab, late-reply, quota-recovery,
-delete/retry and multi-turn adapter cases remain relevant. Synthetic adapter
-answers establish browser behavior, not real model quality. Hosted WebKit/full
-workflow results for this change must be checked separately from earlier green
-runs; no physical-device, native installation or production claim follows.
-
-Local validation: **31 Chromium cases passed in 22.5s** (the complete17-case
-chat-concurrency suite plus14 existing chat adapter/storage cases selected from
-wiki.spec.ts), with no skips/retries. Both TypeScript configurations and Vite
-build passed. The exact parent-source counterexample failed all three selected
-new scheduling cases. The390px fallback notice and1440/390px deletion notices
-were personally inspected in actual screenshots; these full-page images do not
-establish physical-device installation or viewport visibility of every control.
-
-
-## Atomic browser chat persistence, 20 October
-
-Chat now uses one versioned IndexedDB root containing conversations and deletion
-markers. Each UI action reads, merges and writes that root in one native readwrite
-transaction. Only transaction completion confirms a save; a successful put request
-alone does not. Provider requests run outside transactions. Web Locks and
-localStorage cache coherence are no longer persistence dependencies.
-
-The first transaction imports both legacy localStorage keys only when the root is
-absent. An explicitly empty root prevents later reimport and revived deletions.
-Legacy keys remain untouched as a backup; upgraded clients do not dual-write them.
-Close or reload older Chat tabs after updating: old scripts do not participate in
-the new authority. If legacy storage cannot be read, initialization fails visibly
-and can be retried rather than silently committing an empty migration marker.
-Clearing site data still removes this browser-local history; there is no backend
-chat archive or cross-device synchronization.
-
-Initial loading disables chat controls. Failed writes retain the merged transcript,
-deletions and conflict baselines in this document across SPA navigation. A failed
-commit may still answer the locally retained question; a failure before the action
-keeps the unsent draft and does not invoke the provider. A reload cannot preserve
-this session-only fallback. Concurrent saved changes remain separate branches on
-recovery. Native transaction aborts after put success are tested explicitly.
-
-Validation for this storage replacement is recorded separately from the historical
-Web Lock attempt above. Native WebKit and the broad hosted suites remain required;
-local Chromium is not proof of Safari, physical installation or real model quality.
-
-Local validation: the complete changed chat-concurrency suite plus the chat-related
-wiki, history, accessibility and PWA update cases passed in native Chromium with
-the real synthetic demo vault and built frontend (61 cases, no skips or retries).
-Both TypeScript configurations, Vite build, five PWA unit cases, five proxy cases
-and two access-boundary cases passed. Saved-chat1440/390 images were personally
-inspected. A first local attempt used an incomplete empty fixture and wrong PWA
-proxy port; those results are not acceptance evidence.
-
-One additional case passed after the broad local run: a successful synthetic answer
-survives a native transaction abort after put success, SPA navigation, recovery
-commit and reload, with exactly one provider-adapter request (62 distinct local
-browser cases in total). A publication read/open failure before its action still
-leaves the question retryable but cannot retain the received answer; this existing
-boundary is distinct from commit-abort recovery.
-
-
-## Chat readiness and complete demo route, 20 October
-
-The first IndexedDB implementation passed its bounded native WebKit gate
-(18 executions: six storage/migration/abort cases repeated three times), but its
-broad Chromium run failed four cases. Two demo cases still inspected the retired
-localStorage key; their draft-exclusion assertion now reads the committed native
-IndexedDB root instead. The other two exposed a real keyboard entry regression:
-route completion focused a heading that asynchronous chat initialization replaced,
-or Tab skipped the still-disabled composer.
-
-Chat now displays an opening status until the initial transaction finishes, then
-renders its controls and completes the route. The existing router owns focus and
-reading-position decisions, including a header focus deliberately chosen while
-loading. Leaving Chat cancels completion for that departed view. Transaction and
-provider boundaries are unchanged.
-
-Local validation: both original keyboard-entry cases fail on the exact earlier
-built client, then pass after this change. Five added native-transaction-held
-cases cover heading/Tab readiness at390/1440, deliberate header focus, and leaving
-while initialization is queued. All71 relevant chat, accessibility, connected-demo,
-history and PWA update cases passed in1.0min, without skips or retries, using the
-real fictional vault and built frontend. Both TypeScript configurations and Vite
-build passed. The390/1440 readiness/focus images were personally inspected.
-The previous broad failure remains failed; the bounded WebKit gate is not a full
-cross-engine, device, model-quality or production acceptance.
-
-
-## Received answers during browser read outages, 20 October
-
-A successfully received answer previously disappeared when its publication could
-not open or read browser storage. The question stayed retryable, but retrying
-would ask the provider again. The answer now stays once, bounded, in the existing
-tab fallback with its original merge baseline. It survives SPA navigation and
-can be committed by a later storage action without another provider request.
-
-Recovery preserves a newer saved branch separately and respects concurrent
-canonical deletion markers. Stop and leaving Chat while answer publication is
-queued still cancel that answer. Provider waits remain outside native transactions;
-this adds neither a backend archive nor another storage authority. A tab reload
-still cannot preserve data that browser storage never accepted.
-
-Three new native browser outage cases fail on the earlier built client, proving
-actual missing answers. Five added cases cover same-ID recovery, divergent saved
-history, deletion, Stop and leaving after a reply but before publication. The
-concurrent fixture stays within the existing24-message bound; the first local
-attempt supplied25 messages and was corrected rather than changing that bound.
-
-Local validation:75 existing/added Chromium cases passed in the initial combined
-run; its one failing fixture oracle exceeded the history bound. After correcting
-that fixture, all five new outage/cancellation cases passed. Together these cover
-76 distinct local cases with no retry relaxation; the initial combined run remains
-failed rather than being relabeled. Both TypeScript configurations and Vite build
-passed. The early native WebKit gate now includes these five cases before the
-unchanged full profiles; its current-head results must be checked independently.
-
-The fully inspected earlier f0492ae browser run has seven passed records and ten
-zero-exit phases:644 successful executions including18 repeated diagnostic cases;
-Chromium363, first-start2, Git-import3, scale2, WebKit248 and workers8. Fourteen
-skip occurrences are eight complementary phase selections and six known
-engine-specific exclusions. That complete development baseline is separate from
-this received-answer change and from physical/model/production acceptance.
-
-The1440/390 session-only-answer screenshots were personally inspected after the
-new recovery case; the unavailable-storage notice remains visible and no
-horizontal overflow was observed. They are browser images, not device proof.
-
-## Visible keyboard destination after New, 20 October
-
-At390px, activating New with the keyboard focused a composer entirely below the
-viewport. The next Tab could reveal Send, but the initial typing destination was
-hidden. Only the explicit New transition now reveals the focused textarea with
-nearest scrolling. Initial Chat route readiness/heading focus and deliberate
-header focus keep their existing behavior; no global render scrolling or CSS
-change is introduced.
-
-The viewport regression activates New via Tab/Enter and checks the entire input
-rectangle before typing or another Tab can reveal it. On the exact preceding
-built chat source,390 fails this geometry check and1440 passes. The first fixture
-attempt incorrectly expected an unused empty conversation to remain saved; that
-assertion was corrected to the actual active empty-conversation contract.
-
-A separate actual Chromium viewport probe found the received answer reachable at
-initial390 and after1440-to390 resize. Resizing retained the prior inner scroll
-offset; wheel and native Tab-to-log followed by Ctrl+End exposed the complete
-answer. The fullpage screenshot alone did not establish an unreadable answer.
-No source-link keyboard, Linux WebKit, physical-device or native-zoom result is
-inferred from that probe.
-
-The preceding00e7b1f development acceptance is now fully inspected at matching
-merge8eefd9fd/tree42127af: frontend types/proxy5/access2/PWA5 and image build;
-backend Ruff/MyPy122,1274passed/12opt-in-skips and image build; native SSH5/index7
-run those opt-ins separately. Both images use push:false/load:false.
-Browser39473600107/job118803732212 has seven passed records and ten zero-exit
-phases:33 repeated native WebKit storage executions, Chromium368, first-start2,
-Git-import3, scale2, Linux WebKit253 and workers8. Total669 successful executions
-includes33 repeated diagnostic cases; fourteen skip occurrences are eight
-complementary first-start/import selections and six known engine exclusions.
-Stack39473599847 has78 gate entries/76unique, six built-browser gates, restart
-and independent14-page restore. Its actual compose log removes both projects'
-containers, networks and volumes. Cleanup/retention and no-model statements are
-records and logs, not independent OS/network tracing. Synthetic HTTPS/SPKI,
-vectors and provider responses establish no real model or production result.
-The new New-focus change requires its own subsequent CI result.
-
-Local follow-up validation: all76 selected Chromium chat/history/demo/PWA cases
-passed in one corrected run, with no skips or retries. Both TypeScript
-configurations and Vite build passed. The new390/1440 viewport screenshots were
-personally inspected. The initial integrated run remains74passed/two failed:
-one assertion expected the old New-at-scroll-zero behavior; the other needed
-the existing one-CSS-pixel tolerance for native scroll rounding (844.17 versus
-844). Initial route scroll-zero remains asserted separately.
-
-
-**Escaped-punctuation URL boundary, 20 October 2026 (base725cba2):**
-A literal escaped marker such as `\\*HTTPS://example.test/[[target]]*`
-ends Marked12's preceding text token. The following URL is external in the
-article, but the previous graph projection invented a wiki edge. Recognize this
-fresh URL position only after escaped ASCII punctuation, with existing code,
-HTML-anchor, raw-link and ordinary uppercase-prose boundaries preserved. Check
-for a URL before inspecting the escape prefix, so non-URL backslash runs do not
-repeatedly scan their prefixes. The derivation identity becomes v32; old receipts,
-including v31, require rebuilding. Markdown and Git history stay unchanged;
-configured vector rebuilding can invoke paid embeddings.
-
-The actual preceding source fails both new320/1440 Chromium regressions at the
-phantom graph edge after the article correctly renders one external link. The
-corrected source passes all46 code-reading cases, including real editor save,
-reload, graph/backlinks and history. After the equivalent early-URL guard was
-added, the two focused browser cases pass again. Both fullpage screenshots were
-personally inspected for readable wrapping; they are not physical-device or
-native-zoom evidence. Both TypeScript configurations, Ruff and MyPy on the two
-changed runtime modules pass. The final selected Python regression passes577
-cases, including64 new escape/history/work-budget cases and v31 receipt
-invalidation. A local bounded259-case independent Marked12
-comparison improves164 parent mismatches to zero, with no newly mismatching
-case; this is a new escape-focused matrix, not a rerun of the earlier250-case
-matrix or general nested-Markdown parity. Local tests use the current source
-snapshot, Chromium153 and synthetic Git/API fixtures. The first broader Python
-invocation omitted async auto mode and left one async test unexecuted; rerunning
-with the explicit project mode succeeds. Complete new-head hosted/native WebKit,
-container/index and production acceptance remains separate.
-
-
-The first hosted backend follow-up39499565295 fails at MyPy before running the
-backend tests: the new history assertion indexed an optional page without an
-explicit presence check. A follow-up adds that assertion; local MyPy on all four
-changed Python files, Ruff and all64 new tests then pass. Runtime source and
-browser expectations are unchanged. The failed hosted run remains failed and
-its image job was skipped; a complete hosted result for the corrected head is
-still required.
-
-
-**Development acceptance inspected, 21 October 2026 (runtime1351647):**
-The current escaped-punctuation correction and its test-only Optional guard are
-fully inspected at test merge debae6e8ca7e5ff9523062858fb2352b7926f2c0,
-tree5a441436, with ordered parents main1f0cd1e7+1351647. Runtime source is the
-db54a85 fix; the failed Backend39499565295 remains failed.
-
-[Frontend39499864733](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864733)
-passes both type configurations, proxy5/access2/PWA5 and its production/image
-build. [Backend39499864718](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864718)
-passes Ruff/MyPy123 and1339 tests, with12 opt-in skips exercised separately by
-[SSH39499864714](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864714)
-(5 passed) and [Index39499864801](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864801)
-(7 passed). Both image logs show push:false/load:false and cleanup.
-
-[Browser39499864734](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864734)
-has seven passed records and ten zero-exit phases: native WebKit33 repeated
-storage executions, broad Chromium372, first-start2, Git-import3, scale2,
-broad Linux WebKit257 and worker8. The677 successful executions include33
-repeated diagnostics; they are not677 unique tests. Fourteen skip occurrences
-are eight complementary first-start/import selections and six known
-engine-specific exclusions. Both new320/1440 escaped-URL cases run in the broad
-engines; four actual fullpage images were personally inspected. The broad
-profiles retain no grep/retry relaxation; the storage and worker diagnostics
-retain their explicit selections.
-
-[Stack39499864808](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39499864808)
-has78 gate entries/76 unique, six built-browser gates and a separately restored
-14-page volume with history/retry receipts. Actual compose logs remove both
-projects' containers, networks and volumes. DNS changes.3 to.6 with the same
-frontend; backend diagnostics say starting in both snapshots, despite the
-HTTP-health gates passing. Proxy logs show the isolated499 and survivor/retry200;
-exact bodies/no-store/completion are runner assertions. Cleanup/retention and
-no-model statements are records and logs, not independent OS/network tracing.
-Archives are size/hash/CRC checked: browser203,881,696 bytes/840 regular entries,
-stack707,167 bytes/six regular entries.
-
-This is development acceptance with synthetic fixtures, vectors and HTTPS/SPKI.
-It establishes neither physical Safari/iOS/native200% zoom nor real model,
-private original-history migration or production acceptance. The storage prose
-correction above changes no runtime source, tests or configuration and was
-checked against the shared-root transaction and legacy-import code.
-
-
-**Trailing strong text in URL emphasis, 21 October 2026 (baseccc662a):**
-The actual article at320/1440 renders `*HTTPS://example.test/[[target]] **Field note***`
-as an external link, but the preceding graph projection invents a wiki edge.
-A separate additive fallback recognizes one trailing strong segment of ASCII
-words inside outer single-star emphasis. The existing simple matcher and
-code/anchor/escape/closing/flanking guards stay in place. Arbitrary nesting,
-Unicode/punctuation within the strong segment and malformed delimiter spacing
-remain outside this bounded change. No article bytes or history are rewritten.
-Index identity becomes v33 and invalidates v32 receipts; configured embedding
-rebuilds can cost money.
-
-Both actual parent browser probes fail at the phantom edge. The selected final
-Python regression passes615 cases, including36 new static renderer-derived
-cases, exact-source/history coverage and v32 receipt invalidation. Ruff and
-MyPy on all four changed Python files pass, as do both TypeScript configurations.
-All48 current article/code-reading browser cases pass, including actual save,
-reload, backlinks and history. The two new fullpage images were personally
-inspected for wrapping; this is not physical-device or native-zoom acceptance.
-The independent336-case diagnostic comparison corrects16 parent mismatches
-without a new mismatch, retaining92 other known differences; the prior259-case
-escape comparison still has zero mismatches. These are bounded comparisons,
-not complete Markdown parity. New-head hosted acceptance is still required;
-the fully inspected1351647 results above remain historical evidence.
