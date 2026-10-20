@@ -348,6 +348,32 @@ test("a queued chat save reads the peer publication after its native storage loc
 
 for (const operation of ["new", "delete"] as const) {
   test(`overlapping native tab ${operation} and new actions retain saved chats and deletion intent`, async ({ page, context }) => {
+    // Observe the native lock callbacks without changing Storage or introducing
+    // yields inside a transaction. A failed assertion must distinguish a stale
+    // observer from a writer that never saw the preceding publication.
+    await context.addInitScript(({ key, deletedKey, storageLock }) => {
+      type Snapshot = { conversations: string[]; deleted: string[] };
+      const snapshot = (): Snapshot => ({
+        conversations: JSON.parse(localStorage.getItem(key) || "[]").map((item: { id: string }) => item.id),
+        deleted: JSON.parse(localStorage.getItem(deletedKey) || "[]").map((item: { id: string }) => item.id),
+      });
+      const trace: Array<{ phase: string; snapshot: Snapshot }> = [];
+      (window as unknown as { chatStorageTrace: typeof trace }).chatStorageTrace = trace;
+      if (!navigator.locks) return;
+      const request = navigator.locks.request.bind(navigator.locks);
+      Object.defineProperty(navigator.locks, "request", {
+        value: (name: string, options: LockOptions | LockGrantedCallback<unknown>, callback?: LockGrantedCallback<unknown>) => {
+          const action = typeof options === "function" ? options : callback!;
+          const observed: LockGrantedCallback<unknown> = lock => {
+            if (name === storageLock) trace.push({ phase: "acquired", snapshot: snapshot() });
+            const result = action(lock);
+            if (name === storageLock) trace.push({ phase: "returned", snapshot: snapshot() });
+            return result;
+          };
+          return typeof options === "function" ? request(name, observed) : request(name, options, observed);
+        },
+      });
+    }, { key, deletedKey, storageLock });
     const peer = await context.newPage();
     let providerRequests = 0;
     context.on("request", request => {
@@ -381,6 +407,26 @@ for (const operation of ["new", "delete"] as const) {
         peer.locator("[data-conversation].active").getAttribute("data-conversation"),
       ]);
       const saved = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+      const expected = [...ids].sort();
+      const actual = saved.map((item: { id: string }) => item.id).sort();
+      if (operation === "new" && JSON.stringify(actual) !== JSON.stringify(expected)) {
+        const observe = () => ({
+          trace: (window as unknown as { chatStorageTrace?: unknown }).chatStorageTrace,
+          conversations: JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1") || "[]")
+            .map((item: { id: string }) => item.id),
+          deleted: JSON.parse(localStorage.getItem("secondbrain.chat.deleted.v1") || "[]")
+            .map((item: { id: string }) => item.id),
+        });
+        const writers = await Promise.all([page.evaluate(observe), peer.evaluate(observe)]);
+        const fresh = await context.newPage();
+        await fresh.goto("/?overview=1"); // Real read-only app route, never a chat writer.
+        const freshSnapshot = await fresh.evaluate(observe);
+        await Promise.all([page.reload(), peer.reload()]);
+        const reloaded = await Promise.all([page.evaluate(observe), peer.evaluate(observe)]);
+        console.info("[chat-storage-observation] " + JSON.stringify({ operation, trial, ids, initial: actual,
+          writers, fresh: freshSnapshot, reloaded }));
+        await fresh.close();
+      }
       if (operation === "new") {
         expect(saved.map((item: { id: string }) => item.id).sort(), `trial ${trial}`).toEqual(ids.sort());
       } else {
