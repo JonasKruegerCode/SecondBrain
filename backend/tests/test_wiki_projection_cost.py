@@ -86,7 +86,9 @@ def test_projection_optimization_preserves_source_graph_and_history(tmp_path: Pa
         + " [[shown|Visible companion]]\r\n"
     )
     saved = wiki.save_page("source", markdown, None, "source")
-    assert wiki.get_page("source")["markdown"] == markdown
+    page = wiki.get_page("source")
+    assert page is not None
+    assert page["markdown"] == markdown
     assert wiki.backlinks("hidden")["total"] == 0
     assert wiki.backlinks("shown")["total"] == 1
     assert wiki._git("show", "HEAD:pages/source.md") == markdown.encode()
