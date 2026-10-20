@@ -554,8 +554,12 @@ test("mobile chat opens at its heading without forcing composer focus", async ({
   expect(await page.evaluate(() => scrollY)).toBe(0);
 
   await page.getByRole("button", { name: "New", exact: true }).click();
-  await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused();
-  expect(await page.evaluate(() => scrollY)).toBe(0);
+  const input = page.getByRole("textbox", { name: "Message" });
+  await expect(input).toBeFocused();
+  await expect.poll(() => input.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.top >= -1 && rect.bottom <= innerHeight + 1;
+  })).toBe(true);
 });
 
 test("saved chat labels and evidence controls remain readable and touchable", async ({ page }, testInfo) => {

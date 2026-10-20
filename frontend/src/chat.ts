@@ -387,7 +387,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         contextNotice = "";
         persist();
       });
-      if (alive) render(true);
+      if (!alive) return;
+      render(true);
+      main.querySelector<HTMLTextAreaElement>("#chat-input")?.scrollIntoView({ block: "nearest", inline: "nearest" });
     };
     const deleteButton = main.querySelector<HTMLButtonElement>('[data-action="delete"]')!;
     deleteButton.onclick = async () => {

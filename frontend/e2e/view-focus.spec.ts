@@ -1154,3 +1154,38 @@ test("leaving chat during native initialization cannot complete the departed rou
     await peer.close();
   }
 });
+
+
+for (const width of [390, 1440]) {
+  test(`keyboard New conversation reveals the focused composer (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/chat");
+    const input = page.locator("#chat-input");
+    await expect(input).toBeEnabled();
+    const navigation = page.getByRole("navigation", { name: "Primary" });
+    await navigation.getByRole("link", { name: "Chat", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "New", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(input).toBeFocused();
+    await expect(page.locator(".chat-history-list button.active")).toHaveText("New conversation0 messages");
+    // Focus alone can leave the entire narrow-screen input below the fold.
+    // Check actual viewport geometry before typing or Tab can reveal it.
+    const geometry = await input.evaluate(element => ({ rect: element.getBoundingClientRect().toJSON(), width: innerWidth, height: innerHeight, scrollY }));
+    console.log(`[chat-new-viewport] ${JSON.stringify(geometry)}`);
+    // Native nearest scrolling can round its final offset to a CSS pixel.
+    await expect.poll(() => input.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.top >= -1 && rect.bottom <= innerHeight + 1 &&
+        rect.left >= -1 && rect.right <= innerWidth + 1;
+    })).toBe(true);
+    await page.screenshot({ path: info.outputPath(`chat-new-visible-${width}.png`) });
+    await page.keyboard.type("Synthetic visible draft");
+    await expect(input).toHaveValue("Synthetic visible draft");
+    await expect(page.locator(".chat-message")).toHaveCount(0);
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Send →", exact: true })).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(input).toBeFocused();
+  });
+}

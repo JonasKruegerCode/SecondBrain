@@ -814,3 +814,49 @@ this received-answer change and from physical/model/production acceptance.
 The1440/390 session-only-answer screenshots were personally inspected after the
 new recovery case; the unavailable-storage notice remains visible and no
 horizontal overflow was observed. They are browser images, not device proof.
+
+## Visible keyboard destination after New, 20 October
+
+At390px, activating New with the keyboard focused a composer entirely below the
+viewport. The next Tab could reveal Send, but the initial typing destination was
+hidden. Only the explicit New transition now reveals the focused textarea with
+nearest scrolling. Initial Chat route readiness/heading focus and deliberate
+header focus keep their existing behavior; no global render scrolling or CSS
+change is introduced.
+
+The viewport regression activates New via Tab/Enter and checks the entire input
+rectangle before typing or another Tab can reveal it. On the exact preceding
+built chat source,390 fails this geometry check and1440 passes. The first fixture
+attempt incorrectly expected an unused empty conversation to remain saved; that
+assertion was corrected to the actual active empty-conversation contract.
+
+A separate actual Chromium viewport probe found the received answer reachable at
+initial390 and after1440-to390 resize. Resizing retained the prior inner scroll
+offset; wheel and native Tab-to-log followed by Ctrl+End exposed the complete
+answer. The fullpage screenshot alone did not establish an unreadable answer.
+No source-link keyboard, Linux WebKit, physical-device or native-zoom result is
+inferred from that probe.
+
+The preceding00e7b1f development acceptance is now fully inspected at matching
+merge8eefd9fd/tree42127af: frontend types/proxy5/access2/PWA5 and image build;
+backend Ruff/MyPy122,1274passed/12opt-in-skips and image build; native SSH5/index7
+run those opt-ins separately. Both images use push:false/load:false.
+Browser39473600107/job118803732212 has seven passed records and ten zero-exit
+phases:33 repeated native WebKit storage executions, Chromium368, first-start2,
+Git-import3, scale2, Linux WebKit253 and workers8. Total669 successful executions
+includes33 repeated diagnostic cases; fourteen skip occurrences are eight
+complementary first-start/import selections and six known engine exclusions.
+Stack39473599847 has78 gate entries/76unique, six built-browser gates, restart
+and independent14-page restore. Its actual compose log removes both projects'
+containers, networks and volumes. Cleanup/retention and no-model statements are
+records and logs, not independent OS/network tracing. Synthetic HTTPS/SPKI,
+vectors and provider responses establish no real model or production result.
+The new New-focus change requires its own subsequent CI result.
+
+Local follow-up validation: all76 selected Chromium chat/history/demo/PWA cases
+passed in one corrected run, with no skips or retries. Both TypeScript
+configurations and Vite build passed. The new390/1440 viewport screenshots were
+personally inspected. The initial integrated run remains74passed/two failed:
+one assertion expected the old New-at-scroll-zero behavior; the other needed
+the existing one-CSS-pixel tolerance for native scroll rounding (844.17 versus
+844). Initial route scroll-zero remains asserted separately.
