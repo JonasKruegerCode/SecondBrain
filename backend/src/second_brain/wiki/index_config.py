@@ -16,7 +16,7 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
     # Derived content also excludes metadata inside valid inline HTML tags
     # and leading URLs in supported mixed-emphasis scopes.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v28"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v29"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

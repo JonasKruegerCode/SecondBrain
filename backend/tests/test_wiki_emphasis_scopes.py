@@ -38,6 +38,10 @@ CASES = [
     ("prefix https://example.test/[[hidden]] [[shown]]", {"shown"}),
     (f"**{URL}**\u001cword [[shown]]", {"hidden", "shown"}),
     (f"**{URL}**\u0085word [[shown]]", {"hidden", "shown"}),
+    (rf'\<span title="**{URL}**"> [[shown]]', {"hidden", "shown"}),
+    (rf"\<bad **{URL}**> [[shown]]", {"hidden", "shown"}),
+    (f"prefix <bad **{URL}**> [[shown]]", {"hidden", "shown"}),
+    (rf'\<a title="*{URL}*"> [[shown]]', {"hidden", "shown"}),
 ]
 
 

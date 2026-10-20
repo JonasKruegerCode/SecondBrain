@@ -65,9 +65,9 @@ _EMPHASIS_URL_RE = re.compile(
     r"(?:[ \t\n]+[^\s<*_`\\~]+)*?(?P=delimiter)",
     re.I,
 )
-# Marked masks raw backtick pairs before resolving emphasis, even if the first
-# tick is escaped for the later inline-code tokenizer.
-_EMPHASIS_CODE_RE = re.compile(r"`[^`]*?`")
+# Marked masks raw links, backtick pairs and angle spans before resolving
+# emphasis, even if an opener is escaped for the later inline tokenizer.
+_EMPHASIS_MASK_RE = re.compile(r"\[[^\[\]]*?\]\([^()]*?\)|`[^`]*?`|<[^<>]*?>")
 _JS_WHITESPACE_RE = re.compile(rf"{_INLINE_HTML_SPACE}\Z")
 _URL_BACKPEDAL_RE = re.compile(
     r"""(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![A-Za-z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+"""
@@ -776,8 +776,8 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     Code spans likewise shield their contents. Mask with spaces to preserve
     line boundaries and avoid manufacturing typed relations or new links.
     """
-    emphasis_code = iter(_EMPHASIS_CODE_RE.finditer(text))
-    protected_code = next(emphasis_code, None)
+    emphasis_masks = iter(_EMPHASIS_MASK_RE.finditer(text))
+    protected_inline = next(emphasis_masks, None)
     parts: list[str] = []
     code_ends = _code_span_ends(text)
     position = 0
@@ -799,9 +799,9 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
                 parts.append(re.sub(r"[^\n]", " ", anchor.group()))
                 position = anchor.end()
                 continue
-        while protected_code is not None and protected_code.end() <= position:
-            protected_code = next(emphasis_code, None)
-        emphasis_masked = protected_code is not None and protected_code.start() <= position
+        while protected_inline is not None and protected_inline.end() <= position:
+            protected_inline = next(emphasis_masks, None)
+        emphasis_masked = protected_inline is not None and protected_inline.start() <= position
         if mask_urls and not in_anchor and not emphasis_masked:
             emphasized_url = _emphasized_url_span(text, position)
             if emphasized_url is not None:

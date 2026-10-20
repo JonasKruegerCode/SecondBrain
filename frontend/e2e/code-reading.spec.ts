@@ -6,22 +6,24 @@ for (const width of [320, 1440]) {
   test(`mixed emphasis keeps URL metadata out of wiki navigation at ${width}px`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 844 });
     const source = `emphasis-source-${randomUUID()}`, shown = `emphasis-shown-${randomUUID()}`;
-    const hidden = `emphasis-hidden-${randomUUID()}`;
+    const hidden = `emphasis-hidden-${randomUUID()}`, literal = `emphasis-literal-${randomUUID()}`;
     const endpoint = (id: string) => `/api/wiki/pages/${id}`;
-    const markdown = `# Mixed emphasis navigation\r\n\r\nExternal references and an intentional wiki connection.\r\n\r\n**HTTPS://example.test/[[${hidden}]]** *Field note*\r\n\r\n*Context* __HTTPS://other.test/[[${hidden}]]__\r\n\r\n**HTTPS://third.test/[[${hidden}]] plain note**\r\n\r\n[[${shown}|Visible companion]]\r\n`;
+    const markdown = `# Mixed emphasis navigation\r\n\r\nExternal references and an intentional wiki connection.\r\n\r\n**HTTPS://example.test/[[${hidden}]]** *Field note*\r\n\r\n*Context* __HTTPS://other.test/[[${hidden}]]__\r\n\r\n**HTTPS://third.test/[[${hidden}]] plain note**\r\n\r\n[[${shown}|Visible companion]]\r\n\r\nprefix \\<bad **HTTPS://literal.test/[[${literal}]]**>\r\n`;
     const owned: string[] = [];
     try {
-      for (const [id, body] of [[shown, "# Visible companion\n"], [hidden, "# Metadata companion\n"], [source, markdown]]) {
+      for (const [id, body] of [[shown, "# Visible companion\n"], [hidden, "# Metadata companion\n"], [literal, "# Literal angle companion\n"], [source, markdown]]) {
         const response = await request.post(endpoint(id), { data: { markdown: body, base_revision: null, request_id: randomUUID() } });
         expect(response.ok()).toBe(true);
         owned.push(id);
       }
       await page.goto(`/wiki/${source}`);
       await expect(page.locator(".prose a[target='_blank']")).toHaveCount(3);
-      await expect(page.locator(".prose a[data-wiki-target]")).toHaveAttribute("data-wiki-target", shown);
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(2);
+      await expect(page.locator(`.prose a[data-wiki-target="${literal}"]`)).toBeVisible();
       const graph = await (await request.get("/api/wiki/graph")).json();
-      expect(graph.edges.filter((edge: { source: string }) => edge.source === source))
-        .toEqual([{ source, target: shown, type: "wikilink" }]);
+      expect(graph.edges.filter((edge: { source: string }) => edge.source === source)
+        .map((edge: { target: string }) => edge.target).sort())
+        .toEqual([literal, shown].sort());
       expect((await (await request.get(endpoint(hidden) + "/backlinks")).json()).total).toBe(0);
       await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
       // Textareas normalize CRLF; the source read remains byte-for-byte authoritative.
