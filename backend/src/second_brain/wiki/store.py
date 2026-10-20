@@ -290,7 +290,9 @@ def _list_item_end(lines: list[str], start: int, match: re.Match[str]) -> tuple[
     return index, "\n".join(inner).rstrip("\n"), indent
 
 
-def prose_blocks(markdown: str, *, for_links: bool = False, for_excerpt: bool = False) -> str:
+def prose_blocks(
+    markdown: str, *, for_links: bool = False, for_excerpt: bool = False, for_title: bool = False
+) -> str:
     """Project prose without making quoted code into links or quoted H1s into titles.
 
     An explicit work stack handles nested quotes without Python recursion. Only
@@ -303,6 +305,10 @@ def prose_blocks(markdown: str, *, for_links: bool = False, for_excerpt: bool = 
     while pending:
         segment, prefix, quoted = pending.pop()
         if isinstance(segment, _ProseContainer):
+            # A list may use only two columns of indentation. Keep its provenance
+            # when title matching admits real top-level H1s indented 0–3 spaces.
+            if for_title and segment.list_item:
+                continue
             quoted = quoted or segment.quoted
             prefix += segment.prefix
             parts = _prose_segments(
@@ -1039,8 +1045,18 @@ class WikiStore:
     def _page(page_id: str, data: bytes, revision: str) -> dict[str, Any]:
         markdown = data.decode("utf-8")
         content, galaxy = split_frontmatter(markdown)
-        heading = re.search(r"^#\s+(.+)$", prose_blocks(content), re.MULTILINE)
-        title = heading.group(1).strip() if heading else page_id
+        title = next(
+            (
+                match.group(1).strip()
+                for match in re.finditer(
+                    r"^ {0,3}#[ \t]+([^\n]+)$",
+                    prose_blocks(content, for_title=True),
+                    re.MULTILINE,
+                )
+                if match.group(1).strip()
+            ),
+            page_id,
+        )
         page = {
             "id": page_id,
             "title": title,

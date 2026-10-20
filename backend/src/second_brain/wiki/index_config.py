@@ -13,10 +13,10 @@ from second_brain.wiki.store import WikiStore
 
 def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
-    # Derived content also excludes metadata inside valid inline HTML tags
-    # and leading URLs in supported mixed-emphasis scopes.
+    # Top-level ATX titles admit 0–3 leading spaces but never list headings
+    # or a following line swallowed as whitespace after an empty H1.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v29"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v30"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

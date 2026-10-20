@@ -49,7 +49,7 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v29`, defined in
+The current derivation identity is `managed-snapshots-v30`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -231,7 +231,47 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-### Leading source preservation (20 October)
+### Indented ATX title identity (20 October)
+
+A real top-level H1 with one to three leading spaces now supplies the same
+article title to REST/MCP reads, search, title resolution, graph metadata and the
+browser. Empty H1s cannot consume a following line or block promotion of a later
+nonempty title. Separators after the hash are horizontal ASCII whitespace.
+List subtrees are excluded only from title projection: their two-space prefix
+must not make a nested heading look top-level. Quote/code/HTML/table boundaries,
+source bytes, page IDs and Git history remain protected. This is bounded ATX
+alignment, not complete Markdown parser parity.
+
+Identity v30 makes previous configured index receipts pending until rebuilt;
+a configured vector rebuild may call the embedding provider. No content migration
+or automatic production rebuild is performed by this change. Existing v29 receipts
+are explicitly covered along with older identities.
+
+Local validation uses the actual built client and managed API, with synthetic
+pages only. Six indented-title browser cases fail on d02fe06 while two unindented
+comparators pass. Two additional empty-heading cases fail on the intermediate
+frontend; the final predicate skips whitespace-only candidates. All **62** selected
+Chromium code-reading/title-identity/title-inline/title-promotion cases pass on the
+final source, including UI Save/reload, source/history assertions, TOC/fragment
+focus and container protection. Both TypeScript configurations and Vite build
+pass. Two new three-space-title images at320/1440 were personally inspected;
+services and the owned vault were removed.
+
+Backend validation covers **523 distinct local cases** across the selected wiki
+modules:495 synchronous projection/store/index cases, two async MCP cases rerun
+with the configured asyncio mode, and26 API cases. An initial harness override
+omitted asyncio auto mode; those two async failures were invocation failures,
+not accepted product results. Ruff passes; MyPy passes for the two changed runtime
+modules using the backend configuration. The title matrix also has67 failures
+against the parent and20 passes, including the expected v29 receipt mismatch.
+Cached dependencies were restored to repository-locked MCP/Qdrant/telemetry
+versions where needed; this is not a fresh full lock installation. A known
+Pydantic forward-reference warning and the legacy bundle-size warning remain.
+Current-head hosted regression and WebKit remain pending; the parent's complete
+hosted acceptance is separate. No real model, private migration, production or
+physical-device acceptance follows.
+
+### Leading source preservation (d02fe06 parent, 20 October)
 
 The reader no longer removes the first line of indented code as though it were
 an article title, or consumes the remaining article after a CR-only title line.

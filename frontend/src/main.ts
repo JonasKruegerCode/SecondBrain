@@ -172,13 +172,13 @@ function markdown(s: string, pageTitle?: string) {
   // Only an actual top-level ATX title can duplicate the separate page heading.
   // Raw HTML, nested headings and unrelated H1s remain article content.
   const firstTitle = tokens.find(token => token.type === "heading" && token.depth === 1 &&
-    /^#[ \t]+[^\r\n]+/.test(token.raw));
+    Boolean(token.raw.match(/^ {0,3}#[ \t]+([^\r\n]+)/)?.[1].trim()));
   const earlierHtmlTitle = firstTitle && tokens.slice(0, tokens.indexOf(firstTitle)).some(token =>
     token.type === "html" && !token.raw.trimStart().startsWith("<!--") &&
     !/^ {0,3}(?:<(script|pre|style|textarea)[\s>]|<\?|<![a-z]|<!\[CDATA\[)/i.test(token.raw) &&
-    /^#[ \t]+/m.test(token.raw));
+    /^ {0,3}#[ \t]+/m.test(token.raw));
   const candidate = pageTitle !== undefined && !earlierHtmlTitle &&
-    firstTitle?.raw.match(/^#[ \t]+([^\r\n]+)/)?.[1].trim() === pageTitle ? firstTitle : undefined;
+    firstTitle?.raw.match(/^ {0,3}#[ \t]+([^\r\n]+)/)?.[1].trim() === pageTitle ? firstTitle : undefined;
   let candidateIndex = -1, headingCount = 0;
   marked.walkTokens(tokens, token => {
     if (token.type !== "heading") return;

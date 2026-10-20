@@ -26,9 +26,10 @@ from second_brain.wiki.store import WikiError, WikiStore
         "---\nlabel: example\n# Example heading\n---\n\n",
     ],
 )
-def test_page_title_ignores_non_prose_headings(tmp_path: Path, prefix: str) -> None:
+@pytest.mark.parametrize("indent", ["", " ", "  ", "   "])
+def test_page_title_ignores_non_prose_headings(tmp_path: Path, prefix: str, indent: str) -> None:
     store = WikiStore(tmp_path)
-    markdown = prefix + "# Actual heading\nA fictional article.\n"
+    markdown = prefix + indent + "# Actual heading\nA fictional article.\n"
     saved = store.save_page("article", markdown, None, "article")
     assert saved["title"] == "Actual heading"
     assert saved["markdown"] == markdown
@@ -117,6 +118,7 @@ def test_unclosed_comments_hide_headings_but_code_comment_literals_remain(tmp_pa
         "managed-snapshots-v24",
         "managed-snapshots-v27",
         "managed-snapshots-v28",
+        "managed-snapshots-v29",
     ],
 )
 def test_title_projection_upgrade_invalidates_ready_index_receipts(
@@ -129,7 +131,7 @@ def test_title_projection_upgrade_invalidates_ready_index_receipts(
     monkeypatch.delenv("SECOND_BRAIN_WIKI_GRAPH_INDEX", raising=False)
     monkeypatch.delenv("SECOND_BRAIN_WIKI_VECTOR_INDEX", raising=False)
     store = WikiStore(tmp_path)
-    store.save_page("article", "```md\n# Example\n```\n\n# Actual\nText.", None, "a")
+    store.save_page("article", "```md\n# Example\n```\n\n   # Actual\nText.", None, "a")
     store.save_page("source", "# Source\n[[Actual]]", None, "s")
     revision = store._head()
 
@@ -166,4 +168,66 @@ def test_title_projection_upgrade_invalidates_ready_index_receipts(
         "source",
         "article",
     }
+    assert (
+        next(p for p in adapter.snapshots[-1]["pages"] if p["id"] == "article")["title"] == "Actual"
+    )
     assert store._head() == revision
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "- # Listed title\n\n",
+        "1. # Listed title\n\n",
+        "- Parent\n  - # Listed title\n\n",
+        "> # Quoted title\n\n",
+        "| # Cell title | x |\n| --- | --- |\n\n",
+        "x | # Cell title\n--- | ---\n\n",
+        "\t# Code title\n\n",
+        "    # Code title\n\n",
+    ],
+)
+def test_indented_title_keeps_container_provenance(tmp_path: Path, prefix: str) -> None:
+    store = WikiStore(tmp_path)
+    markdown = prefix + "Outside the container.\n\n   # First actual title\n\n# Later title\n"
+    saved = store.save_page("article", markdown, None, "a")
+    assert saved["title"] == "First actual title"
+    assert saved["markdown"] == markdown
+    assert store._git("show", "HEAD:pages/article.md") == markdown.encode()
+
+
+@pytest.mark.parametrize(
+    "markdown, title",
+    [
+        ("#\nFollowing paragraph\n", "article"),
+        ("#  \t\nFollowing paragraph\n", "article"),
+        ("   # EOF title", "EOF title"),
+        ("# \nFollowing paragraph\n", "article"),
+        ("# \n# Real title\n", "Real title"),
+        ("#\u00a0Not an ATX heading\n", "article"),
+        ("#\tTab title\rBody\r", "Tab title"),
+        ("  # CR title\r\nBody\r\n", "CR title"),
+    ],
+)
+def test_title_uses_horizontal_ascii_heading_boundary(
+    tmp_path: Path, markdown: str, title: str
+) -> None:
+    store = WikiStore(tmp_path)
+    saved = store.save_page("article", markdown, None, "a")
+    assert saved["title"] == title
+    assert saved["markdown"] == markdown
+
+
+@pytest.mark.parametrize(
+    "markdown",
+    [
+        "- # Listed title\n\n   # Still listed\n",
+        "1. # Listed title\n\n   # Still listed\n",
+        "> # Quoted title\n",
+        "    # Code title\n",
+        "\t# Code title\n",
+    ],
+)
+def test_contained_headings_never_become_page_identity(tmp_path: Path, markdown: str) -> None:
+    store = WikiStore(tmp_path)
+    assert store.save_page("article", markdown, None, "a")["title"] == "article"

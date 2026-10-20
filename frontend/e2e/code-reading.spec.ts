@@ -22,12 +22,12 @@ for (const width of [320, 1440]) {
         expect(created.ok()).toBe(true);
         revision = (await created.json()).revision;
         await page.goto(`/wiki/${id}`);
-        await expect(page.locator("article > h1")).toHaveText(fixture.name === "indented-heading" ? id : "Source preservation");
-        if (fixture.name === "indented-heading") await expect(page.locator(".prose h1")).toHaveText("Source preservation");
+        await expect(page.locator("article > h1")).toHaveText("Source preservation");
+        if (fixture.name === "indented-heading") await expect(page.locator(".prose h1")).toHaveCount(0);
         await expect(page.locator(".prose p").filter({ hasText: "Visible body remains." })).toBeVisible();
         await expect(page.locator(".prose p").filter({ hasText: "Section body remains." })).toBeVisible();
         if (fixture.code) await expect(page.locator(".prose pre code")).toHaveJSProperty("textContent", fixture.name === "mixed-indent" ? " # Literal first line\n literal code\n" : "# Literal first line\nliteral code\n");
-        else if (fixture.name !== "indented-heading") await expect(page.locator(".prose h2")).toHaveAttribute("id", "section-1");
+        else await expect(page.locator(".prose h2")).toHaveAttribute("id", "section-1");
         await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
         const normalized = markdown.replace(/\r\n?|\n/g, "\n");
         await expect(page.locator("#editor")).toHaveValue(normalized);
