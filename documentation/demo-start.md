@@ -166,9 +166,11 @@ The separate worker lifecycle slice keeps service workers enabled:
 SECOND_BRAIN_WIKI_API_KEY= "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers
 ```
 
-It selects four existing cases: online-first registration and no private caches,
-an offered waiting-worker update, and editor-draft protection while another tab
-updates, followed by save or discard and deliberate reload. The update probe
+It selects eight existing cases: online-first registration and no private caches,
+an offered waiting-worker update, discovering an update already installing when
+another tab opens at 390/1440px, recoverable background-update failures at those
+widths, and editor-draft protection while another tab updates, followed by save
+or discard and deliberate reload. The update probe
 serves the actual app/API through an owned loopback proxy and changes only a
 synthetic comment in the worker bytes to trigger a new version. Browser contexts
 close before the proxy, including its worker connections. Its worker-enabled
