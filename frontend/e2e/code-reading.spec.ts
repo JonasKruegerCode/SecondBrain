@@ -1166,3 +1166,51 @@ for (const width of [320, 1440]) {
     }
   });
 }
+
+for (const width of [320, 1440]) {
+  test(`trailing plain strong text keeps an emphasized URL out of wiki edges at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const source = `strong-source-${randomUUID()}`, hidden = `strong-hidden-${randomUUID()}`;
+    const shown = `strong-shown-${randomUUID()}`, owned: string[] = [];
+    const endpoint = (id: string) => `/api/wiki/pages/${id}`;
+    const markdown = ["# Nested emphasis guide", "",
+      `*HTTPS://example.test/[[${hidden}]] **Field note***`, "",
+      `[[${shown}|Read companion]]`, "",
+    ].join("\n");
+    try {
+      for (const [id, body] of [[hidden, "# External URL target\n"], [shown, "# Reading companion\n"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: { markdown: body, base_revision: null, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true); owned.push(id);
+      }
+      await page.goto(`/wiki/${source}`);
+      await expect(page.locator(".prose a[target='_blank']")).toHaveCount(1);
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveText(["Read companion"]);
+      const assertGraph = async (targets: string[]) => {
+        const response = await request.get("/api/wiki/graph"); expect(response.ok()).toBe(true);
+        expect((await response.json()).edges.filter((edge: { source: string }) => edge.source === source)
+          .map((edge: { target: string }) => edge.target).sort()).toEqual(targets.sort());
+      };
+      await assertGraph([shown]);
+      expect((await (await request.get(endpoint(hidden) + "/backlinks")).json()).total).toBe(0);
+      expect((await (await request.get(endpoint(source))).json()).markdown).toBe(markdown);
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.locator("#editor").fill(markdown + `\n[[${hidden}|Deliberate connection]]\n`);
+      await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+      await expect(page.locator(".prose a[data-wiki-target]")).toHaveText(["Read companion", "Deliberate connection"]);
+      await assertGraph([shown, hidden]);
+      expect((await (await request.get(endpoint(source) + "/history")).json()).history).toHaveLength(2);
+      await page.reload();
+      await expect(page.locator(".prose a[target='_blank']")).toHaveCount(1);
+      await assertGraph([shown, hidden]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`trailing-strong-${width}.png`), fullPage: true });
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(endpoint(id)); expect(current.ok()).toBe(true);
+        const response = await request.delete(endpoint(id), { data: { base_revision: (await current.json()).revision, request_id: randomUUID() } });
+        expect(response.ok()).toBe(true);
+      }
+    }
+  });
+}

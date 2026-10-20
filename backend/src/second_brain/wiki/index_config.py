@@ -13,9 +13,9 @@ from second_brain.wiki.store import WikiStore
 
 def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
-    # Escaped punctuation starts a fresh URL token instead of a phantom wikilink.
+    # Trailing plain strong text must not invent wiki edges inside emphasized URLs.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v32"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v33"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

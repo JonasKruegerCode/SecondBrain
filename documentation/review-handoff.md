@@ -49,7 +49,7 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v32`, defined in
+The current derivation identity is `managed-snapshots-v33`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -949,3 +949,28 @@ It establishes neither physical Safari/iOS/native200% zoom nor real model,
 private original-history migration or production acceptance. The storage prose
 correction above changes no runtime source, tests or configuration and was
 checked against the shared-root transaction and legacy-import code.
+
+
+**Trailing strong text in URL emphasis, 21 October 2026 (baseccc662a):**
+The actual article at320/1440 renders `*HTTPS://example.test/[[target]] **Field note***`
+as an external link, but the preceding graph projection invents a wiki edge.
+A separate additive fallback recognizes one trailing strong segment of ASCII
+words inside outer single-star emphasis. The existing simple matcher and
+code/anchor/escape/closing/flanking guards stay in place. Arbitrary nesting,
+Unicode/punctuation within the strong segment and malformed delimiter spacing
+remain outside this bounded change. No article bytes or history are rewritten.
+Index identity becomes v33 and invalidates v32 receipts; configured embedding
+rebuilds can cost money.
+
+Both actual parent browser probes fail at the phantom edge. The selected final
+Python regression passes615 cases, including36 new static renderer-derived
+cases, exact-source/history coverage and v32 receipt invalidation. Ruff and
+MyPy on all four changed Python files pass, as do both TypeScript configurations.
+All48 current article/code-reading browser cases pass, including actual save,
+reload, backlinks and history. The two new fullpage images were personally
+inspected for wrapping; this is not physical-device or native-zoom acceptance.
+The independent336-case diagnostic comparison corrects16 parent mismatches
+without a new mismatch, retaining92 other known differences; the prior259-case
+escape comparison still has zero mismatches. These are bounded comparisons,
+not complete Markdown parity. New-head hosted acceptance is still required;
+the fully inspected1351647 results above remain historical evidence.

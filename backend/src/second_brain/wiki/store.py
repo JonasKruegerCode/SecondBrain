@@ -66,6 +66,16 @@ _EMPHASIS_URL_RE = re.compile(
     r"(?:[ \t\n]+[^\s<*_`\\~]+)*?(?P=delimiter)",
     re.I,
 )
+# One bounded nested form: outer single-star emphasis with a trailing
+# strong segment containing ASCII words only. No general nesting is inferred.
+_EMPHASIS_URL_TRAILING_STRONG_RE = re.compile(
+    r"(?P<delimiter>\*)"
+    r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+)"
+    r"(?:[ \t]+[^\s<*_`\\~]+)*?"
+    r"[ \t]+\*\*[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)*\*\*"
+    r"(?P=delimiter)",
+    re.I,
+)
 # Marked masks raw links, backtick pairs and angle spans before resolving
 # emphasis, even if an opener is escaped for the later inline tokenizer.
 _EMPHASIS_MASK_RE = re.compile(r"\[[^\[\]]*?\]\([^()]*?\)|`[^`]*?`|<[^<>]*?>")
@@ -762,7 +772,9 @@ def _emphasized_url_span(text: str, position: int) -> tuple[int, int] | None:
     previous = text[position - 1] if position else ""
     if delimiter == "_" and previous and unicodedata.category(previous)[0] in "LN":
         return None
-    match = _EMPHASIS_URL_RE.match(text, position)
+    match = _EMPHASIS_URL_RE.match(text, position) or _EMPHASIS_URL_TRAILING_STRONG_RE.match(
+        text, position
+    )
     if match is None or (match.end() < len(text) and text[match.end()] == delimiter):
         return None
     closing = match.end() - len(match.group("delimiter"))
