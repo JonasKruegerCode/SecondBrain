@@ -120,49 +120,45 @@ function applyTombstones(conversations: Conversation[], tombstones: Tombstone[])
   return conversations.filter(item => !deleted.has(item.id));
 }
 
-function readPersistent(): { conversations: Conversation[]; tombstones: Tombstone[]; unavailable: boolean } {
-  try {
-    const tombstones = parseTombstones(localStorage.getItem(DELETED_STORAGE_KEY));
-    return {
-      conversations: applyTombstones(parseConversations(localStorage.getItem(STORAGE_KEY)), tombstones),
-      tombstones,
-      unavailable: false,
+type ChatRoot = { version: 1; conversations: Conversation[]; tombstones: Tombstone[] };
+type Stored = { conversations: Conversation[]; tombstones: Tombstone[]; unavailable: boolean };
+let stagedRoot: Stored | undefined;
+let database: Promise<IDBDatabase> | undefined;
+function openDatabase(): Promise<IDBDatabase> {
+  if (!database) database = new Promise<IDBDatabase>((resolve, reject) => {
+    let abandoned = false;
+    const request = indexedDB.open("secondbrain.chat.v1", 1);
+    request.onupgradeneeded = () => { request.result.createObjectStore("chat"); };
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => {
+      abandoned = true;
+      reject(new Error("Chat storage upgrade is blocked"));
     };
-  } catch {
-    return { conversations: [], tombstones: [], unavailable: true };
-  }
+    request.onsuccess = () => {
+      const db = request.result;
+      if (abandoned) { db.close(); return; }
+      db.onversionchange = () => { db.close(); database = undefined; };
+      resolve(db);
+    };
+  }).catch(cause => { database = undefined; throw cause; });
+  return database;
 }
-
-function load(): { conversations: Conversation[]; tombstones: Tombstone[]; unavailable: boolean } {
-  if (tabConversations) return {
-    conversations: tabConversations,
-    tombstones: tabTombstones || [],
-    unavailable: true,
-  };
-  return readPersistent();
+function normalizedRoot(value: unknown): ChatRoot {
+  if (!record(value) || value.version !== 1) throw new Error("Unsupported chat storage");
+  const tombstones = parseTombstones(JSON.stringify(value.tombstones));
+  return { version: 1, conversations: applyTombstones(
+    parseConversations(JSON.stringify(value.conversations)), tombstones), tombstones };
 }
-
-function save(
-  conversations: Conversation[], tombstones: Tombstone[], dirtyIds: Set<string>,
-  baselines: Map<string, string>,
-): boolean {
-  try {
-    // Persist deletion intent before the conversation snapshot. A stale tab can then
-    // merge without resurrecting a conversation if the second write is interrupted.
-    localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify(tombstones));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-    tabConversations = undefined;
-    tabTombstones = undefined;
-    tabDirtyIds = undefined;
-    tabBaselines = undefined;
-    return true;
-  } catch {
-    tabConversations = conversations;
-    tabTombstones = tombstones;
-    tabDirtyIds = new Set(conversations.filter(item => dirtyIds.has(item.id)).map(item => item.id));
-    tabBaselines = new Map([...baselines].filter(([id]) => dirtyIds.has(id)));
-    return false;
-  }
+function readPersistent(): Stored {
+  if (!stagedRoot) throw new Error("Chat storage read outside transaction");
+  return stagedRoot;
+}
+function retainFallback(conversations: Conversation[], tombstones: Tombstone[],
+  dirtyIds: Set<string>, baselines: Map<string, string>) {
+  tabConversations = conversations;
+  tabTombstones = tombstones;
+  tabDirtyIds = new Set(conversations.filter(item => dirtyIds.has(item.id)).map(item => item.id));
+  tabBaselines = new Map([...baselines].filter(([id]) => dirtyIds.has(id)));
 }
 
 const transcript = (item: Conversation | undefined) => JSON.stringify(item?.messages ?? null);
@@ -172,57 +168,90 @@ function freshConversation(): Conversation {
 }
 
 export function renderChat(main: Element, api: Api, stateChanged: () => void = () => {}): () => void {
-  const loaded = load();
-  let conversations = loaded.conversations;
-  let tombstones = loaded.tombstones;
-  let storageUnavailable = loaded.unavailable;
-  if (!conversations.length) conversations = [freshConversation()];
-  let activeId = conversations[0].id;
-  // Preserve pending writes across SPA navigation while browser storage is full.
-  // A restored in-tab snapshot must still merge its unsaved messages on recovery.
+  let conversations = tabConversations || [freshConversation()];
+  let tombstones = tabTombstones || [];
+  let storageUnavailable = !!tabConversations;
+  let activeId = conversations[0]?.id || "";
   const dirtyIds = new Set(tabDirtyIds);
-  // Immutable persisted bases survive quota failure and SPA navigation. A
-  // bounded transcript can drop old turns without becoming a concurrent edit.
-  const baselines = new Map(tabBaselines ?? loaded.conversations.map(
-    item => [item.id, transcript(item)] as const,
-  ));
+  const baselines = new Map(tabBaselines);
   const deletedIds = new Map<string, number>();
-  // Unsent text belongs to its conversation while this Chat view stays open.
-  // Keep it out of saved transcripts and provider requests until Send.
   const drafts = new Map<string, string>();
   let busy = false;
-  let storagePending = false;
-  const lifetime = new AbortController();
-  const coordinatedStorage = typeof navigator.locks?.request === "function";
+  let storagePending = true;
   let requestController: AbortController | undefined;
   let error = "";
   let conversationNotice = "";
   let contextNotice = "";
   let alive = true;
+  let persistedInAction = false;
   reloadBlocker = () => !alive ? undefined : busy || storagePending ? "reply"
     : drafts.size ? "draft" : undefined;
 
-  // Serialize the complete read/merge/write across tabs, never provider waits.
-  // Older browsers keep best-effort persistence with an explicit notice.
-  const storageTransaction = async (action: () => void): Promise<boolean> => {
-    if (!alive || storagePending) return false;
+  // IndexedDB serializes the entire read/merge/write across documents, including
+  // WebKit without Web Locks. No async work is performed while a transaction is live.
+  const storageTransaction = async (action: () => void, initial = false): Promise<boolean> => {
+    if (!alive || (storagePending && !initial)) return false;
     storagePending = true;
     main.querySelectorAll<HTMLButtonElement | HTMLTextAreaElement>(
       'button:not([data-action="stop"]), textarea',
     ).forEach(control => { control.disabled = true; });
     stateChanged();
-    const run = () => {
-      if (!alive) return false;
-      action();
-      return true;
-    };
+    let executed = false;
+    persistedInAction = false;
     try {
-      return coordinatedStorage
-        ? await navigator.locks.request("secondbrain.chat.storage.v1", { mode: "exclusive", signal: lifetime.signal }, run)
-        : run();
+      const db = await openDatabase();
+      if (!alive) return false;
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("chat", "readwrite");
+        const store = tx.objectStore("chat");
+        tx.oncomplete = () => {
+          if (persistedInAction) {
+            tabConversations = undefined;
+            tabTombstones = undefined;
+            tabDirtyIds = undefined;
+            tabBaselines = undefined;
+            baselines.clear();
+            conversations.forEach(item => baselines.set(item.id, transcript(item)));
+            dirtyIds.clear();
+            deletedIds.clear();
+          }
+          storageUnavailable = !!tabConversations;
+          resolve();
+        };
+        tx.onabort = () => reject(tx.error || new Error("Chat storage transaction aborted"));
+        tx.onerror = () => { /* Abort is the definitive failure signal. */ };
+        const request = store.get("root");
+        request.onsuccess = () => {
+          if (!alive) { tx.abort(); return; }
+          try {
+            let root: ChatRoot;
+            if (request.result === undefined) {
+              // Import both backup keys in this same first transaction. An empty
+              // root is an intentional snapshot and must never import again.
+              const deleted = parseTombstones(localStorage.getItem(DELETED_STORAGE_KEY));
+              root = { version: 1, conversations: applyTombstones(
+                parseConversations(localStorage.getItem(STORAGE_KEY)), deleted), tombstones: deleted };
+            } else root = normalizedRoot(request.result);
+            stagedRoot = { conversations: root.conversations, tombstones: root.tombstones, unavailable: false };
+            action();
+            executed = true;
+            store.put({ version: 1, conversations: stagedRoot.conversations,
+              tombstones: stagedRoot.tombstones } satisfies ChatRoot, "root");
+          } catch (cause) {
+            // A synchronous put throw must abort; request success alone never
+            // establishes durability (quota failures can abort after put success).
+            tx.abort();
+          } finally { stagedRoot = undefined; }
+        };
+      });
+      return executed;
     } catch {
-      if (alive) error = "The browser could not coordinate chat storage. Your action was not completed; retry when ready.";
-      return false;
+      if (executed && persistedInAction) retainFallback(conversations, tombstones, dirtyIds, baselines);
+      if (alive) {
+        storageUnavailable = true;
+        if (!executed) error = "The browser could not read chat storage. Your action was not completed; retry when ready.";
+      }
+      return executed;
     } finally {
       storagePending = false;
     }
@@ -300,13 +329,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     for (const id of baselines.keys()) {
       if (!conversations.some(item => item.id === id)) baselines.delete(id);
     }
-    storageUnavailable = !save(conversations, tombstones, dirtyIds, baselines);
-    if (!storageUnavailable) {
-      baselines.clear();
-      conversations.forEach(item => baselines.set(item.id, transcript(item)));
-      dirtyIds.clear();
-      deletedIds.clear();
-    }
+    stagedRoot = { conversations, tombstones, unavailable: false };
+    persistedInAction = true;
   };
   const render = (focusComposer = false) => {
     const conversation = current();
@@ -328,7 +352,6 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         ${conversationNotice ? `<div class="chat-storage-notice chat-conversation-notice" role="status">${esc(conversationNotice)}</div>` : ""}
         ${contextNotice ? `<div class="chat-storage-notice chat-context-notice" role="status">${esc(contextNotice)}</div>` : ""}
         ${storageUnavailable ? `<div class="chat-storage-notice" role="status">Browser storage is unavailable. New messages stay only in this tab until it is reloaded; previously saved conversations may remain after deletion.</div>` : ""}
-        ${!coordinatedStorage ? `<div class="chat-storage-notice chat-lock-notice" role="status">This browser cannot coordinate chat storage across tabs. Use one Chat tab at a time to avoid losing changes.</div>` : ""}
         <form class="chat-composer"><label for="chat-input">Message</label><textarea id="chat-input" maxlength="4000" rows="2" placeholder="Ask this wiki…" ${busy || storagePending ? "disabled" : ""}></textarea><button class="primary" ${busy || storagePending ? "disabled" : ""}>Send →</button><small>Up to 12 recent messages are sent. ${storageUnavailable ? "Chats are session-only in this tab." : "Chats are saved only in local browser storage."}</small></form>
       </div>
     </section>`;
@@ -545,9 +568,21 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   };
 
   render(false);
+  void storageTransaction(() => {
+    const stored = readPersistent();
+    if (!tabConversations) {
+      conversations = stored.conversations.length ? stored.conversations : [freshConversation()];
+      tombstones = stored.tombstones;
+      activeId = conversations[0].id;
+      baselines.clear();
+      stored.conversations.forEach(item => baselines.set(item.id, transcript(item)));
+    }
+  }, true).then(() => {
+    if (!alive) return;
+    render(false);
+  });
   return () => {
     alive = false;
-    lifetime.abort();
     requestController?.abort();
     stateChanged();
   };

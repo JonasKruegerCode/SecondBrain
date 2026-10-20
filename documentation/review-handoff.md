@@ -664,10 +664,12 @@ runtime **and test** modules. Product behavior and the earlier local browser
 results are unchanged. The failed run remains a failed historical check; no
 full Hosted acceptance is inferred from other successful job statuses.
 
-## Concurrent local chat saves, 20 October
+## Historical Web Lock attempt, 20 October
 
-Two current Chat tabs now serialize the complete local-storage read, merge and
-write through one same-origin Web Lock. This prevents an overlapping New action
+The earlier implementation serialized the complete local-storage read, merge and
+write through one same-origin Web Lock. Local Chromium checks passed, but native WebKit subsequently lost a conversation
+even after independent reads and reloads. This attempt is not a successful
+cross-engine persistence repair. It aimed to prevent an overlapping New action
 from replacing another tab's new conversation or its deletion marker. Submission,
 retry preflight, reply publication and deletion checks use the same boundary;
 provider requests never hold the lock. Waiting controls are disabled, an unmounted
@@ -701,3 +703,47 @@ build passed. The exact parent-source counterexample failed all three selected
 new scheduling cases. The390px fallback notice and1440/390px deletion notices
 were personally inspected in actual screenshots; these full-page images do not
 establish physical-device installation or viewport visibility of every control.
+
+
+## Atomic browser chat persistence, 20 October
+
+Chat now uses one versioned IndexedDB root containing conversations and deletion
+markers. Each UI action reads, merges and writes that root in one native readwrite
+transaction. Only transaction completion confirms a save; a successful put request
+alone does not. Provider requests run outside transactions. Web Locks and
+localStorage cache coherence are no longer persistence dependencies.
+
+The first transaction imports both legacy localStorage keys only when the root is
+absent. An explicitly empty root prevents later reimport and revived deletions.
+Legacy keys remain untouched as a backup; upgraded clients do not dual-write them.
+Close or reload older Chat tabs after updating: old scripts do not participate in
+the new authority. If legacy storage cannot be read, initialization fails visibly
+and can be retried rather than silently committing an empty migration marker.
+Clearing site data still removes this browser-local history; there is no backend
+chat archive or cross-device synchronization.
+
+Initial loading disables chat controls. Failed writes retain the merged transcript,
+deletions and conflict baselines in this document across SPA navigation. A failed
+commit may still answer the locally retained question; a failure before the action
+keeps the unsent draft and does not invoke the provider. A reload cannot preserve
+this session-only fallback. Concurrent saved changes remain separate branches on
+recovery. Native transaction aborts after put success are tested explicitly.
+
+Validation for this storage replacement is recorded separately from the historical
+Web Lock attempt above. Native WebKit and the broad hosted suites remain required;
+local Chromium is not proof of Safari, physical installation or real model quality.
+
+Local validation: the complete changed chat-concurrency suite plus the chat-related
+wiki, history, accessibility and PWA update cases passed in native Chromium with
+the real synthetic demo vault and built frontend (61 cases, no skips or retries).
+Both TypeScript configurations, Vite build, five PWA unit cases, five proxy cases
+and two access-boundary cases passed. Saved-chat1440/390 images were personally
+inspected. A first local attempt used an incomplete empty fixture and wrong PWA
+proxy port; those results are not acceptance evidence.
+
+One additional case passed after the broad local run: a successful synthetic answer
+survives a native transaction abort after put success, SPA navigation, recovery
+commit and reload, with exactly one provider-adapter request (62 distinct local
+browser cases in total). A publication read/open failure before its action still
+leaves the question retryable but cannot retain the received answer; this existing
+boundary is distinct from commit-abort recovery.

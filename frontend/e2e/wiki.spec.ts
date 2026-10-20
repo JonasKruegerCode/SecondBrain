@@ -1,3 +1,4 @@
+import { installWikiChatStorage, failWikiChatWrites } from "./wiki-chat-storage";
 import { test, expect, APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -5,6 +6,8 @@ import { createServer } from "node:http";
 import { AddressInfo } from "node:net";
 import { checkTallOverview } from "./galaxy-window";
 import { traceFirstInstall, readFirstInstallTrace } from "./pwa-install-trace";
+
+test.beforeEach(async ({ page }) => { await installWikiChatStorage(page); });
 
 // The separate WebKit worker slice uses these actual lifecycle tests. Reading
 // tests in other files retain their routing-compatible worker-blocked profile.
@@ -557,8 +560,9 @@ test("mobile chat opens at its heading without forcing composer focus", async ({
 
 test("saved chat labels and evidence controls remain readable and touchable", async ({ page }, testInfo) => {
   // A synthetic local history tests rendering only; it is not a generated model answer.
-  await page.addInitScript(() => {
-    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+  await page.goto("/?overview=1");
+  await page.evaluate(async () => {
+    await window.__wikiChatWrite([{
       id: "synthetic-accessibility-history",
       title: "Reading the demo wiki",
       updated: 1,
@@ -571,7 +575,7 @@ test("saved chat labels and evidence controls remain readable and touchable", as
           activity: ["Read the synthetic Home article."],
         },
       ],
-    }]));
+    }]);
   });
   let chatRequests = 0;
   page.on("request", request => {
@@ -1627,7 +1631,7 @@ for (const width of [1440, 390]) {
       await delivered;
       await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
       await expect(page.locator(".chat-message.user p")).toHaveText(question);
-      expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).not.toContain(lateAnswer);
+      expect(await page.evaluate(async () => JSON.stringify(await window.__wikiChatRead()))).not.toContain(lateAnswer);
       await page.getByRole("button", { name: "Retry", exact: true }).click();
       await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic retry answer.");
       await expect(page.locator(".chat-message.user")).toHaveCount(1);
@@ -1780,17 +1784,17 @@ test("read-only chat keeps multi-turn context and conversations in this browser"
 for (const scenario of ["long-answer", "many-turns", "multibyte", "escaped-text"] as const) {
 test(`chat bounds follow-up context without changing saved text (${scenario})`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: scenario === "multibyte" || scenario === "escaped-text" ? 390 : 1440, height: 900 });
-  await page.addInitScript(kind => {
-    if (localStorage.getItem("secondbrain.chat.conversations.v1")) return;
+  await page.goto("/?overview=1");
+  await page.evaluate(async kind => {
     const text = kind === "multibyte" ? "界".repeat(3500)
       : kind === "escaped-text" ? "\u0001".repeat(3500) : "Synthetic context. ".repeat(190);
     const messages = kind === "long-answer"
       ? [{ role: "user", content: "A synthetic earlier question." },
          { role: "assistant", content: "Long synthetic reply. ".repeat(300) }]
       : Array.from({ length: kind === "many-turns" ? 6 : 10 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: text }));
-    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+    await window.__wikiChatWrite([{
       id: "synthetic-context", title: "Synthetic context probe", updated: 1, messages,
-    }]));
+    }]);
   }, scenario);
   let captured: { role: string; content: string }[] = [];
   await page.route("**/api/wiki/chat", async route => {
@@ -1805,14 +1809,14 @@ test(`chat bounds follow-up context without changing saved text (${scenario})`, 
     }) });
   });
   await page.goto("/chat");
-  const before = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].messages);
+  const before = await page.evaluate(async () => (await window.__wikiChatRead())[0].messages);
   await page.getByLabel("Message").fill("Keep this exact newest synthetic question.");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".chat-message.assistant").last()).toContainText("Synthetic bounded follow-up answer.");
   expect(captured.at(-1)).toEqual({ role: "user", content: "Keep this exact newest synthetic question." });
   expect(captured[0].role).toBe("user");
   await expect(page.locator(".chat-context-notice")).toContainText("saved messages are unchanged");
-  const after = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].messages);
+  const after = await page.evaluate(async () => (await window.__wikiChatRead())[0].messages);
   expect(after.slice(0, before.length)).toEqual(before);
   await page.locator(".chat-context-notice").scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
@@ -1840,8 +1844,8 @@ test("chat preserves independent tab conversations and does not resurrect a dele
   await other.getByRole("button", { name: "Send" }).click();
   await expect(other.locator(".chat-message.assistant")).toContainText("Synthetic tab answer.");
 
-  const storedQuestions = () => page.evaluate(() =>
-    JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1") || "[]")
+  const storedQuestions = () => page.evaluate(async () =>
+    (await window.__wikiChatRead())
       .flatMap((conversation: { messages: Array<{ role: string; content: string }> }) => conversation.messages)
       .filter((message: { role: string }) => message.role === "user")
       .map((message: { content: string }) => message.content),
@@ -1865,7 +1869,7 @@ test(`chat deletion in another tab survives a follow-up and an in-flight answer 
   await page.getByLabel("Message").fill("Question to be deleted.");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic initial answer.");
-  const deletedId = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].id);
+  const deletedId = await page.evaluate(async () => (await window.__wikiChatRead())[0].id);
   const stale = await context.newPage();
   await stale.setViewportSize({ width, height: 844 });
   let submitted: { messages: Array<{ role: string; content: string }> } | undefined;
@@ -1879,7 +1883,7 @@ test(`chat deletion in another tab survives a follow-up and an in-flight answer 
   await stale.getByLabel("Message").fill("Follow-up after deletion.");
   await stale.getByRole("button", { name: "Send" }).click();
   await expect(stale.locator(".chat-message.assistant").last()).toContainText("Synthetic fresh answer.");
-  expect(await page.evaluate(id => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === id), deletedId)).toBeFalsy();
+  expect(await page.evaluate(async id => (await window.__wikiChatRead()).some((item: { id: string }) => item.id === id), deletedId)).toBeFalsy();
   expect(submitted?.messages).toEqual([{ role: "user", content: "Follow-up after deletion." }]);
   await expect(stale.locator(".chat-conversation-notice")).toContainText("started a new conversation");
   expect(await stale.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
@@ -1887,7 +1891,7 @@ test(`chat deletion in another tab survives a follow-up and an in-flight answer 
 
   await page.reload();
   await expect(page.locator(".chat-message.user")).toContainText("Follow-up after deletion.");
-  const inFlightId = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].id);
+  const inFlightId = await page.evaluate(async () => (await window.__wikiChatRead())[0].id);
   let release!: () => void;
   const hold = new Promise<void>(resolve => { release = resolve; });
   await stale.unroute("**/api/wiki/chat");
@@ -1905,7 +1909,7 @@ test(`chat deletion in another tab survives a follow-up and an in-flight answer 
   await expect(stale.locator(".chat-thinking")).toHaveCount(0);
   await expect(stale.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
   await expect(stale.locator(".chat-conversation-notice")).toContainText("deleted in another tab");
-  expect(await page.evaluate(id => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === id), inFlightId)).toBeFalsy();
+  expect(await page.evaluate(async id => (await window.__wikiChatRead()).some((item: { id: string }) => item.id === id), inFlightId)).toBeFalsy();
   await expect(stale.getByLabel("Message")).toBeEnabled();
   await stale.close();
 });
@@ -2230,7 +2234,8 @@ test("late backlink response cannot replace a newer article and read failures ca
 test("chat ignores malformed saved records and keeps a valid bounded conversation", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.addInitScript(() => {
+  await page.goto("/?overview=1");
+  await page.evaluate(async () => {
     const valid = { id: "synthetic-valid", title: "Synthetic saved question", updated: 1,
       messages: Array.from({ length: 26 }, () => ({ role: "user", content: "A retained synthetic question." })) };
     const invalid = [
@@ -2240,7 +2245,7 @@ test("chat ignores malformed saved records and keeps a valid bounded conversatio
       { ...valid, id: "bad-activity", messages: [{ role: "assistant", content: "Invalid activity", activity: [42] }] },
       { ...valid, id: "bad-surrogate", messages: [{ role: "assistant", content: "Invalid source", sources: [{ id: "\ud800", title: "bad", evidence: "read" }] }] },
     ];
-    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([...invalid, valid]));
+    await window.__wikiChatWrite([...invalid, valid]);
   });
   await page.goto("/chat");
   await expect(page.locator(".chat-message.user")).toHaveCount(24);
@@ -2249,14 +2254,15 @@ test("chat ignores malformed saved records and keeps a valid bounded conversatio
   expect(errors).toEqual([]);
   for (let i = 0; i < 22; i++) await page.getByRole("button", { name: "New", exact: true }).click();
   await expect(page.locator(".chat-history-list button")).toHaveCount(20);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).length)).toBe(20);
+  expect(await page.evaluate(async () => (await window.__wikiChatRead()).length)).toBe(20);
 });
 
 test("new chat remains active at the limit even with future-dated saved conversations", async ({ page }) => {
-  await page.addInitScript(() => { if (!localStorage.getItem("secondbrain.chat.conversations.v1")) localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+  await page.goto("/?overview=1");
+  await page.evaluate(async () => { await window.__wikiChatWrite(
     Array.from({ length: 20 }, (_, i) => ({ id: `synthetic-future-${i}`, title: `Earlier synthetic chat ${i}`, updated: Date.now() + 86400000,
       messages: [{ role: "user", content: "Earlier synthetic question." }] })),
-  )); });
+  ); });
   let submitted: unknown;
   await page.route("**/api/wiki/chat", route => {
     submitted = route.request().postDataJSON();
@@ -2275,21 +2281,17 @@ test("new chat remains active at the limit even with future-dated saved conversa
 });
 
 test("chat storage failure explains session-only answers and unsuccessful persisted deletion", async ({ page }, testInfo) => {
-  await page.addInitScript(() => {
-    const key = "secondbrain.chat.conversations.v1";
-    localStorage.setItem(key, JSON.stringify([{ id: "synthetic-storage", title: "Synthetic saved question", updated: 1,
-      messages: [{ role: "user", content: "Previously saved synthetic question." }] }]));
-    const set = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      if (key === "secondbrain.chat.conversations.v1") throw new DOMException("Synthetic unavailable storage", "QuotaExceededError");
-      return set.call(this, key, value);
-    };
-    window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+  await page.goto("/?overview=1");
+  await page.evaluate(async () => {
+    await window.__wikiChatWrite([{ id: "synthetic-storage", title: "Synthetic saved question", updated: 1,
+      messages: [{ role: "user", content: "Previously saved synthetic question." }] }]);
   });
   // Scripted transport only: this checks local persistence, not model behavior.
   await page.route("**/api/wiki/chat", route => route.fulfill({ contentType: "application/json",
     body: JSON.stringify({ answer: "A synthetic session answer.", sources: [], activity: [] }) }));
   await page.goto("/chat");
+  await expect(page.locator(".chat-message.user")).toHaveCount(1);
+  await failWikiChatWrites(page);
   await page.getByLabel("Message").fill("Synthetic follow-up.");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".chat-message.assistant")).toContainText("A synthetic session answer.");
@@ -2297,6 +2299,7 @@ test("chat storage failure explains session-only answers and unsuccessful persis
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.locator(".chat-message.assistant")).toContainText("A synthetic session answer.");
   await expect(page.locator(".chat-storage-notice")).toContainText("only in this tab");
+  await expect(page.getByLabel("Message")).toBeEnabled();
   const historyBox = (await page.locator(".chat-history").boundingBox())!;
   const titleBox = (await page.locator(".chat-history-list button").boundingBox())!;
   expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(historyBox.x + historyBox.width);
@@ -2313,30 +2316,26 @@ test("chat storage failure explains session-only answers and unsuccessful persis
   await page.getByRole("link", { name: "Home", exact: true }).click();
   await page.getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Start with a real question." })).toBeVisible();
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)[0].messages)).toHaveLength(1);
+  expect(await page.evaluate(async () => (await window.__wikiChatRead())[0].messages)).toHaveLength(1);
   await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
   await page.getByRole("button", { name: "New", exact: true }).click();
   await expect(page.locator(".chat-storage-notice")).toHaveCount(0);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!).some((item: { id: string }) => item.id === "synthetic-storage"))).toBeFalsy();
+  expect(await page.evaluate(async () => (await window.__wikiChatRead()).some((item: { id: string }) => item.id === "synthetic-storage"))).toBeFalsy();
 });
 
 test("chat storage recovery retains unsaved conversations after article navigation", async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify([{
+  await page.goto("/?overview=1");
+  await page.evaluate(async () => {
+    await window.__wikiChatWrite([{
       id: "saved-before-quota", title: "Saved before quota", updated: 1,
       messages: [{ role: "user", content: "Previously saved question." }],
-    }]));
-    const set = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      if (key === "secondbrain.chat.conversations.v1")
-        throw new DOMException("Synthetic full storage", "QuotaExceededError");
-      return set.call(this, key, value);
-    };
-    window.addEventListener("synthetic-storage-ready", () => { Storage.prototype.setItem = set; }, { once: true });
+    }]);
   });
   await page.route("**/api/wiki/chat", route => route.fulfill({ contentType: "application/json",
     body: JSON.stringify({ answer: "Synthetic answer during quota failure.", sources: [], activity: [] }) }));
   await page.goto("/chat");
+  await expect(page.locator(".chat-message.user")).toHaveCount(1);
+  await failWikiChatWrites(page);
   await page.getByLabel("Message").fill("Unsaved follow-up in existing conversation.");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic answer during quota failure.");
@@ -2350,7 +2349,7 @@ test("chat storage recovery retains unsaved conversations after article navigati
   await page.evaluate(() => window.dispatchEvent(new Event("synthetic-storage-ready")));
   await page.getByRole("button", { name: "New", exact: true }).click();
   await expect(page.locator(".chat-storage-notice")).toHaveCount(0);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1") || "[]"));
+  const stored = await page.evaluate(async () => (await window.__wikiChatRead()));
   expect(stored.find((item: { id: string }) => item.id === "saved-before-quota").messages).toHaveLength(3);
   expect(stored.some((item: { messages: Array<{ content: string }> }) =>
     item.messages.some(message => message.content === "Unsaved independent conversation."))).toBeTruthy();
@@ -2564,7 +2563,7 @@ for (const finish of ["clear", "send", "stop"] as const) {
         draftConversation = await page.locator(".chat-history-list button.active").getAttribute("data-conversation");
         await page.getByRole("button", { name: "New", exact: true }).click();
         await expect(input).toHaveValue("");
-        expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1")))
+        expect(await page.evaluate(async () => JSON.stringify(await window.__wikiChatRead())))
           .not.toContain(question);
       }
       // An empty active composer must not hide another conversation's unsent draft.
@@ -2602,7 +2601,7 @@ for (const finish of ["clear", "send", "stop"] as const) {
       if (finish === "send") {
         releaseReply();
         await expect(page.locator(".chat-message.assistant")).toContainText(answer);
-        await expect.poll(() => page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toContain(answer);
+        await expect.poll(() => page.evaluate(async () => JSON.stringify(await window.__wikiChatRead()))).toContain(answer);
       } else if (finish === "stop") {
         const aborted = page.waitForEvent("requestfailed", request => new URL(request.url()).pathname === "/api/wiki/chat");
         await page.getByRole("button", { name: "Stop reply", exact: true }).click();
@@ -2611,7 +2610,7 @@ for (const finish of ["clear", "send", "stop"] as const) {
         await replyDelivered;
         await expect(page.locator(".chat-error")).toContainText("Reply stopped.");
         await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
-        const stored = await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"));
+        const stored = await page.evaluate(async () => JSON.stringify(await window.__wikiChatRead()));
         expect(stored).toContain(question);
         expect(stored).not.toContain(answer);
       } else {
@@ -2650,28 +2649,20 @@ for (const finish of ["recover", "delete"] as const) {
     const other = await context.newPage();
     const question = "Synthetic unsaved storage question.";
     const answer = "Synthetic reply retained only in this tab.";
-    await page.addInitScript(() => {
-      const set = Storage.prototype.setItem;
-      Storage.prototype.setItem = function(key, value) {
-        if (key === "secondbrain.chat.conversations.v1")
-          throw new DOMException("Synthetic full storage", "QuotaExceededError");
-        return set.call(this, key, value);
-      };
-      window.addEventListener("synthetic-storage-ready", () => {
-        Storage.prototype.setItem = set;
-      }, { once: true });
-    });
+
     await page.route("**/api/wiki/chat", route => route.fulfill({ json: { answer, sources: [], activity: [] } }));
     try {
       await page.goto(`${proxy.origin}/chat`);
       await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
       await other.goto(`${proxy.origin}/?overview=1`);
       await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await expect(page.getByLabel("Message")).toBeEnabled();
+      await failWikiChatWrites(page);
       await page.getByLabel("Message").fill(question);
       await page.getByRole("button", { name: "Send" }).click();
       await expect(page.locator(".chat-message.assistant")).toContainText(answer);
       await expect(page.locator(".chat-storage-notice")).toContainText("only in this tab");
-      expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toBeNull();
+      expect(await page.evaluate(async () => await window.__wikiChatRead())).toEqual([]);
       await offerPwaUpdate(page, proxy);
       const notice = page.locator('.pwa-notice[data-kind="update"]');
       await expect(notice).toContainText("Recover browser storage or delete unsaved conversations");
@@ -2700,7 +2691,7 @@ for (const finish of ["recover", "delete"] as const) {
         await page.getByRole("button", { name: "New", exact: true }).click();
         await page.locator(".chat-history-list button").filter({ hasText: question }).click();
         await expect(page.locator(".chat-storage-notice")).toHaveCount(0);
-        expect(await page.evaluate(() => localStorage.getItem("secondbrain.chat.conversations.v1"))).toContain(answer);
+        expect(await page.evaluate(async () => JSON.stringify(await window.__wikiChatRead()))).toContain(answer);
       } else {
         await page.getByRole("button", { name: "Delete conversation" }).click();
         await expect(page.locator(".chat-message")).toHaveCount(0);

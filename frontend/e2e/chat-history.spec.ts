@@ -1,5 +1,8 @@
+import { installWikiChatStorage } from "./wiki-chat-storage";
 import { chromium, expect } from "@playwright/test";
 import { test } from "./reading-test";
+
+test.beforeEach(async ({ page }) => { await installWikiChatStorage(page); });
 
 // A real Blink text setting changes glyph metrics without narrowing the
 // viewport. This is separate from browser zoom, Safari and physical devices.
@@ -63,10 +66,10 @@ for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/chat");
     const seed = async (count: number) => {
-      await page.evaluate(count => localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+      await page.evaluate(async count => await window.__wikiChatWrite(
         Array.from({ length: count }, (_, i) => ({ id: `synthetic-history-${i}`, title: `Synthetic conversation ${i + 1}`,
           updated: 100 - i, messages: [{ role: "user", content: `Synthetic saved question ${i + 1}.` }] })),
-      )), count);
+      ), count);
       await page.reload();
       await expect(page.locator(".chat-history-list button")).toHaveCount(count);
     };
@@ -147,10 +150,10 @@ for (const width of [390, 1440]) {
         if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") chatRequests++;
       });
       await page.goto("/chat");
-      await page.evaluate(count => localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+      await page.evaluate(async count => await window.__wikiChatWrite(
         Array.from({ length: count }, (_, i) => ({ id: `synthetic-delete-${i}`, title: `Synthetic saved chat ${i + 1}`,
           updated: 100 - i, messages: [{ role: "user", content: `Synthetic deletion question ${i + 1}.` }] })),
-      )), count);
+      ), count);
       await page.reload();
       await expect(page.locator(".chat-message.user p")).toHaveText("Synthetic deletion question 1.");
       const remove = page.getByRole("button", { name: "Delete conversation", exact: true });
@@ -184,7 +187,7 @@ for (const width of [390, 1440]) {
       await expect(target).toBeFocused();
       await page.screenshot({ path: info.outputPath(`chat-delete-focus-${width}-${count}.png`) });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!)
+      expect(await page.evaluate(async () => (await window.__wikiChatRead())
         .some((item: { id: string }) => item.id === "synthetic-delete-0"))).toBeFalsy();
       await page.reload();
       await expect(page.locator('[data-conversation="synthetic-delete-0"]')).toHaveCount(0);
@@ -227,10 +230,10 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 450 }
     let created = false;
     try {
       await page.goto("/chat");
-      await page.evaluate(() => localStorage.setItem("secondbrain.chat.conversations.v1", JSON.stringify(
+      await page.evaluate(async () => await window.__wikiChatWrite(
         Array.from({ length: 20 }, (_, i) => ({ id: `short-history-${i}`, title: `Synthetic conversation ${i + 1}`,
           updated: 100 - i, messages: [{ role: "user", content: `Synthetic saved question ${i + 1}.` }] })),
-      )));
+      ));
       await page.reload();
       const history = page.locator("[data-conversation]");
       await expect(history).toHaveCount(20);
@@ -261,7 +264,7 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 450 }
       await expect(page.locator(".chat-error")).toContainText("Synthetic short viewport provider failure.");
       await expect(page.locator(".chat-message.user").last()).toContainText(question);
       await expect(page.locator(".chat-message.assistant")).toHaveCount(0);
-      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("secondbrain.chat.conversations.v1")!));
+      const stored = await page.evaluate(async () => (await window.__wikiChatRead()));
       expect(stored.find((item: { id: string }) => item.id === "short-history-19").messages.at(-1).content).toBe(question);
 
       const response = await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } });
