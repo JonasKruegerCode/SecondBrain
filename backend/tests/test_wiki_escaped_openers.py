@@ -46,7 +46,9 @@ def test_literal_prefix_does_not_invent_a_typed_relation(tmp_path: Path) -> None
         {"source": "source", "target": "shown", "type": "wikilink"}
     ]
     assert reopened.backlinks("shown")["total"] == 1
-    assert reopened.get_page("source")["markdown"] == markdown
+    current = reopened.get_page("source")
+    assert current is not None
+    assert current["markdown"] == markdown
     assert reopened._git("show", "HEAD:pages/source.md") == markdown.encode()
     assert len(reopened.history("source")) == 1
     changed = "# Synthetic bracket guide\n\nrelated:: [[shown|Readable]]\n"

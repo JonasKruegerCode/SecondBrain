@@ -654,3 +654,12 @@ with workers blocked and genuine app services; no API/browser mocks or model
 calls. Owned services stopped and the synthetic vault was absent at the final
 cleanup check. This is not WebKit, native mobile/zoom, production, model-quality
 or private migration acceptance. More complex Markdown differences remain.
+
+
+**Hosted follow-up:** Backend39420809923 on733234a failed MyPy in the new test:
+`get_page()` is optional and was indexed without first asserting a page exists.
+Ruff passed; pytest and the backend image build were skipped. The follow-up
+adds the missing explicit non-null assertion and verifies MyPy on the changed
+runtime **and test** modules. Product behavior and the earlier local browser
+results are unchanged. The failed run remains a failed historical check; no
+full Hosted acceptance is inferred from other successful job statuses.
