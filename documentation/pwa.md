@@ -28,8 +28,13 @@ is deliberately synthetic and contains no personal wiki data.
 `service-worker.js` has no `fetch` handler and never opens CacheStorage. It
 therefore cannot cache page responses, chat requests, authorization headers or
 an offline copy of the app. Managed API responses also retain
-`Cache-Control: no-store`. Chat history remains only in browser `localStorage`
-and can be deleted in the Chat view; it is not a service-worker cache.
+`Cache-Control: no-store`. Saved chat history stays in this browser's IndexedDB
+and can be deleted in the Chat view; it is not a service-worker cache or part of
+the server's wiki backup. Conversations and deletion records are saved together.
+Legacy `localStorage` history is imported only when no current storage root exists;
+an explicitly empty root prevents reimport. Legacy copies remain as backups and
+are not kept in sync with later saves or deletions. Deleting a conversation in
+Chat therefore does not erase those retained legacy copies.
 
 If an already open app loses connectivity, a visible notice explains that wiki
 and chat need a connection. A cold offline launch shows the browser's ordinary
@@ -52,6 +57,11 @@ nonempty unsaved conversations remain protected in the current document even
 after navigating to an article. Recover storage and persist the conversation,
 or deliberately delete its unsaved messages, before updating. The notice
 explains which state is blocking reload; it does not add a backend chat archive.
+This unsaved fallback lasts only in the current tab and does not survive reload.
+An unsent composer draft lasts only while the Chat view remains open. Preserve it
+before leaving Chat. After an application update, reload older open Chat tabs
+only after preserving drafts, finishing replies, and saving any unsaved fallback
+conversation or deliberately deleting its unsaved messages.
 
 If another tab activates the worker, a tab with unsaved changes or a pending
 save keeps its current document and editor. Its update notice remains available;

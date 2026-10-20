@@ -7,6 +7,13 @@ Neo4j or Qdrant data, provider credentials, environment variables, proxy
 configuration, or a remote Git repository. Those remain independent deployment
 concerns; derived indexes are rebuilt against the restored content revision.
 
+Browser chat history and the saved start-page preference are also outside this
+archive: restoring a server vault does not restore them. Saved chats live in the
+browser's IndexedDB; unsaved fallback conversations last only in the current tab
+and do not survive reload. Retained legacy `localStorage` chat backups are not
+included or kept in sync with current chats. Deleting a conversation in Chat does
+not erase those legacy copies; see the [PWA privacy guide](pwa.md).
+
 ## Create a backup
 
 The commands below address a host directory. For the named volume used by

@@ -61,7 +61,10 @@ for an update:** that can delete the persistent wiki.
 ## Prepare an update and archive current content
 
 Finish or preserve browser drafts and pending replies first; quiesce external
-writers. Record the current source commit, Compose/env/proxy configuration and
+writers. Browser chat history and the saved start-page preference are outside
+the server wiki archive. Unsaved chat fallback lasts only in its current tab;
+recover storage and save it, or deliberately delete its unsaved messages, before
+reloading. Record the current source commit, Compose/env/proxy configuration and
 actual image IDs. Protect environment/proxy credentials separately: the wiki
 archive does not contain them. Retain the old images locally with distinct tags
 before rebuilding, so a later recovery need not recreate them from mutable bases.
@@ -163,6 +166,11 @@ reload. Finish/save or deliberately discard before updating; check another dirty
 tab also preserves its draft. After safe activation, confirm controlled reload,
 saved Home, direct URLs and readable current content. A clean navigation receiving
 new HTML is not by itself proof that the protected PWA update path ran.
+Reload older open Chat tabs so they use the updated browser storage implementation.
+First preserve composer drafts, finish pending replies, and save any unsaved
+fallback conversation or deliberately delete its unsaved messages. Reloading
+does not preserve that fallback, and leaving Chat does not preserve its composer
+draft.
 Use the [PWA guide](pwa.md) for installation, privacy and precise limits. Physical
 Home Screen/standalone/touch checks remain separate from browser emulation.
 
