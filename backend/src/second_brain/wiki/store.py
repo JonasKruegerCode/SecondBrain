@@ -14,6 +14,7 @@ import re
 import subprocess
 import tempfile
 import unicodedata
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -893,6 +894,22 @@ def _markdown_escaped(text: str, position: int) -> bool:
     return (position - start) % 2 == 1
 
 
+def _wiki_link_matches(text: str) -> Iterator[re.Match[str]]:
+    """Consume accepted tokens, retrying after an escaped literal opener.
+
+    Marked consumes an escaped bracket as text before trying the following
+    wikilink. A rejected outer candidate must not swallow that next token.
+    Accepted candidates remain nonoverlapping, including their labels.
+    """
+    position = 0
+    while match := LINK_RE.search(text, position):
+        if _markdown_escaped(text, match.start()):
+            position = match.start() + 1
+        else:
+            yield match
+            position = match.end()
+
+
 def plain_text_excerpt(markdown: str) -> str:
     """Collapse article prose into a short, presentation-safe summary.
 
@@ -1224,11 +1241,7 @@ class WikiStore:
                 for match in TYPED_LINK_RE.finditer(prose)
                 if not _markdown_escaped(prose, match.start(2) - 2)
             ]
-            links.extend(
-                (match.group(1), None)
-                for match in LINK_RE.finditer(prose)
-                if not _markdown_escaped(prose, match.start())
-            )
+            links.extend((match.group(1), None) for match in _wiki_link_matches(prose))
             outgoing: set[tuple[str, str | None]] = set()
             for raw_target, rel in links:
                 target, candidates = WikiStore._resolve_target(raw_target, page["id"], ids, titles)

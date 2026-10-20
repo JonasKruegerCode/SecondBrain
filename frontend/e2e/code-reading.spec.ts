@@ -1054,3 +1054,67 @@ for (const width of [390, 1440]) {
   });
 }
 
+for (const width of [320, 1440]) {
+  test(`literal bracket prefix preserves the next wiki token at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const source = `bracket-source-${randomUUID()}`, target = `bracket-target-${randomUUID()}`;
+    const literal = `bracket-literal-${randomUUID()}`, owned: string[] = [], errors: string[] = [];
+    const endpoint = (id: string) => `/api/wiki/pages/${id}`;
+    const markdown = ["# Synthetic bracket guide", "",
+      `Literal opening bracket: \\[[[${target}|Read companion]]].`, "",
+      `Another escaped bracket: ${"\\".repeat(3)}[[[${target}|Read again]]].`, "",
+      `Literal example: \\[[${literal}|Not a link]].`, "",
+      `uses:: \\[[[${target}|Ordinary link]]]`, "",
+    ].join("\n");
+    page.on("pageerror", error => errors.push(error.message));
+    try {
+      for (const [id, body] of [[target, "# Synthetic companion\n\nFictional reading target.\n"],
+        [literal, "# Literal example\n"], [source, markdown]]) {
+        const response = await request.post(endpoint(id), { data: {
+          markdown: body, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(response.ok()).toBe(true); owned.push(id);
+      }
+      const original = await (await request.get(endpoint(source))).json();
+      const assertReading = async () => {
+        await expect(page.locator(".prose a[data-wiki-target]")).toHaveText([
+          "Read companion", "Read again", "Ordinary link",
+        ]);
+        await expect(page.locator(".prose")).toContainText(`[[${literal}|Not a link]]`);
+        const response = await request.get("/api/wiki/graph");
+        expect(response.ok()).toBe(true);
+        const graph = await response.json();
+        expect(graph.edges.filter((edge: { source: string }) => edge.source === source))
+          .toEqual([{ source, target, type: "wikilink" }]);
+        expect(graph.missing_targets.filter((edge: { source: string }) => edge.source === source)).toEqual([]);
+        const backlinks = await request.get(endpoint(target) + "/backlinks");
+        expect(backlinks.ok()).toBe(true);
+        expect((await backlinks.json()).backlinks.map((p: { id: string }) => p.id)).toEqual([source]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      };
+      await page.goto(`/wiki/${source}`);
+      await assertReading();
+      await page.reload();
+      await assertReading();
+      await page.locator(".prose").getByRole("link", { name: "Read companion", exact: true }).click();
+      await expect(page.locator("article > h1")).toHaveText("Synthetic companion");
+      await page.goBack();
+      await assertReading();
+      await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+      await expect(page.locator("#editor")).toHaveValue(markdown);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await assertReading();
+      expect(await (await request.get(endpoint(source))).json()).toMatchObject({ markdown, revision: original.revision });
+      expect((await (await request.get(endpoint(source) + "/history")).json()).history).toHaveLength(1);
+      expect(errors).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath(`literal-bracket-prefix-${width}.png`), fullPage: true });
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(endpoint(id)); expect(current.ok()).toBe(true);
+        const removed = await request.delete(endpoint(id), { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } }); expect(removed.ok()).toBe(true);
+      }
+    }
+  });
+}

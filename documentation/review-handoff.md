@@ -607,3 +607,50 @@ original assertion, gesture and timing when investigating a new occurrence.
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
 
+
+## Escaped opening brackets and graph tokens, 20 October
+
+An escaped literal bracket before a real wiki token (`\[[[target]]]`) was
+clickable in the installed Marked12 reader but absent from graph/backlinks.
+The graph's nonoverlapping regex scan consumed the rejected escaped outer
+candidate and skipped the valid opener one character later. The bounded fix
+advances one character after an escaped rejected opener; accepted wiki tokens
+still consume their complete span. It does not expose nested targets inside
+accepted links or invent a typed relation after a literal bracket.
+
+The configured index schema is now **managed-snapshots-v31**. Existing v30
+(and older) ready receipts become pending even with unchanged Markdown;
+configured indexes must rebuild before being reported current. Content, page
+IDs and Git history are unchanged. A configured embedding rebuild can incur
+provider costs. No production rebuild or private migration was performed.
+
+Validation on the hash-verified cc0b36b runtime snapshot plus this change:
+
+- Final counterfactual selection on the parent: seven failures/94 passes,
+  comprising six escaped-opener graph/persistence failures and the v30 receipt
+  invalidation case. The parent's actual Python source was selected with the
+  pytest `pythonpath` override; an earlier environment-only invocation was
+  superseded because project configuration takes precedence.
+- 537 selected local backend wiki/projection/index/API/MCP cases passed; two
+  additional accepted-outer-token/missing-target controls passed separately,
+  for **539 distinct local cases**. New escaped-opener module:15 cases. Ruff
+  checks/format and MyPy for the two runtime modules passed. This is not a
+  new full locked-environment or hosted-provider acceptance.
+- Both new actual built-UI/API Chromium cases failed on the unchanged parent
+  graph, then the complete existing code-reading suite passed **44 cases in
+  45.2s**, without skips, retries or flakies. Existing suite registration is
+  retained. The new 320/1440px cases assert rendered labels, exact graph edges,
+  backlinks, absence of missing targets, click/back/reload, editor bytes and
+  unchanged revision/history; literal examples stay inert. Both new full-page
+  screenshots were personally inspected: readable, no horizontal overflow.
+- Actual frontend Marked12-tokenizer comparison and an independent read-only
+  review checked escaped prefixes, aliases/fragments, odd/even backslashes,
+  code/destination guards, malformed images and accepted outer tokens. The
+  malformed-image case is literal prose with a real visible inner link;
+  expectations were corrected before final parent/fixed comparison.
+
+The browser used the existing isolated local Chromium153/Playwright1.64 path
+with workers blocked and genuine app services; no API/browser mocks or model
+calls. Owned services stopped and the synthetic vault was absent at the final
+cleanup check. This is not WebKit, native mobile/zoom, production, model-quality
+or private migration acceptance. More complex Markdown differences remain.
