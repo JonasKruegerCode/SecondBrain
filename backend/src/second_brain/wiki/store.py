@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -55,16 +56,19 @@ _INLINE_HTML_TAG_RE = re.compile(
 )
 _AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
 _URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
-# A single emphasized URL starts its own inline-token scope. Bound the whole
-# block to plain words, punctuation and deliberate wikilinks around that scope;
-# mixed/nested markup requires a real inline parser. Underscore flanking is
-# checked below because only asterisk emphasis can open inside a word.
+# A URL at the start of a simple emphasis scope is a fresh inline token.
+# Recognize only exact short delimiter runs with plain inner prose; code, tags,
+# escaping and nested delimiters remain the responsibility of the outer scanner.
 _EMPHASIS_URL_RE = re.compile(
-    r"(?P<prefix>(?:[^\W_]+[ \t]+)*[^\W_]*)(?P<delimiter>\*{1,3}|_{1,3})"
-    r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+?)(?P=delimiter)"
-    r"(?P<suffix>[!.,?;:]*(?:[ \t]+(?:[^\W_]+|\[\[[^\]\r\n]+\]\])[!.,?;:]*)*[ \t]*)",
+    r"(?P<delimiter>\*{1,3}|_{1,3})"
+    r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+)"
+    r"(?:[ \t\n]+[^\s<*_`\\~]+)*?(?P=delimiter)",
     re.I,
 )
+# Marked masks raw backtick pairs before resolving emphasis, even if the first
+# tick is escaped for the later inline-code tokenizer.
+_EMPHASIS_CODE_RE = re.compile(r"`[^`]*?`")
+_JS_WHITESPACE_RE = re.compile(rf"{_INLINE_HTML_SPACE}\Z")
 _URL_BACKPEDAL_RE = re.compile(
     r"""(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![A-Za-z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+"""
 )
@@ -726,6 +730,45 @@ def _autolink_end(text: str, position: int, *, bare: bool = True) -> int | None:
         url = shortened
 
 
+def _emphasized_url_span(text: str, position: int) -> tuple[int, int] | None:
+    """Locate the leading URL in a bounded, valid inline emphasis scope.
+
+    Unicode punctuation/symbols and whitespace determine delimiter flanking,
+    as in Marked. Matching a scope never rewrites its prose or delimiters.
+    """
+    if text[position] not in "*_" or _markdown_escaped(text, position):
+        return None
+    delimiter = text[position]
+    if position and text[position - 1] == delimiter:
+        return None
+    previous = text[position - 1] if position else ""
+    if delimiter == "_" and previous and unicodedata.category(previous)[0] in "LN":
+        return None
+    match = _EMPHASIS_URL_RE.match(text, position)
+    if match is None or (match.end() < len(text) and text[match.end()] == delimiter):
+        return None
+    closing = match.end() - len(match.group("delimiter"))
+    before = text[closing - 1]
+    after = text[match.end()] if match.end() < len(text) else ""
+    before_punctuation = unicodedata.category(before)[0] in "PS"
+    after_punctuation = bool(after) and unicodedata.category(after)[0] in "PS"
+    # A punctuation-adjacent closer before a word is an opener, not a closer.
+    if _JS_WHITESPACE_RE.fullmatch(before) or (
+        before_punctuation
+        and after
+        and not (_JS_WHITESPACE_RE.fullmatch(after) or after_punctuation)
+    ):
+        return None
+    if delimiter == "_" and after and not (_JS_WHITESPACE_RE.fullmatch(after) or after_punctuation):
+        return None
+    inner = match.group("url")
+    end = _autolink_end(inner, 0)
+    if end is None:
+        return None
+    start = match.start("url")
+    return start, start + end
+
+
 def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     """Project valid inline links in source order within one block/cell.
 
@@ -733,24 +776,8 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
     Code spans likewise shield their contents. Mask with spaces to preserve
     line boundaries and avoid manufacturing typed relations or new links.
     """
-    emphasis = _EMPHASIS_URL_RE.fullmatch(text) if mask_urls else None
-    if emphasis is not None and not (
-        emphasis.group("delimiter").startswith("_")
-        and emphasis.group("prefix")
-        and not emphasis.group("prefix")[-1].isspace()
-    ):
-        inner = emphasis.group("url")
-        end = _autolink_end(inner, 0)
-        if end is not None:
-            delimiter = emphasis.group("delimiter")
-            text = (
-                emphasis.group("prefix")
-                + delimiter
-                + " " * end
-                + inner[end:]
-                + delimiter
-                + emphasis.group("suffix")
-            )
+    emphasis_code = iter(_EMPHASIS_CODE_RE.finditer(text))
+    protected_code = next(emphasis_code, None)
     parts: list[str] = []
     code_ends = _code_span_ends(text)
     position = 0
@@ -771,6 +798,16 @@ def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
                     in_anchor = False
                 parts.append(re.sub(r"[^\n]", " ", anchor.group()))
                 position = anchor.end()
+                continue
+        while protected_code is not None and protected_code.end() <= position:
+            protected_code = next(emphasis_code, None)
+        emphasis_masked = protected_code is not None and protected_code.start() <= position
+        if mask_urls and not in_anchor and not emphasis_masked:
+            emphasized_url = _emphasized_url_span(text, position)
+            if emphasized_url is not None:
+                start, end = emphasized_url
+                parts.append(text[position:start] + " " * (end - start))
+                position = end
                 continue
         if mask_urls:
             url_end = _autolink_end(text, position, bare=not in_anchor)

@@ -49,7 +49,7 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v27`, defined in
+The current derivation identity is `managed-snapshots-v28`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -231,7 +231,36 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
-### Bounded Markdown projection work
+### Mixed emphasis URL scopes (20 October)
+
+Backend projection now recognizes a leading URL in a bounded simple emphasis
+scope at its source position, including surrounding independent markup and
+plain prose after the URL. It preserves delimiter flanking, Unicode/JavaScript
+whitespace, raw backtick masking, code/HTML-anchor shielding and the distinction
+between an uppercase URL at a token start and one embedded after prose. Markdown
+source/history and rendering remain unchanged. Index identity v28 invalidates old
+ready receipts; configured embedding rebuilds can incur provider costs.
+
+The selected Marked12 matrix is a bounded comparison, not a complete inline
+parser or arbitrary nested-emphasis guarantee. Escaped delimiters and other
+previously documented mismatches remain outside the supported scope. The new
+built-app 320/1440 regression checks visible links against graph/backlinks, exact
+source reads, normalized textarea contents, real UI Save, reload and history.
+CRLF remains exact until the explicit textarea edit publishes its LF draft.
+The parent browser failed both graph assertions; the corrected cases pass.
+Local backend selection425 cases, scoped MyPy over four files, source/test
+Ruff/format, both TypeScript configurations and Vite production build passed.
+An attempted broader local API/MCP/index collection was blocked by the retained
+minimal environment (missing instrumentation/Qdrant and MCP2 versus project
+MCP1), so it supplies no API/MCP/provider acceptance. Hosted locked checks are
+still required. Independent250-case Marked comparison corrected84 prior
+mismatches with zero new mismatches in that matrix;28 old mismatches remain.
+Twelve isolated complexity samples (unclosed prose, many short scopes, raw
+escaped-backtick pairs) up to950033 bytes completed below0.450s; single samples,
+not a general parser, API latency or capacity bound.
+
+
+### Previous output-preserving projection optimization (7602e6b)
 
 Long URL punctuation/closing-parenthesis suffixes previously caused repeated
 whole-prefix regex work; repeated comments copied the remaining source suffix.
