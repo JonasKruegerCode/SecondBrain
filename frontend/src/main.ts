@@ -728,12 +728,15 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     main.querySelector(".toolbar > div")!.prepend(connections);
     const prose = main.querySelector(".prose")!;
     const articleSource = articleMarkdown(page.markdown || "");
-    const leadingTitle = /^\s*# [^\n]*\n?/;
-    const rendered = markdown(articleSource.replace(leadingTitle, ""), leadingTitle.test(articleSource) ? undefined : page.title);
-    const title = main.querySelector<HTMLHeadingElement>("article > h1")!;
+    // Strip only a confirmed leading ATX title. Broad whitespace can consume
+    // indented code; a newline match must stop at CR as well as LF.
+    const leadingTitle = /^(?:[ \t]*(?:\r\n|\r|\n))* {0,3}# [^\r\n]*(?:\r\n|\r|\n|$)/;
     const leadingHeading = articleSource.match(leadingTitle)?.[0];
-    const displayHeading = rendered.titleHeading || (leadingHeading
-      ? markdown(leadingHeading, page.title).titleHeading : undefined);
+    const leadingProjection = leadingHeading ? markdown(leadingHeading, page.title).titleHeading : undefined;
+    const rendered = markdown(leadingProjection ? articleSource.slice(leadingHeading!.length) : articleSource,
+      leadingProjection ? undefined : page.title);
+    const title = main.querySelector<HTMLHeadingElement>("article > h1")!;
+    const displayHeading = rendered.titleHeading || leadingProjection;
     if (displayHeading) {
       const inline = titleInline(displayHeading);
       if (inline.textContent?.trim()) title.replaceChildren(inline);
@@ -913,7 +916,11 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     renderPage(editing ? "editor" : "edit");
   });
   if (editing) {
-    main.querySelector("textarea")!.addEventListener("input", (e) => {
+    const editor = main.querySelector<HTMLTextAreaElement>("#editor")!;
+    // HTML parsing discards an initial textarea newline. Assign the value after
+    // construction so opening the editor preserves every leading blank line.
+    editor.value = draft;
+    editor.addEventListener("input", (e) => {
       draft = (e.target as HTMLTextAreaElement).value;
       renderPwaState();
     });

@@ -231,6 +231,31 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Evidence snapshot
 
+### Leading source preservation (20 October)
+
+The reader no longer removes the first line of indented code as though it were
+an article title, or consumes the remaining article after a CR-only title line.
+Only a line-bounded ATX candidate confirmed by the existing title projection is
+removed. Unconfirmed headings remain in the article body; normal leading titles
+retain their existing section numbering. This does not expand backend title
+recognition or promise complete Markdown parity.
+
+Opening the editor now assigns its value after DOM construction. HTML textarea
+parsing otherwise discards one leading newline; stored source bytes remain exact
+until an explicit textarea edit publishes its normalized LF contents.
+Fourteen new built-client/API cases at 320/1440px failed on the parent: indented
+code (spaces, tab and mixed indentation), CR-only article text, leading LF/CRLF
+editor blanks and an unconfirmed indented H1. They pass with the correction,
+including exact source reads, actual UI Save, reload, history2 and no horizontal
+overflow. All 54 local code-reading/title-identity/title-inline/title-promotion cases,
+both TypeScript configurations and the production build passed. Four new
+viewport images were personally inspected; services and the test vault were
+removed. These checks remain separate from subsequent hosted acceptance. Fixtures are synthetic, workers
+blocked and Chromium native to the execution host; no physical-device, real-model
+or production acceptance follows. An early test draft incorrectly expected the
+backend to title a three-space-indented H1; the final regression instead preserves
+its existing ID fallback and asserts that the real heading remains visible.
+
 ### Mixed emphasis URL scopes (20 October)
 
 Backend projection now recognizes a leading URL in a bounded simple emphasis
@@ -258,8 +283,9 @@ minimal environment (missing instrumentation/Qdrant and MCP2 versus project
 MCP1), so it supplies no API/MCP/provider acceptance. Hosted locked checks are
 still required. An extended independent292-case Marked comparison found zero new mismatches
 in that bounded matrix; existing delimiter/escape mismatches remain.
-Twelve isolated complexity samples (unclosed prose, many short scopes, raw
-escaped-backtick pairs) up to950033 bytes completed below0.450s; single samples,
+Twelve isolated complexity samples on intermediate ce4a1ee, before the final
+literal-angle guard (unclosed prose, many short scopes, raw escaped-backtick
+pairs), up to950033 bytes completed below0.450s; single samples,
 not a general parser, API latency or capacity bound.
 
 

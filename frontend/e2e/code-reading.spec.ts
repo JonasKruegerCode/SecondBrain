@@ -3,6 +3,59 @@ import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 
 for (const width of [320, 1440]) {
+  for (const fixture of [
+    { name: "spaces", prefix: "    # Literal first line\n    literal code\n\n", newline: "\n", code: true },
+    { name: "tab", prefix: "\t# Literal first line\r\n\tliteral code\r\n\r\n", newline: "\r\n", code: true },
+    { name: "mixed-indent", prefix: " \t# Literal first line\n \tliteral code\n\n", newline: "\n", code: true },
+    { name: "carriage-return", prefix: "", newline: "\r", code: false },
+    { name: "line-feed", prefix: "\n", newline: "\n", code: false },
+    { name: "crlf", prefix: "\r\n", newline: "\r\n", code: false },
+    { name: "indented-heading", prefix: "   ", newline: "\n", code: false },
+  ]) {
+    test(`leading article source preserves ${fixture.name} at ${width}px`, async ({ page, request }, info) => {
+      await page.setViewportSize({ width, height: 844 });
+      const id = `leading-source-${randomUUID()}`, endpoint = `/api/wiki/pages/${id}`;
+      const markdown = fixture.prefix + ["# Source preservation", "", "Visible body remains.", "", "## Reader section", "", "Section body remains.", ""].join(fixture.newline);
+      let revision: string | null = null;
+      try {
+        const created = await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+        expect(created.ok()).toBe(true);
+        revision = (await created.json()).revision;
+        await page.goto(`/wiki/${id}`);
+        await expect(page.locator("article > h1")).toHaveText(fixture.name === "indented-heading" ? id : "Source preservation");
+        if (fixture.name === "indented-heading") await expect(page.locator(".prose h1")).toHaveText("Source preservation");
+        await expect(page.locator(".prose p").filter({ hasText: "Visible body remains." })).toBeVisible();
+        await expect(page.locator(".prose p").filter({ hasText: "Section body remains." })).toBeVisible();
+        if (fixture.code) await expect(page.locator(".prose pre code")).toHaveJSProperty("textContent", fixture.name === "mixed-indent" ? " # Literal first line\n literal code\n" : "# Literal first line\nliteral code\n");
+        else if (fixture.name !== "indented-heading") await expect(page.locator(".prose h2")).toHaveAttribute("id", "section-1");
+        await page.getByRole("button", { name: "Edit page ↗", exact: true }).click();
+        const normalized = markdown.replace(/\r\n?|\n/g, "\n");
+        await expect(page.locator("#editor")).toHaveValue(normalized);
+        expect((await (await request.get(endpoint)).json()).markdown).toBe(markdown);
+        await page.locator("#editor").fill(normalized + "\nExplicit edit survives.\n");
+        await page.getByRole("button", { name: "Save changes →", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Edit page ↗", exact: true })).toBeVisible();
+        await page.reload();
+        await expect(page.locator(".prose p").filter({ hasText: "Explicit edit survives." })).toBeVisible();
+        if (fixture.code) await expect(page.locator(".prose pre code")).toHaveJSProperty("textContent", fixture.name === "mixed-indent" ? " # Literal first line\n literal code\n" : "# Literal first line\nliteral code\n");
+        expect((await (await request.get(endpoint)).json()).markdown).toBe(normalized + "\nExplicit edit survives.\n");
+        expect((await (await request.get(endpoint + "/history")).json()).history).toHaveLength(2);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (fixture.name === "spaces" || fixture.name === "carriage-return")
+          await page.screenshot({ path: info.outputPath(`leading-${fixture.name}-${width}.png`) });
+      } finally {
+        if (revision !== null) {
+          const current = await request.get(endpoint);
+          expect(current.ok()).toBe(true);
+          const deleted = await request.delete(endpoint, { data: { base_revision: (await current.json()).revision, request_id: randomUUID() } });
+          expect(deleted.ok()).toBe(true);
+        }
+      }
+    });
+  }
+}
+
+for (const width of [320, 1440]) {
   test(`mixed emphasis keeps URL metadata out of wiki navigation at ${width}px`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 844 });
     const source = `emphasis-source-${randomUUID()}`, shown = `emphasis-shown-${randomUUID()}`;
