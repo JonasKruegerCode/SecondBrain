@@ -23,7 +23,7 @@ HEADERS = {"Authorization": f"Bearer {KEY}", "Accept": "application/json, text/e
 
 
 @contextmanager
-def services(root: Path, vault: Path) -> Iterator[tuple[str, str]]:
+def services(root: Path, vault: Path, *, remote: Path | None = None) -> Iterator[tuple[str, str]]:
     """Own listening sockets before spawning, then stop/reap only our children."""
     source = Path(__file__).resolve().parents[1] / "src"
     env = {
@@ -37,6 +37,14 @@ def services(root: Path, vault: Path) -> Iterator[tuple[str, str]]:
         "SECOND_BRAIN_WIKI_VECTOR_INDEX": "0",
         "OPENROUTER_API_KEY": "",
     }
+    if remote is not None:
+        env.update(
+            SECOND_BRAIN_WIKI_DELIVERY="1",
+            SECOND_BRAIN_WIKI_GIT_SYNC="1",
+            SECOND_BRAIN_WIKI_GIT_REMOTE=str(remote),
+            SECOND_BRAIN_WIKI_GIT_BRANCH="wiki",
+            SECOND_BRAIN_WIKI_GIT_EXPECTED_REMOTE_REVISION="empty",
+        )
     processes: list[subprocess.Popen[bytes]] = []
     urls: list[str] = []
     with ExitStack() as stack:
@@ -250,3 +258,89 @@ def test_simultaneous_rest_mcp_writes_and_restart(tmp_path: Path, case: str) -> 
         assert history == store.history("harbor")
         mcp_history = tool(mcp, mcp_url, "get_history", {"id": "harbor"})["structuredContent"]
         assert mcp_history["result"] == history
+
+
+def test_git_failure_cross_transport_replay_preserves_later_write(tmp_path: Path) -> None:
+    vault, remote = tmp_path / "vault", tmp_path / "remote.git"
+    offline = tmp_path / "offline.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    remote.rename(offline)
+    store = WikiStore(vault)
+    args = {
+        "id": "harbor",
+        "markdown": "# Harbor\nSynthetic first survey.",
+        "base_revision": None,
+        "request_id": "delivery-first",
+    }
+
+    def wait_remote(client: httpx.Client, url: str, state: str) -> dict[str, Any]:
+        deadline = time.monotonic() + 30
+        while True:
+            response = client.get(url + "/api/wiki/delivery-status")
+            assert response.status_code == 200
+            status = response.json()
+            if status["remote"]["state"] == state:
+                return cast(dict[str, Any], status)
+            assert time.monotonic() < deadline, status
+            time.sleep(0.025)
+
+    def assert_replays_and_conflicts() -> None:
+        assert save_rest(rest, rest_url, args) == (True, receipt)
+        assert save_mcp(mcp, mcp_url, args) == (True, receipt)
+        stale = {**args, "request_id": "fresh-stale", "base_revision": receipt["revision"]}
+        success, conflict = save_rest(rest, rest_url, stale)
+        assert not success
+        assert conflict["error"] == "revision_conflict"
+        assert conflict["current_revision"] == later_receipt["revision"]
+        result = tool(mcp, mcp_url, "save_page", stale)
+        assert result["isError"] is True
+        assert result["structuredContent"]["error"] == "revision_conflict"
+        assert result["structuredContent"]["current_revision"] == later_receipt["revision"]
+        assert store.snapshot() == published
+        assert rest.get(rest_url + "/api/wiki/pages/harbor").json() == page
+        assert tool(mcp, mcp_url, "get_page", {"id": "harbor"})["structuredContent"] == page
+        assert rest.get(rest_url + "/api/wiki/pages/harbor/history").json()["history"] == history
+        assert (
+            tool(mcp, mcp_url, "get_history", {"id": "harbor"})["structuredContent"]["result"]
+            == history
+        )
+
+    with (
+        services(tmp_path, vault, remote=remote) as (rest_url, mcp_url),
+        httpx.Client(headers=HEADERS, trust_env=False, timeout=10) as rest,
+        httpx.Client(headers=HEADERS, trust_env=False, timeout=10) as mcp,
+    ):
+        initialize(mcp, mcp_url)
+        success, receipt = save_rest(rest, rest_url, args)
+        assert success and receipt["publication"] == "saved"
+        wait_remote(rest, rest_url, "error")
+        assert not remote.exists()
+        later = {
+            **args,
+            "markdown": "# Harbor\nSynthetic later reviewed survey.",
+            "base_revision": receipt["revision"],
+            "request_id": "delivery-later",
+        }
+        success, later_receipt = save_mcp(mcp, mcp_url, later)
+        assert success and later_receipt["revision"] != receipt["revision"]
+        published = store.snapshot()
+        page, history = store.get_page("harbor"), store.history("harbor")
+        assert len(history) == 2
+        assert_replays_and_conflicts()
+        offline.rename(remote)
+        status = wait_remote(rest, rest_url, "current")
+        assert status["remote"]["last_published_content_revision"] == store._head()
+        assert_replays_and_conflicts()
+
+    with (
+        services(tmp_path, vault, remote=remote) as (rest_url, mcp_url),
+        httpx.Client(headers=HEADERS, trust_env=False, timeout=10) as rest,
+        httpx.Client(headers=HEADERS, trust_env=False, timeout=10) as mcp,
+    ):
+        initialize(mcp, mcp_url)
+        wait_remote(rest, rest_url, "current")
+        assert_replays_and_conflicts()
+        markdown = subprocess.check_output(
+            ["git", "--git-dir", str(remote), "show", "wiki:harbor.md"]
+        ).decode()
+        assert markdown == later["markdown"]
