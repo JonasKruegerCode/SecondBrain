@@ -12,6 +12,8 @@
 
 /* The introduction sits on the light wiki shell; the map owns its space palette. */
 .galaxy .galaxy-heading h1 { color: #243b3b; }
+.galaxy-heading { flex-wrap: wrap; }
+.galaxy-heading > div { min-width: 0; }
 .galaxy-heading p, .galaxy-snapshot, .galaxy-snapshot span:first-child, .galaxy-snapshot .galaxy-revision, .galaxy-status { color: #536d68; }
 .galaxy-heading .galaxy-eyebrow { color: #287b70; }
 .galaxy .galaxy-return, .galaxy .galaxy-refresh { color: #285f55; border-color: #aec7c0; }

@@ -3,6 +3,32 @@ import { expect, APIRequestContext, Page } from "@playwright/test";
 import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
 
+for (const width of [320, 1440]) {
+  test("galaxy header keeps text-spacing controls reachable (" + width + ")", async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-stage")).toBeVisible();
+    await page.addStyleTag({ content: "* { line-height:1.5 !important;letter-spacing:0.12em !important;word-spacing:0.16em !important;} p {margin-block-end:2em !important;}" });
+    const overview = page.getByRole("link", { name: "Page overview" });
+    const bounds = await overview.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await overview.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Galaxy" }).click();
+    await page.getByRole("button", { name: /^Sky & navigation/ }).click();
+    const firstPage = page.locator(".galaxy-page").first();
+    const id = await firstPage.getAttribute("data-node");
+    await firstPage.click();
+    await page.locator(".galaxy-selected-heading .galaxy-article").click();
+    await expect(page).toHaveURL(new RegExp("/wiki/" + id + "$"));
+    await expect(page.getByRole("button", { name: "Edit page" })).toBeVisible();
+  });
+}
+
 for (const width of [390, 1440]) {
   for (const failure of ["storage denied", "quota exceeded"] as const) {
     test(`start preference storage failure preserves the editor and recovers (${failure}, ${width})`, async ({ page, request }, info) => {
