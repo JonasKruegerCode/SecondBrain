@@ -239,6 +239,16 @@ function markdown(s: string, pageTitle?: string) {
       marker.checked = el.hasAttribute("checked");
       return marker;
     }
+    // These inert inline wrappers must not flatten Markdown-generated links
+    // or emphasis. Discard the wrapper and all of its source attributes;
+    // rebuild its children through the same sanitizer. Other unsupported
+    // elements retain their text-only fallback.
+    if (el.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+        (el.tagName === "SPAN" || el.tagName === "KBD")) {
+      const content = document.createDocumentFragment();
+      el.childNodes.forEach(child => content.append(clean(child)));
+      return content;
+    }
     if (!allow.has(el.tagName))
       return document.createTextNode(el.textContent || "");
     const out = document.createElement(el.tagName.toLowerCase());
