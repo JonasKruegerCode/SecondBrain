@@ -46,8 +46,8 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium webkit
 
-      - name: Check native WebKit atomic chat storage before the full suites
-        run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --browser-grep "overlapping native tab|concurrent initial migration|failed first migration|transaction abort after put|a received answer" --repeat-each 3'
+      - name: Check native WebKit chat and preference transactions before full suites
+        run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --browser-grep "overlapping native tab|concurrent initial migration|failed first migration|transaction abort after put|a received answer|start-preference" --repeat-each 3'
 
       - name: Exercise the real disposable wiki and browser
         run: make acceptance PYTHON="$WIKI_PYTHON"
