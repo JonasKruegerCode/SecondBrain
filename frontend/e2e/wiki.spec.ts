@@ -676,6 +676,18 @@ test("keyboard users can skip navigation and identify the active view", async ({
   await expect(
     page.getByRole("status").filter({ hasText: "Search view loaded." }),
   ).toHaveCount(1);
+
+  for (const width of [320, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const brand = page.locator("a.brand");
+    const visibleLabel = (await brand.innerText()).replace("✳", "").replace(/\s+/g, " ").trim();
+    const escapedLabel = visibleLabel.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&");
+    await expect(brand).toHaveAccessibleName(new RegExp("^" + escapedLabel, "i"));
+    await brand.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+  }
+
 });
 
 test(
