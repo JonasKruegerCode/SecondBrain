@@ -538,6 +538,7 @@ test("small muted text keeps AA contrast on light wiki surfaces", async ({ page 
 
   await page.goto("/wiki/home");
   const links = page.locator(".prose a");
+  await expect(links.first()).toBeVisible();
   expect(await links.count()).toBeGreaterThan(0);
   for (const link of await links.all()) {
     const colors = await link.evaluate(element => {
