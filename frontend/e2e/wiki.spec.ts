@@ -1062,6 +1062,7 @@ test("start page persists, overview stays reachable, and deletion falls back", a
   );
   await page.goto(`/wiki/${fixture.id}`);
   await page.getByRole("button", { name: "Set as start page" }).click();
+  await expect(page.locator(".notice")).toHaveText("This is now your start page.");
   await page.goto("/");
   await expect(page).toHaveURL(new RegExp(`/wiki/${fixture.id}$`));
   await page.reload();
@@ -1079,7 +1080,11 @@ test("start page persists, overview stays reachable, and deletion falls back", a
     page.getByRole("heading", { name: "A growing collection" }),
   ).toBeVisible();
   await expect(page.locator(".start-page-notice")).toContainText("no longer exists");
-  expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe(fixture.id);
+  expect(await page.evaluate(async () => {
+    const modulePath = "/src/start-preference.ts";
+    const module = await import(modulePath);
+    return module.readStartPage();
+  })).toBe(fixture.id);
   await expect(
     page.getByRole("link", { name: /Open Lantern Bay/ }),
   ).toBeVisible();
@@ -1711,6 +1716,7 @@ test("demo tour preserves an unanswered real chat question across reload and nav
   });
   await page.goto("/wiki/home");
   await page.getByRole("button", { name: "Set as start page" }).click();
+  await expect(page.locator(".notice")).toHaveText("This is now your start page.");
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Lantern Bay field atlas", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Mira Quill", exact: true }).click();

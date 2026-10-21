@@ -3,6 +3,7 @@ import "./style.css";
 import { renderGalaxy, Graph, GalaxyViewState } from "./galaxy";
 import { chatReloadBlocker, renderChat } from "./chat";
 import { applyUpdate, installApp, observePwa, PwaState, startPwa } from "./pwa";
+import { readStartPage, saveStartPage } from "./start-preference";
 type HistoryEntry = { commit: string; date: string; message: string };
 type Backlinks = {
   revision: string;
@@ -93,6 +94,8 @@ let page: Page | null = null,
   deliveryGeneration = 0,
   activeUrl = location.pathname + location.search + location.hash;
 let saveAttempt: { pageId: string; markdown: string; base_revision: string; request_id: string } | null = null;
+let startPending = false;
+let startOperation = 0;
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -539,6 +542,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
   notice = "";
   noticeError = false;
   noticeAtSave = false;
+  startPending = false;
   deliveryNotice = "";
   if (reuseShell) {
     // Resolving a link or a saved start page normalizes the URL within this
@@ -674,10 +678,13 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     }
     const { pages } = await api("/pages");
     if (run !== generation) return;
-    let preferred = "";
+    let preferred = "", preferenceNotice = "";
     try {
-      preferred = localStorage.getItem("secondbrain.startpage") || "";
-    } catch {}
+      preferred = await readStartPage();
+    } catch {
+      preferenceNotice = "Your browser could not read your start-page preference. You can still open any page and retry Home.";
+    }
+    if (run !== generation) return;
     const start =
       pages.find((p: Page) => p.id === preferred) ||
       pages.find((p: Page) => p.id === "home");
@@ -690,7 +697,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
       void route(focusView, true, readingPoint, { fallbackOnError: true });
       return;
     }
-    const startNotice = startNavigation.notice ||
+    const startNotice = startNavigation.notice || preferenceNotice ||
       (preferred && !pages.some((p: Page) => p.id === preferred) &&
         !new URLSearchParams(location.search).has("overview")
         ? "Your saved start page no longer exists. Home is shown instead." : "");
@@ -889,20 +896,42 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
       historyLoading = false;
     }
   });
-  main.querySelector("#start")!.addEventListener("click", () => {
+  const startButton = main.querySelector<HTMLButtonElement>("#start")!;
+  startButton.disabled = startPending;
+  startButton.textContent = startPending ? "Saving start page…" : "Set as start page";
+  startButton.addEventListener("click", async () => {
+    if (startPending || !page) return;
+    const pageId = page.id, run = generation, operation = ++startOperation;
+    startPending = true;
+    startButton.disabled = true;
+    startButton.textContent = "Saving start page…";
+    const current = () => run === generation && operation === startOperation && page?.id === pageId;
     try {
-      localStorage.setItem("secondbrain.startpage", page!.id);
+      await saveStartPage(pageId);
+      if (!current()) return;
       notice = "This is now your start page.";
       noticeError = false;
     } catch {
+      if (!current()) return;
       notice = "Your browser could not remember this preference.";
       noticeError = true;
+    }
+    if (!current()) return;
+    startPending = false;
+    const visibleStart = app.querySelector<HTMLButtonElement>("#start");
+    if (visibleStart) {
+      visibleStart.disabled = false;
+      visibleStart.textContent = "Set as start page";
     }
     noticeAtSave = false;
     // Saving or setting a preference must not replace an active editor and
     // destroy the browser's native selection/undo history.
     if (editing) updateEditorState();
-    else renderPage("start");
+    else {
+      const message = main.querySelector<HTMLElement>(".notice")!;
+      message.textContent = notice;
+      message.classList.toggle("error", noticeError);
+    }
   });
   main.querySelector("#edit")!.addEventListener("click", () => {
     if (saving) return;

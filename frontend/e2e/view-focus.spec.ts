@@ -97,6 +97,18 @@ for (const width of [390, 1440]) {
               throw new DOMException("Synthetic full storage", "QuotaExceededError");
             return set.call(this, name, value);
           };
+          const open = IDBFactory.prototype.open;
+          IDBFactory.prototype.open = function(name, version) {
+            if (blocked && failure === "storage denied" && name === "secondbrain.preferences.v1")
+              throw new DOMException("Synthetic preference denial", "SecurityError");
+            return open.call(this, name, version!);
+          };
+          const put = IDBObjectStore.prototype.put;
+          IDBObjectStore.prototype.put = function(value, recordKey) {
+            if (blocked && failure === "quota exceeded" && this.name === "preferences" && value?.pageId !== "home")
+              throw new DOMException("Synthetic preference quota", "QuotaExceededError");
+            return put.call(this, value, recordKey!);
+          };
           window.addEventListener("synthetic-start-storage-ready", () => {
             blocked = false;
             sessionStorage.setItem(recoveryKey, "yes");
@@ -180,6 +192,7 @@ for (const width of [390, 1440]) {
       try {
         await page.goto(`/wiki/${fixture.id}`);
         await page.getByRole("button", { name: "Set as start page" }).click();
+        await expect(page.locator(".notice")).toHaveText("This is now your start page.");
         await page.goto("/search");
         await expect(page.locator("main h1")).toHaveText("Find a thought.");
         await page.route(pattern, async route => {
@@ -202,7 +215,11 @@ for (const width of [390, 1440]) {
         await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
         expect(targetReads).toBe(1);
         expect(await page.evaluate(() => history.length)).toBe(visitLength);
-        expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe(fixture.id);
+        expect(await page.evaluate(async () => {
+          const modulePath = "/src/start-preference.ts";
+          const module = await import(modulePath);
+          return module.readStartPage();
+        })).toBe(fixture.id);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: info.outputPath(`start-fallback-${failure.startsWith("deleted") ? "deleted" : "transport"}-${width}.png`), fullPage: true });
         await page.goBack();

@@ -73,6 +73,15 @@ editor. Navigation preserves deliberate keyboard focus and bounded tab-local
 reading positions. Save/conflict/unknown-acknowledgement states retain the draft;
 index and remote status are shown separately.
 
+The start-page choice uses its own versioned IndexedDB preference record;
+success is shown only after transaction completion. Existing localStorage
+choices import once when that record is absent. A denied legacy read leaves
+migration pending, and an existing record always wins over stale legacy data.
+Storage errors preserve the editor and allow retry. A delayed preference read
+cannot redirect a newer navigation; a delayed Set retains the captured article
+without placing feedback on another article. This is local to one browser
+profile, not account sync or a guarantee against device loss or storage eviction.
+
 The galaxy derives stars, curated constellations, cores and bridges from actual
 page/link evidence. Missing or ambiguous targets remain explicit diagnostics.
 Dense maps limit drawn incident edges without deleting API edges or directional

@@ -255,6 +255,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/skip-link.spec.ts",
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
+            "e2e/start-preference.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
             "e2e/galaxy-density.spec.ts",
             "e2e/article-galaxy.spec.ts",
@@ -282,6 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/delivery-recovery.spec.ts",
             "e2e/article-focus.spec.ts",
             "e2e/view-focus.spec.ts",
+            "e2e/start-preference.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
             "e2e/galaxy-density.spec.ts",
             "e2e/article-galaxy.spec.ts",
@@ -501,3 +503,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

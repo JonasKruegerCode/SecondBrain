@@ -195,7 +195,8 @@ viewport/browser, provider enabled or unavailable, and any failed step:
 1. Start the documented demo, open Home, follow **Mira Quill** to the archive
    method, and use its field-notebook link. The route should read naturally,
    with clear introductions and a useful path back to Home.
-   On Mira Quill, choose **Set as start page**, then open
+   On Mira Quill, choose **Set as start page**, wait for **This is now your start
+   page**, then open
    <http://127.0.0.1:5173/> in the same browser profile and confirm that it opens
    that article. The **Home** navigation link and **All pages** intentionally
    open the overview; use it to return to the atlas when needed.
@@ -300,3 +301,4 @@ Nothing is seeded on API startup. The CLI requires `--vault`; there is no defaul
 An optional `--template PATH` selects a flat directory of Markdown files instead of the checked-in `examples/demo-vault` template. Each filename becomes a page ID, and each page must begin with a level-one title. Template pages and the target vault must not be symbolic links. Use only clearly synthetic material for a public demo.
 
 The template's examples are cultural and narrative material. They are not real observing forecasts, navigation instructions, harvesting advice, or food safety guidance.
+
