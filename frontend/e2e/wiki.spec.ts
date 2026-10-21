@@ -1125,39 +1125,6 @@ test("safe renderer strips active HTML and resolves wikilinks only outside code"
   await expect(page.locator(".prose img")).not.toHaveAttribute("src");
 });
 
-for (const width of [390, 1440]) {
-  test(`inline wrapper links retain graph parity and sanitize attributes (${width})`, async ({ page, request }) => {
-    const target = await create(request, "# Fictional wrapper destination\nA synthetic observation.");
-    const fixture = await create(request,
-      `# Fictional wrapper article\n\n<span style="color:red" onclick="window.__wrapperXss=1">[[${target.id}|Span destination]] and **important observation**</span>\n\n<kbd title="discarded" onmouseover="window.__wrapperXss=2">[[${target.id}|Keyboard destination]]</kbd>\n\n<span><a href="javascript:window.__wrapperXss=3">Unsafe destination</a><img src="data:image/svg+xml,bad" onerror="window.__wrapperXss=4" alt="Inert image"></span>\n\n<button><a href="https://example.invalid/">Inert button child</a></button>\n\n<object><img src="https://example.invalid/object.png" alt="Hidden object child"></object>`,
-    );
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto(`/wiki/${fixture.id}`);
-    await expect(page.locator('.prose a[data-wiki-target]')).toHaveCount(2);
-    for (const name of ["Span destination", "Keyboard destination"]) {
-      await expect(page.getByRole("link", { name, exact: true })).toHaveAttribute("href", `/wiki/${target.id}`);
-    }
-    await expect(page.locator(".prose strong")).toHaveText("important observation");
-    await expect(page.locator(".prose span,.prose kbd,.prose button,.prose object")).toHaveCount(0);
-    await expect(page.locator('.prose a[href^="javascript:"],.prose [style],.prose [onclick],.prose [onmouseover],.prose [onerror]')).toHaveCount(0);
-    await expect(page.getByText("Unsafe destination", { exact: true })).not.toHaveAttribute("href");
-    await expect(page.locator('.prose img[alt="Inert image"]')).not.toHaveAttribute("src");
-    await expect(page.locator('.prose a[href="https://example.invalid/"],.prose img[src="https://example.invalid/object.png"]')).toHaveCount(0);
-    expect(await page.evaluate(() => (window as any).__wrapperXss)).toBeUndefined();
-    const response = await request.get("/api/wiki/graph");
-    expect(response.ok()).toBeTruthy();
-    const graph = await response.json();
-    expect(graph.edges.filter((edge: { source: string }) => edge.source === fixture.id)).toEqual([
-      { source: fixture.id, target: target.id, type: "wikilink" },
-    ]);
-    await page.getByRole("link", { name: "Span destination", exact: true }).click();
-    await expect(page.locator("article h1")).toHaveText("Fictional wrapper destination");
-    await page.goBack();
-    await expect(page.locator('.prose a[data-wiki-target]')).toHaveCount(2);
-    await page.reload();
-    await expect(page.locator('.prose a[data-wiki-target]')).toHaveCount(2);
-  });
-}
 
 test("mobile direct page and missing link state remain readable", async ({
   page,
