@@ -146,7 +146,12 @@ test("Git import: exact public source, real navigation, history and browser save
     await expect(page.locator(".history-list li")).toHaveCount(history.length);
   });
   await mkdir(dirname(artifact("STATE")), { recursive: true }); await mkdir(dirname(artifact("RECEIPT")), { recursive: true });
-  await context.storageState({ path: artifact("STATE") });
+  // Preserve the real preference store in this owned synthetic state transfer.
+  await context.storageState({ path: artifact("STATE"), indexedDB: true });
+  const browserState: { origins: { origin: string; indexedDB?: { name: string }[] }[] } =
+    JSON.parse(await readFile(artifact("STATE"), "utf8"));
+  const origin = browserState.origins.find(item => item.origin === new URL(page.url()).origin);
+  expect(origin?.indexedDB?.some(database => database.name === "secondbrain.preferences.v1")).toBe(true);
   await writeFile(artifact("RECEIPT"), JSON.stringify(receipt, null, 2) + "\n");
 });
 
@@ -156,7 +161,10 @@ test("Git import: replay and real restart retain exact content and start page", 
   await verify(request, receipt);
   const note = receipt.pages.find(item => item.id.endsWith("night-sky-survey"))!;
   await page.goto("/"); await expect(page).toHaveURL(new RegExp(`/wiki/${note.id}$`));
-  expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe(note.id);
+  expect(await page.evaluate(async () => {
+    const path = "/src/start-preference.ts";
+    return (await import(/* @vite-ignore */ path)).readStartPage();
+  })).toBe(note.id);
   await historyUI(page, receipt.history);
   await screenshots(page, info, "git-import-restarted-history", async () => {
     await expect(page.locator(".prose")).toContainText("synthetic-import-marker");
@@ -174,3 +182,4 @@ test("Git import: replay and real restart retain exact content and start page", 
     await expect(page.locator(".library")).toContainText("12 pages");
   });
 });
+
