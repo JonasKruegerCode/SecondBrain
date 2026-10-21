@@ -13,6 +13,51 @@ async function create(request: APIRequestContext, owned: string[], markdown: str
 }
 
 for (const width of [390, 1440]) {
+  test(`literal star URL references do not invent graph connections (${width})`, async ({ page, request }) => {
+    const owned: string[] = [];
+    await page.setViewportSize({ width, height: 900 });
+    try {
+      const hidden = await create(request, owned, "# Fictional external-only target");
+      const shown = await create(request, owned, "# Fictional deliberate target");
+      for (const prefix of ["", "prefix ", "\\"]) {
+        const markdown = `# Fictional observing reference\n\n${prefix}**HTTPS://example.invalid/[[${hidden.id}]] **Field note*** [[${shown.id}|Visible notebook]]\n`;
+        const saved = await create(request, owned, markdown);
+        await page.goto(`/wiki/${saved.id}`);
+        await expect(page.locator(".prose strong")).toHaveText("Field note");
+        await expect(page.locator('.prose a[href^="HTTPS://example.invalid/"]')).toHaveAttribute(
+          "href", `HTTPS://example.invalid/%5B%5B${hidden.id}%5D%5D`,
+        );
+        await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(1);
+        await expect(page.getByRole("link", { name: "Visible notebook", exact: true })).toHaveAttribute("href", `/wiki/${shown.id}`);
+        const graphResponse = await request.get("/api/wiki/graph");
+        expect(graphResponse.ok()).toBeTruthy();
+        const graph = await graphResponse.json();
+        expect(graph.edges.filter((edge: { source: string }) => edge.source === saved.id)).toEqual([
+          { source: saved.id, target: shown.id, type: "wikilink" },
+        ]);
+        const readback = await request.get(`/api/wiki/pages/${saved.id}`);
+        expect(readback.ok()).toBeTruthy();
+        expect((await readback.json()).markdown).toBe(markdown);
+        await page.getByRole("link", { name: "Visible notebook", exact: true }).click();
+        await expect(page.locator("article h1")).toHaveText("Fictional deliberate target");
+        await page.goBack();
+        await page.reload();
+        await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(1);
+      }
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(`/api/wiki/pages/${id}`);
+        expect(current.ok()).toBeTruthy();
+        const removed = await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } });
+        expect(removed.ok()).toBeTruthy();
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`inline wrapper links retain graph parity and sanitize attributes (${width})`, async ({ page, request }) => {
     const owned: string[] = [];
     try {

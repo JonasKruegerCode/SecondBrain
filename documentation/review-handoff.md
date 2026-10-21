@@ -65,7 +65,7 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v33`, defined in
+The current derivation identity is `managed-snapshots-v34`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -114,6 +114,15 @@ wikilinks and graph projection have separate regression coverage. The v26 bounde
 in that matrix. Escapes, mixed delimiters and HTML-anchor contexts still limit
 general parity; do not claim complete Marked/sanitizer/graph equivalence or an
 absence of all phantom-link cases.
+
+A literal star before the bounded single-star URL/trailing-strong form now
+keeps the external URL out of the wiki graph, matching rendered articles.
+The correction covers an extra unescaped or escaped opening star; it does
+not implement a general delimiter-run resolver. A fixed 336-case diagnostic
+improves 92 graph-target mismatches to 72 with no new mismatch in that matrix.
+Raw Markdown, page revisions and Git history are preserved. The derivation
+identity change makes older index receipts pending; rebuilding configured
+embeddings can make paid requests and remains an explicit operation.
 
 ### Read-only chat and PWA
 
@@ -261,7 +270,7 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Current development evidence, inspected 21 October 2026
+## Historical development evidence, inspected 21 October 2026
 
 Implementation `f7da8a519d4314a3950f6923d0e4c84ddd837cf5`, tree
 `561baa8481b86664b4b9f552d7df393eb9044e65`, was tested at merge
@@ -318,7 +327,7 @@ words inside outer single-star URL emphasis. For example,
 `*HTTPS://example.test/[[target]] **Field note***` is an external article link;
 the graph must not invent a wiki edge to `target`. Existing simple matching and
 code/anchor/escape/closing/flanking guards are retained. Markdown, history and
-API payloads are unchanged. The current derivation identity is **v33**: older
+API payloads were unchanged. That correction used derivation identity **v33**: older
 configured receipts, including v32, become pending until rebuilt. A configured
 embedding rebuild can incur provider costs; this is not an automatic production
 rebuild or content migration.
@@ -327,7 +336,8 @@ Both actual parent browser probes fail at the phantom edge. The corrected local
 selection passes 615 Python cases and all 48 article/code-reading cases, including
 UI Save, reload, backlinks and history. Ruff, MyPy on all four changed Python files
 and both TypeScript configurations pass. A bounded 336-case Marked12 diagnostic
-corrects 16 mismatches without a new one, retaining 92 other differences; the prior
+corrected 16 mismatches without a new one, retaining 92 other differences at that
+revision; the later literal-star correction above leaves 72. The prior
 259-case escaped-punctuation matrix has zero mismatches. Arbitrary nesting,
 Unicode/punctuation inside that strong segment and malformed delimiter spacing
 remain outside this correction. These matrices do not establish complete Markdown

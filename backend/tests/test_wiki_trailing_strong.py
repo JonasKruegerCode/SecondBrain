@@ -83,6 +83,31 @@ def test_trailing_strong_url_scope(markdown: str, targets: set[str]) -> None:
     assert {edge["target"] for edge in graph["edges"]} == targets
 
 
+@pytest.mark.parametrize("prefix", ["", "prefix ", "\\", "word", "<span>"])
+def test_literal_star_before_trailing_strong_url(prefix: str, tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    for key in ("hidden", "shown"):
+        store.save_page(key, f"# {key}", None, key)
+    suffix = "</span>" if prefix == "<span>" else ""
+    markdown = (
+        "# Literal star\r\n\r\n"
+        f"{prefix}**HTTPS://example.test/[[hidden]] **Field note***{suffix} [[shown]]\r\n"
+    )
+    saved = store.save_page("source", markdown, None, "first")
+    assert store.graph()["edges"] == [{"source": "source", "target": "shown", "type": "wikilink"}]
+    assert store.backlinks("hidden")["total"] == 0
+    page = store.get_page("source")
+    assert page is not None
+    assert page["markdown"] == markdown
+    assert store.save_page("source", markdown, None, "first") == saved
+    changed = markdown + "\r\n[[hidden|Deliberate connection]]\r\n"
+    store.save_page("source", changed, saved["revision"], "deliberate")
+    reopened = WikiStore(tmp_path)
+    assert reopened.backlinks("hidden")["total"] == 1
+    assert len(reopened.history("source")) == 2
+    assert reopened._git("show", "HEAD~1:pages/source.md") == markdown.encode()
+
+
 def test_nested_url_keeps_source_history_and_deliberate_edges(tmp_path: Path) -> None:
     store = WikiStore(tmp_path)
     for key in ("hidden", "shown"):

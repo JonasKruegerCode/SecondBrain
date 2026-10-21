@@ -768,7 +768,20 @@ def _emphasized_url_span(text: str, position: int) -> tuple[int, int] | None:
         return None
     delimiter = text[position]
     if position and text[position - 1] == delimiter:
-        return None
+        # Marked can leave one literal star before this existing bounded scope:
+        # **URL **words*** -> * + em(URL + strong(words)).
+        # An escaped literal star also starts a fresh single-star scope.
+        trailing_strong = delimiter == "*" and _EMPHASIS_URL_TRAILING_STRONG_RE.match(
+            text, position
+        )
+        previous_is_literal = (
+            _markdown_escaped(text, position - 1)
+            or position == 1
+            or text[position - 2] != "*"
+            or _markdown_escaped(text, position - 2)
+        )
+        if not trailing_strong or not previous_is_literal:
+            return None
     previous = text[position - 1] if position else ""
     if delimiter == "_" and previous and unicodedata.category(previous)[0] in "LN":
         return None
