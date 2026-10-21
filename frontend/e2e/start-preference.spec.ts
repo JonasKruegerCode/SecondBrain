@@ -76,6 +76,34 @@ async function moduleCall(page: Page, method: "readStartPage" | "saveStartPage",
 }
 
 for (const width of [390, 1440]) {
+  test(`pending preference keeps keyboard focus and ignores duplicate activation (${width})`, async ({ page, context }, info) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/wiki/home");
+    const peer = await context.newPage();
+    await peer.goto("/wiki/home");
+    await holdWriter(peer);
+    try {
+      await observeTransactions(page);
+      const start = page.locator("#start");
+      await start.focus();
+      await page.keyboard.press("Enter");
+      await transactions(page, 1);
+      await expect(start).toBeFocused();
+      await expect(start).toHaveAttribute("aria-disabled", "true");
+      await page.screenshot({ path: info.outputPath(`pending-start-focus-${width}.png`) });
+      // aria-disabled keeps focus but requires the handler's duplicate guard.
+      await page.keyboard.press("Enter");
+      await start.evaluate((node: HTMLButtonElement) => { node.click(); node.click(); });
+      expect(await page.evaluate(() => (window as any).preferenceTransactions)).toBe(1);
+      await releaseWriter(peer);
+      await expect(page.locator(".notice")).toHaveText("This is now your start page.");
+      await expect(start).toHaveAttribute("aria-disabled", "false");
+      await expect(start).toBeFocused();
+      await page.screenshot({ path: info.outputPath(`confirmed-start-focus-${width}.png`) });
+      expect(await record(page)).toEqual({ version: 1, pageId: "home" });
+    } finally { await releaseWriter(peer); await peer.close(); }
+  });
+
   test(`legacy import and authoritative preference precedence (${width})`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/wiki/home");

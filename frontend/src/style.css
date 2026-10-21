@@ -78,7 +78,8 @@ button {
   cursor: pointer;
   border: 0;
 }
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   opacity: 0.5;
   cursor: wait;
 }

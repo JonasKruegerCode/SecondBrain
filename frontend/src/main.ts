@@ -897,13 +897,15 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     }
   });
   const startButton = main.querySelector<HTMLButtonElement>("#start")!;
-  startButton.disabled = startPending;
+  // Keep the chosen control focused while its native transaction is pending.
+  // aria-disabled announces the lock; the handler guard prevents repeat writes.
+  startButton.setAttribute("aria-disabled", String(startPending));
   startButton.textContent = startPending ? "Saving start page…" : "Set as start page";
   startButton.addEventListener("click", async () => {
     if (startPending || !page) return;
     const pageId = page.id, run = generation, operation = ++startOperation;
     startPending = true;
-    startButton.disabled = true;
+    startButton.setAttribute("aria-disabled", "true");
     startButton.textContent = "Saving start page…";
     const current = () => run === generation && operation === startOperation && page?.id === pageId;
     try {
@@ -920,7 +922,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     startPending = false;
     const visibleStart = app.querySelector<HTMLButtonElement>("#start");
     if (visibleStart) {
-      visibleStart.disabled = false;
+      visibleStart.setAttribute("aria-disabled", "false");
       visibleStart.textContent = "Set as start page";
     }
     noticeAtSave = false;

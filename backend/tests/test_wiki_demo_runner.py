@@ -380,7 +380,8 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/wiki.spec.ts", "e2e/pwa-existing-install.spec.ts",
         "e2e/history.spec.ts", "e2e/delivery-recovery.spec.ts",
         "e2e/skip-link.spec.ts", "e2e/article-focus.spec.ts",
-        "e2e/view-focus.spec.ts", "e2e/demo-rehearsal.spec.ts",
+        "e2e/view-focus.spec.ts", "e2e/start-preference.spec.ts",
+        "e2e/demo-rehearsal.spec.ts",
         "e2e/galaxy-density.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/galaxy-search.spec.ts", "e2e/editor-retry.spec.ts",
         "e2e/resolve-identity.spec.ts",
@@ -399,6 +400,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/skip-link.spec.ts",
         "e2e/history.spec.ts", "e2e/delivery-recovery.spec.ts",
         "e2e/article-focus.spec.ts", "e2e/view-focus.spec.ts",
+        "e2e/start-preference.spec.ts",
         "e2e/demo-rehearsal.spec.ts", "e2e/galaxy-density.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/galaxy-search.spec.ts", "e2e/editor-retry.spec.ts",
         "e2e/resolve-identity.spec.ts",
@@ -841,3 +843,4 @@ def test_acceptance_preserves_failed_browser_evidence_across_later_runs(
     assert failed_output == failed_result.parent / expected_outputs[0]
     assert outputs[1:] == [passed_result.parent / name for name in expected_outputs]
     assert all(command.count("--output") == 1 for command in commands)
+

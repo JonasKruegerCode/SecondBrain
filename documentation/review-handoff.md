@@ -14,6 +14,22 @@ preserves detailed reproductions, historical failures and regression matrices.
 It is historical evidence, not a claim about a later revision. This document
 consolidates that material instead of accumulating another run log.
 
+## Pending start preference and keyboard focus
+
+The start-page control remains focusable while its IndexedDB transaction is
+pending. `aria-disabled` announces the temporary lock and the click-handler
+guard rejects duplicate activation. A native `disabled` button lost focus in
+the prior asynchronous implementation, including when an unrelated Save
+request later failed. Completion updates the current toolbar without restoring
+focus over a later user choice or replacing the editor. Both browser-engine
+suite contracts include the start-preference regressions.
+
+The 21 October CI on `3706165` preserved this counterexample: Chromium had
+379 passes and 20 editor focus failures; the backend had 1,373 passes, six
+outdated suite-list expectations and 12 explicit opt-in skips. Later browser
+phases, including broad WebKit, were skipped. These are failed runs, separate
+from the previously accepted parent and subsequent correction evidence.
+
 ## Architecture and data flow
 
 ### One content authority
