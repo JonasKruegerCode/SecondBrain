@@ -2664,8 +2664,8 @@ for (const finish of ["clear", "send", "stop"] as const) {
       } else await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue("");
     } finally {
       releaseReply();
-      await other.close();
-      await page.close();
+      // The context owns worker connections as well as its pages.
+      await context.close();
       await proxy.close();
     }
   });
@@ -2731,60 +2731,85 @@ for (const finish of ["recover", "delete"] as const) {
       if (finish === "recover") await expect(page.locator(".chat-message.assistant")).toContainText(answer);
       else await expect(page.locator(".chat-message")).toHaveCount(0);
     } finally {
-      await other.close();
-      await page.close();
+      // The context owns worker connections as well as its pages.
+      await context.close();
       await proxy.close();
     }
   });
 }
 
-test("PWA blocks update during an unchanged save until the real response arrives", async ({ page, context, request }) => {
+test("PWA blocks update during an unchanged save until the real response arrives", async ({ page, context, request }, testInfo) => {
   const fixture = await create(request, "# PWA saving fixture\nSynthetic unchanged text.");
   const proxy = await pwaUpdateProxy();
   const other = await context.newPage();
   let held: ReturnType<typeof proxy.holdNextSave> | undefined;
+  const notice = page.locator('.pwa-notice[data-kind="update"]');
+  let phase = "setup";
+  const step = async (name: string, run: () => Promise<void>) => {
+    phase = name;
+    console.info("[pwa-save-phase] " + phase);
+    await test.step(name, run);
+  };
   let unexpectedDialogs = 0;
   page.on("dialog", async dialog => { unexpectedDialogs++; await dialog.dismiss(); });
   try {
-    await page.goto(`${proxy.origin}/wiki/${fixture.id}`);
-    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-    await other.goto(`${proxy.origin}/?overview=1`);
-    await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-    await page.getByRole("button", { name: "Edit page" }).click();
-    held = proxy.holdNextSave();
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await held.arrived;
-    await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
-    await page.evaluate(() => {
-      (window as any).__pwaDocumentMarker = "saving-document";
-      (window as any).__pwaControllerChanges = 0;
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        (window as any).__pwaControllerChanges++;
-      });
+    await traceFirstInstall(page);
+    await traceFirstInstall(other);
+    await step("native workers control both tabs", async () => {
+      await page.goto(`${proxy.origin}/wiki/${fixture.id}`);
+      await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await other.goto(`${proxy.origin}/?overview=1`);
+      await other.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
     });
-    await offerPwaUpdate(page, proxy);
-    const notice = page.locator('.pwa-notice[data-kind="update"]');
-    await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
-    await expect(notice).toContainText(/sav/i);
-    expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true);
-    await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
-    await Promise.all([other.waitForEvent("load"), other.getByRole("button", { name: "Update now" }).click()]);
-    await page.waitForFunction(() => (window as any).__pwaControllerChanges === 1);
-    await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
-    expect(unexpectedDialogs).toBe(0);
-    expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBe("saving-document");
-    held.release();
-    await expect(page.locator(".notice")).toContainText("Saved");
-    await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
-    await Promise.all([page.waitForEvent("load"), notice.getByRole("button", { name: "Update now" }).click()]);
-    await expect(page.locator(".prose")).toContainText("Synthetic unchanged text.");
-    expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBeUndefined();
+    await step("real save stays held while update waits", async () => {
+      await page.getByRole("button", { name: "Edit page" }).click();
+      held = proxy.holdNextSave();
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await held.arrived;
+      await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
+      await page.evaluate(() => {
+        (window as any).__pwaDocumentMarker = "saving-document";
+        (window as any).__pwaControllerChanges = 0;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          (window as any).__pwaControllerChanges++;
+        });
+      });
+      await offerPwaUpdate(page, proxy);
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await expect(notice).toContainText(/sav/i);
+      expect(await page.evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.waiting))).toBe(true);
+    });
+    await step("other tab activates without losing the held save", async () => {
+      await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+      await Promise.all([other.waitForEvent("load"), other.getByRole("button", { name: "Update now" }).click()]);
+      await page.waitForFunction(() => (window as any).__pwaControllerChanges === 1);
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Saving" })).toBeDisabled();
+      expect(unexpectedDialogs).toBe(0);
+      expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBe("saving-document");
+      await page.screenshot({ path: testInfo.outputPath("pwa-held-save.png") });
+    });
+    await step("save completes before applying the new worker", async () => {
+      if (!held) throw new Error("The real save gate was not created");
+      held.release();
+      await expect(page.locator(".notice")).toContainText("Saved");
+      await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+      await Promise.all([page.waitForEvent("load"), notice.getByRole("button", { name: "Update now" }).click()]);
+      await expect(page.locator(".prose")).toContainText("Synthetic unchanged text.");
+      expect(await page.evaluate(() => (window as any).__pwaDocumentMarker)).toBeUndefined();
+      await page.screenshot({ path: testInfo.outputPath("pwa-completed-save.png") });
+    });
   } finally {
+    console.info("[pwa-save-lifecycle] " + JSON.stringify({
+      phase, main: await readFirstInstallTrace(page, "before-cleanup"),
+      other: await readFirstInstallTrace(other, "before-cleanup"),
+    }));
     held?.release();
-    await other.close();
-    await page.close();
-    await proxy.close();
+    await step("close the browser context before its proxy", async () => {
+      await context.close();
+      console.info("[pwa-save-phase] close-proxy");
+      await proxy.close();
+    });
   }
 });
 
@@ -3354,3 +3379,4 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
