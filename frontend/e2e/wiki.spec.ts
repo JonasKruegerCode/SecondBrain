@@ -536,6 +536,18 @@ test("small muted text keeps AA contrast on light wiki surfaces", async ({ page 
     expect(contrastRatio(foreground, background), selector).toBeGreaterThanOrEqual(4.5);
   }
 
+  await page.goto("/wiki/home");
+  const links = page.locator(".prose a");
+  expect(await links.count()).toBeGreaterThan(0);
+  for (const link of await links.all()) {
+    const colors = await link.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { foreground: style.color, background: style.backgroundColor };
+    });
+    // Measure the actual tinted link surface, rather than the article's white.
+    expect(contrastRatio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(4.5);
+  }
+
   await page.goto("/chat");
   for (const selector of [".chat-history-heading", ".chat-heading p", ".chat-empty"]) {
     const foreground = await page.locator(selector).evaluate(
