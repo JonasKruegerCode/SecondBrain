@@ -145,10 +145,20 @@ async function api(path: string, options?: RequestInit) {
   const savingPage = options?.method === "POST" && path.startsWith("/pages/");
   try {
     const r = await fetch("/api/wiki" + path, { ...options, signal: controller.signal });
-    const b = await r.json();
+    let b;
+    try {
+      b = await r.json();
+    } catch (error) {
+      // Proxies can return empty or HTML errors. Keep the HTTP status for
+      // missing-page and revision-conflict handling, without exposing parser text.
+      if (controller.signal.aborted) throw error;
+      throw Object.assign(new Error(savingPage
+        ? "The save response could not be confirmed. The change may already be saved. Retry the unchanged draft to check."
+        : "The workspace returned an unreadable response. Try again."), { status: r.status });
+    }
     if (!r.ok)
-      throw Object.assign(new Error(b.message || (savingPage
-        ? "The save response could not be confirmed."
+      throw Object.assign(new Error(b?.message || (savingPage
+        ? "The save response could not be confirmed. The change may already be saved. Retry the unchanged draft to check."
         : "Unable to open this page.")), {
         status: r.status,
       });
@@ -159,6 +169,11 @@ async function api(path: string, options?: RequestInit) {
       throw new Error(savingPage
         ? "The save response timed out. The change may already be saved. Retry the unchanged draft to check."
         : "Request timed out. Check your connection and try again.");
+    }
+    if (error instanceof TypeError && !controller.signal.aborted) {
+      throw new Error(savingPage
+        ? "The workspace could not be reached. The change may already be saved. Check your connection, then retry the unchanged draft."
+        : "The workspace could not be reached. Check your connection and try again.");
     }
     throw error;
   } finally {

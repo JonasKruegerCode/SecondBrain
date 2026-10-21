@@ -2,6 +2,82 @@ import { expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
+for (const failure of ["empty proxy response", "HTML proxy response", "network abort"] as const) {
+  test(`unconfirmed save recovery explains ${failure} and replays the same receipt`, async ({ page, request }) => {
+    const fixture = await create(request, "# Unconfirmed save fixture\nBefore.");
+    const payloads: unknown[] = [];
+    try {
+      await page.goto(`/wiki/${fixture.id}`);
+      await page.getByRole("button", { name: "Edit page" }).click();
+      const editor = page.locator("#editor");
+      const identity = await editor.elementHandle();
+      const draft = "# Unconfirmed save fixture\nA synthetic recoverable correction.";
+      await editor.fill(draft);
+      // Scripted response regression: commit the real write, then replace only
+      // its acknowledgement. A proxy/network failure cannot establish failure
+      // of the write, and retry must reuse the entire original request.
+      await page.route(`**/api/wiki/pages/${fixture.id}`, async route => {
+        if (route.request().method() !== "POST") return route.continue();
+        payloads.push(route.request().postDataJSON());
+        if (payloads.length > 1) return route.continue();
+        expect((await route.fetch()).ok()).toBeTruthy();
+        if (failure === "network abort") return route.abort("failed");
+        await route.fulfill({ status: 502, contentType: "text/html", body:
+          failure === "HTML proxy response" ? "<html><body>Bad gateway</body></html>" : "" });
+      });
+      await page.getByRole("button", { name: "Save changes" }).click();
+      const notice = page.locator(".notice.error");
+      await expect(notice).toContainText("The change may already be saved.");
+      await expect(notice).not.toContainText(/Unexpected|JSON|Failed to fetch|Bad gateway/);
+      await expect(editor).toHaveValue(draft);
+      await expect(editor).toBeEditable();
+      await expect(editor).toBeFocused();
+      expect(await identity!.evaluate(e => e === document.querySelector("#editor"))).toBe(true);
+      const committed = await (await request.get(`/api/wiki/pages/${fixture.id}`)).json();
+      expect(committed.markdown).toBe(draft);
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.locator(".notice")).toContainText("Saved locally");
+      expect(payloads).toHaveLength(2);
+      expect(payloads[1]).toEqual(payloads[0]);
+      expect(await (await request.get(`/api/wiki/pages/${fixture.id}`)).json()).toMatchObject({
+        markdown: draft, revision: committed.revision,
+      });
+      expect((await (await request.get(`/api/wiki/pages/${fixture.id}/history`)).json()).history).toHaveLength(2);
+    } finally {
+      const current = await request.get(`/api/wiki/pages/${fixture.id}`);
+      expect(current.ok()).toBeTruthy();
+      expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+        base_revision: (await current.json()).revision, request_id: randomUUID(),
+      } })).ok()).toBeTruthy();
+    }
+  });
+}
+
+test("non-JSON errors retain missing-page and conflict status", async ({ page, request }) => {
+  const fixture = await create(request, "# Error status fixture\nOriginal.");
+  const pattern = `**/api/wiki/pages/${fixture.id}`;
+  try {
+    // Explicit response injection checks status-based UI, not a real deletion.
+    await page.route(pattern, route => route.fulfill({ status: 404, body: "", contentType: "text/html" }), { times: 1 });
+    await page.goto(`/wiki/${fixture.id}`);
+    await expect(page.getByRole("heading", { name: "This page is missing." })).toBeVisible();
+    await expect(page.locator("#retry-workspace")).toHaveCount(0);
+    await page.reload();
+    await page.getByRole("button", { name: "Edit page" }).click();
+    const draft = "# Error status fixture\nA synthetic draft.";
+    await page.locator("#editor").fill(draft);
+    await page.route(pattern, route => route.fulfill({ status: 409, body: "<html>Conflict</html>", contentType: "text/html" }), { times: 1 });
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".notice.error")).toContainText("Conflict: this page has a newer revision.");
+    await expect(page.locator("#editor")).toHaveValue(draft);
+    expect((await (await request.get(`/api/wiki/pages/${fixture.id}`)).json()).revision).toBe(fixture.revision);
+  } finally {
+    expect((await request.delete(`/api/wiki/pages/${fixture.id}`, { data: {
+      base_revision: fixture.revision, request_id: randomUUID(),
+    } })).ok()).toBeTruthy();
+  }
+});
+
 for (const [width, height, placement] of [[320, 568, "normal"], [390, 844, "normal"], [1440, 844, "normal"], [1440, 844, "bottom"]] as const) {
   for (const trigger of ["pointer", "keyboard"] as const) {
     for (const failure of ["transport", "conflict"] as const) {
@@ -734,3 +810,4 @@ test(`a long scrolled draft retains selection and chosen focus before ${finish}`
   }
 });
 }
+
