@@ -428,6 +428,13 @@ form input {
   gap: 10px;
   align-items: center;
 }
+.toolbar a, .toolbar button, .editor-footer button {
+  min-height: 44px;
+}
+.toolbar a {
+  display: inline-flex;
+  align-items: center;
+}
 .article-connections {
   display: inline-flex;
   align-items: center;

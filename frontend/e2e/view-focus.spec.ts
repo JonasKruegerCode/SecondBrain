@@ -3,6 +3,47 @@ import { expect, APIRequestContext, Page } from "@playwright/test";
 import { test } from "./reading-test";
 import { randomUUID } from "node:crypto";
 
+for (const viewport of [{ width: 390, height: 360 }, { width: 844, height: 390 }]) {
+  test(`article actions retain usable targets in a short viewport (${viewport.width})`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    const checkTargets = async (selector: string) => {
+      const targets = page.locator(selector);
+      expect(await targets.count()).toBeGreaterThan(0);
+      for (const target of await targets.all()) {
+        await target.scrollIntoViewIfNeeded();
+        const bounds = await target.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.height, await target.innerText()).toBeGreaterThanOrEqual(44);
+        expect(bounds!.width, await target.innerText()).toBeGreaterThanOrEqual(44);
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+        expect(bounds!.y).toBeGreaterThanOrEqual(-1);
+        expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height + 1);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    };
+    await page.goto("/wiki/home");
+    await expect(page.locator(".prose")).toBeVisible();
+    await checkTargets(".toolbar a, .toolbar button");
+    await page.screenshot({ path: info.outputPath(`article-actions-${viewport.width}.png`) });
+    await page.getByRole("button", { name: "Edit page" }).click();
+    await checkTargets(".toolbar a, .toolbar button, .editor-footer button");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.locator(".prose")).toBeVisible();
+    await page.goto("/galaxy");
+    await page.getByRole("button", { name: /^Sky & navigation/ }).click();
+    const firstPage = page.locator(".galaxy-page").first();
+    const id = await firstPage.getAttribute("data-node");
+    await firstPage.click();
+    await checkTargets(".galaxy-selected-heading .galaxy-article");
+    await page.screenshot({ path: info.outputPath(`galaxy-article-action-${viewport.width}.png`) });
+    await page.locator(".galaxy-selected-heading .galaxy-article").focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp("/wiki/" + id + "$"));
+    await expect(page.locator(".prose")).toBeVisible();
+  });
+}
+
 for (const width of [320, 1440]) {
   test("galaxy header keeps text-spacing controls reachable (" + width + ")", async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
