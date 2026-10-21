@@ -177,7 +177,13 @@ test("first start: empty workspace, real first pages, edit and saved preference"
   const receipts: Receipts = { pages: [home, { id: "first-note", markdown: saved.markdown, revision: saved.revision }], graphRevision: graph.revision, noteHistory: history.history };
   await mkdir(dirname(statePath), { recursive: true });
   await mkdir(dirname(receiptPath), { recursive: true });
-  await context.storageState({ path: statePath });
+  // This is an owned synthetic context snapshot, not a native browser profile.
+  // Preferences are now in IndexedDB; the default snapshot omits that store.
+  await context.storageState({ path: statePath, indexedDB: true });
+  const browserState: { origins: { origin: string; indexedDB?: { name: string }[] }[] } =
+    JSON.parse(await readFile(statePath, "utf8"));
+  const origin = browserState.origins.find(item => item.origin === new URL(page.url()).origin);
+  expect(origin?.indexedDB?.some(database => database.name === "secondbrain.preferences.v1")).toBe(true);
   await writeFile(receiptPath, JSON.stringify(receipts, null, 2) + "\n");
 });
 
@@ -201,7 +207,10 @@ test("first start: real process restart preserves exact pages and browser prefer
   expect((await get(request, "/pages/first-note/history")).history).toEqual(receipts.noteHistory);
   await page.goto("/");
   await expect(page).toHaveURL(/\/wiki\/first-note$/);
-  expect(await page.evaluate(() => localStorage.getItem("secondbrain.startpage"))).toBe("first-note");
+  expect(await page.evaluate(async () => {
+    const path = "/src/start-preference.ts";
+    return (await import(/* @vite-ignore */ path)).readStartPage();
+  })).toBe("first-note");
   await page.getByText("Local Git history", { exact: true }).click();
   await expect(page.locator(".history-list li")).toHaveCount(receipts.noteHistory.length);
   await screenshots(page, info, "first-start-restarted-note-history", async () => {
@@ -231,3 +240,4 @@ test("first start: real process restart preserves exact pages and browser prefer
     await expect(page.locator(".library")).toContainText("2 pages");
   });
 });
+
