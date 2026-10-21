@@ -11,7 +11,7 @@ Mira looks after the imagined Lantern Bay archive. Her favorite question is: “
 
 ## Current projects
 
-1. Add source labels to the [[oral-history|oral history collection]] collection.
+1. Add source labels to the [[oral-history|oral history collection]].
 2. Compare historic wayfinding stories in [[navigation-history|navigation stories]] with the modern [[night-sky-survey|night sky survey]].
 3. Prepare a public reading corner for the [[lantern-festival|lantern festival]].
 
