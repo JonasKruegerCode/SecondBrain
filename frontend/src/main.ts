@@ -96,6 +96,7 @@ let page: Page | null = null,
 let saveAttempt: { pageId: string; markdown: string; base_revision: string; request_id: string } | null = null;
 let startPending = false;
 let startOperation = 0;
+let saveOperation = 0;
 const esc = (s: string) =>
   s.replace(
     /[&<>"']/g,
@@ -904,19 +905,16 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
   startButton.addEventListener("click", async () => {
     if (startPending || !page) return;
     const pageId = page.id, run = generation, operation = ++startOperation;
+    const saveRun = saveOperation, whileSaving = saving;
     startPending = true;
     startButton.setAttribute("aria-disabled", "true");
     startButton.textContent = "Saving start page…";
     const current = () => run === generation && operation === startOperation && page?.id === pageId;
+    let preferenceError = false;
     try {
       await saveStartPage(pageId);
-      if (!current()) return;
-      notice = "This is now your start page.";
-      noticeError = false;
     } catch {
-      if (!current()) return;
-      notice = "Your browser could not remember this preference.";
-      noticeError = true;
+      preferenceError = true;
     }
     if (!current()) return;
     startPending = false;
@@ -925,7 +923,14 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
       visibleStart.setAttribute("aria-disabled", "false");
       visibleStart.textContent = "Set as start page";
     }
-    noticeAtSave = false;
+    // A preference started before/during Save must not hide its later failure.
+    // An explicit Set after the error is a newer user action and may confirm.
+    // Finish the toolbar even when Save owns the shared live region.
+    if (!(editing && noticeAtSave && noticeError && (whileSaving || saveRun !== saveOperation))) {
+      notice = preferenceError ? "Your browser could not remember this preference." : "This is now your start page.";
+      noticeError = preferenceError;
+      noticeAtSave = false;
+    }
     // Saving or setting a preference must not replace an active editor and
     // destroy the browser's native selection/undo history.
     if (editing) updateEditorState();
@@ -1049,6 +1054,7 @@ function updateEditorState(restoreSaveFocus = false) {
 }
 async function save() {
   if (!page || saving) return;
+  saveOperation++;
   const previousAttempt = saveAttempt;
   // An edit followed by undo must still recover a lost acknowledgement. Bind
   // the retry identity to the submitted payload, rather than each input event.
@@ -1083,6 +1089,9 @@ async function save() {
     page = result;
     editing = false;
     saveAttempt = null;
+    // An independent preference failure may have shown while Save was pending.
+    // Its error flag does not describe this confirmed content publication.
+    noticeError = false;
     notice = `Saved locally · revision ${String(result.revision).slice(0, 8)}.`;
     deliveryNotice = "Checking workspace indexing and remote delivery…";
     void refreshDelivery(generation, ++deliveryGeneration);

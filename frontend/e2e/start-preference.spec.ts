@@ -236,6 +236,194 @@ test("delayed Set stores captured article without feedback on next article", asy
 });
 
 
+for (const width of [390, 1440]) {
+  for (const failure of ["timeout", "conflict"] as const) {
+    for (const preference of ["commits", "aborts"] as const) {
+      test(`late preference ${preference} preserves Save ${failure} recovery (${width})`, async ({ page, context, request }, info) => {
+        const id = `e2e-feedback-${randomUUID()}`;
+        const original = "# Synthetic feedback ordering\n\nAn invented draft.";
+        const created = await request.post(`/api/wiki/pages/${id}`, { data: {
+          markdown: original, base_revision: null, request_id: randomUUID(),
+        } });
+        expect(created.ok()).toBe(true);
+        const base = await created.json();
+        const peer = await context.newPage();
+        let held = false, release!: () => void, published!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const committed = new Promise<void>(resolve => { published = resolve; });
+        const payloads: unknown[] = [];
+        try {
+          await page.setViewportSize({ width, height: 844 });
+          await page.goto(`/wiki/${id}`);
+          await peer.goto("/wiki/home");
+          await holdWriter(peer);
+          held = true;
+          if (preference === "aborts") await page.evaluate(() => {
+            const put = IDBObjectStore.prototype.put;
+            IDBObjectStore.prototype.put = function(...args) {
+              const request = put.apply(this, args);
+              if (this.name === "preferences") request.addEventListener("success", () => this.transaction.abort());
+              return request;
+            };
+          });
+          await page.getByRole("button", { name: "Edit page" }).click();
+          const editor = page.getByRole("textbox", { name: /Markdown/ });
+          const identity = await editor.elementHandle();
+          const suffix = " A keyboard correction.";
+          await editor.press("ControlOrMeta+End");
+          await editor.pressSequentially(suffix);
+          const draft = original + suffix;
+          await editor.evaluate(node => (node as HTMLTextAreaElement).setSelectionRange(4, 13, "backward"));
+          await page.clock.install();
+          await page.route(`**/api/wiki/pages/${id}`, async route => {
+            if (route.request().method() !== "POST") return route.continue();
+            payloads.push(route.request().postDataJSON());
+            if (failure !== "timeout" || payloads.length > 1) return route.continue();
+            const response = await route.fetch();
+            expect(response.ok()).toBeTruthy();
+            published();
+            await gate;
+            await route.fulfill({ response }).catch(() => {});
+          });
+          // The two original editor paths start Set on either side of Save.
+          if (failure === "conflict") {
+            await page.locator("#start").click();
+            const foreign = await request.post(`/api/wiki/pages/${id}`, { data: {
+              markdown: original + "\n\nA newer agent edit.", base_revision: base.revision, request_id: randomUUID(),
+            } });
+            expect(foreign.ok()).toBeTruthy();
+          }
+          await page.getByRole("button", { name: "Save changes" }).click();
+          if (failure === "timeout") {
+            await committed;
+            await page.locator("#start").click();
+            await page.clock.fastForward(30_001);
+          }
+          const notice = page.locator(".notice");
+          await expect(notice).toContainText(failure === "timeout" ? "timed out" : "Conflict");
+          const recovery = await notice.textContent();
+          await expect(notice).toHaveClass(/error/);
+          await expect(page.locator("#start")).toHaveAttribute("aria-disabled", "true");
+          await releaseWriter(peer);
+          held = false;
+          await expect(page.locator("#start")).toHaveAttribute("aria-disabled", "false");
+          await expect(notice).toHaveText(recovery!);
+          await expect(notice).toHaveClass(/error/);
+          expect(await notice.evaluate(node => node.parentElement?.className)).toBe("editor-feedback");
+          await expect(editor).toHaveValue(draft);
+          expect(await editor.evaluate((node, old) => node === old, identity)).toBe(true);
+          expect(await editor.evaluate(node => [(node as HTMLTextAreaElement).selectionStart,
+            (node as HTMLTextAreaElement).selectionEnd, (node as HTMLTextAreaElement).selectionDirection])).toEqual([4, 13, "backward"]);
+          if (failure === "timeout") await expect(page.locator("#start")).toBeFocused();
+          else await expect(editor).toBeFocused();
+          expect(await record(page)).toEqual(preference === "commits" ? { version: 1, pageId: id } : undefined);
+          await page.screenshot({ path: info.outputPath(`late-${preference}-${failure}-${width}.png`), fullPage: true });
+          await editor.press("ControlOrMeta+z");
+          await expect(editor).toHaveValue(original);
+          await editor.press("ControlOrMeta+Shift+z");
+          await expect(editor).toHaveValue(draft);
+          release();
+          const before = await (await request.get(`/api/wiki/pages/${id}`)).json();
+          await page.getByRole("button", { name: "Save changes" }).click();
+          await expect(notice).toContainText(failure === "timeout" ? "Saved locally" : "Conflict");
+          if (failure === "timeout") {
+            await expect(notice).not.toHaveClass(/error/);
+            expect(payloads[1]).toEqual(payloads[0]);
+          }
+          const after = await (await request.get(`/api/wiki/pages/${id}`)).json();
+          expect(after.revision).toBe(before.revision);
+          expect(after.markdown).toBe(failure === "timeout" ? draft : original + "\n\nA newer agent edit.");
+          expect((await (await request.get(`/api/wiki/pages/${id}/history`)).json()).history).toHaveLength(2);
+        } finally {
+          release();
+          if (held) await releaseWriter(peer);
+          await peer.close();
+          const current = await request.get(`/api/wiki/pages/${id}`);
+          expect(current.ok()).toBeTruthy();
+          expect((await request.delete(`/api/wiki/pages/${id}`, { data: {
+            base_revision: (await current.json()).revision, request_id: randomUUID(),
+          } })).ok()).toBeTruthy();
+        }
+      });
+    }
+  }
+}
+
+for (const width of [390, 1440]) {
+  for (const preference of ["commits", "aborts"] as const) {
+    test(`preference ${preference} during pending Save leaves its outcome authoritative (${width})`, async ({ page, context, request }) => {
+      const id = `e2e-pending-feedback-${randomUUID()}`;
+      const original = "# Synthetic pending feedback\n\nAn invented article.";
+      const created = await request.post(`/api/wiki/pages/${id}`, { data: {
+        markdown: original, base_revision: null, request_id: randomUUID(),
+      } });
+      expect(created.ok()).toBeTruthy();
+      const peer = await context.newPage();
+      let held = false, release!: () => void, published!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const committed = new Promise<void>(resolve => { published = resolve; });
+      try {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto(`/wiki/${id}`);
+        await peer.goto("/wiki/home");
+        await holdWriter(peer);
+        held = true;
+        if (preference === "aborts") await page.evaluate(() => {
+          const put = IDBObjectStore.prototype.put;
+          IDBObjectStore.prototype.put = function(...args) {
+            const request = put.apply(this, args);
+            if (this.name === "preferences") request.addEventListener("success", () => this.transaction.abort());
+            return request;
+          };
+        });
+        await page.route(`**/api/wiki/pages/${id}`, async route => {
+          if (route.request().method() !== "POST") return route.continue();
+          const response = await route.fetch();
+          expect(response.ok()).toBeTruthy();
+          published();
+          await gate;
+          await route.fulfill({ response });
+        });
+        await page.getByRole("button", { name: "Edit page" }).click();
+        const editor = page.getByRole("textbox", { name: /Markdown/ });
+        const identity = await editor.elementHandle();
+        const draft = original + "\n\nA saved synthetic correction.";
+        await editor.fill(draft);
+        await page.getByRole("button", { name: "Save changes" }).click();
+        await committed;
+        await page.locator("#start").click();
+        await expect(page.locator("#start")).toHaveAttribute("aria-disabled", "true");
+        await releaseWriter(peer);
+        held = false;
+        await expect(page.locator("#start")).toHaveAttribute("aria-disabled", "false");
+        await expect(page.locator(".notice")).toHaveText(preference === "commits"
+          ? "This is now your start page." : "Your browser could not remember this preference.");
+        if (preference === "commits") await expect(page.locator(".notice")).not.toHaveClass(/error/);
+        else await expect(page.locator(".notice")).toHaveClass(/error/);
+        expect(await page.locator(".notice").evaluate(node => node.parentElement?.className)).not.toBe("editor-feedback");
+        expect(await editor.evaluate((node, old) => node === old, identity)).toBe(true);
+        await expect(editor).toHaveValue(draft);
+        await expect(page.locator("#start")).toBeFocused();
+        expect(await record(page)).toEqual(preference === "commits" ? { version: 1, pageId: id } : undefined);
+        release();
+        await expect(page.locator(".notice")).toContainText("Saved locally");
+        await expect(page.locator(".notice")).not.toHaveClass(/error/);
+        await expect(page.locator(".prose")).toContainText("A saved synthetic correction.");
+        expect((await (await request.get(`/api/wiki/pages/${id}/history`)).json()).history).toHaveLength(2);
+      } finally {
+        release();
+        if (held) await releaseWriter(peer);
+        await peer.close();
+        const current = await request.get(`/api/wiki/pages/${id}`);
+        expect(current.ok()).toBeTruthy();
+        expect((await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+      }
+    });
+  }
+}
+
 async function denyLegacyGetter(page: Page) {
   await page.evaluate(() => {
     const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage")!;
