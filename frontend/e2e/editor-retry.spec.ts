@@ -2,7 +2,8 @@ import { expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
-for (const failure of ["empty proxy response", "HTML proxy response", "network abort"] as const) {
+for (const failure of ["empty proxy response", "HTML proxy response", "network abort",
+  "JSON null", "JSON empty object", "JSON wrong page", "JSON invalid revision"] as const) {
   test(`unconfirmed save recovery explains ${failure} and replays the same receipt`, async ({ page, request }) => {
     const fixture = await create(request, "# Unconfirmed save fixture\nBefore.");
     const payloads: unknown[] = [];
@@ -20,8 +21,17 @@ for (const failure of ["empty proxy response", "HTML proxy response", "network a
         if (route.request().method() !== "POST") return route.continue();
         payloads.push(route.request().postDataJSON());
         if (payloads.length > 1) return route.continue();
-        expect((await route.fetch()).ok()).toBeTruthy();
+        const response = await route.fetch();
+        expect(response.ok()).toBeTruthy();
         if (failure === "network abort") return route.abort("failed");
+        if (failure.startsWith("JSON ")) {
+          const committed = await response.json();
+          const invalid = failure === "JSON null" ? null
+            : failure === "JSON empty object" ? {}
+            : failure === "JSON wrong page" ? { ...committed, id: "different-page" }
+            : { ...committed, revision: 42 };
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invalid) });
+        }
         await route.fulfill({ status: 502, contentType: "text/html", body:
           failure === "HTML proxy response" ? "<html><body>Bad gateway</body></html>" : "" });
       });

@@ -1041,6 +1041,14 @@ async function save() {
         request_id: attempt.request_id,
       }),
     });
+    // A parsed 2xx response is not yet a confirmed acknowledgement. Validate
+    // the page before releasing the draft or its immutable retry receipt.
+    if (!result || typeof result !== "object" || Array.isArray(result) ||
+      result.id !== attempt.pageId || typeof result.title !== "string" ||
+      typeof result.revision !== "string" || !result.revision.trim() ||
+      result.markdown !== attempt.markdown) {
+      throw new Error("The save response could not be confirmed. The change may already be saved. Retry the unchanged draft to check.");
+    }
     page = result;
     editing = false;
     saveAttempt = null;

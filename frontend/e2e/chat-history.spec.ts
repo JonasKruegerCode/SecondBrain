@@ -281,7 +281,7 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 450 }
       await reachable(page.locator("#save"));
       await page.screenshot({ path: info.outputPath("short-editor-save.png") });
       await page.locator("#save").click();
-      await expect(page.locator(".notice")).toHaveText("The save response could not be confirmed. Your draft is preserved. Try saving again.");
+      await expect(page.locator(".notice")).toHaveText("The save response could not be confirmed. The change may already be saved. Retry the unchanged draft to check. Your draft is preserved. Try saving again.");
       await expect(page.locator("#editor")).toHaveValue(draft);
       await reachable(page.locator("#edit"));
       await page.screenshot({ path: info.outputPath("short-editor-cancel.png") });
