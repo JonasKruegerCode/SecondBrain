@@ -159,6 +159,9 @@ test(`rehearse a connected atlas journey and preserve an unanswered question (${
   }).first();
   await expect(evidence).toContainText("Explicit wikilink");
   await expect(evidence.locator('[aria-label="links to"]')).toBeVisible();
+  const inspectTarget = await evidence.locator("button").boundingBox();
+  expect(inspectTarget!.height).toBeGreaterThanOrEqual(44);
+  expect(inspectTarget!.width).toBeGreaterThanOrEqual(44);
   await evidence.locator('button[data-node="archive-method"]').click();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Archive method: observation, source, interpretation");
   await page.screenshot({ path: testInfo.outputPath("rehearsal-link-evidence.png"), fullPage: true });

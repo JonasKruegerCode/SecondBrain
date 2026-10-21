@@ -25,6 +25,7 @@
 .galaxy .galaxy-density-note{font-size:11px;line-height:1.6;color:#c2d1e5;background:#15243b;border-bottom:1px solid var(--g-border);padding:12px 15px;margin:0;overflow-wrap:anywhere}
 
 .galaxy-selected-heading>.galaxy-article{min-height:44px;align-items:center}
+.galaxy-evidence button{min-height:44px;min-width:44px}
 @media (forced-colors: active) {
   .galaxy-neighborhood ellipse { fill: none; stroke: GrayText; stroke-opacity: 1; }
   .galaxy-neighborhood text, .galaxy-neighborhood .galaxy-count,
