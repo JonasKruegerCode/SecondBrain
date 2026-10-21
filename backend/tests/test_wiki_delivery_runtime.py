@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,141 @@ from second_brain.wiki.delivery_runtime import DeliveryWorker, configured_delive
 from second_brain.wiki.index_adapters import QdrantSnapshotAdapter
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.mcp import create_http_app
+from second_brain.wiki.remote import ManagedGitSync
 from second_brain.wiki.store import WikiStore
+
+
+def test_embedded_vector_failure_git_success_replay_restart_recovery(tmp_path: Path) -> None:
+    """ASGI replay and coordinator recreation with a real closed-client engine fault."""
+
+    class SyntheticEmbedder:
+        def embed(self, text: str) -> list[float]:
+            return [1.0, float("reviewed" in text.lower())]
+
+    vault, remote, engine = tmp_path / "vault", tmp_path / "remote.git", tmp_path / "index"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    first = {"markdown": "# Harbor\nFirst survey.", "base_revision": None, "request_id": "a"}
+    receipt: dict[str, Any] = {}
+    later_receipt: dict[str, Any] = {}
+    snapshot: dict[str, Any] = {}
+    page: dict[str, Any] | None = None
+    history: list[dict[str, str]] = []
+
+    # Each pass recreates both ASGI apps, store, index and delivery coordinators.
+    # The first two use genuinely closed persistent Qdrant clients; the last
+    # reopens that same engine path. No server outage or embedding model is involved.
+    for phase in range(3):
+        store = WikiStore(vault)
+        with closing(
+            QdrantClient(path=str(engine), force_disable_check_same_thread=True)
+        ) as client:
+            if phase < 2:
+                client.close()
+            indexes = IndexCoordinator(
+                store, {"vector": QdrantSnapshotAdapter(client, SyntheticEmbedder(), 2)}
+            )
+            delivery = DeliveryCoordinator(
+                store,
+                indexes,
+                ManagedGitSync(store, str(remote), "wiki", ""),
+                expected_remote_revision=None,
+            )
+            with (
+                TestClient(create_app(vault, indexes=indexes, delivery=delivery)) as rest,
+                TestClient(
+                    create_http_app(store, indexes=indexes, delivery=delivery),
+                    base_url="http://localhost",
+                    headers={"Accept": "application/json, text/event-stream"},
+                ) as mcp,
+            ):
+
+                def call(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+                    response = mcp.post(
+                        "/mcp",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "tools/call",
+                            "params": {"name": name, "arguments": arguments},
+                        },
+                    )
+                    assert response.status_code == 200, response.text
+                    result: dict[str, Any] = response.json()["result"]
+                    return result
+
+                if phase == 0:
+                    response = rest.post("/api/wiki/pages/harbor", json=first)
+                    assert response.status_code == 200
+                    receipt = response.json()
+                    status = delivery.run_once()
+                    assert status["indexes"]["vector"]["state"] == "error"
+                    assert status["remote"]["state"] == "current"
+                    assert (
+                        subprocess.check_output(
+                            ["git", "--git-dir", str(remote), "show", "wiki:harbor.md"]
+                        ).decode()
+                        == first["markdown"]
+                    )
+                    later = call(
+                        "save_page",
+                        {
+                            "id": "harbor",
+                            "markdown": "# Harbor\nLater reviewed survey.",
+                            "base_revision": receipt["revision"],
+                            "request_id": "b",
+                        },
+                    )
+                    assert not later.get("isError", False)
+                    later_receipt = later["structuredContent"]
+                    assert later_receipt["revision"] != receipt["revision"]
+                    snapshot, page, history = (
+                        store.snapshot(),
+                        store.get_page("harbor"),
+                        store.history("harbor"),
+                    )
+                    assert len(history) == 2
+
+                status = delivery.run_once()
+                assert status["indexes"]["vector"]["state"] == ("error" if phase < 2 else "current")
+                assert status["remote"]["state"] == "current"
+                assert status["remote"]["last_published_content_revision"] == snapshot["revision"]
+                if phase == 2:
+                    semantic = rest.get("/api/wiki/search?mode=semantic&q=reviewed")
+                    assert semantic.status_code == 200
+                    assert semantic.json()["revision"] == snapshot["revision"]
+                    hit = semantic.json()["results"][0]
+                    assert hit["id"] == "harbor"
+                    assert hit["revision"] == later_receipt["revision"]
+
+                assert rest.post("/api/wiki/pages/harbor", json=first).json() == receipt
+                assert call("save_page", {"id": "harbor", **first})["structuredContent"] == receipt
+                stale = {
+                    **first,
+                    "base_revision": receipt["revision"],
+                    "request_id": f"stale-{phase}",
+                }
+                conflict = rest.post("/api/wiki/pages/harbor", json=stale)
+                assert conflict.status_code == 409
+                assert conflict.json()["error"] == "revision_conflict"
+                assert conflict.json()["current_revision"] == later_receipt["revision"]
+                failed = call("save_page", {"id": "harbor", **stale, "request_id": f"mcp-{phase}"})
+                assert failed["isError"] is True
+                assert failed["structuredContent"]["error"] == "revision_conflict"
+                assert failed["structuredContent"]["current_revision"] == later_receipt["revision"]
+                assert store.snapshot() == snapshot
+                assert rest.get("/api/wiki/pages/harbor").json() == page
+                assert call("get_page", {"id": "harbor"})["structuredContent"] == page
+                assert rest.get("/api/wiki/pages/harbor/history").json()["history"] == history
+                assert (
+                    call("get_history", {"id": "harbor"})["structuredContent"]["result"] == history
+                )
+                assert page is not None
+                assert (
+                    subprocess.check_output(
+                        ["git", "--git-dir", str(remote), "show", "wiki:harbor.md"]
+                    ).decode()
+                    == page["markdown"]
+                )
 
 
 class RecordingIndex:
