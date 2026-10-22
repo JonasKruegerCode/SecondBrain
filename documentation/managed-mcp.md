@@ -96,7 +96,8 @@ and the text content contain the same JSON object with `error`, `message`, and
 any domain details, such as `current_revision` on `revision_conflict`. A reused
 request ID with a different payload returns `request_id_reused`; it must not be
 retried as though publication were unknown. Successful outputs and schemas are
-unchanged. Missing-page reads remain normal `{error: not_found, id}` results;
+unchanged. Missing-page reads use the same domain-error result: `isError: true`
+with `error: not_found`, a message, and the requested `id` in both JSON forms.
 SDK validation and unexpected tool errors retain the SDK's error handling.
 Publication succeeds independently from indexing; mutation receipts record pending
 at publication and remote sync reports `not_configured`. `get_index_status` reads
