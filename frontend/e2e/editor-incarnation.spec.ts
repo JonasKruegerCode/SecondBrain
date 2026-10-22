@@ -14,6 +14,32 @@ async function saveFrom(page: Page, id: string) {
   return response;
 }
 
+// Observe capture boundaries without moving focus or scrolling. A full-page
+// image alone cannot establish viewport visibility or the focused element.
+async function captureState(page: Page) {
+  return page.evaluate(() => {
+    const skip = document.querySelector<HTMLAnchorElement>(".skip-link")!;
+    const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
+    const rect = skip.getBoundingClientRect();
+    const active = document.activeElement;
+    const outline = getComputedStyle(editor);
+    const viewport = visualViewport;
+    return {
+      active: active ? { tag: active.tagName, id: active.id, class: active.className } : null,
+      skip: { focused: active === skip, focus_visible: skip.matches(":focus-visible"),
+        top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right,
+        transform: getComputedStyle(skip).transform },
+      editor: { focused: active === editor, focus_visible: editor.matches(":focus-visible"),
+        outline: { style: outline.outlineStyle, width: outline.outlineWidth, color: outline.outlineColor } },
+      scroll: { x: scrollX, y: scrollY },
+      viewport: { width: innerWidth, height: innerHeight },
+      document: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+      visual_viewport: viewport ? { width: viewport.width, height: viewport.height,
+        offset_left: viewport.offsetLeft, offset_top: viewport.offsetTop, scale: viewport.scale } : null,
+    };
+  });
+}
+
 for (const width of [390, 1440]) {
   test(`a stale editor cannot overwrite a byteidentical recreated page (${width})`, async ({ page, context, request }, info) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -60,7 +86,21 @@ for (const width of [390, 1440]) {
       expect(await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual(selection);
       expect(await stored(await request.get(`/api/wiki/pages/${id}`))).toMatchObject({ markdown, revision: recreated.revision });
       expect((await stored(await request.get(`/api/wiki/pages/${id}/history`))).history).toEqual(historyBefore);
+      const beforeViewport = await captureState(page);
+      await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-before-${width}.png`) });
+      const beforeFullpage = await captureState(page);
       await page.screenshot({ path: info.outputPath(`recreated-conflict-${width}.png`), fullPage: true });
+      const afterFullpage = await captureState(page);
+      await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-after-${width}.png`) });
+      const afterViewport = await captureState(page);
+      console.info("[editor-capture] " + JSON.stringify({ width, beforeViewport,
+        beforeFullpage, afterFullpage, afterViewport }));
+      for (const state of [beforeViewport, beforeFullpage, afterFullpage, afterViewport]) {
+        expect(state.skip.focused).toBe(false);
+        expect(state.skip.bottom).toBeLessThanOrEqual(0);
+      }
+      expect(afterFullpage).toEqual(beforeFullpage);
+      expect(afterViewport).toEqual(beforeViewport);
 
       await other.goto(`/wiki/${id}`);
       await other.getByRole("button", { name: "Edit page" }).click();
