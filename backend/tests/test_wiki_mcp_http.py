@@ -1,5 +1,6 @@
 """Real in-process FastMCP Streamable HTTP, without service/model mocks."""
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -132,6 +133,29 @@ def test_http_initialize_tools_guidance_and_shared_rest_content(tmp_path: Path) 
         assert rest.get("/api/wiki/pages/http-fixture").json()["revision"] == saved["revision"]
 
 
+@pytest.mark.parametrize("deleted", [False, True])
+def test_http_missing_page_is_a_structured_domain_error(tmp_path: Path, deleted: bool) -> None:
+    store = WikiStore(tmp_path)
+    if deleted:
+        saved = store.save_page("missing", "# Temporary fixture", None, "create-missing")
+        store.delete_page("missing", saved["revision"], "delete-missing")
+    snapshot = store.snapshot()
+    with TestClient(
+        create_http_app(store), base_url="http://localhost:8000", headers=HEADERS
+    ) as client:
+        missing = rpc(client, "tools/call", {"name": "get_page", "arguments": {"id": "missing"}})
+        assert missing["isError"] is True
+        assert missing["structuredContent"] == {
+            "error": "not_found",
+            "message": "This page does not exist.",
+            "id": "missing",
+        }
+        assert json.loads(missing["content"][0]["text"]) == missing["structuredContent"]
+    with TestClient(create_app(tmp_path)) as rest:
+        assert rest.get("/api/wiki/pages/missing").status_code == 404
+    assert store.snapshot() == snapshot
+
+
 @pytest.mark.parametrize(
     "headers",
     [
@@ -202,3 +226,4 @@ def test_http_factory_requires_explicit_vault(monkeypatch: pytest.MonkeyPatch) -
         http_app_factory()
     with pytest.raises(ValueError, match="wildcard"):
         create_http_app(None, allowed_hosts=("*",))  # type: ignore[arg-type]
+

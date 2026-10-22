@@ -106,7 +106,10 @@ def create_mcp(
     @mcp.tool()
     def get_page(id: str) -> dict[str, Any]:
         """Read Markdown and its revision directly; no remote sync or model required."""
-        return store.get_page(id) or {"error": "not_found", "id": id}
+        page = store.get_page(id)
+        if page is None:
+            raise WikiError("not_found", "This page does not exist.", id=id)
+        return page
 
     @mcp.tool()
     def list_pages() -> list[dict[str, Any]]:

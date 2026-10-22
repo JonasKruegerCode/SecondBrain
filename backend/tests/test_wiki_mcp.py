@@ -47,4 +47,12 @@ async def test_managed_mcp_shares_rest_store_and_guidance(tmp_path: Path) -> Non
     assert (store.get_page("harbor") or {})["revision"] == result["revision"]
     fetched = _data(await mcp.call_tool("get_page", {"id": "harbor"}))
     assert fetched["markdown"] == "# Harbor\nFictional harbor."
-    assert _data(await mcp.call_tool("get_page", {"id": "missing"}))["error"] == "not_found"
+    missing = await mcp.call_tool("get_page", {"id": "missing"})
+    assert missing.isError is True
+    assert missing.structuredContent == {
+        "error": "not_found",
+        "message": "This page does not exist.",
+        "id": "missing",
+    }
+    assert json.loads(missing.content[0].text) == missing.structuredContent
+
