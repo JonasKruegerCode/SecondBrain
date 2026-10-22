@@ -67,16 +67,16 @@ jobs:
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --browser-grep "overlapping native tab|concurrent initial migration|failed first migration|transaction abort after put|a received answer|start-preference" --repeat-each 3'
 
       - name: Exercise the real disposable wiki and browser
-        run: make acceptance PYTHON="$WIKI_PYTHON"
+        run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-acceptance.py'
 
       - name: Exercise empty first start and real service restart
-        run: make acceptance-first-start PYTHON="$WIKI_PYTHON"
+        run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --first-start'
 
       - name: Exercise local Git import and preserved browser edits
-        run: make acceptance-import PYTHON="$WIKI_PYTHON"
+        run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-import-acceptance.py'
 
       - name: Exercise the real synthetic320 graph and browser history
-        run: make acceptance-scale PYTHON="$WIKI_PYTHON"
+        run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --scale'
 
       - name: Exercise reading and navigation in WebKit
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit'
