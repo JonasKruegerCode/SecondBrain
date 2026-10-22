@@ -1,6 +1,39 @@
 import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 import { startDeliveryFixture } from "./delivery-fixture";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("delivery fixture preserves its Python loader while isolating provider and Git settings", async () => {
+  const keys = ["LD_LIBRARY_PATH", "OPENROUTER_API_KEY", "GIT_SSH_COMMAND", "SECOND_BRAIN_WIKI_VAULT"];
+  const before = new Map(keys.map(key => [key, process.env[key]]));
+  const loaderProbe = await mkdtemp(join(tmpdir(), "wiki-loader-probe-"));
+  let fixture: Awaited<ReturnType<typeof startDeliveryFixture>> | undefined;
+  try {
+    const loaderPath = [loaderProbe, process.env.LD_LIBRARY_PATH].filter(Boolean).join(":");
+    process.env.LD_LIBRARY_PATH = loaderPath;
+    process.env.OPENROUTER_API_KEY = "synthetic-provider-must-not-reach-fixture";
+    process.env.GIT_SSH_COMMAND = "synthetic-ssh-must-not-run";
+    process.env.SECOND_BRAIN_WIKI_VAULT = "/synthetic-vault-must-not-be-opened";
+    fixture = await startDeliveryFixture();
+    expect(fixture.env.LD_LIBRARY_PATH).toBe(loaderPath);
+    expect(fixture.env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(fixture.env.GIT_SSH_COMMAND).toBeUndefined();
+    expect(fixture.env.SECOND_BRAIN_WIKI_VAULT).toBe(fixture.vault);
+    expect((await fixture.deliver()).remote.state).toBe("current");
+    expect(await fixture.head()).toBeTruthy();
+  } finally {
+    try { await fixture?.close(); }
+    finally {
+      for (const [key, value] of before) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await rm(loaderProbe, { recursive: true, force: true });
+    }
+  }
+});
 
 // Real isolated API + local Git transport behind an owned forwarding proxy.
 // No status JSON is mocked, and no external provider or user vault is used.

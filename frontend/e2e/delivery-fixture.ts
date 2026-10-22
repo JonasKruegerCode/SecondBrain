@@ -18,8 +18,10 @@ export async function startDeliveryFixture() {
   const parked = join(directory, "remote-interrupted.git");
   const python = process.env.WIKI_PYTHON || join(root, "backend/.venv/bin/python");
   // Deliberately allow only process basics; provider/auth/Git overrides cannot leak in.
+  // setup-python's shared interpreter in the browser CI container needs its
+  // library search path even when the child uses a Poetry virtual environment.
   const env: NodeJS.ProcessEnv = {};
-  for (const key of ["PATH", "HOME", "SYSTEMROOT", "WINDIR", "TMPDIR", "LANG", "LC_ALL"]) {
+  for (const key of ["PATH", "HOME", "SYSTEMROOT", "WINDIR", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH"]) {
     if (process.env[key]) env[key] = process.env[key];
   }
   Object.assign(env, {
