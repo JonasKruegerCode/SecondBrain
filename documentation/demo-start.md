@@ -24,6 +24,10 @@ For a new empty destination, explicit template choice or Git import, use the
 [first-start profiles](first-start.md). Stop the launcher before starting another
 profile on the same ports.
 
+`PYTHON` is one executable path, including paths containing spaces. It is not a
+shell command prefix: use the selected environment's Python executable rather
+than a value such as `poetry run python` or `python3 -u`.
+
 The empty API-key assignment is an explicit choice for this loopback-only
 preview: a Bearer key inherited from another installation would make the browser
 receive 401 responses, because this frontend uses same-origin proxy authentication
