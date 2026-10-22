@@ -108,7 +108,7 @@ test("Git import: exact public source, real navigation, history and browser save
   const note = inputs.pages.find(item => item.id.endsWith("night-sky-survey"))!;
   expect(inputs.source_commits).toHaveLength(2);
   for (const commit of inputs.source_commits) expect(inputs.history.map(entry => entry.commit)).toContain(commit);
-  await page.goto("/");
+  await page.goto("/?overview=1");
   await screenshots(page, info, "git-import-home", async () => {
     await expect(page.locator(".library .card")).toHaveCount(12);
     await expect(page.locator(".library")).toContainText("12 pages");

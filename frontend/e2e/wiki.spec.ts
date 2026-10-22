@@ -1076,18 +1076,15 @@ test("start page persists, overview stays reachable, and deletion falls back", a
   });
   expect(removed.ok()).toBeTruthy();
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "A growing collection" }),
-  ).toBeVisible();
-  await expect(page.locator(".start-page-notice")).toContainText("no longer exists");
+  await expect(page).toHaveURL(/\/wiki\/home$/);
+  await expect(page.locator("article h1")).toHaveText("Lantern Bay field atlas");
+  await expect(page.locator(".notice")).toContainText("no longer exists");
   expect(await page.evaluate(async () => {
     const modulePath = "/src/start-preference.ts";
     const module = await import(modulePath);
     return module.readStartPage();
   })).toBe(fixture.id);
-  await expect(
-    page.getByRole("link", { name: /Open Lantern Bay/ }),
-  ).toBeVisible();
+
 });
 
 test("safe renderer strips active HTML and resolves wikilinks only outside code", async ({

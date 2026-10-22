@@ -17,7 +17,15 @@ WIKI_PYTHON="$(cd backend && poetry env info --executable)"
 SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
 ```
 
-Open <http://127.0.0.1:5173>. The launcher uses the separate `.demo/vault`,
+Open <http://127.0.0.1:5173>. A fresh browser opens the curated Home article.
+An existing personal start page takes precedence. The **Home** navigation link
+and **All pages** deliberately open the collection overview; `/?overview=1`
+also bypasses automatic start-page navigation. A vault without a Home article
+still opens its overview. Automatic Home selection does not save a personal
+preference. An unreadable browser preference or failed automatic page read
+shows an explanatory overview instead.
+
+The launcher uses the separate `.demo/vault`,
 requires no remote or model key, clears inherited OpenRouter access and retains
 your later demo edits. It never seeds an existing nonempty wiki implicitly.
 For a new empty destination, explicit template choice or Git import, use the

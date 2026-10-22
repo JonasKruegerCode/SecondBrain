@@ -540,7 +540,7 @@ function cards(pages: Page[], fragment = "", showIdentity = false) {
     .join("");
 }
 async function route(focusView = false, reuseShell = false, readingPoint?: ReadingPoint,
-  startNavigation: { fallbackOnError?: boolean; notice?: string; articleFocus?: "edit" } = {}) {
+  startNavigation: { fallbackOnError?: "saved" | "home"; notice?: string; articleFocus?: "edit" } = {}) {
   const run = ++generation;
   viewComplete = false;
   readingReady = false;
@@ -683,6 +683,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
       );
       if (run !== generation) return;
       page = loaded;
+      notice = startNavigation.notice || "";
       renderPage();
       complete(loaded.title);
       return;
@@ -696,22 +697,24 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
       preferenceNotice = "Your browser could not read your start-page preference. You can still open any page and retry Home.";
     }
     if (run !== generation) return;
-    const start =
-      pages.find((p: Page) => p.id === preferred) ||
-      pages.find((p: Page) => p.id === "home");
-    if (
-      preferred &&
-      start?.id === preferred &&
-      !new URLSearchParams(location.search).has("overview")
-    ) {
-      replaceAppUrl(url(preferred));
-      void route(focusView, true, readingPoint, { fallbackOnError: true });
+    const overview = new URLSearchParams(location.search).has("overview");
+    const savedStart = pages.find((p: Page) => p.id === preferred);
+    const home = pages.find((p: Page) => p.id === "home");
+    const start = savedStart || home;
+    const startNotice = startNavigation.notice || preferenceNotice ||
+      (preferred && !savedStart && !overview
+        ? home ? "Your saved start page no longer exists. Home is shown instead."
+          : "Your saved start page no longer exists. Choose another page from the overview."
+        : "");
+    if (start && !preferenceNotice && !overview) {
+      // A curated Home is the default, not a persisted personal choice. Keep
+      // explicit overview visits and unreadable preferences on the overview.
+      replaceAppUrl(url(start.id));
+      void route(focusView, true, readingPoint, {
+        fallbackOnError: savedStart ? "saved" : "home", notice: startNotice,
+      });
       return;
     }
-    const startNotice = startNavigation.notice || preferenceNotice ||
-      (preferred && !pages.some((p: Page) => p.id === preferred) &&
-        !new URLSearchParams(location.search).has("overview")
-        ? "Your saved start page no longer exists. Home is shown instead." : "");
     main.innerHTML = `<section class="intro home"><div><div class="eyebrow">A PLACE FOR YOUR IDEAS</div><h1>Make room for<br><em>clearer thinking.</em></h1><p>Your notes, ideas, and connections. A quiet place to<br class="desktop"> find what matters and build on what you know.</p>${start ? `<a class="primary" href="${url(start.id)}">Open ${esc(start.title)} <span>↗</span></a>` : ""}</div><div class="art" aria-hidden="true"><div class="orbit"></div><div class="note small">Small discoveries &nbsp; ↗</div><div class="note large"><span>✳</span><b>One idea leads<br>to another.</b><i></i><i></i></div><div class="pill">◉ &nbsp; Stay curious</div></div></section><section class="library"><div class="section-heading"><div><div class="eyebrow">YOUR WIKI</div><h2>A growing collection</h2></div><span>${pages.length} pages</span></div><div class="grid">${pages.length ? cards(pages) : '<p class="quiet">Your workspace is ready. Ask your assistant to create your first page, or load the demo to explore.</p>'}</div></section>`;
     if (startNotice) {
       const message = document.createElement("p");
@@ -728,7 +731,9 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
       // retain their normal error/retry state, and the saved preference remains.
       replaceAppUrl("/?overview=1");
       void route(focusView, true, readingPoint, {
-        notice: "Your saved start page could not be opened. Home is shown instead. Your start-page choice is unchanged.",
+        notice: startNavigation.fallbackOnError === "saved"
+          ? "Your saved start page could not be opened. The page overview is shown instead. Your start-page choice is unchanged."
+          : "Home could not be opened. The page overview is shown instead. Your start-page choice is unchanged.",
       });
       return;
     }
