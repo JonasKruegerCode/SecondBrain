@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mcp.types import CallToolResult, TextContent
+
 from second_brain.wiki.mcp import create_mcp
 from second_brain.wiki.store import WikiStore
 
@@ -48,11 +50,13 @@ async def test_managed_mcp_shares_rest_store_and_guidance(tmp_path: Path) -> Non
     fetched = _data(await mcp.call_tool("get_page", {"id": "harbor"}))
     assert fetched["markdown"] == "# Harbor\nFictional harbor."
     missing = await mcp.call_tool("get_page", {"id": "missing"})
+    assert isinstance(missing, CallToolResult)
     assert missing.isError is True
     assert missing.structuredContent == {
         "error": "not_found",
         "message": "This page does not exist.",
         "id": "missing",
     }
+    assert isinstance(missing.content[0], TextContent)
     assert json.loads(missing.content[0].text) == missing.structuredContent
 
