@@ -67,12 +67,13 @@ _EMPHASIS_URL_RE = re.compile(
     re.I,
 )
 # One bounded nested form: outer single-star emphasis with a trailing
-# strong segment containing ASCII words only. No general nesting is inferred.
+# strong segment containing ASCII words and one optional terminal sentence
+# punctuation character. No general nesting or punctuation grammar is inferred.
 _EMPHASIS_URL_TRAILING_STRONG_RE = re.compile(
     r"(?P<delimiter>\*)"
     r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+)"
     r"(?:[ \t]+[^\s<*_`\\~]+)*?"
-    r"[ \t]+\*\*[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)*\*\*"
+    r"[ \t]+\*\*[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)*[.!?,;:]?\*\*"
     r"(?P=delimiter)",
     re.I,
 )

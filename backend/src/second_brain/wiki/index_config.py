@@ -15,7 +15,7 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
     # Literal-star prefixes must not invent edges inside bounded emphasized URLs.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v34"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v35"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 

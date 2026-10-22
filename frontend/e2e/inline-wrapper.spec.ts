@@ -13,6 +13,47 @@ async function create(request: APIRequestContext, owned: string[], markdown: str
 }
 
 for (const width of [390, 1440]) {
+  test(`punctuated URL notes do not invent graph connections (${width})`, async ({ page, request }, info) => {
+    const owned: string[] = [];
+    await page.setViewportSize({ width, height: 900 });
+    try {
+      const hidden = await create(request, owned, "# Fictional external-only reference");
+      const shown = await create(request, owned, "# Fictional notebook");
+      for (const punctuation of ["!", ".", "?", ",", ";", ":"]) {
+        const markdown = `# Fictional observing note\n\n*HTTPS://example.invalid/[[${hidden.id}]] **Field note${punctuation}*** [[${shown.id}|Notebook]]\n`;
+        const saved = await create(request, owned, markdown);
+        await page.goto(`/wiki/${saved.id}`);
+        await expect(page.locator(".prose strong")).toHaveText(`Field note${punctuation}`);
+        await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(1);
+        await expect(page.locator('.prose a[href^="HTTPS://example.invalid/"]')).toHaveAttribute(
+          "href", `HTTPS://example.invalid/%5B%5B${hidden.id}%5D%5D`,
+        );
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        const edges = graph.edges.filter((edge: { source: string }) => edge.source === saved.id);
+        console.info("[punctuated-note] " + JSON.stringify({ width, punctuation, edges, expected: shown.id }));
+        if (punctuation === "!") await page.screenshot({ path: info.outputPath(`punctuated-note-${width}.png`) });
+        expect(edges).toEqual([{ source: saved.id, target: shown.id, type: "wikilink" }]);
+        expect((await (await request.get(`/api/wiki/pages/${saved.id}`)).json()).markdown).toBe(markdown);
+        await page.getByRole("link", { name: "Notebook", exact: true }).click();
+        await expect(page.locator("article h1")).toHaveText("Fictional notebook");
+        await page.goBack();
+        await page.reload();
+        await expect(page.locator(".prose a[data-wiki-target]")).toHaveCount(1);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      }
+    } finally {
+      for (const id of owned.reverse()) {
+        const current = await request.get(`/api/wiki/pages/${id}`);
+        expect(current.ok()).toBeTruthy();
+        expect((await request.delete(`/api/wiki/pages/${id}`, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+      }
+    }
+  });
+}
+
+for (const width of [390, 1440]) {
   test(`literal star URL references do not invent graph connections (${width})`, async ({ page, request }) => {
     const owned: string[] = [];
     await page.setViewportSize({ width, height: 900 });

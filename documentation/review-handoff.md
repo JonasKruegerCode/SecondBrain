@@ -65,8 +65,12 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v34`, defined in
+The current derivation identity is `managed-snapshots-v35`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
+This revision removes phantom URL-path wikilinks from the bounded nested
+single-star/strong note form when its ASCII words end in one `. ! ? , ; :`
+character. Escaping, invalid closers and arbitrary nesting retain their existing
+separate rules; this is not complete Markdown-parser parity.
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
 make paid embedding requests. Retention is explicit, dry-run first and scoped to

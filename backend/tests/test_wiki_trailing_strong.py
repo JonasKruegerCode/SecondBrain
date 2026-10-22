@@ -2,6 +2,7 @@
 
 Static targets were checked with the frontend Marked12 extension. This does
 not promise arbitrary nested emphasis, punctuation or Unicode strong contents.
+One terminal ASCII sentence-punctuation character is covered explicitly.
 """
 
 from pathlib import Path
@@ -9,6 +10,34 @@ from pathlib import Path
 import pytest
 
 from second_brain.wiki.store import WikiStore
+
+
+@pytest.mark.parametrize("punctuation", ["!", ".", "?", ",", ";", ":"])
+@pytest.mark.parametrize("prefix", ["", "prefix ", "*", "\\"])
+def test_terminal_punctuation_in_nested_url_scope(punctuation: str, prefix: str) -> None:
+    markdown = f"{prefix}*HTTPS://example.test/[[hidden]] **Field note{punctuation}*** [[shown]]"
+    pages = [{"id": key, "title": key, "markdown": ""} for key in ("hidden", "shown")]
+    pages.append({"id": "source", "title": "Source", "markdown": markdown})
+    graph = WikiStore._graph(pages, "synthetic-revision")
+    assert graph["edges"] == [{"source": "source", "target": "shown", "type": "wikilink"}]
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "**Field note! ***",
+        "**Field note!** *",
+        "**Field note!**",
+        "**Field note!***word",
+        "**Field note!**\\*",
+    ],
+)
+def test_punctuated_strong_scope_requires_valid_closer(suffix: str) -> None:
+    markdown = f"*HTTPS://example.test/[[hidden]] {suffix} [[shown]]"
+    pages = [{"id": key, "title": key, "markdown": ""} for key in ("hidden", "shown")]
+    pages.append({"id": "source", "title": "Source", "markdown": markdown})
+    graph = WikiStore._graph(pages, "synthetic-revision")
+    assert {edge["target"] for edge in graph["edges"]} == {"hidden", "shown"}
 
 
 @pytest.mark.parametrize(
