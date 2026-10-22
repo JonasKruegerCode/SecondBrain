@@ -72,7 +72,7 @@ receipt. Independent graph and search receipts let one backend recover without
 claiming the other is ready. The configuration fingerprint is shared across enabled backends:
 changing graph or vector configuration invalidates both receipts until rebuilt.
 
-The current snapshot derivation identity is `managed-snapshots-v26`, defined in
+The current snapshot derivation identity is `managed-snapshots-v35`, defined in
 `backend/src/second_brain/wiki/index_config.py`. It projects titles, excerpts and
 explicit links with bounded Markdown code, comment, container, HTML and link
 metadata rules. This is not complete renderer/parser parity. An older derivation
@@ -85,8 +85,12 @@ old provider generations; normal retention rules still apply.
 
 The coordinator now records each new build attempt in a local retention ledger.
 Cleanup is deliberately operator initiated and dry-run by default. It protects the
-current ready receipt plus the configured number of recent ready generations,
-observes a minimum age, takes the same worker lock as builders, and takes an
+current ready receipt and enough recent ready generations actually present on
+the configured provider to reach `--keep-ready` in total. Missing provider
+generations in the local ledger do not consume that retention count. A missing
+current generation still fails retrieval; retaining a backup does not promote it
+as a replacement current receipt. Cleanup observes a minimum age, takes the same
+worker lock as builders, and takes an
 exclusive lock against semantic/graph readers before deletion. Provider targets
 not present in this coordinator's ledger are reported as untracked and never
 deleted. This includes legacy generations discovered after an upgrade; cleanup

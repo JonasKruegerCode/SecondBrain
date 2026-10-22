@@ -218,7 +218,10 @@ class IndexCoordinator:
                             (kind,),
                         ).fetchall()
                     receipt = self._receipt(kind)
-                    ready = [row[0] for row in rows if row[1] == "ready"]
+                    # Missing provider generations cannot satisfy retention.
+                    # Otherwise a lost recent backup can evict the last actual
+                    # predecessor even while keep_ready requests two copies.
+                    ready = [row[0] for row in rows if row[1] == "ready" and row[0] in available]
                     protected = (
                         {receipt["generation"]}
                         if receipt and receipt["state"] == "ready"

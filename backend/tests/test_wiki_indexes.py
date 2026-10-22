@@ -180,6 +180,53 @@ def test_retention_is_dry_run_reader_safe_and_never_deletes_untracked(
     }
 
 
+@pytest.mark.parametrize("missing_current", [False, True])
+@pytest.mark.parametrize("kind", ["graph", "vector"])
+def test_retention_counts_only_available_ready_generations(
+    tmp_path: Path, missing_current: bool, kind: str
+) -> None:
+    store, _, indexes = setup(tmp_path)
+    adapter = indexes.adapters[kind]
+    generations = []
+    for _ in range(3):
+        indexes.run_once(rebuild=True)
+        receipt = indexes._receipt(kind)
+        assert receipt
+        generations.append(receipt["generation"])
+    # Provider loss is independent of the durable local build ledger. Make
+    # creation order explicit rather than depending on clock resolution.
+    with indexes._db() as db:
+        for created, generation in enumerate(generations, start=1):
+            db.execute(
+                "UPDATE generations SET created_at=? WHERE kind=? AND generation=?",
+                (created, kind, generation),
+            )
+    missing = generations[-1] if missing_current else generations[1]
+    adapter.delete_generation(missing)
+    available = set(adapter.list_generations(indexes.namespace))
+    before = store.snapshot()
+
+    planned = indexes.prune(keep_ready=2, min_age_seconds=0)
+    assert planned["indexes"][kind]["candidates"] == []
+    assert set(adapter.list_generations(indexes.namespace)) == available
+    applied = indexes.prune(keep_ready=2, min_age_seconds=0, dry_run=False)
+    assert applied["indexes"][kind]["deleted"] == []
+    assert set(adapter.list_generations(indexes.namespace)) == available
+    assert store.snapshot() == before
+
+    def read() -> dict[str, Any]:
+        return indexes.neighbors(["home"]) if kind == "graph" else indexes.semantic_search("harbor")
+
+    if not missing_current:
+        rows = read()["pages" if kind == "graph" else "results"]
+        assert "harbor" in {page["id"] for page in rows}
+    else:
+        # Retaining backups does not promote one as a substitute current receipt.
+        with pytest.raises(WikiError) as error:
+            read()
+        assert error.value.code == "index_unavailable"
+
+
 def test_worker_lock_and_configuration_change(tmp_path: Path) -> None:
     store, graph, indexes = setup(tmp_path)
     competitor = IndexCoordinator(store, indexes.adapters)
