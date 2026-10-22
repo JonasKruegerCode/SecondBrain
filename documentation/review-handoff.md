@@ -14,22 +14,6 @@ preserves detailed reproductions, historical failures and regression matrices.
 It is historical evidence, not a claim about a later revision. This document
 consolidates that material instead of accumulating another run log.
 
-## Pending start preference and keyboard focus
-
-The start-page control remains focusable while its IndexedDB transaction is
-pending. `aria-disabled` announces the temporary lock and the click-handler
-guard rejects duplicate activation. A native `disabled` button lost focus in
-the prior asynchronous implementation, including when an unrelated Save
-request later failed. Completion updates the current toolbar without restoring
-focus over a later user choice or replacing the editor. Both browser-engine
-suite contracts include the start-preference regressions.
-
-The 21 October CI on `3706165` preserved this counterexample: Chromium had
-379 passes and 20 editor focus failures; the backend had 1,373 passes, six
-outdated suite-list expectations and 12 explicit opt-in skips. Later browser
-phases, including broad WebKit, were skipped. These are failed runs, separate
-from the previously accepted parent and subsequent correction evidence.
-
 ## Architecture and data flow
 
 ### One content authority
@@ -66,7 +50,9 @@ previously published. Both 390/1440 cases passed locally with real API/Git
 services and native headless Chromium 153; no content or response mocks. The
 minimal local runtime is not the locked full suite, Linux-WebKit, a physical
 device or a provider/index-delivery acceptance. Hosted results for these new
-cases must be checked separately.
+cases are included in both broad engine profiles of inspected Browser run
+`39848542539` below. Headless synthetic acceptance remains separate from physical
+devices, production operation and real providers.
 
 ### Derived retrieval and delivery
 
@@ -106,6 +92,10 @@ editor. Navigation preserves deliberate keyboard focus and bounded tab-local
 reading positions. Save/conflict/unknown-acknowledgement states retain the draft;
 index and remote status are shown separately.
 
+While a start-page transaction is pending, the control stays focusable with
+`aria-disabled`; its handler rejects duplicate activation. Completion does not
+steal a later focus choice or replace the editor.
+
 The start-page choice uses its own versioned IndexedDB preference record;
 success is shown only after transaction completion. Existing localStorage
 choices import once when that record is absent. A denied legacy read leaves
@@ -135,8 +125,9 @@ absence of all phantom-link cases.
 A literal star before the bounded single-star URL/trailing-strong form now
 keeps the external URL out of the wiki graph, matching rendered articles.
 The correction covers an extra unescaped or escaped opening star; it does
-not implement a general delimiter-run resolver. A fixed 336-case diagnostic
-improves 92 graph-target mismatches to 72 with no new mismatch in that matrix.
+not implement a general delimiter-run resolver. Earlier bounded corrections left 92 and then 72 graph-target mismatches in a
+fixed 336-case diagnostic. The current v35 terminal-punctuation correction
+leaves 63; these are successive source revisions, not complete parser parity.
 Raw Markdown, page revisions and Git history are preserved. The derivation
 identity change makes older index receipts pending; rebuilding configured
 embeddings can make paid requests and remains an explicit operation.
@@ -174,7 +165,9 @@ apps, Safari, soft keyboards and screen readers.
 ### Authentication and compatibility
 
 Managed REST lives under `/api/wiki`; direct managed MCP exposes ten tools and
-`wiki://guidance`. Read guidance before editing. The primary managed profile
+`wiki://guidance`. Read guidance before editing. Missing-page `get_page` calls
+return `isError:true` with matching structured/text JSON containing `not_found`,
+a message and the requested ID. Existing-page reads and REST 404 are unchanged. The primary managed profile
 excludes `remember/recall`; the optional
 [legacy profile](legacy-memory-profile.md) remains isolated. Never point legacy
 and managed writers at the same vault.
@@ -287,96 +280,96 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Historical development evidence, inspected 21 October 2026
+## Inspected acceptance, 22 October 2026
 
-Implementation `f7da8a519d4314a3950f6923d0e4c84ddd837cf5`, tree
-`561baa8481b86664b4b9f552d7df393eb9044e65`, was tested at merge
-`1fac0cbcf93f2f1fe281ccf79e328a5ed80f9907`. The merge has that identical tree
-and ordered parents main `1f0cd1e7` + implementation `f7da8a5`.
-The logs and downloaded result records below were inspected, rather than
-inferring acceptance from workflow badges. This handoff consolidation changes
-only documentation; it does not create another runtime acceptance result.
+Functional source `9dafdc021ad7aa5fda2dd45410eecc2cef39ceef`, tree
+`684b9d9ad44d698fe9dc46b04f3914d5e86077a8`, was checked at merge
+`e1deab8e67b9e4ccaaf505e7867a6c9370c4bee8`. Original checkout logs and
+the Git object establish the same tree and ordered parents main `1f0cd1e7`
+plus functional source `9dafdc02`. Subsequent documentation-only changes do
+not constitute another runtime acceptance result.
 
-| Area | Examined run | Result and scope |
+| Area | Inspected original run | Result and boundary |
 | --- | --- | --- |
-| Frontend | [39508028891](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028891) | Both TypeScript configurations, proxy 5/access 2/PWA 5, production and image builds |
-| Backend | [39508028925](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028925) | Ruff/MyPy on 124 files, 1,377 passed/12 opt-in skips, image build |
-| SSH | [39508028842](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028842) | Five native isolated SSH/Git cases |
-| Indexes | [39508028961](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028961) | Seven disposable provider cases with synthetic vectors; together with SSH exercises the 12 ordinary-suite opt-ins |
-| Browser | [39508028858](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028858) | Seven passed records/ten zero-exit phases; 681 successful executions including 33 repeated diagnostics, 14 skip occurrences |
-| Stack | [39508028782](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39508028782) | 78 gate entries/76 unique, six built-browser gates, synthetic HTTPS/auth, independent 14-page restore |
+| Backend | [39848542316](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542316) | Ruff/MyPy125; 1,458 passed, 12 dedicated opt-in skips; image build |
+| Frontend | [39848542554](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542554) | Both TS projects; proxy5/access2/PWA5/image-protocol2; compile and image build |
+| Indexes | [39848542236](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542236) | Seven real disposable Neo4j/Qdrant cases with synthetic vectors; 320 pages/648 edges |
+| SSH | [39848542360](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542360) | Five authenticated Git/restart and host/agent refusal-preservation cases |
+| Browser | [39848542539](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542539) | Seven passed records; 858 successful executions/14 explained skips, zero reported failed/flaky |
+| Stack | [39848542400](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542400) | 87 gate records/85 unique labels, six synthetic TLS/auth/browser gates, 49 retained-image gate records |
 
-Both image logs show `push:false/load:false` and cleanup. No image was published.
-Browser phases contain native WebKit storage diagnostics 33, broad Chromium 374,
-first-start 2, Git import 3, scale 2, broad Linux WebKit 259 and worker updates 8.
-The broad profiles have no grep/repeat relaxation; diagnostics and worker profiles
-retain explicit selections. The 14 skips are eight complementary first-start/import
-phase selections and six known engine exclusions, not unexplained missing cases.
-The new trailing-strong 320/1440 cases run in both broad engines. Their four actual
-full-page images were personally inspected for readable wrapping.
+Browser phase totals are WebKit transaction/preference diagnostics114,
+Chromium422, first-start2, Git import3, synthetic320:2, reading-WebKit307
+and worker-WebKit8. Repetitions count as executions, not distinct requirements.
+Eight skips select complementary first-start/import phases; five exclude
+Blink-only minimum-font checks and one excludes CDP-only touch. The reading
+WebKit profile blocks workers; the separate eight worker tests allow them.
+All seven Git-import preservation/retry assertions pass. Original result records
+assert zero exit codes and owned runner cleanup; these are not OS-wide or
+power-loss guarantees. No external model was called.
 
-Stack logs show removal of both isolated projects' containers, networks and volumes.
-The controlled DNS test changes backend address `.3` to `.6` while retaining the
-frontend. Docker health remains `starting` in both diagnostic snapshots despite
-the passing HTTP-health gates. Proxy logs show the disconnected 499 and survivor/
-retry 200 responses; exact bodies, no-store and completed invocations are runner
-assertions. The restored page count is an explicit 14-page runner assertion.
-Cleanup, retention and no-model statements are records/logs, not independent
-OS or network tracing.
+The missing-page MCP error correction is covered by direct, HTTP and real SDK
+stdio tests. Two preceding backend attempts remain failed:
+[39847387889](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39847387889)
+caught the new test's SDK union typing before pytest;
+[39847652692](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39847652692)
+passed Ruff/MyPy and 1,457 cases but exposed an old stdio assertion expecting
+the incorrect success flag. The final source narrows the SDK types and corrects
+that assertion. The earlier 21 October editor-focus failures and Optional-page
+test error remain in Git and the pinned historical handoff; later passes do not
+relabel them or establish causes for unrelated intermittent observations.
 
-Downloaded archives were size/hash/CRC and safe-path checked:
+Standalone image jobs use `push:false/load:false` and cache-only output.
+The separate stack actually builds and runs images. Its normal path verifies
+synthetic TLS/auth, same-origin writes, shared REST/MCP, isolated chat cancellation,
+DNS/IP churn without restarting the frontend, and create-only restore on a separate
+owned volume. The retained old/new/old/resume path uses distinct real images on
+one volume, history 1→2→3→3, changed worker bytes, retained native editor,
+one browser save/history addition and preference migration. Scripted providers,
+synthetic TLS/SPKI and disposable volumes do not establish production operation.
 
-| Artifact | Bytes / regular entries | SHA256 |
+All listed archives match API sizes/digests and pass safe unique-path/CRC checks:
+
+| Artifact | Bytes / entries | SHA256 |
 | --- | --- | --- |
-| Browser 12305261215 | 204,779,355 / 844 | `d89ae394c06740f6b2ba1a3ed57469fd81fbe11b2f4e4ee8538356774b6dd60a` |
-| Stack 12304511916 | 706,527 / 6 | `959825a1c059aefb71538b2710f8b987e23b1fe1b56966d59f38d90abb842932` |
+| Browser12458460505 | 217,826,510 / 934 | `4e65d0943bc03aab6a8321a54428649af08d21fe65dd0952d1daf2f166ef8f59` |
+| Stack12457825223 | 709,107 / 6 | `60c767144526af6b342b6a5e3df450008d6ef18da47e6a7d436f3dcfed6de7e9` |
+| Image-update12456696346 | 16,714 / 3 | `c10d9741b25efa843bf96ce5fede603bbbd54e650d1ec9d8d6ce08ae4ded2359` |
 
-Original CI artifacts expire 27 October 2026; links and hashes do not guarantee
-availability afterward. Historical failures remain in the pinned handoff and Git
-history, including Backend39499565295's Optional-page test error before pytest
-and the unsuccessful Web Lock storage attempt. A later green run does not explain
-an earlier intermittent failure or turn phase executions into unique requirements.
+These workflow artifacts expire 29 October 2026; references and hashes do not
+guarantee availability afterward. Preserve needed evidence before expiry.
+Selected captures were visually inspected; 934 entries do not mean 934 images
+were individually reviewed. Full-page captures do not establish first-screen
+visibility.
 
 ### Current graph derivation and parser boundary
 
-The latest bounded correction recognizes one trailing strong segment of ASCII
-words inside outer single-star URL emphasis. For example,
-`*HTTPS://example.test/[[target]] **Field note***` is an external article link;
-the graph must not invent a wiki edge to `target`. Existing simple matching and
-code/anchor/escape/closing/flanking guards are retained. Markdown, history and
-API payloads were unchanged. That correction used derivation identity **v33**: older
-configured receipts, including v32, become pending until rebuilt. A configured
-embedding rebuild can incur provider costs; this is not an automatic production
-rebuild or content migration.
+The current identity is **managed-snapshots-v35**. The bounded nested
+single-star/strong handling accepts ASCII words with one terminal
+`. ! ? , ; :` character while retaining escape, closing and flanking guards.
+For example, `*HTTPS://example.test/[[target]] **Field note.***` renders an
+external article link without inventing a wiki edge to `target`.
+The fixed 336-case diagnostic still has 63 graph-target mismatches; arbitrary
+nesting and general Markdown parity remain outside this correction.
+Markdown, revisions and history are unchanged. Older configured index receipts
+become pending; explicit rebuilding can make paid embedding calls.
 
-Both actual parent browser probes fail at the phantom edge. The corrected local
-selection passes 615 Python cases and all 48 article/code-reading cases, including
-UI Save, reload, backlinks and history. Ruff, MyPy on all four changed Python files
-and both TypeScript configurations pass. A bounded 336-case Marked12 diagnostic
-corrected 16 mismatches without a new one, retaining 92 other differences at that
-revision; the later literal-star correction above leaves 72. The prior
-259-case escaped-punctuation matrix has zero mismatches. Arbitrary nesting,
-Unicode/punctuation inside that strong segment and malformed delimiter spacing
-remain outside this correction. These matrices do not establish complete Markdown
-parity. Earlier source/title, escaped-opener and inline-HTML corrections and their
-counterfactuals remain available in the pinned history.
+### Independent synthetic reader paths
 
-### Independent synthetic reader walk
+A real Chromium reader walk at 320/1440 completed Home → curated article → search
+→ Galaxy selection/zoom/list → article → Chat. The unconfigured chat correctly
+returned 503, retained the question and offered Retry; no model answer was claimed.
+A separate real browser/MCP HTTP coediting path at 390/1440 preserved drafts
+through foreign saves, deletion/recreation and two 409 conflicts, then deliberately
+reloaded and saved the current page. Both clients agreed on revision/history 5
+and graph links. It used cached native Chromium with nondefault runtime flags
+and blocked workers, not the locked CI environment or a physical device.
 
-At 320×900 and 1440×900, a fresh real Chromium walk completed Home → curated
-article → search → article → Galaxy cluster/page selection → zoom/list → Open
-article → Chat against genuine content/index services. No document horizontal
-overflow or browser page error was observed. The narrow map truncates a long node
-title; the selected heading, evidence and Open article remain usable. Actual
-viewport and separately labeled full-page captures were inspected. A full-page
-image does not establish first-screen visibility.
-
-Chat returned the real not-configured 503, retained the question and offered Retry.
-No provider was mocked and no model call or answer-quality claim follows. Owned
-services terminated and the ephemeral vault was removed. This local walk and
-Linux WebKit CI do not establish physical installation, Safari/iOS, native zoom,
-production operation or private migration acceptance.
-
+The first coediting fixture attempt passed 390px but its reused browser closed
+before 1440px. Separate browser instances passed both widths. This is a local
+fixture correction, not an established product cause. Immediate owned-group/input
+cleanup was recorded, but operational files later reappeared; the cause remains
+unknown and lasting absence is not established.
 
 ## Known release gates
 
@@ -427,3 +420,4 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
+
