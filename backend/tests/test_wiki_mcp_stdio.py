@@ -131,8 +131,9 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
             assert not replay_delete.isError
             assert replay_delete.structuredContent == deleted.structuredContent
             missing = await client.call_tool("get_page", {"id": "harbor"})
-            assert not missing.isError
-            assert missing.structuredContent == {"error": "not_found", "id": "harbor"}
+            assert _error(missing) == {
+                "error": "not_found", "message": "This page does not exist.", "id": "harbor"
+            }
             history = await client.call_tool("get_history", {"id": "harbor"})
             assert not history.isError
             assert history.structuredContent is not None
@@ -152,3 +153,4 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
     assert len(external.history("harbor")) == 3
     with TestClient(create_app(vault)) as rest:
         assert rest.get("/api/wiki/pages/harbor").status_code == 404
+
