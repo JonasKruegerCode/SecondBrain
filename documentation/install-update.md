@@ -276,3 +276,24 @@ Compose behavior: [project names](https://docs.docker.com/compose/how-tos/projec
 [restart](https://docs.docker.com/reference/cli/docker/compose/restart/) and
 [run](https://docs.docker.com/reference/cli/docker/compose/run/).
 
+
+## Disposable old/new image compatibility gate
+
+`python3 scripts/run-wiki-update-acceptance.py --baseline-source PATH` builds a
+clean checkout of the pinned baseline `dceee9fd63ccd36b5c6d5bd0ebd6cb11b5e25477`
+and the current clean candidate checkout. The managed-stack workflow obtains
+both sources and runs this as a separate bounded Docker job. It keeps distinct
+actual local image IDs and one token-owned synthetic volume, then starts old,
+new, old again and the candidate again. Every transition stops both writers;
+REST/MCP reads, exact histories, replayed request receipts, rejected stale writes
+and writes made after rollback must survive the next image selection. Ports are
+rediscovered after each recreation. No registry image is published.
+
+The result records the exact source pair, image IDs, completed phases and owned
+resource cleanup. A green guardrail unit test is not a successful Docker run;
+inspect this job's original `result.json` and logs. This is one concrete server
+compatibility pair, not a guarantee that every former version can read a newer
+store. Mutable Docker bases and package mirrors remain build inputs. This gate
+records whether worker bytes differ but does not keep a browser across versions:
+PWA activation/draft guards across a real release, proxy/auth, external indexes,
+production migration and physical installation remain separate acceptance.

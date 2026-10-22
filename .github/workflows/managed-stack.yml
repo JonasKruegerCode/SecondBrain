@@ -48,3 +48,34 @@ jobs:
             .demo/stack-acceptance/*/*.log
           if-no-files-found: warn
           retention-days: 7
+
+  image-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Fixed reviewed baseline: runtime store and frontend differ from candidate.
+      - uses: actions/checkout@v4
+        with:
+          ref: dceee9fd63ccd36b5c6d5bd0ebd6cb11b5e25477
+          path: .demo/update-baseline
+          persist-credentials: false
+
+      - name: Exercise retained old/new/old/resumed images on one owned volume
+        run: python3 scripts/run-wiki-update-acceptance.py --baseline-source .demo/update-baseline
+
+      - name: Upload synthetic image compatibility results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-image-update-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .demo/update-acceptance/*/result.json
+            .demo/update-acceptance/*/*.log
+            .demo/update-acceptance/*/restart-diagnostics.jsonl
+          if-no-files-found: warn
+          retention-days: 7
