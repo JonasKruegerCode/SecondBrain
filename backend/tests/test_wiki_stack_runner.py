@@ -41,6 +41,120 @@ def config() -> dict[str, Any]:
     }
 
 
+def recovery_config() -> dict[str, Any]:
+    data: dict[str, Any] = runner["isolated_config"](
+        config(), "synthetic-recovery", "synthetic", restored=True
+    )
+    data["volumes"]["managed_wiki"] = {"external": True, "name": "synthetic-recovery"}
+    for name, service in data["services"].items():
+        service["image"] = "sha256:" + name
+        service["pull_policy"] = "never"
+    return data
+
+
+@pytest.mark.parametrize(
+    "danger",
+    [None, "volume", "provider", "vault", "port", "proxy", "image", "mount", "pull"],
+)
+def test_actual_recovery_merge_rejects_wrong_targets(danger: str | None) -> None:
+    data = recovery_config()
+    if danger == "volume":
+        data["volumes"]["managed_wiki"]["name"] = "original-live-volume"
+    elif danger == "provider":
+        data["services"]["backend"]["environment"]["OPENROUTER_API_KEY"] = "do-not-call"
+    elif danger == "vault":
+        data["services"]["mcp"]["environment"]["SECOND_BRAIN_WIKI_VAULT"] = "/managed-vault"
+    elif danger == "port":
+        data["services"]["frontend"]["ports"][0]["host_ip"] = "0.0.0.0"
+    elif danger == "proxy":
+        data["networks"]["proxy"] = {"external": True}
+    elif danger == "image":
+        data["services"]["frontend"]["image"] = "mutable:latest"
+    elif danger == "mount":
+        data["services"]["backend"]["volumes"][0]["source"] = "original"
+    elif danger == "pull":
+        data["services"]["mcp"]["pull_policy"] = "always"
+    images = {name: "sha256:" + name for name in ("backend", "mcp", "frontend")}
+    if danger is None:
+        runner["validate_recovery_config"](data, "synthetic-recovery", images)
+    else:
+        with pytest.raises(RuntimeError):
+            runner["validate_recovery_config"](data, "synthetic-recovery", images)
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_recovery_volume_cleanup_checks_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreign: bool
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    run.recovery_volumes["owned-recovery"] = "our-token"
+    removed: list[str] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        if "ls" in args:
+            return "owned-recovery"
+        if "inspect" in args:
+            return json.dumps("foreign-token" if foreign else "our-token")
+        removed.append(args[-1])
+        return ""
+
+    monkeypatch.setattr(run, "command", command)
+    if foreign:
+        with pytest.raises(RuntimeError, match="ownership"):
+            run.cleanup_recovery_volume("owned-recovery")
+        assert run.recovery_volumes
+        assert not removed
+    else:
+        run.cleanup_recovery_volume("owned-recovery")
+        assert removed == ["owned-recovery"]
+        assert not run.recovery_volumes
+
+
+def test_existing_recovery_volume_is_not_created_or_tracked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    calls: list[list[str]] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        calls.append(args)
+        return "existing-volume"
+
+    monkeypatch.setattr(run, "command", command)
+    with pytest.raises(RuntimeError, match="already exists"):
+        run.create_recovery_volume("existing-volume")
+    assert len(calls) == 1 and "ls" in calls[0]
+    assert not run.recovery_volumes
+
+
+@pytest.mark.parametrize("created", [False, True])
+def test_recovery_create_timeout_still_tracks_and_cleans_owned_volume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, created: bool
+) -> None:
+    run = runner["Run"](tmp_path, "synthetic")
+    creating = True
+    removed: list[str] = []
+
+    def command(args: list[str], **kwargs: Any) -> str:
+        if "create" in args:
+            assert run.recovery_volumes
+            raise subprocess.TimeoutExpired(args, 180)
+        if "ls" in args:
+            return "owned-recovery" if not creating and created else ""
+        if "inspect" in args:
+            return json.dumps(run.recovery_volumes["owned-recovery"])
+        removed.append(args[-1])
+        return ""
+
+    monkeypatch.setattr(run, "command", command)
+    with pytest.raises(subprocess.TimeoutExpired):
+        run.create_recovery_volume("owned-recovery")
+    creating = False
+    run.cleanup_recovery_volume("owned-recovery")
+    assert removed == (["owned-recovery"] if created else [])
+    assert not run.recovery_volumes
+
+
 def test_rehearsal_replaces_inherited_credentials_ports_and_resource_names() -> None:
     original = runner["isolated_config"](config(), "synthetic-project", "synthetic-secret")
     assert original["volumes"]["managed_wiki"]["name"] == "synthetic-project_managed_wiki"

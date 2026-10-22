@@ -50,7 +50,10 @@ wiki_compose up -d --no-build --wait
 wiki_compose ps
 ```
 
-The preview binds frontend to `127.0.0.1:8080` and MCP to `127.0.0.1:3001`.
+The preview defaults to frontend `127.0.0.1:8080` and MCP `127.0.0.1:3001`.
+`WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` select different host ports while retaining
+loopback binding. Port `0` requests an available Docker-assigned port; discover it
+with `wiki_compose port frontend 80` or `wiki_compose port mcp 3001`.
 A new volume starts empty; services never auto-seed it. Backend health means the
 local content authority is readable, not that model, index or remote delivery is
 accepted. `--wait` does not replace checking frontend/MCP through the actual proxy.
@@ -191,8 +194,14 @@ unique new volume name and the reviewed restore-capable backend image. For examp
 ```sh
 : "${WIKI_RECOVERY_VOLUME:?Choose a new recovery volume name}"
 : "${WIKI_BACKEND_IMAGE:?Select the reviewed backend image}"
+# An existing name is not proof of an independent recovery. Stop if it exists.
+if docker volume inspect "$WIKI_RECOVERY_VOLUME" >/dev/null 2>&1; then
+  echo "Choose a new recovery volume name" >&2
+  exit 1
+fi
+docker image inspect "$WIKI_BACKEND_IMAGE" >/dev/null
 docker volume create "$WIKI_RECOVERY_VOLUME"
-docker run --rm --network none --entrypoint python \
+docker run --rm --network none --pull never --entrypoint python \
   -v "$WIKI_RECOVERY_VOLUME:/recovery" \
   -v "$PWD/.demo/operator-backups:/backups:ro" \
   "$WIKI_BACKEND_IMAGE" -m second_brain.wiki.backup restore \
@@ -201,27 +210,47 @@ docker run --rm --network none --entrypoint python \
 
 Restore refuses an existing `restored` destination. Do not remove an earlier
 recovery to make this command pass; choose another new destination instead. To
-inspect the recovered wiki through Compose, deliberately select this volume and
-subdirectory with an override:
+inspect the recovered wiki through Compose, use the checked-in
+`docker-compose.wiki.recovery.yml` with the base file. It selects the restored
+subdirectory and external volume, disables paid chat and remote delivery, and
+uses only the three explicitly selected local images. It inherits local HTTP
+access, not the installation's public proxy. Create an ignored inspection env
+file (for example `.env.wiki.inspect`) with these values:
 
-```yaml
-services:
-  backend:
-    environment:
-      SECOND_BRAIN_WIKI_VAULT: /managed-vault/restored
-  mcp:
-    environment:
-      SECOND_BRAIN_WIKI_VAULT: /managed-vault/restored
-volumes:
-  managed_wiki:
-    external: true
-    name: ${WIKI_RECOVERY_VOLUME:?Select the independently restored volume}
+```dotenv
+WIKI_RECOVERY_VOLUME=the-new-volume-you-just-restored
+WIKI_BACKEND_IMAGE=sha256:the-retained-backend-image-id
+WIKI_MCP_IMAGE=sha256:the-retained-mcp-image-id
+WIKI_FRONTEND_IMAGE=sha256:the-retained-frontend-image-id
+SECOND_BRAIN_WIKI_API_KEY=choose-a-separate-long-random-inspection-secret
+WIKI_FRONTEND_PORT=0
+WIKI_MCP_PORT=0
 ```
 
-Use a separate inspection project with separate loopback ports and no public
-proxy attachment; verify reads/history/receipts before a deliberate cutover. Do
-not start that inspection with the original fixed ports or expose two writers to
-the same vault. Retain both the original volume and the recovery until accepted.
+Replace the placeholders with the actual full IDs recorded before the update.
+Verify each exists with `docker image inspect`; the `:?` checks require values
+but do not validate image provenance or prohibit a mutable tag. Use a unique
+inspection project, and only these two Compose files (no public proxy override):
+
+```sh
+wiki_inspect() {
+  docker compose -p secondbrain-recovery-inspect --env-file .env.wiki.inspect \
+    -f docker-compose.wiki.yml -f docker-compose.wiki.recovery.yml "$@"
+}
+wiki_inspect config --quiet
+wiki_inspect up -d --no-build --pull never --wait
+wiki_inspect port frontend 80
+wiki_inspect port mcp 3001
+wiki_inspect ps
+```
+
+Use the returned loopback addresses to verify reads/history/receipts before a
+deliberate cutover. This is a writable inspection copy; any deliberate edit or
+retry must target it, never the original. Do not attach two different writer
+deployments to the same vault. When inspection is complete, `wiki_inspect down`
+removes its containers and network while retaining the external recovery volume.
+Retain both the original volume and recovery until accepted. The dedicated env
+file is private; never commit it or print resolved configuration with secrets.
 The
 [backup/restore guide](backup-restore.md) explains the create-only restore and
 provider/remote boundaries. Never restore over the live source or silently discard
@@ -232,7 +261,10 @@ it once ran.
 
 The [disposable stack acceptance](managed-stack-acceptance.md) builds source and
 checks real container restart, shared REST/MCP writes, synthetic HTTPS/auth,
-address recovery and independent-volume restore. Browser acceptance separately
+address recovery and the checked-in recovery overlay with retained image IDs,
+stopped one-off backup, an independent external volume and dynamic loopback ports.
+Inspect the actual run result before treating this newly wired path as passed.
+Browser acceptance separately
 checks worker transitions and draft/reply guards. Neither proves this operator's
 proxy, private content, published image availability, production upgrade or
 physical installation. Inspect the reviewed revision's actual CI records and

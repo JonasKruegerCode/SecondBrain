@@ -149,6 +149,45 @@ def add_acceptance_proxy(config: dict[str, Any]) -> None:
     }
 
 
+def validate_recovery_config(
+    config: dict[str, Any], volume: str, images: dict[str, str]
+) -> None:
+    """Check the actual Compose merge before starting an inspection writer."""
+    if set(config["services"]) != {"backend", "mcp", "frontend"}:
+        raise RuntimeError("unexpected recovery services")
+    resource = config["volumes"]["managed_wiki"]
+    if resource.get("external") is not True or resource.get("name") != volume:
+        raise RuntimeError("recovery volume selection changed")
+    if any(v.get("external") for v in config.get("networks", {}).values()):
+        raise RuntimeError("recovery must not attach to a proxy network")
+    for name, service in config["services"].items():
+        if service.get("image") != images[name] or service.get("pull_policy") != "never":
+            raise RuntimeError("recovery must retain the selected local image")
+        if service.get("container_name"):
+            raise RuntimeError("fixed recovery container name refused")
+        if name == "frontend" and service.get("volumes"):
+            raise RuntimeError("unexpected recovery frontend mount")
+        for port in service.get("ports", []):
+            if port.get("host_ip") != "127.0.0.1" or str(port.get("published")) != "0":
+                raise RuntimeError("acceptance recovery needs dynamic loopback ports")
+        if name in {"backend", "mcp"}:
+            env = service["environment"]
+            if (
+                env.get("SECOND_BRAIN_WIKI_VAULT") != "/managed-vault/restored"
+                or env.get("OPENROUTER_API_KEY") != ""
+                or env.get("SECOND_BRAIN_WIKI_DELIVERY") != "0"
+            ):
+                raise RuntimeError("recovery must inspect the restored path without providers")
+            mounts = service.get("volumes", [])
+            if len(mounts) != 1 or any(
+                mounts[0].get(k) != v
+                for k, v in {
+                    "type": "volume", "source": "managed_wiki", "target": "/managed-vault"
+                }.items()
+            ):
+                raise RuntimeError("unexpected recovery mount")
+
+
 class Run:
     def __init__(self, artifact: Path, key: str) -> None:
         self.artifact, self.key = artifact, key
@@ -162,6 +201,45 @@ class Run:
         self.projects: list[list[str]] = []
         self.probe_networks: list[str] = []
         self.probe_owners: dict[str, tuple[str, str]] = {}
+        self.recovery_volumes: dict[str, str] = {}
+
+    def create_recovery_volume(self, name: str) -> None:
+        existing = self.command(
+            [*DOCKER, "volume", "ls", "--filter", f"name=^{name}$", "--format", "{{.Name}}"],
+            record_output=False,
+        ).strip()
+        if existing:
+            raise RuntimeError("recovery volume already exists")
+        owner = uuid4().hex
+        self.recovery_volumes[name] = owner  # Track a timed-out create too.
+        self.command(
+            [*DOCKER, "volume", "create", "--label", f"secondbrain.acceptance.owner={owner}", name]
+        )
+        self.recovery_volume_owner(name, owner)
+
+    def recovery_volume_owner(self, name: str, owner: str) -> None:
+        actual = json.loads(
+            self.command(
+                [
+                    *DOCKER, "volume", "inspect", "--format",
+                    '{{json (index .Labels "secondbrain.acceptance.owner")}}', name,
+                ],
+                record_output=False,
+            )
+        )
+        if actual != owner:
+            raise RuntimeError("recovery volume ownership mismatch")
+
+    def cleanup_recovery_volume(self, name: str) -> None:
+        exists = self.command(
+            [*DOCKER, "volume", "ls", "--filter", f"name=^{name}$", "--format", "{{.Name}}"],
+            record_output=False,
+        ).strip()
+        if exists:
+            self.recovery_volume_owner(name, self.recovery_volumes[name])
+            # Docker refuses removal while any container still mounts the volume.
+            self.command([*DOCKER, "volume", "rm", name])
+        del self.recovery_volumes[name]
 
     def cleanup_probe_network(self, name: str) -> None:
         """Remove only an empty network carrying this run's ownership token."""
@@ -1036,76 +1114,97 @@ def main() -> int:
                     "reseed-preserves-content",
                     run.data(base + "/api/wiki/pages/stack-fixture") == page,
                 )
-                run.command(
-                    [
-                        *compose,
-                        "exec",
-                        "-T",
-                        "backend",
-                        "python",
-                        "-m",
-                        "second_brain.wiki.backup",
-                        "create",
-                        "--vault",
-                        "/managed-vault",
-                        "--archive",
-                        "/tmp/stack-backup.tar.gz",
-                    ]
-                )
-                run.command(
-                    [
-                        *compose,
-                        "cp",
-                        "backend:/tmp/stack-backup.tar.gz",
-                        str(temp / "backup.tar.gz"),
-                    ]
-                )
-                restore_project = project + "-restore"
-                restore_raw = json.loads(original_path.read_text())
-                restore_raw["services"].pop("edge")
-                restore_path = temp / "restore.json"
-                restore_path.write_text(
-                    json.dumps(
-                        isolated_config(restore_raw, restore_project, run.key, restored=True)
+                images = {
+                    name: json.loads(
+                        run.command(
+                            [*docker, "inspect", "--format", "{{json .Image}}",
+                             run.container(compose, name)["id"]],
+                            record_output=False,
+                        )
                     )
+                    for name in ("backend", "mcp", "frontend")
+                }
+                run.check(
+                    "retained-local-image-ids",
+                    all(v.startswith("sha256:") for v in images.values()),
                 )
-                restored = [
-                    *docker,
-                    "compose",
-                    "-p",
-                    restore_project,
-                    "-f",
-                    str(restore_path),
-                ]
-                run.projects.append(restored)
-                # Reuse the built images; the independent project owns a new named volume.
-                for name in ("backend", "mcp", "frontend"):
-                    restore_raw["services"][name]["image"] = f"{project}-{name}"
-                    restore_raw["services"][name].pop("build", None)
-                restore_path.write_text(json.dumps(restore_raw))
+                run.command([*compose, "stop", "frontend", "backend", "mcp"])
                 backup = json.loads(
                     run.command(
                         [
-                            *restored,
-                            "run",
-                            "--rm",
-                            "--no-deps",
-                            "-v",
-                            f"{temp}:/acceptance:ro",
-                            "backend",
-                            "python",
-                            "-m",
-                            "second_brain.wiki.backup",
-                            "restore",
-                            "--archive",
-                            "/acceptance/backup.tar.gz",
-                            "--vault",
-                            "/managed-vault/restored",
+                            *compose, "run", "--rm", "--no-deps", "-T", "--pull", "never",
+                            "-v", f"{temp}:/backups", "backend", "sh", "-c",
+                            'exec python -m second_brain.wiki.backup create '
+                            '--vault "${SECOND_BRAIN_WIKI_VAULT:?Set the active managed vault}" '
+                            '--archive "$1"', "sh", "/backups/backup.tar.gz",
                         ]
                     )
                 )
-                run.check("independent-volume-restore", backup["page_count"] == 14)
-                run.command([*restored, "up", "-d", "--wait"], timeout=150)
+                run.check("stopped-one-off-backup", backup["page_count"] == 14)
+                restore_project = project + "-restore"
+                recovery_volume = restore_project + "_managed_wiki"
+                run.create_recovery_volume(recovery_volume)
+                restored_backup = json.loads(
+                    run.command(
+                        [
+                            *docker, "run", "--rm", "--network", "none", "--pull", "never",
+                            "--entrypoint", "python", "-v", f"{recovery_volume}:/recovery",
+                            "-v", f"{temp}:/backups:ro", images["backend"],
+                            "-m", "second_brain.wiki.backup", "restore",
+                            "--archive", "/backups/backup.tar.gz", "--vault", "/recovery/restored",
+                        ]
+                    )
+                )
+                run.check("independent-volume-restore", restored_backup["page_count"] == 14)
+                run.env.update(
+                    WIKI_BACKEND_IMAGE=images["backend"],
+                    WIKI_MCP_IMAGE=images["mcp"],
+                    WIKI_FRONTEND_IMAGE=images["frontend"],
+                    WIKI_RECOVERY_VOLUME=recovery_volume,
+                    WIKI_FRONTEND_PORT="0",
+                    WIKI_MCP_PORT="0",
+                    SECOND_BRAIN_WIKI_API_KEY=run.key,
+                )
+                restored = [
+                    *docker, "compose", "-p", restore_project, "--env-file", str(env_file),
+                    "-f", str(ROOT / "docker-compose.wiki.yml"),
+                    "-f", str(ROOT / "docker-compose.wiki.recovery.yml"),
+                ]
+                actual = json.loads(
+                    run.command([*restored, "config", "--format", "json"], record_output=False)
+                )
+                validate_recovery_config(actual, recovery_volume, images)
+                run.steps.append("operator-recovery-overlay-resolved")
+                run.projects.append(restored)
+                run.command(
+                    [*restored, "up", "-d", "--no-build", "--pull", "never", "--wait"],
+                    timeout=150,
+                )
+                for name in images:
+                    running = run.container(restored, name)
+                    selected = json.loads(
+                        run.command(
+                            [*docker, "inspect", "--format", "{{json .Image}}", running["id"]],
+                            record_output=False,
+                        )
+                    )
+                    run.check(f"recovery-retained-image-{name}", selected == images[name])
+                for name in ("backend", "mcp"):
+                    mounts = json.loads(
+                        run.command(
+                            [*docker, "inspect", "--format", "{{json .Mounts}}",
+                             run.container(restored, name)["id"]],
+                            record_output=False,
+                        )
+                    )
+                    run.check(
+                        f"recovery-external-mount-{name}",
+                        any(
+                            m.get("Name") == recovery_volume
+                            and m.get("Destination") == "/managed-vault"
+                            for m in mounts
+                        ),
+                    )
                 restored_base = run.port(restored, "frontend", 80)
                 run.wait(restored_base + "/api/wiki/health")
                 run.check(
@@ -1122,6 +1221,17 @@ def main() -> int:
                 run.check(
                     "restored-retry-receipt",
                     retry["structuredContent"]["revision"] == page["revision"],
+                )
+                run.command(
+                    [*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"],
+                    timeout=150,
+                )
+                base = run.port(compose, "frontend", 80)
+                run.wait(base + "/api/wiki/health")
+                run.check(
+                    "original-preserved-after-recovery",
+                    run.data(base + "/api/wiki/pages/stack-fixture") == page
+                    and run.data(base + "/api/wiki/pages/stack-fixture/history") == history,
                 )
                 result["status"] = "passed"
             except BaseException:
@@ -1143,6 +1253,11 @@ def main() -> int:
                     try:
                         run.command([*ctx, "down", "--volumes", "--remove-orphans"], timeout=90)
                     except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                        clean = False
+                for name in list(run.recovery_volumes):
+                    try:
+                        run.cleanup_recovery_volume(name)
+                    except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
                         clean = False
                 result["cleanup_ok"] = clean
                 if not clean and not failed:

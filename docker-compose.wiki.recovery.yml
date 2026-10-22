@@ -1,0 +1,30 @@
+# Inspection only: combine with the base managed file, never a proxy override.
+# Select retained local image IDs and an independently restored external volume.
+services:
+  backend:
+    image: ${WIKI_BACKEND_IMAGE:?Select the retained local backend image ID}
+    pull_policy: never
+    restart: "no"
+    environment:
+      SECOND_BRAIN_WIKI_VAULT: /managed-vault/restored
+      OPENROUTER_API_KEY: ""
+      SECOND_BRAIN_WIKI_DELIVERY: "0"
+  mcp:
+    image: ${WIKI_MCP_IMAGE:?Select the retained local MCP image ID}
+    pull_policy: never
+    restart: "no"
+    environment:
+      SECOND_BRAIN_WIKI_VAULT: /managed-vault/restored
+      SECOND_BRAIN_WIKI_API_KEY: ${SECOND_BRAIN_WIKI_API_KEY:?Set an inspection MCP secret}
+      SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS: "localhost,localhost:*,127.0.0.1,127.0.0.1:*"
+      SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS: "http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*"
+      OPENROUTER_API_KEY: ""
+      SECOND_BRAIN_WIKI_DELIVERY: "0"
+  frontend:
+    image: ${WIKI_FRONTEND_IMAGE:?Select the retained local frontend image ID}
+    pull_policy: never
+    restart: "no"
+volumes:
+  managed_wiki:
+    external: true
+    name: ${WIKI_RECOVERY_VOLUME:?Select the independently restored volume}
