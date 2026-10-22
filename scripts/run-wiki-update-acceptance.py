@@ -49,6 +49,14 @@ class BrowserProbe:
         except BaseException:
             self.log.close()
             raise
+        try:
+            self.command("ready", timeout=15)
+        except BaseException:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(self.process.pid, signal.SIGKILL)
+            self.process.wait(timeout=15)
+            self.log.close()
+            raise
 
     def command(self, command: str, *, timeout: float = 180, **arguments: Any) -> dict[str, Any]:
         if self.process.poll() is not None:
@@ -71,7 +79,13 @@ class BrowserProbe:
             raise RuntimeError("invalid PWA browser response boundary")
         result = json.loads(line)
         if not isinstance(result, dict) or result.get("ok") is not True:
-            raise RuntimeError("PWA browser command failed; inspect synthetic evidence")
+            gate = result.get("gate") if isinstance(result, dict) else None
+            detail = (
+                gate
+                if isinstance(gate, str) and re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", gate)
+                else "unknown"
+            )
+            raise RuntimeError(f"PWA browser command failed at {detail}; inspect evidence")
         if result.get("phase") != {"close": "closed"}.get(command, command):
             raise RuntimeError("PWA browser response phase mismatch")
         return result
@@ -79,7 +93,7 @@ class BrowserProbe:
     def close(self) -> None:
         try:
             if self.process.poll() is None:
-                self.command("close", timeout=15)
+                self.command("close", timeout=20)
             if self.process.wait(timeout=15) != 0:
                 raise RuntimeError("owned PWA browser did not exit cleanly")
         finally:

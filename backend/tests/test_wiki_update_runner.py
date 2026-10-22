@@ -18,6 +18,41 @@ OLD = dict.fromkeys(runner["SERVICES"], "sha256:" + "1" * 64)
 NEW = dict.fromkeys(runner["SERVICES"], "sha256:" + "2" * 64)
 
 
+@pytest.mark.parametrize("refuse", [False, True])
+def test_pwa_startup_requires_a_bounded_ready_handshake(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refuse: bool
+) -> None:
+    state: dict[str, Any] = {"killed": False, "waited": False}
+
+    class Process:
+        pid = 424242
+
+        def wait(self, timeout: float) -> int:
+            assert timeout == 15
+            state["waited"] = True
+            return -9
+
+    def command(self: Any, op: str, *, timeout: float) -> dict[str, Any]:
+        assert op == "ready" and timeout == 15
+        if refuse:
+            raise RuntimeError("startup refused")
+        return {"ok": True, "phase": "ready"}
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: Process())
+    monkeypatch.setattr(runner["BrowserProbe"], "command", command)
+    monkeypatch.setattr(runner["os"], "killpg", lambda *args: state.update(killed=True))
+    if refuse:
+        with pytest.raises(RuntimeError, match="startup refused"):
+            runner["BrowserProbe"](tmp_path, tmp_path, {})
+        assert state == {"killed": True, "waited": True}
+        # The constructor must release its file even when no probe is returned.
+        (tmp_path / "pwa-browser.log").unlink()
+    else:
+        probe = runner["BrowserProbe"](tmp_path, tmp_path, {})
+        assert state == {"killed": False, "waited": False}
+        probe.log.close()
+
+
 class Output:
     def __init__(self, data: str) -> None:
         self.data = io.BytesIO(data.encode())

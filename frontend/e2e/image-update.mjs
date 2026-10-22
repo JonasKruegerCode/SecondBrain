@@ -2,12 +2,25 @@ import { createServer, request as httpRequest } from 'node:http';
 import { createHash } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import assert from 'node:assert/strict';
+import { writeSync } from 'node:fs';
 import { chromium, expect } from '@playwright/test';
 
 // A real reverse proxy: worker bytes, API replies and assets are never replaced.
 let upstream, server, browser, context, a, b, origin, id, oldHash, before, draft;
 let eventCursor = 0;
 let closed = false, gate = 'protocol';
+function mark(next) {
+  gate = next;
+  writeSync(2, JSON.stringify({ phase: gate, elapsed_ms: Math.round(performance.now()) }) + '\n');
+}
+async function bounded(operation, milliseconds, label) {
+  let timer;
+  try {
+    return await Promise.race([operation(), new Promise((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(label + ' timed out')), milliseconds);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 const counts = { requests: 0, writes: 0, externalBlocked: 0, modelRequests: 0, navigationsA: 0, navigationsB: 0 };
 const events = [], pageErrors = [];
 function validate(value) {
@@ -17,15 +30,21 @@ function validate(value) {
 }
 async function cleanup() {
   closed = true;
-  await browser?.close();
-  if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+  try { if (browser) await bounded(() => browser.close(), 10000, 'browser close'); }
+  finally {
+    if (server) {
+      server.closeAllConnections();
+      await bounded(() => new Promise(resolve => server.close(resolve)), 5000, 'gateway close');
+    }
+  }
 }
 async function json(path) {
-  const response = await fetch(origin + path, { redirect: 'error' });
+  mark('api-' + path.replaceAll('/', '-'));
+  const response = await fetch(origin + path, { redirect: 'error', signal: AbortSignal.timeout(15000) });
   assert(response.ok, 'fixture API request failed'); return response.json();
 }
 async function workerHash() {
-  const r = await fetch(origin + '/service-worker.js', { cache: 'no-store', redirect: 'error' });
+  const r = await fetch(origin + '/service-worker.js', { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15000) });
   assert(r.ok, 'served worker unavailable');
   return createHash('sha256').update(Buffer.from(await r.arrayBuffer())).digest('hex');
 }
@@ -52,7 +71,7 @@ async function snapshot() {
   return { pages: await json('/api/wiki/pages'), page: await json(`/api/wiki/pages/${id}`), history: await json(`/api/wiki/pages/${id}/history`) };
 }
 async function baseline(command) {
-  gate = 'baseline-upstream';
+  mark('baseline-upstream');
   assert(!server, 'baseline already initialized'); upstream = validate(command.upstream);
   id = command.page_id || 'pwa-update-notebook'; assert(/^[a-zA-Z0-9_-]+$/.test(id), 'invalid synthetic fixture id');
   server = createServer((req, res) => {
@@ -62,11 +81,14 @@ async function baseline(command) {
     const destination = new URL(upstream);
     const proxy = httpRequest({ hostname: destination.hostname, port: destination.port, method: req.method, path: req.url, headers: { ...req.headers } }, reply => {
       res.writeHead(reply.statusCode, reply.headers); reply.pipe(res);
+      reply.on('error', () => res.destroy());
     });
+    proxy.setTimeout(15000, () => { console.error(JSON.stringify({ phase: gate, proxy_timeout: true })); proxy.destroy(new Error('upstream timed out')); });
+    res.on('close', () => proxy.destroy());
     proxy.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); }); req.pipe(proxy);
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); origin = `http://127.0.0.1:${server.address().port}`;
-  gate = 'browser-launch';
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }); origin = `http://127.0.0.1:${server.address().port}`;
+  mark('browser-launch');
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'], ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
   context = await browser.newContext({ serviceWorkers: 'allow' }); context.setDefaultTimeout(45000);
   await context.route('**/*', route => {
@@ -86,15 +108,18 @@ async function baseline(command) {
   await context.addInitScript(() => {
     navigator.serviceWorker?.addEventListener('controllerchange', () => window.__imageUpdateEvent({ type: 'controllerchange', document: window.__imageUpdateDocument }));
   });
-  gate = 'baseline-pages-and-controller';
+  mark('baseline-pages-and-controller');
   a = await context.newPage(); b = await context.newPage();
   for (const [page, label] of [[a, 'A'], [b, 'B']]) {
     page.on('pageerror', () => pageErrors.push(label));
     page.on('framenavigated', frame => { if (frame === page.mainFrame()) counts['navigations' + label]++; });
-    await page.goto(`${origin}/wiki/${id}`); await expect(page.locator('article h1')).toBeVisible(); await controlled(page);
+    mark('baseline-navigation-' + label);
+    await page.goto(`${origin}/wiki/${id}`); await expect(page.locator('article h1')).toBeVisible();
+    mark('baseline-controller-' + label); await controlled(page);
   }
-  gate = 'baseline-preference-and-draft';
-  oldHash = await workerHash(); before = await snapshot();
+  mark('baseline-worker-hash'); oldHash = await workerHash();
+  mark('baseline-api-snapshot'); before = await snapshot();
+  mark('baseline-preference-and-draft');
   await a.getByRole('button', { name: 'Set as start page', exact: true }).click();
   await expect(a.locator('.notice')).toHaveText('This is now your start page.');
   assert.deepEqual(await preference(a), { version: 1, pageId: id });
@@ -111,10 +136,10 @@ async function baseline(command) {
   return { ok: true, phase: 'baseline', origin, worker_sha256: oldHash, preference: await preference(a), counts: { ...counts }, physical_device: false, production_https: false, secure_context: await a.evaluate(() => isSecureContext) };
 }
 async function forward(command) {
-  gate = 'forward-served-worker';
+  mark('forward-served-worker');
   assert(a && !closed, 'baseline required'); upstream = validate(command.upstream);
   const newHash = await workerHash(); assert.notEqual(newHash, oldHash, 'served worker bytes did not change');
-  gate = 'forward-install-waiting';
+  mark('forward-install-waiting');
   await b.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration('/'); if (!r) throw new Error('registration missing'); await r.update(); });
   await b.waitForFunction(async () => !!(await navigator.serviceWorker.getRegistration('/'))?.waiting);
   const updateA = a.getByRole('button', { name: 'Update now', exact: true });
@@ -122,23 +147,23 @@ async function forward(command) {
   await expect(updateA).toBeVisible(); await expect(updateA).toBeDisabled(); await expect(updateB).toBeEnabled();
   const docA = await a.evaluate(() => window.__imageUpdateDocument);
   const docB = await b.evaluate(() => window.__imageUpdateDocument);
-  gate = 'forward-clean-tab-activation';
+  mark('forward-clean-tab-activation');
   await updateB.click();
   await b.waitForFunction(old => window.__imageUpdateDocument !== old, docB);
   await controlled(b); await expect(b.locator('article h1')).toBeVisible();
   await a.waitForFunction(() => window.__imageUpdateTrace.some(e => e.type === 'controllerchange'));
-  gate = 'forward-native-draft-retention';
+  mark('forward-native-draft-retention');
   const retained = await a.evaluate(() => ({ node: window.__imageUpdateEditor === document.querySelector('#editor'), document: window.__imageUpdateOriginalDocument === document, value: document.querySelector('#editor')?.value, start: document.querySelector('#editor')?.selectionStart, end: document.querySelector('#editor')?.selectionEnd, direction: document.querySelector('#editor')?.selectionDirection, id: window.__imageUpdateDocument }));
   assert.deepEqual(retained, { node: true, document: true, value: draft, start: 4, end: 12, direction: 'forward', id: docA });
   await expect(updateA).toBeDisabled();
-  gate = 'forward-ui-save-and-reload';
+  mark('forward-ui-save-and-reload');
   const writesBeforeSave = counts.writes;
   await a.getByRole('button', { name: 'Save changes' }).click();
   await expect(a.locator('#editor')).toHaveCount(0); await expect(a.locator('.notice')).toContainText('Saved locally');
   await expect(updateA).toBeEnabled(); await updateA.click();
   await a.waitForFunction(old => window.__imageUpdateDocument !== old, docA); await controlled(a);
   await expect(a.locator('article .prose')).toContainText('Synthetic retained-image PWA draft.');
-  gate = 'forward-preference-home-root';
+  mark('forward-preference-home-root');
   for (const page of [a, b]) {
     assert.deepEqual(await preference(page), { version: 1, pageId: id });
     await page.getByRole('link', { name: 'Home', exact: true }).click();
@@ -148,7 +173,7 @@ async function forward(command) {
     assert.deepEqual(await preference(page), { version: 1, pageId: id });
     assert.deepEqual(await page.evaluate(() => caches.keys()), []);
   }
-  gate = 'forward-api-history-verification';
+  mark('forward-api-history-verification');
   const after = await snapshot();
   assert.equal(after.page.markdown, draft); assert.notEqual(after.page.revision, before.page.revision);
   assert.equal(after.history.history.length, before.history.history.length + 1);
@@ -164,20 +189,22 @@ async function forward(command) {
   return { ok: true, phase: 'forward', worker_sha256_before: oldHash, worker_sha256_after: newHash, retained_native_editor: true, additional_history_entries: 1, page_count_before: pageIds(before.pages).length, page_count_after: pageIds(after.pages).length, history_count_before: before.history.history.length, history_count_after: after.history.history.length, preference: await preference(a), caches: [], pageerrors: 0, events, counts: { ...counts }, no_external_model_calls: true, physical_device: false, production_https: false, secure_context: await a.evaluate(() => isSecureContext) };
 }
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+mark('protocol-ready');
 for await (const line of lines) {
   if (!line.trim()) continue;
   try {
     const command = JSON.parse(line), op = command.command;
     let result;
-    if (op === 'baseline') result = await baseline(command);
-    else if (op === 'forward') result = await forward(command);
+    if (op === 'ready') result = { ok: true, phase: 'ready' };
+    else if (op === 'baseline') result = await bounded(() => baseline(command), 150000, 'baseline');
+    else if (op === 'forward') result = await bounded(() => forward(command), 150000, 'forward');
     else if (op === 'close') { await cleanup(); result = { ok: true, phase: 'closed' }; }
     else throw new Error('unknown command');
     process.stdout.write(JSON.stringify(result) + '\n');
     if (closed) break;
   } catch (error) {
     console.error(String(error?.stack || error).slice(0, 6000));
-    await cleanup();
+    try { await cleanup(); } catch (closeError) { console.error(String(closeError).slice(0, 1000)); }
     process.stdout.write(JSON.stringify({ ok: false, error: 'PWA retained-image browser verification failed', gate }) + '\n');
     process.exitCode = 1; break;
   }
