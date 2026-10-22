@@ -237,7 +237,7 @@ Windows has not been accepted. From a clean source checkout, remain at its root:
 
 ```sh
 (cd backend && poetry sync --no-interaction)
-(cd frontend && npm ci && npx playwright install --with-deps chromium webkit)
+(cd frontend && npm ci)
 WIKI_PYTHON="$(cd backend && poetry env info --executable)"
 export PYTHONPATH="$PWD/backend/src"
 SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
@@ -250,6 +250,13 @@ another installation's proxy password. Ctrl+C stops the services. Stop it before
 running another profile on the same 8000/5173 ports. Do not use the older Make
 `dev-start-infra`, `infra` or `prod` targets for this isolated preview; they can
 operate on other containers.
+
+The demo itself does not need Playwright browser binaries. To run the browser
+checks below, install them separately after stopping the demo:
+
+```sh
+(cd frontend && npx playwright install --with-deps chromium webkit)
+```
 
 Run only checks relevant to the change; these commands are separate invocations:
 
