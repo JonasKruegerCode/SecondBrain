@@ -55,6 +55,19 @@ requires a fresh read and deliberate reconciliation. A cancelled request can
 already have published, so Cancel is not an undo operation. Subsequent index or
 remote failure does not turn a published save into a lost write.
 
+The two-tab [editor incarnation regression](../frontend/e2e/editor-incarnation.spec.ts)
+deletes and recreates a page with byteidentical Markdown before attempting the
+old tab's first save. That save must conflict even before another tab changes
+the replacement's content. A later UI save, repeated conflict, preserved draft
+and textarea selection, rejected/accepted Cancel, fresh read and subsequent save
+also verify recovery without changing the visit or adding conflict commits.
+Historical retry receipts are a separate contract: this draft was never
+previously published. Both 390/1440 cases passed locally with real API/Git
+services and native headless Chromium 153; no content or response mocks. The
+minimal local runtime is not the locked full suite, Linux-WebKit, a physical
+device or a provider/index-delivery acceptance. Hosted results for these new
+cases must be checked separately.
+
 ### Derived retrieval and delivery
 
 Exact page reads, lexical search, local history and explicit Markdown graph
