@@ -51,13 +51,19 @@ async function workerHash() {
 async function preference(page) {
   return page.evaluate(() => new Promise((resolve, reject) => {
     const open = indexedDB.open('secondbrain.preferences.v1', 1);
+    // This is an observer, never a migration writer. Refuse absent stores
+    // rather than creating an empty database that would poison the real app.
+    open.onupgradeneeded = () => { open.transaction?.abort(); reject(new Error('preference database not migrated')); };
+    open.onblocked = () => reject(new Error('preference open blocked'));
     open.onerror = () => reject(new Error('preference open failed'));
     open.onsuccess = () => {
       const db = open.result;
-      const tx = db.transaction('preferences', 'readonly');
-      const get = tx.objectStore('preferences').get('start-page');
-      get.onsuccess = () => { resolve(get.result); db.close(); };
-      get.onerror = () => { db.close(); reject(new Error('preference read failed')); };
+      try {
+        const tx = db.transaction('preferences', 'readonly');
+        const get = tx.objectStore('preferences').get('start-page');
+        tx.oncomplete = () => { resolve(get.result); db.close(); };
+        tx.onabort = tx.onerror = () => { db.close(); reject(new Error('preference read failed')); };
+      } catch (error) { db.close(); reject(error); }
     };
   }));
 }
@@ -122,7 +128,8 @@ async function baseline(command) {
   mark('baseline-preference-and-draft');
   await a.getByRole('button', { name: 'Set as start page', exact: true }).click();
   await expect(a.locator('.notice')).toHaveText('This is now your start page.');
-  assert.deepEqual(await preference(a), { version: 1, pageId: id });
+  assert.equal(await a.evaluate(() => localStorage.getItem('secondbrain.startpage')), id);
+  assert.equal(await a.evaluate(async () => (await indexedDB.databases()).some(db => db.name === 'secondbrain.preferences.v1')), false, 'baseline observer must not create the future preference database');
   await a.evaluate(() => { window.__imageUpdateTrace = []; });
   eventCursor = events.length;
   await a.getByRole('button', { name: 'Edit page' }).click();
@@ -133,7 +140,7 @@ async function baseline(command) {
     window.__imageUpdateEditor = el;
     window.__imageUpdateOriginalDocument = document;
   });
-  return { ok: true, phase: 'baseline', origin, worker_sha256: oldHash, preference: await preference(a), counts: { ...counts }, physical_device: false, production_https: false, secure_context: await a.evaluate(() => isSecureContext) };
+  return { ok: true, phase: 'baseline', origin, worker_sha256: oldHash, preference_storage: 'localStorage', preference: await a.evaluate(() => localStorage.getItem('secondbrain.startpage')), counts: { ...counts }, physical_device: false, production_https: false, secure_context: await a.evaluate(() => isSecureContext) };
 }
 async function forward(command) {
   mark('forward-served-worker');
@@ -165,9 +172,10 @@ async function forward(command) {
   await expect(a.locator('article .prose')).toContainText('Synthetic retained-image PWA draft.');
   mark('forward-preference-home-root');
   for (const page of [a, b]) {
-    assert.deepEqual(await preference(page), { version: 1, pageId: id });
     await page.getByRole('link', { name: 'Home', exact: true }).click();
     await expect(page).toHaveURL(origin + '/?overview=1');
+    await expect(page.locator('.home h1')).toBeVisible();
+    assert.deepEqual(await preference(page), { version: 1, pageId: id });
     await page.goto(origin + '/'); await expect(page).toHaveURL(origin + '/wiki/' + id);
     await expect(page.locator('article .prose')).toContainText('Synthetic retained-image PWA draft.');
     assert.deepEqual(await preference(page), { version: 1, pageId: id });
@@ -186,7 +194,7 @@ async function forward(command) {
   assert.equal(pageErrors.length, 0); assert.equal(counts.externalBlocked, 0); assert.equal(counts.modelRequests, 0);
   assert(events.slice(eventCursor).some(e => e.type === 'controllerchange' && e.document === docA), 'missing observed A controller change');
   assert(events.slice(eventCursor).some(e => e.type === 'controllerchange' && e.document === docB), 'missing observed B controller change');
-  return { ok: true, phase: 'forward', worker_sha256_before: oldHash, worker_sha256_after: newHash, retained_native_editor: true, additional_history_entries: 1, page_count_before: pageIds(before.pages).length, page_count_after: pageIds(after.pages).length, history_count_before: before.history.history.length, history_count_after: after.history.history.length, preference: await preference(a), caches: [], pageerrors: 0, events, counts: { ...counts }, no_external_model_calls: true, physical_device: false, production_https: false, secure_context: await a.evaluate(() => isSecureContext) };
+  return { ok: true, phase: 'forward', worker_sha256_before: oldHash, worker_sha256_after: newHash, retained_native_editor: true, additional_history_entries: 1, page_count_before: pageIds(before.pages).length, page_count_after: pageIds(after.pages).length, history_count_before: before.history.history.length, history_count_after: after.history.history.length, preference_migrated_from: 'localStorage', preference: await preference(a), caches: [], pageerrors: 0, events, counts: { ...counts }, no_external_model_calls: true, physical_device: false, production_https: false, secure_context: await a.evaluate(() => isSecureContext) };
 }
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 mark('protocol-ready');
