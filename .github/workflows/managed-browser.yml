@@ -20,6 +20,13 @@ jobs:
   acceptance:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Match the locked Playwright version. System libraries and both browser
+    # binaries are preinstalled; do not spend the suite's budget on apt mirrors.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --user 1001
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,11 +47,21 @@ jobs:
           poetry sync --no-interaction
           echo "WIKI_PYTHON=$(poetry env info --executable)" >> "$GITHUB_ENV"
 
-      - name: Install browser dependencies
+      - name: Install locked browser packages and verify the prebuilt browsers
         working-directory: frontend
         run: |
           npm ci
-          npx playwright install --with-deps chromium webkit
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const { chromium, webkit } = require('playwright');
+          assert.equal(require('@playwright/test/package.json').version, '1.64.0',
+            'Update the CI image together with the locked Playwright version');
+          for (const browser of [chromium, webkit]) {
+            assert.ok(fs.existsSync(browser.executablePath()),
+              `Missing prebuilt ${browser.name()} binary`);
+          }
+          JS
 
       - name: Check native WebKit chat and preference transactions before full suites
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --browser-grep "overlapping native tab|concurrent initial migration|failed first migration|transaction abort after put|a received answer|start-preference" --repeat-each 3'

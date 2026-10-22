@@ -297,3 +297,17 @@ store. Mutable Docker bases and package mirrors remain build inputs. This gate
 records whether worker bytes differ but does not keep a browser across versions:
 PWA activation/draft guards across a real release, proxy/auth, external indexes,
 production migration and physical installation remain separate acceptance.
+
+## Browser CI runtime
+
+The managed browser workflow uses the official
+`mcr.microsoft.com/playwright:v1.64.0-noble` image as non-root UID 1001, matching
+the checked-in npm lock. It still runs `npm ci`, then refuses a version mismatch
+or missing Chromium/WebKit executable before the existing acceptance phases.
+The prebuilt system libraries avoid repeating an apt download that has consumed
+the entire job limit on the hosted mirror. Update the image and version guard
+alongside a deliberate Playwright lockfile change; do not silently skip missing
+browser requirements. Image pull, Python/toolcache permissions and actual browser
+launch still require a successful hosted run. All acceptance phases and evidence
+limits remain in place. This is CI infrastructure, not a production deployment.
+See the [official container CI example](https://playwright.dev/docs/ci#via-containers).
