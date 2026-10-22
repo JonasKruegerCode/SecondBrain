@@ -65,7 +65,10 @@ for (const width of [390, 1440]) {
     const prefix = "Synthetic " + "i".repeat(14);
     const clusters = ["e\u0301", "👩🏽‍🚀", "🇺🇳"];
     const titles = clusters.map(cluster => `${prefix}${cluster} beyond the synthetic horizon`);
-    const haloTitle = "Synthetic " + clusters.join("").repeat(6);
+    // Stay within the API's 80-code-point galaxy_label limit, with wide ASCII
+    // between mixed graphemes so compact emoji fonts still overflow on mobile.
+    const haloTitle = "Synthetic " + clusters.join("").repeat(2) + "W".repeat(38) + clusters.join("").repeat(2);
+    expect([...haloTitle]).toHaveLength(80);
     const owned: string[] = [];
     const errors: string[] = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -98,19 +101,37 @@ for (const width of [390, 1440]) {
       const halo = page.locator(".galaxy-neighborhood text:not(.galaxy-count)");
       await expect(halo).toHaveAttribute("data-label", haloTitle);
       await expect(halo).toBeVisible();
+      if (width === 390) await expect(halo).not.toHaveText(haloTitle);
       // Pixel fitting retains both ends of the label. Check the actual painted
       // text against independent browser grapheme boundaries, including its suffix.
       const haloFit = await halo.evaluate(element => {
-        const source = (element as SVGTextElement).dataset.label!;
+        const label = element as SVGTextElement;
+        const source = label.dataset.label!;
         const Segmenter = (Intl as any).Segmenter;
         const clusters = Array.from(new Segmenter(undefined, { granularity: "grapheme" }).segment(source), (part: any) => part.segment as string);
         const text = element.textContent || "";
         const [left, right, extra] = text.split("…");
-        return { shortened: text !== source, valid: text === source || (extra === undefined && right !== undefined &&
+        // Measure a hidden full-text clone with the same SVG/font/transform.
+        // Do not mutate the fitted label or depend on a specific emoji font.
+        const full = label.cloneNode(true) as SVGTextElement;
+        full.textContent = source;
+        full.style.visibility = "hidden";
+        label.parentElement!.append(full);
+        const scale = Math.hypot(label.getScreenCTM()!.a, label.getScreenCTM()!.b);
+        const available = label.ownerSVGElement!.parentElement!.clientWidth - 24;
+        let sourceWidth: number;
+        try { sourceWidth = full.getComputedTextLength() * scale; }
+        finally { full.remove(); }
+        return { sourceWidth, available, paintedWidth: label.getComputedTextLength() * scale,
+          shortened: text !== source, valid: text === source || (extra === undefined && right !== undefined && left.length > 0 && right.length > 0 &&
           clusters.some((_, count) => clusters.slice(0, count).join("") === left) &&
           clusters.some((_, count) => clusters.slice(clusters.length - count).join("") === right)) };
       });
-      if (width === 390) expect(haloFit.shortened).toBe(true);
+      if (width === 390) {
+        expect(haloFit.sourceWidth, "fixture must exceed the actual halo pixel budget").toBeGreaterThan(haloFit.available);
+        expect(haloFit.shortened).toBe(true);
+      }
+      expect(haloFit.paintedWidth).toBeLessThanOrEqual(haloFit.available + .5);
       expect(haloFit.valid, "painted halo prefix and suffix must end at complete graphemes").toBe(true);
       for (const [index, id] of ids.entries()) {
         const star = page.locator(`.galaxy-star[data-node="${id}"]`);
@@ -433,3 +454,4 @@ for (const width of [390, 1440]) {
     }
   });
 }
+

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
 import runpy
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +16,86 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts/run-wiki-update-acceptan
 runner = runpy.run_path(str(SCRIPT))
 OLD = dict.fromkeys(runner["SERVICES"], "sha256:" + "1" * 64)
 NEW = dict.fromkeys(runner["SERVICES"], "sha256:" + "2" * 64)
+
+
+class Output:
+    def __init__(self, data: str) -> None:
+        self.data = io.BytesIO(data.encode())
+
+    def fileno(self) -> int:
+        return 9999
+
+
+@pytest.mark.parametrize(
+    "response,ready,match",
+    [
+        ('{"ok":false}\n', True, "command failed"),
+        ('{"ok":true}', True, "response boundary"),
+        ('x' * 65537, True, "response boundary"),
+        ('{"ok":true}\n', False, "timed out"),
+        ('{"ok":true,"phase":"baseline"}\n', True, "phase mismatch"),
+    ],
+)
+def test_pwa_protocol_failure_cannot_be_accepted(
+    response: str, ready: bool, match: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Process:
+        stdin = io.BytesIO()
+        stdout = Output(response)
+
+        def poll(self) -> None:
+            return None
+
+    probe = object.__new__(runner["BrowserProbe"])
+    probe.process = Process()
+    monkeypatch.setattr(
+        runner["os"], "read", lambda fd, count: probe.process.stdout.data.read(count)
+    )
+    monkeypatch.setattr(runner["select"], "select", lambda *args: ([1] if ready else [], [], []))
+    with pytest.raises(RuntimeError, match=match):
+        probe.command("forward", upstream="http://127.0.0.1:1234")
+
+
+def test_pwa_protocol_preserves_one_successful_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Process:
+        stdin = io.BytesIO()
+        stdout = Output('{"ok":true,"phase":"forward"}\n')
+
+        def poll(self) -> None:
+            return None
+
+    probe = object.__new__(runner["BrowserProbe"])
+    process = Process()
+    probe.process = process
+    monkeypatch.setattr(runner["os"], "read", lambda fd, count: process.stdout.data.read(count))
+    monkeypatch.setattr(runner["select"], "select", lambda *args: ([1], [], []))
+    assert probe.command("forward", upstream="http://127.0.0.1:1234") == {
+        "ok": True, "phase": "forward"
+    }
+    assert json.loads(process.stdin.getvalue()) == {
+        "command": "forward", "upstream": "http://127.0.0.1:1234"
+    }
+
+
+def test_partial_pwa_line_still_obeys_command_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Process:
+        stdin = io.BytesIO()
+        stdout = Output('{"ok":')
+
+        def poll(self) -> None:
+            return None
+
+    probe = object.__new__(runner["BrowserProbe"])
+    probe.process = Process()
+    readiness: Iterator[tuple[list[int], list[int], list[int]]] = iter([
+        ([1], [], []), ([], [], [])
+    ])
+    monkeypatch.setattr(runner["select"], "select", lambda *args: next(readiness))
+    monkeypatch.setattr(
+        runner["os"], "read", lambda fd, count: probe.process.stdout.data.read(count)
+    )
+    with pytest.raises(RuntimeError, match="timed out"):
+        probe.command("forward")
 
 
 @pytest.mark.parametrize("bad", ["tag", "short", "missing", "service"])

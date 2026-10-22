@@ -1,7 +1,7 @@
 """Check a pinned old/new/old image pair on one disposable managed volume.
 
-This is a server/image compatibility rehearsal, not a PWA worker, production
-proxy, external index, private migration or universal downgrade acceptance.
+The optional kept-browser gate uses a secure loopback origin across real image
+changes. Neither gate accepts production HTTPS, devices or universal downgrade.
 """
 
 from __future__ import annotations
@@ -9,12 +9,15 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import re
 import runpy
 import secrets
+import select
 import signal
 import subprocess
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +29,65 @@ SERVICES = ("backend", "mcp", "frontend")
 stack = runpy.run_path(str(ROOT / "scripts/run-wiki-stack-acceptance.py"))
 Run = stack["Run"]
 DOCKER = stack["DOCKER"]
+
+
+class BrowserProbe:
+    """One owned browser process and stable gateway, never a reconstructed profile."""
+
+    def __init__(self, root: Path, artifact: Path, env: dict[str, str]) -> None:
+        self.log = (artifact / "pwa-browser.log").open("w", encoding="utf-8")
+        try:
+            self.process = subprocess.Popen(
+                ["node", str(root / "frontend/e2e/image-update.mjs")],
+                cwd=root / "frontend",
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=self.log,
+                start_new_session=True,
+            )
+        except BaseException:
+            self.log.close()
+            raise
+
+    def command(self, command: str, *, timeout: float = 180, **arguments: Any) -> dict[str, Any]:
+        if self.process.poll() is not None:
+            raise RuntimeError("owned PWA browser exited before its command")
+        assert self.process.stdin is not None and self.process.stdout is not None
+        self.process.stdin.write((json.dumps({"command": command, **arguments}) + "\n").encode())
+        self.process.stdin.flush()
+        deadline = time.monotonic() + timeout
+        response = bytearray()
+        while b"\n" not in response:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
+                raise RuntimeError("owned PWA browser command timed out")
+            chunk = os.read(self.process.stdout.fileno(), min(4096, 65537 - len(response)))
+            response.extend(chunk)
+            if not chunk or len(response) > 65536:
+                raise RuntimeError("invalid PWA browser response boundary")
+        line, extra = response.split(b"\n", 1)
+        if extra:
+            raise RuntimeError("invalid PWA browser response boundary")
+        result = json.loads(line)
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise RuntimeError("PWA browser command failed; inspect synthetic evidence")
+        if result.get("phase") != {"close": "closed"}.get(command, command):
+            raise RuntimeError("PWA browser response phase mismatch")
+        return result
+
+    def close(self) -> None:
+        try:
+            if self.process.poll() is None:
+                self.command("close", timeout=15)
+            if self.process.wait(timeout=15) != 0:
+                raise RuntimeError("owned PWA browser did not exit cleanly")
+        finally:
+            if self.process.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(self.process.pid, signal.SIGKILL)
+                self.process.wait(timeout=15)
+            self.log.close()
 
 
 def source_revision(path: Path, expected: str | None = None) -> str:
@@ -96,6 +158,9 @@ def running_selection(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-source", type=Path, required=True)
+    parser.add_argument(
+        "--pwa", action="store_true", help="Keep a real browser across old/new images"
+    )
     args = parser.parse_args(argv)
     artifact = (
         ROOT
@@ -117,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         "cleanup_ok": False,
     }
     temporary: tempfile.TemporaryDirectory[str] | None = None
+    browser: BrowserProbe | None = None
 
     def interrupt(_signum: int, _frame: Any) -> None:
         raise KeyboardInterrupt
@@ -239,6 +305,13 @@ def main(argv: list[str] | None = None) -> int:
                 run.initialize(mcp)
                 url = base + "/api/wiki/pages/update-notebook"
                 worker_bytes.append(run.http(base + "/service-worker.js")[0])
+                if args.pwa and phase == "forward":
+                    run.check("actual-worker-version-changed", worker_bytes[0] != worker_bytes[1])
+                    assert browser is not None
+                    result["pwa_forward"] = browser.command("forward", upstream=base)
+                    browser.close()
+                    browser = None
+                    result["pwa_crossversion"] = True
                 if page is not None:
                     run.check(phase + "-page", run.data(url) == page)
                     run.check(phase + "-history", run.data(url + "/history") == history)
@@ -300,6 +373,19 @@ def main(argv: list[str] | None = None) -> int:
                 result["phases"].append(
                     {"phase": phase, "images": images[version], "history_count": len(receipts)}
                 )
+                if args.pwa and phase == "baseline":
+                    run.data(
+                        base + "/api/wiki/pages/pwa-update-notebook",
+                        body={
+                            "markdown": "# PWA update notebook\nOnly invented observations.",
+                            "base_revision": None,
+                            "request_id": "pwa-update-create",
+                        },
+                    )
+                    browser = BrowserProbe(ROOT, artifact, run.env)
+                    result["pwa_baseline"] = browser.command(
+                        "baseline", upstream=base, page_id="pwa-update-notebook"
+                    )
             result.update(status="passed", worker_bytes_changed=worker_bytes[0] != worker_bytes[1])
     except (Exception, KeyboardInterrupt) as exc:
         result["failure"] = (type(exc).__name__ + ": " + str(exc)).replace(run.key, "[redacted]")
@@ -307,6 +393,11 @@ def main(argv: list[str] | None = None) -> int:
             run.diagnostics(compose, "image-update-failure")
     finally:
         clean = True
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                clean = False
         for compose in reversed(run.projects):
             with contextlib.suppress(Exception):
                 run.command([*compose, "logs", "--no-color"], timeout=30)

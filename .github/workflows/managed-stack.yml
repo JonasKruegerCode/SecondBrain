@@ -58,6 +58,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare browser for the retained-image update
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
       # Fixed reviewed baseline: runtime store and frontend differ from candidate.
       - uses: actions/checkout@v4
         with:
@@ -66,7 +76,7 @@ jobs:
           persist-credentials: false
 
       - name: Exercise retained old/new/old/resumed images on one owned volume
-        run: python3 scripts/run-wiki-update-acceptance.py --baseline-source .demo/update-baseline
+        run: python3 scripts/run-wiki-update-acceptance.py --baseline-source .demo/update-baseline --pwa
 
       - name: Upload synthetic image compatibility results
         if: always()

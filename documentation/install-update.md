@@ -311,3 +311,32 @@ browser requirements. Image pull, Python/toolcache permissions and actual browse
 launch still require a successful hosted run. All acceptance phases and evidence
 limits remain in place. This is CI infrastructure, not a production deployment.
 See the [official container CI example](https://playwright.dev/docs/ci#via-containers).
+## Real PWA image-update rehearsal
+
+The image-update CI job also runs the opt-in kept-browser check:
+
+```sh
+python3 scripts/run-wiki-update-acceptance.py --baseline-source .demo/update-baseline --pwa
+```
+
+This requires the locked frontend dependencies and Playwright Chromium in
+addition to the local Docker prerequisites above. The pinned baseline and
+candidate are built as actual different images; the candidate worker has a
+deliberate checked-in release change. The check refuses identical served worker
+bytes. It keeps one browser/context and a stable loopback gateway origin while
+the selected frontend container changes. A dirty tab must retain its native
+editor, draft and selection when a clean second tab activates the real waiting
+worker. It then saves through the real API and deliberately reloads. History,
+the saved start-page preference, Home/root navigation and empty CacheStorage
+are checked; provider endpoints remain disabled.
+
+The gateway forwards the real image responses; it does not substitute worker
+scripts or lifecycle events. Its HTTP loopback origin is browser-trusted for
+service workers, **not production HTTPS or physical installation evidence**.
+The original server old/new/old/resume checks continue after the browser closes.
+Without `--pwa`, the runner retains its server-only behavior. A passing local
+same-app worker-file rehearsal is useful driver integration evidence and does
+not replace this Docker image pair or the operator's deployment-specific test.
+Inspect `pwa_baseline`, `pwa_forward`, `pwa_crossversion` and `pwa-browser.log`
+alongside the selected image IDs, content/history receipts and cleanup result.
+
