@@ -209,10 +209,11 @@ for (const width of [390, 1440]) {
           } else await route.abort("failed"); // Explicit transport injection only.
         }, { times: 1 });
         await page.goto("/");
-        await expect(page).toHaveURL(/\/\?overview=1$/);
-        await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
-        await expect(page.locator(".start-page-notice")).toContainText("could not be opened");
-        await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
+        await expect(page).toHaveURL(/\/wiki\/home$/);
+        await expect(page.locator("article h1")).toHaveText("Lantern Bay field atlas");
+        await expect(page.locator(".notice")).toContainText("Home is shown instead");
+        await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveClass(/active/);
+        await expect(page.getByRole("link", { name: "Home", exact: true })).not.toHaveAttribute("aria-current", "page");
         expect(targetReads).toBe(1);
         expect(await page.evaluate(() => history.length)).toBe(visitLength);
         expect(await page.evaluate(async () => {

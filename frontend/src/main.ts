@@ -729,6 +729,16 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     if (startNavigation.fallbackOnError) {
       // Only automatic start-page navigation falls back. Direct article URLs
       // retain their normal error/retry state, and the saved preference remains.
+      if (startNavigation.fallbackOnError === "saved" && location.pathname !== "/wiki/home") {
+        // The saved page can disappear after listing, or its read can fail
+        // independently. Try the curated Home once before the overview.
+        replaceAppUrl(url("home"));
+        void route(focusView, true, readingPoint, {
+          fallbackOnError: "home",
+          notice: "Your saved start page could not be opened. Home is shown instead. Your start-page choice is unchanged.",
+        });
+        return;
+      }
       replaceAppUrl("/?overview=1");
       void route(focusView, true, readingPoint, {
         notice: startNavigation.fallbackOnError === "saved"
