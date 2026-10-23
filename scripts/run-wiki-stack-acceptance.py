@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import hashlib
 import ipaddress
 import itertools
 import json
@@ -149,6 +150,35 @@ def add_acceptance_proxy(config: dict[str, Any]) -> None:
     }
 
 
+def source_digest(source: Path) -> dict[str, str]:
+    """Include Git metadata and index bytes, not only visible Markdown."""
+    if source.is_symlink() or not source.is_dir() or not (source / ".git").is_dir():
+        raise RuntimeError("import fixture must be a standalone local repository")
+    result = {}
+    for path in sorted(source.rglob("*")):
+        if path.is_symlink():
+            raise RuntimeError("import fixture symlinks refused")
+        if path.is_file():
+            result[path.relative_to(source).as_posix()] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+    return result
+
+
+def import_config(
+    config: dict[str, Any], project: str, key: str, images: dict[str, str]
+) -> dict[str, Any]:
+    """Reuse actual built images in an independent, provider-free project."""
+    data = isolated_config(json.loads(json.dumps(config)), project, key)
+    for name, service in data["services"].items():
+        if not images.get(name, "").startswith("sha256:"):
+            raise RuntimeError("import rehearsal requires retained image IDs")
+        service.pop("build", None)
+        service["image"] = images[name]
+        service["pull_policy"] = "never"
+    return data
+
+
 def validate_recovery_config(
     config: dict[str, Any], volume: str, images: dict[str, str]
 ) -> None:
@@ -202,6 +232,7 @@ class Run:
         self.probe_networks: list[str] = []
         self.probe_owners: dict[str, tuple[str, str]] = {}
         self.recovery_volumes: dict[str, str] = {}
+        self.import_sources: list[tuple[Path, dict[str, str]]] = []
 
     def create_recovery_volume(self, name: str) -> None:
         existing = self.command(
@@ -353,11 +384,12 @@ class Run:
         timeout: int = 180,
         expected: int = 0,
         record_output: bool = True,
+        environment: dict[str, str] | None = None,
     ) -> str:
         result = subprocess.run(
             args,
             cwd=ROOT,
-            env=self.env,
+            env=self.env if environment is None else environment,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -644,7 +676,9 @@ class Run:
             )
 
         try:
-            self.command([*compose, "up", "-d", "--wait", "--no-deps", "--force-recreate", "backend"])
+            self.command(
+                [*compose, "up", "-d", "--wait", "--no-deps", "--force-recreate", "backend"]
+            )
             self.backend_health(compose)
             # The control route exists only in this fixture; wait for Docker DNS
             # caches to reach its replacement, not a stale healthy backend.
@@ -723,7 +757,9 @@ class Run:
                 config["services"]["backend"]["command"] = original_command
             config_path.write_text(json.dumps(config))
             try:
-                self.command([*compose, "up", "-d", "--wait", "--no-deps", "--force-recreate", "backend"])
+                self.command(
+                    [*compose, "up", "-d", "--wait", "--no-deps", "--force-recreate", "backend"]
+                )
                 self.backend_health(compose)
             except (OSError, RuntimeError, subprocess.TimeoutExpired):
                 if not failed:
@@ -911,6 +947,105 @@ class Run:
             raise RuntimeError(f"gate failed: {name}")
         self.steps.append(name)
 
+    def exercise_import(
+        self, temp: Path, source_config: dict[str, Any], project: str, images: dict[str, str]
+    ) -> dict[str, Any]:
+        source = temp / "import-source"
+        source.mkdir()
+        git = ["git", "-C", str(source)]
+        template = temp / "empty-git-template"
+        template.mkdir()
+        git_env = {k: v for k, v in self.env.items() if not k.startswith("GIT_")}
+        git_env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+                       GIT_TEMPLATE_DIR=str(template), GIT_TERMINAL_PROMPT="0")
+
+        def source_git(*args: str) -> str:
+            return self.command([*git, *args], environment=git_env)
+
+        source_git("init")
+        pages = source / "wiki"
+        pages.mkdir()
+        (pages / "home.md").write_text("# Fictional harbor\n\n[[weather-note|Weather note]]\n")
+        (pages / "weather-note.md").write_text("# Weather note\n\nA fictional observation.\n")
+        source_git("add", ".")
+        commit = ["-c", "user.name=Synthetic Fixture", "-c",
+                  "user.email=fixture@example.invalid"]
+        source_git(*commit, "commit", "-m", "Fictional harbor")
+        (pages / "weather-note.md").write_text(
+            "# Weather note\n\nA second fictional observation.\n"
+        )
+        source_git("add", ".")
+        source_git(*commit, "commit", "-m", "Fictional observation update")
+        source_head = source_git("rev-parse", "HEAD").strip()
+        before = source_digest(source)
+        self.import_sources.append((source, before))
+        config = import_config(source_config, project, self.key, images)
+        path = temp / "import.json"
+        path.write_text(json.dumps(config))
+        compose = [*DOCKER, "compose", "-p", project, "-f", str(path)]
+        self.projects.append(compose)  # Own cleanup before creating any resources.
+        oneoff = [*compose, "run", "--rm", "--no-deps", "-T", "--pull", "never",
+                  "-v", f"{source}:/import-source:ro"]
+        probe = json.loads(self.command([*oneoff, "backend", "python", "-c",
+            "import errno,json,os\nfrom pathlib import Path\n"
+            "try:\n Path('/import-source/.write-probe').write_text('probe')\n"
+            "except OSError as e:\n assert e.errno == errno.EROFS\n"
+            "else:\n raise RuntimeError('source writable')\n"
+            "print(json.dumps({'uid':os.getuid(),'owner':os.stat('/import-source').st_uid}))"]))
+        self.check("import-readonly-mount", True)  # Probe must raise EROFS, never succeed.
+        self.check("import-container-root", probe["uid"] == 0)
+        foreign_owner = probe["uid"] != probe["owner"]
+        if foreign_owner:
+            self.command(
+                [*oneoff, "backend", "git", "-C", "/import-source", "status", "--porcelain"],
+                expected=128,
+            )
+            self.steps.append("import-untrusted-owner-refused")
+        trusted = [*oneoff, "-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=safe.directory",
+                   "-e", "GIT_CONFIG_VALUE_0=/import-source", "backend", "python", "-m",
+                   "second_brain.wiki.setup", "--vault", "/managed-vault", "--mode", "import",
+                   "--source", "/import-source", "--prefix", "wiki", "--request-id", "stack-import"]
+        first = json.loads(self.command(trusted))
+        self.check("import-first-publication", first["publication"] == "imported"
+                   and first["pages"] == 2 and first["source_revision"] == source_head
+                   and bool(first["revision"]) and first["current_revision"] == first["revision"])
+        self.command([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"], timeout=150)
+        base = self.port(compose, "frontend", 80)
+        self.wait(base + "/api/wiki/health")
+        page_url = base + "/api/wiki/pages/weather-note"
+        page = self.data(page_url)
+        self.check(
+            "import-api-content", page["markdown"] == (pages / "weather-note.md").read_text()
+        )
+        self.check("import-source-history", len(self.data(page_url + "/history")["history"]) == 3)
+        payload = {"markdown": page["markdown"] + "\nA later managed edit.\n",
+                   "base_revision": page["revision"], "request_id": "stack-import-edit"}
+        receipt = self.data(page_url, body=payload)
+        edited = self.data(page_url)
+        history = self.data(page_url + "/history")
+        graph = self.data(base + "/api/wiki/graph")
+        self.command([*compose, "stop", "frontend", "backend", "mcp"])
+        retry = json.loads(self.command(trusted))
+        self.check("import-retry-keeps-original-receipt", retry["revision"] == first["revision"]
+                   and retry["publication"] == "imported"
+                   and retry["current_revision"] != first["revision"])
+        self.command([*trusted[:-1], "different-first-import"], expected=1)
+        self.steps.append("import-populated-new-request-refused")
+        self.command([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"], timeout=150)
+        base = self.port(compose, "frontend", 80)
+        self.wait(base + "/api/wiki/health")
+        page_url = base + "/api/wiki/pages/weather-note"
+        self.check("import-edit-history-graph-survive-restart", self.data(page_url) == edited
+                   and self.data(page_url + "/history") == history
+                   and self.data(base + "/api/wiki/graph") == graph)
+        self.check("import-edit-receipt-replayed", self.data(page_url, body=payload) == receipt)
+        self.command([*compose, "stop", "frontend", "backend", "mcp"])
+        self.check("import-source-all-bytes-unchanged", source_digest(source) == before
+                   and source_git("rev-parse", "HEAD").strip() == source_head)
+        return {"status": "passed", "pages": 2, "source_files_checked": len(before),
+                "foreign_owner_exercised": foreign_owner, "readonly_errno": "EROFS",
+                "images": images}
+
     def exercise(self, compose: list[str]) -> tuple[str, dict[str, Any], dict[str, Any]]:
         base = self.port(compose, "frontend", 80)
         mcp = self.port(compose, "mcp", 3001) + "/mcp"
@@ -1056,6 +1191,7 @@ def main() -> int:
                 run.command([*original, "config", "--format", "json"], record_output=False)
             )
             original_path = temp / "original.json"
+            source_config = json.loads(json.dumps(raw))
             isolated = isolated_config(raw, project, run.key)
             add_acceptance_proxy(isolated)
             original_path.write_text(json.dumps(isolated))
@@ -1233,6 +1369,9 @@ def main() -> int:
                     run.data(base + "/api/wiki/pages/stack-fixture") == page
                     and run.data(base + "/api/wiki/pages/stack-fixture/history") == history,
                 )
+                result["container_import"] = run.exercise_import(
+                    temp, source_config, project + "-import", images
+                )
                 result["status"] = "passed"
             except BaseException:
                 for ctx in run.projects:
@@ -1259,6 +1398,14 @@ def main() -> int:
                         run.cleanup_recovery_volume(name)
                     except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
                         clean = False
+                try:
+                    sources_unchanged = all(
+                        source_digest(source) == before for source, before in run.import_sources
+                    )
+                except (OSError, RuntimeError):
+                    sources_unchanged = False
+                result["import_sources_unchanged_after_cleanup"] = sources_unchanged
+                clean = clean and sources_unchanged
                 result["cleanup_ok"] = clean
                 if not clean and not failed:
                     raise RuntimeError("isolated project cleanup failed")
@@ -1292,3 +1439,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -117,9 +117,28 @@ prepare frontend dependencies and Chromium (`npm ci` and `npx playwright install
 --with-deps chromium` in `frontend`), then run
 `SECOND_BRAIN_STACK_BROWSER=1 make acceptance-stack`.
 
+The runner also exercises the documented container Git first start in a separate
+owned project/volume using the already built images by immutable local ID, with
+builds and pulls disabled for that project. It mounts a complete fictional
+two-commit clone read-only at `/import-source`, requires an actual write attempt
+to fail with `EROFS`, and scopes Git's ownership trust to that exact path. When
+host and container UIDs differ it first requires Git to reject the untrusted
+source; `container_import.foreign_owner_exercised` distinguishes that case from
+a same-owner run.
+
+The imported two-page prefix retains its original history. An API edit, stopped
+setup retry and real service restart must preserve content/history/graph and the
+edit receipt. The retry must return the original import revision plus the later
+`current_revision`; a different first-start request must refuse the populated
+destination. Every source file, including `.git` and index bytes, is compared
+before/after and again after owned Docker cleanup. Inspect `container_import`,
+the `import-*` gates and `import_sources_unchanged_after_cleanup` in the actual
+result. Passing local helper tests alone do not establish these container gates.
+
 A passing synthetic stack run still does not establish hosted model or index
 provider behavior, production Git authentication and delivery, production HTTPS
 and reverse-proxy/authentication configuration, or installation and updates on
 physical Android/iOS devices. Use the separate explicit OpenRouter acceptance
 path for real model calls and the [PWA guide](pwa.md) for device checks. Production
 deployment and private-vault acceptance remain separate work.
+

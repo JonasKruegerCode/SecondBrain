@@ -15,6 +15,42 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run-wiki-stack-accep
 runner = runpy.run_path(str(SCRIPT), run_name="wiki_stack_runner")
 
 
+def test_import_project_uses_only_retained_images_and_independent_storage() -> None:
+    original = config()
+    images = {name: "sha256:" + name for name in ("backend", "mcp", "frontend")}
+    for service in original["services"].values():
+        service["build"] = {"context": "/reviewed/source"}
+    selected = runner["import_config"](original, "synthetic-import", "synthetic", images)
+    assert selected["volumes"]["managed_wiki"]["name"] == "synthetic-import_managed_wiki"
+    assert original["volumes"]["managed_wiki"]["name"] == "existing-private-volume"
+    for name, service in selected["services"].items():
+        assert service["image"] == images[name]
+        assert service["pull_policy"] == "never"
+        assert "build" not in service
+    for missing in images:
+        with pytest.raises(RuntimeError, match="retained image"):
+            runner["import_config"](
+                original, "synthetic-import", "synthetic", {**images, missing: "latest"}
+            )
+    original["volumes"]["managed_wiki"]["external"] = True
+    with pytest.raises(RuntimeError, match="external"):
+        runner["import_config"](original, "synthetic-import", "synthetic", images)
+
+
+def test_import_digest_detects_git_index_changes_and_refuses_symlinks(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    (source / ".git").mkdir(parents=True)
+    (source / ".git/index").write_bytes(b"before")
+    (source / "home.md").write_text("# Fictional home\n")
+    before = runner["source_digest"](source)
+    assert set(before) == {".git/index", "home.md"}
+    (source / ".git/index").write_bytes(b"after")
+    assert runner["source_digest"](source) != before
+    (source / "link").symlink_to(source / "home.md")
+    with pytest.raises(RuntimeError, match="symlink"):
+        runner["source_digest"](source)
+
+
 def config() -> dict[str, Any]:
     return {
         "services": {
@@ -434,3 +470,4 @@ def test_probe_cleanup_refuses_foreign_resources_and_retries_owned_removal(
         assert attempts == []
         with pytest.raises(RuntimeError, match="ownership"):
             run.cleanup_probe_network(name)
+
