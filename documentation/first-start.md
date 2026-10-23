@@ -89,18 +89,82 @@ launcher. For the default
 fictional tour, use [`make demo`](managed-wiki-development.md). Setup itself
 neither starts services nor configures production services, remotes, or secrets.
 
-For the isolated container preview, copy `.env.wiki.example` to the ignored
-`.env.wiki`, set a real MCP secret, and run:
+## Container first start
+
+Use the project identity, protected `.env.wiki` and `wiki_compose` function from
+the [install/update procedure](install-update.md#keep-one-installation-identity).
+Docker builds install their own locked dependencies; the native Python/Poetry/Node
+setup above is not required for this route. Build before invoking the setup CLI:
 
 ```sh
-docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
+wiki_compose config --quiet
+wiki_compose build backend mcp frontend
 ```
 
-This starts with an empty persistent named volume unless a prepared managed
-vault is restored into that volume by an explicit operator procedure. It never
-auto-seeds template content. Verify the actual revision and runtime with the
-disposable rehearsal below; success there does not accept a private-vault restore
-or production proxy configuration.
+For an existing installation, preserve/backup content first; setup is not an
+update or replacement operation. Stop the managed services and quiesce other
+writers before setup. Choose exactly one mode against the mounted managed volume:
+
+```sh
+wiki_compose stop frontend backend mcp
+
+# Explicit empty wiki (also the default if no setup is run).
+wiki_compose run --rm --no-deps -T backend \
+  python -m second_brain.wiki.setup --vault /managed-vault --mode empty
+
+# OR: the fictional atlas, mounted read-only from the reviewed checkout.
+wiki_compose run --rm --no-deps -T \
+  -v "$PWD/examples/demo-vault:/setup-template:ro" backend \
+  python -m second_brain.wiki.setup --vault /managed-vault --mode template \
+  --template /setup-template
+```
+
+The backend image contains application code, not `examples/demo-vault`; the
+explicit mount and `--template` are required. Check the host directory exists
+before running the command. Setup must succeed before starting services. An
+identical template retry verifies the original seed; after user edits it refuses
+without overwriting them. Restart ordinary services to retain edits instead.
+
+For a Git first start, use a complete clean local clone with its `.git` directory,
+not a linked worktree whose Git directory is outside the mount. Replace the host
+path and optional prefix deliberately; never mount the active managed vault as
+the source. Read-only mounting protects source files. The one-off container runs
+as root, so scope Git's ownership trust to this exact reviewed mount only:
+
+```sh
+wiki_compose run --rm --no-deps -T \
+  -v "/absolute/path/to/local-clone:/import-source:ro" \
+  -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory \
+  -e GIT_CONFIG_VALUE_0=/import-source backend \
+  python -m second_brain.wiki.setup --vault /managed-vault --mode import \
+  --source /import-source --prefix path/to/wiki --request-id first-import
+```
+
+Omit `--prefix` for root Markdown or an empty repository. Keep the same source,
+prefix and request ID for an identical retry; later edits remain published and
+`current_revision` reports them separately. No remote clone or credentials are
+needed by this command. Source remotes/configuration are not copied to the wiki.
+Do not use a wildcard ownership exception or bypass a dirty/incomplete-source
+refusal. Finish any interrupted template only through its explicit `--resume`
+contract, not by deleting the volume.
+
+After a successful choice:
+
+```sh
+wiki_compose up -d --no-build --wait
+wiki_compose ps
+```
+
+These commands use the base `/managed-vault` path, not the separate recovery
+overlay's `/managed-vault/restored`. Keep recovery inspection separate. Services
+never auto-seed template content; a prepared native host directory is not the
+Compose volume. Verify the actual revision and runtime with the disposable
+rehearsal below; success there does not accept a private migration or production
+proxy configuration. For reviewed image-only startup, select the matching images
+as described in the install guide, omit `build`, verify each selected image exists
+with `docker image inspect`, and use `run --pull never` for each one-off setup.
+Do not pass `--build`; unlike `up`, `run` has no `--no-build` option. These options
+are listed in the [Compose run reference](https://docs.docker.com/reference/cli/docker/compose/run/).
 
 For a lasting instance, follow the [install/update procedure](install-update.md)
 to keep the same Compose project and volume, archive container content, and
@@ -126,3 +190,4 @@ content is available even when they are disabled or pending. Chat, galaxy and PW
 are separate runtime capabilities rather than setup modes. The [PWA guide](pwa.md)
 documents HTTPS, installation, privacy and updates; first-start itself does not
 verify a physical-device installation.
+

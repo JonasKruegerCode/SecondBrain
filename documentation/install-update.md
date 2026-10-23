@@ -7,6 +7,13 @@ commands. Start with the [first-start choices](first-start.md), keep the existin
 authenticated HTTPS proxy, and use the [MCP guide](managed-mcp.md) for its separate
 Bearer/Host/Origin boundary.
 
+The source-build route below needs Git, Docker Engine with Compose v2, and network
+access to the Docker bases and package registries used by the Dockerfiles. Python,
+Poetry and Node run inside the build containers; their native host installations
+are needed only for the separate development/demo route. Use the complete reviewed
+checkout, including `backend/`, `frontend/`, their lockfiles and the Compose files.
+Do not run the legacy `docker-compose.yml` in place of the managed file.
+
 ## Keep one installation identity
 
 Run from the root of a clean checkout of the reviewed `secondbrain-2.0` revision.
@@ -39,7 +46,18 @@ real MCP secret and exact proxy authorities/origins. The browser API does not
 receive the MCP Bearer key; protect frontend, assets and `/api/wiki` with the
 existing proxy authentication. Configure OpenRouter only if paid chat is wanted.
 The base managed Compose profile does not enable optional index/remote-Git
-providers; configuring those is a separate reviewed operator step.
+providers; configuring those is a separate reviewed operator step. `--env-file`
+supplies Compose interpolation, not every container's process environment. Merely
+adding provider variables to `.env.wiki` does not pass them to the services. A
+reviewed override must map the required variables into both API and MCP, with the
+same index configuration and only one delivery worker. Follow the
+[index](managed-indexes.md) and [delivery](managed-delivery.md) contracts.
+
+Preserve the browser's public `Host` authority through the proxy to the frontend;
+its Nginx forwards that authority to the API, which checks it against a present
+`Origin` on writes/chat. Rewriting it to an internal service name can leave reads
+working while saves fail with `403 origin_rejected`. For MCP, forward the Bearer
+header and configure its actual incoming Host and optional Origin independently.
 
 Check interpolation without printing secrets, then build and start:
 
@@ -49,6 +67,12 @@ wiki_compose build backend mcp frontend
 wiki_compose up -d --no-build --wait
 wiki_compose ps
 ```
+
+For a new installation that should contain a template or imported Git pages,
+build first, then run one of the [container first-start commands](first-start.md#container-first-start)
+against this same project/volume **before** `up`. Native setup into a host
+directory does not populate the Compose named volume. The default empty start
+above is also intentional and remains usable without optional providers.
 
 The preview defaults to frontend `127.0.0.1:8080` and MCP `127.0.0.1:3001`.
 `WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` select different host ports while retaining
@@ -134,7 +158,11 @@ older-source rebuild is not proof of the identical former image.
 
 Published application images are an alternative **only when those exact artifacts
 exist and their provenance is reviewed**. PR image builds do not publish this
-branch; do not substitute `latest` from the default branch. Use a local override
+branch; both application workflows publish only on their configured `main` push
+path. A green PR build is not a downloadable preview image. Do not substitute
+`latest` from the default branch. Keep the matching Compose/env/override files
+even for image-only operation; no host Poetry or Node installation is required.
+Use a local override
 with concrete reviewed digests/retained image IDs for all services:
 
 ```yaml
@@ -339,4 +367,5 @@ same-app worker-file rehearsal is useful driver integration evidence and does
 not replace this Docker image pair or the operator's deployment-specific test.
 Inspect `pwa_baseline`, `pwa_forward`, `pwa_crossversion` and `pwa-browser.log`
 alongside the selected image IDs, content/history receipts and cleanup result.
+
 

@@ -174,6 +174,15 @@ before remote exposure. The API deliberately does not receive the MCP Bearer
 key, so browser access remains same-origin and can retain the deployment's
 existing proxy authentication.
 
+This Compose start is empty by default. To choose fictional template or local Git
+content directly in that named volume, follow the explicit
+[container first-start commands](documentation/first-start.md#container-first-start)
+before starting services. Native setup into a host directory does not seed the
+container volume. Docker source builds need the complete reviewed checkout and
+Docker/Compose, without a native Python/Poetry/Node installation. PR builds do not
+publish branch images; use source builds unless exact reviewed image artifacts
+are actually available, as described in the install/update guide.
+
 The backend healthcheck is a read-only readiness probe of the local bare Git
 authority. An empty vault is healthy; after publication, an unavailable object
 store or unreadable current commit makes the backend unhealthy instead of
@@ -293,3 +302,4 @@ fixtures and screenshots must contain no private wiki content or credentials.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
