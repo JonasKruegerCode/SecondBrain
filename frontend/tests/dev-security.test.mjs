@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { createServer } from "vite";
 
 const project = fileURLToPath(new URL("../", import.meta.url));
-async function fixture() {
+async function fixture(mode = "development") {
   const base = await mkdtemp(join(tmpdir(), "secondbrain-vite-boundary-"));
   const root = join(base, "root");
   const allowed = join(root, "node_modules/.vite/deps/entry.js.map");
@@ -27,7 +27,7 @@ async function fixture() {
     await writeFile(join(root, ".env"), "SYNTHETIC_ONLY=never-serve-this-fixture");
     await writeFile(outside, sourceMap("outside-map-fixture"));
     server = await createServer({
-      root, configFile: join(project, "vite.config.ts"), logLevel: "silent",
+      root, mode, configFile: join(project, "vite.config.ts"), logLevel: "silent",
       cacheDir: join(root, "node_modules/.vite"),
       server: { host: "127.0.0.1", port: 0, strictPort: true, hmr: false,
         fs: { strict: true, allow: [root] },
@@ -90,4 +90,37 @@ test("dev server keeps denied files and untrusted hosts outside its response", a
     assert.equal(host.status, 403);
     assert.doesNotMatch(host.body, /Synthetic dev fixture/);
   } finally { await f.close(); }
+});
+
+
+
+async function hotReloadConnection(port) {
+  return new Promise(resolve => {
+    const req = request({ host: "127.0.0.1", port, path: "/", headers: {
+      connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13",
+      "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-protocol": "vite-hmr",
+    } });
+    let settled = false;
+    const finish = accepted => {
+      if (settled) return;
+      settled = true;
+      req.destroy();
+      resolve(accepted);
+    };
+    req.on("upgrade", (_response, socket) => { socket.destroy(); finish(true); });
+    req.on("response", response => { response.resume(); finish(false); });
+    req.on("error", () => finish(false));
+    req.setTimeout(1000, () => finish(false));
+    req.end();
+  });
+}
+
+test("demo serves pages without a reconnect reload channel; development keeps it", async () => {
+  for (const mode of ["demo", "development"]) {
+    const f = await fixture(mode);
+    try {
+      assert.equal((await get(f.port, "/index.html")).status, 200);
+      assert.equal(await hotReloadConnection(f.port), mode === "development");
+    } finally { await f.close(); }
+  }
 });

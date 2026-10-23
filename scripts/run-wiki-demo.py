@@ -219,6 +219,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "--host",
                 "127.0.0.1",
                 "--strictPort",
+                "--mode",
+                "demo",
             ],
             cwd=root / "frontend", complete=True,
         )

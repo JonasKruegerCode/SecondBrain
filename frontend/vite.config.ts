@@ -4,9 +4,13 @@ import { defineConfig } from "vite";
 // than prod (e.g. API_PORT=8001 in .env to develop alongside a running Docker stack).
 const apiPort = process.env.API_PORT ?? "8000";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   server: {
     port: 5173,
+    // A demo service restart must not reload the tab and discard an open draft.
+    // Ordinary `npm run dev` keeps Vite hot reload enabled.
+    hmr: mode === "demo" ? false : undefined,
+    ws: mode === "demo" ? false : undefined,
     proxy: {
       "/api": {
         target: `http://localhost:${apiPort}`,
@@ -37,4 +41,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
