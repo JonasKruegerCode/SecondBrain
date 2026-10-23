@@ -285,10 +285,11 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Inspected acceptance, 24 October 2026
 
-Current application source is [c42fc679](https://github.com/JonasKruegerCode/SecondBrain/commit/c42fc679341d281c299608257997bc1a99e4f317),
+The preceding fully inspected application source is [c42fc679](https://github.com/JonasKruegerCode/SecondBrain/commit/c42fc679341d281c299608257997bc1a99e4f317),
 tree `ea6919a1dfac3bea662f65cdd5b8149e4e0119e8`. CI checkout merge
 `2180c13d23107188e8ba9f5ec8d772a6a84104d0` has that same tree.
-This documentation consolidation does not change application or test code.
+The later MARK/SMALL correction below changes rendering; those older full CI
+results do not independently validate the new application.
 
 The editor now separates a confirmed historical publication from the current
 page. A subsequent GET must match both revision and Markdown before completing
@@ -362,6 +363,42 @@ preserves dated operator tours, reload checks, recovery probes, older CI matrice
 and failed experiments. Later passes do not diagnose earlier intermittent
 loading, preference, worker, new-tab or cleanup observations. Run only relevant
 regressions after new changes; do not rerun full CI solely to refresh a date.
+
+### Current bounded wrapper correction
+
+A real-service probe found that Markdown wikilinks inside inline `<mark>` and
+`<small>` wrappers existed in graph/backlinks but were flattened into plain
+article text. These two inert wrappers now use the existing HTML-namespace
+checked recursive child sanitizer, alongside SPAN/KBD. Wrapper tags and all
+source attributes are discarded; descendants still pass normal URL/element
+filtering. Other unsupported elements retain their text-only fallback.
+Markdown, API contracts, graph derivation identity and stored content do not
+change. No index rebuild is needed for this renderer-only correction.
+
+The versioned [23-case corpus](../frontend/e2e/wiki-link-cases.ts) and
+[real-service probe](../frontend/e2e/inline-wrapper.spec.ts) retain explicit
+expected labels/targets, a nonempty control, visible hydrated anchors, actual
+graph edges, backlinks to every fixture target, missing/ambiguous diagnostics
+and byte/revision readback. Both viewport probes also save a changed link, replay
+the exact request, check two history entries and changed backlinks, reload and
+navigate through the new link. Exact synthetic inputs and observed projections
+are printed as `[wiki-link-parity]` rows in the allowlisted browser log; this is
+reproducible current evidence, not the lost historical 336-case selection.
+
+Local native Chromium at 390/1440 passes the focused eight-test selection,
+including all 23 cases per width and both mutation paths. The final strengthened
+24-test selection covers adjacent destination/reference/URL/fence/title paths.
+Both TypeScript projects and the production frontend build pass. Current
+narrow/broad MARK originals were personally viewed. These use cached minimal
+local dependencies and partial source; broad Chromium/WebKit CI for the new
+application remains a separate follow-up.
+
+The unchanged-parent diagnostic records MARK/SMALL graph links with missing
+article anchors at both widths. Earlier probe attempts also exposed a harness
+hydration race, a mistaken comment-block oracle (same-line Markdown remains
+unparsed in both projections), and an ES2020 `replaceAll` type error. Those were
+corrected in the probe; they are not additional product defects. The historical
+63-mismatch aggregate is not reduced or revalidated by this new bounded corpus.
 
 ## Known release gates
 
