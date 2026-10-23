@@ -70,7 +70,8 @@ test("bounded chat history keeps its original conversation after transaction abo
   await expect(page.locator(".chat-error")).toContainText("Synthetic provider failure.");
   const navigation = page.getByRole("navigation", { name: "Primary", exact: true });
   await navigation.getByRole("link", { name: "Home", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "A growing collection", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/wiki\/home$/);
+  await expect(page.locator("article h1")).toHaveText("Lantern Bay field atlas");
   await navigation.getByRole("link", { name: "Chat", exact: true }).click();
   await expect(page.locator(".chat-message.user").last()).toContainText("Synthetic SPA unsaved question.");
   expect(await page.evaluate(() => (window as any).chatPutSucceeded)).toBe(true);

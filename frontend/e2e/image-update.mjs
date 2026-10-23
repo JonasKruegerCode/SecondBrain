@@ -173,6 +173,10 @@ async function forward(command) {
   mark('forward-preference-home-root');
   for (const page of [a, b]) {
     await page.getByRole('link', { name: 'Home', exact: true }).click();
+    await expect(page).toHaveURL(origin + '/wiki/' + id);
+    await expect(page.locator('article .prose')).toContainText('Synthetic retained-image PWA draft.');
+    assert.deepEqual(await preference(page), { version: 1, pageId: id });
+    await page.getByRole('link', { name: '← All pages', exact: true }).click();
     await expect(page).toHaveURL(origin + '/?overview=1');
     await expect(page.locator('.home h1')).toBeVisible();
     assert.deepEqual(await preference(page), { version: 1, pageId: id });

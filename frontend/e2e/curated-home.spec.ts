@@ -12,23 +12,37 @@ for (const width of [390, 1440]) {
         await page.getByRole("button", { name: "Set as start page" }).click();
         await expect(page.locator(".notice")).toHaveText("This is now your start page.");
       }
-      for (const control of ["Home", "brand"]) {
+      for (const control of ["Home", "brand", "brand keyboard"]) {
         await page.goto("/search");
+        // Losing this in-memory value would hide a document reload behind a
+        // correct destination, and invalidate session-only chat recovery.
+        const documentToken = await page.evaluate(() => {
+          const token = crypto.randomUUID();
+          (window as any).__homeNavigationDocument = token;
+          return token;
+        });
         if (control === "Home") {
           const link = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Home", exact: true });
           await link.focus();
           await page.keyboard.press("Enter");
+        } else if (control === "brand keyboard") {
+          await page.locator("a.brand").focus();
+          await page.keyboard.press("Enter");
         } else await page.locator("a.brand").click();
         await expect(page).toHaveURL(saved ? /\/wiki\/field-notebook$/ : /\/wiki\/home$/);
         await expect(page.locator("article h1")).toHaveText(saved ? "Field notebook" : "Lantern Bay field atlas");
+        expect(await page.evaluate(() => (window as any).__homeNavigationDocument)).toBe(documentToken);
+        if (control !== "brand") await expect(page.locator("article h1")).toBeFocused();
         expect(await page.evaluate(async () => {
           const path = "/src/start-preference.ts";
           return (await import(/* @vite-ignore */ path)).readStartPage();
         })).toBe(saved ? "field-notebook" : "");
       }
       await page.getByRole("link", { name: "← All pages", exact: true }).click();
+      await expect(page).toHaveURL(/\/\?overview=1$/);
       await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
       await expect(page.locator(".library .card")).toHaveCount(12);
+      await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
     }
     await page.screenshot({ path: info.outputPath(`global-home-overview-${width}.png`), fullPage: true });
     await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Home", exact: true }).click();

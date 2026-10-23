@@ -21,11 +21,14 @@ SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
 
 Open <http://127.0.0.1:5173>. A fresh browser opens the curated Home article.
 An existing personal start page takes precedence. The **Home** navigation link
-and **All pages** deliberately open the collection overview; `/?overview=1`
-also bypasses automatic start-page navigation. A vault without a Home article
-still opens its overview. Automatic Home selection does not save a personal
-preference. An unreadable browser preference or failed automatic page read
-shows an explanatory overview instead.
+and brand open that personal start page, or the curated Home article when no
+personal start is saved. **All pages** opens the collection overview;
+`/?overview=1` also bypasses automatic start-page navigation. A missing or
+unreachable personal start page falls back to curated Home, then to an
+explanatory overview if Home is also unavailable. With no personal start or
+Home article, the vault opens its overview. Automatic Home selection does not
+save a personal preference; fallback leaves the saved choice unchanged.
+An unreadable browser preference shows an explanatory overview instead.
 
 The launcher uses the separate `.demo/vault`,
 requires no remote or model key, clears inherited OpenRouter access and retains
@@ -212,8 +215,8 @@ viewport/browser, provider enabled or unavailable, and any failed step:
    On Mira Quill, choose **Set as start page**, wait for **This is now your start
    page**, then open
    <http://127.0.0.1:5173/> in the same browser profile and confirm that it opens
-   that article. The **Home** navigation link and **All pages** intentionally
-   open the overview; use it to return to the atlas when needed.
+   that article. The **Home** navigation link and brand also open Mira Quill.
+   Use **All pages** to open the overview and return to the atlas when needed.
    On a longer article, follow an in-text link and use browser Back/Forward:
    the reading point should return for that visit, including after reloading the
    destination and then using Back/Forward. Fragment links still take precedence;
