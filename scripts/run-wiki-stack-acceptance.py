@@ -1001,13 +1001,20 @@ class Run:
                 expected=128,
             )
             self.steps.append("import-untrusted-owner-refused")
-        trusted = [*oneoff, "-e", "GIT_CONFIG_GLOBAL=/tmp/first-import.gitconfig",
-                   "backend", "sh", "-c",
-                   "git config --global --add safe.directory /import-source && "
-                   "git config --global --add safe.directory /import-source/.git && "
-                   'exec python -m second_brain.wiki.setup "$@"', "sh",
-                   "--vault", "/managed-vault", "--mode", "import",
-                   "--source", "/import-source", "--prefix", "wiki", "--request-id", "stack-import"]
+        def trusted_python(context: list[str], input_repo: Path, *args: str) -> list[str]:
+            source_digest(input_repo)  # Refuse missing/misdirected bind sources.
+            return [*context, "run", "--rm", "--no-deps", "-T", "--pull", "never",
+                    "-v", f"{input_repo}:/import-source:ro",
+                    "-e", "GIT_CONFIG_GLOBAL=/tmp/first-import.gitconfig",
+                    "backend", "sh", "-c",
+                    "git config --global --add safe.directory /import-source && "
+                    "git config --global --add safe.directory /import-source/.git && "
+                    'exec python "$@"', "sh", *args]
+
+        setup_args = ["-m", "second_brain.wiki.setup", "--vault", "/managed-vault",
+                      "--mode", "import", "--source", "/import-source"]
+        trusted = trusted_python(compose, source, *setup_args, "--prefix", "wiki",
+                                 "--request-id", "stack-import")
         first = json.loads(self.command(trusted))
         self.check("import-first-publication", first["publication"] == "imported"
                    and first["pages"] == 2 and first["source_revision"] == source_head
@@ -1034,6 +1041,40 @@ class Run:
                    and retry["current_revision"] != first["revision"])
         self.command([*trusted[:-1], "different-first-import"], expected=1)
         self.steps.append("import-populated-new-request-refused")
+        refusal_probe = (
+            "import json\nfrom second_brain.wiki.setup import setup_vault\n"
+            "from second_brain.wiki.store import WikiStore,WikiError\n"
+            "store=WikiStore('/managed-vault')\nbefore=store._head()\n"
+            "try:\n setup_vault('/managed-vault','import',source='/import-source',"
+            "prefix='wiki',request_id='stack-import')\n"
+            "except WikiError as e:\n print(json.dumps({'error':e.code,'before':before,"
+            "'after':store._head()}))\nelse:\n raise RuntimeError('invalid source accepted')"
+        )
+        invalid_sources = {}
+        for kind, error in (("dirty", "dirty_source"), ("shallow", "incomplete_source")):
+            invalid = temp / (kind + "-source")
+            clone = ["git", "clone", "--no-local"]
+            if kind == "shallow":
+                clone.extend(["--depth", "1"])
+            self.command([*clone, source.as_uri(), str(invalid)], environment=git_env)
+            if kind == "dirty":
+                (invalid / "untracked.md").write_text("# Uncommitted fictional input\n")
+            else:
+                self.check("import-source-is-shallow", self.command(
+                    ["git", "-C", str(invalid), "rev-parse", "--is-shallow-repository"],
+                    environment=git_env,
+                ).strip() == "true")
+            invalid_before = source_digest(invalid)
+            self.import_sources.append((invalid, invalid_before))
+            refused = json.loads(self.command(
+                trusted_python(compose, invalid, "-c", refusal_probe)
+            ))
+            self.check(f"import-{kind}-source-refused-without-publication",
+                       refused["error"] == error
+                       and refused["before"] == refused["after"] == retry["current_revision"])
+            self.check(f"import-{kind}-source-bytes-unchanged",
+                       source_digest(invalid) == invalid_before)
+            invalid_sources[kind] = {"error": error, "source_files": len(invalid_before)}
         self.command([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"], timeout=150)
         base = self.port(compose, "frontend", 80)
         self.wait(base + "/api/wiki/health")
@@ -1045,9 +1086,44 @@ class Run:
         self.command([*compose, "stop", "frontend", "backend", "mcp"])
         self.check("import-source-all-bytes-unchanged", source_digest(source) == before
                    and source_git("rev-parse", "HEAD").strip() == source_head)
+        empty_source = temp / "empty-source"
+        self.command(["git", "init", str(empty_source)], environment=git_env)
+        empty_before = source_digest(empty_source)
+        self.import_sources.append((empty_source, empty_before))
+        empty_project = project + "-empty"
+        empty_config = temp / "empty-import.json"
+        empty_config.write_text(json.dumps(
+            import_config(source_config, empty_project, self.key, images)
+        ))
+        empty_context = [*DOCKER, "compose", "-p", empty_project, "-f", str(empty_config)]
+        self.projects.append(empty_context)
+        empty_command = trusted_python(empty_context, empty_source, *setup_args,
+                                       "--request-id", "empty-git-import")
+        empty = json.loads(self.command(empty_command))
+        self.check("import-unborn-source-publishes-empty-receipt", empty["pages"] == 0
+                   and empty["source_revision"] is None and empty["publication"] == "imported"
+                   and bool(empty["revision"]) and empty["current_revision"] == empty["revision"])
+        self.check("import-unborn-source-identical-retry",
+                   json.loads(self.command(empty_command)) == empty)
+        self.command([*empty_command[:-1], "competing-empty-import"], expected=1)
+        self.steps.append("import-unborn-published-target-refuses-new-request")
+        self.command([*empty_context, "up", "-d", "--no-build", "--pull", "never", "--wait"],
+                     timeout=150)
+        empty_base = self.port(empty_context, "frontend", 80)
+        self.wait(empty_base + "/api/wiki/health")
+        self.check(
+            "import-unborn-api-empty", self.data(empty_base + "/api/wiki/pages")["pages"] == []
+        )
+        self.command([*empty_context, "stop", "frontend", "backend", "mcp"])
+        self.check("import-unborn-refusal-preserves-receipt",
+                   json.loads(self.command(empty_command)) == empty)
+        self.check("import-unborn-source-bytes-unchanged",
+                   source_digest(empty_source) == empty_before)
         return {"status": "passed", "pages": 2, "source_files_checked": len(before),
                 "foreign_owner_exercised": foreign_owner, "readonly_errno": "EROFS",
-                "images": images}
+                "images": images, "invalid_sources": invalid_sources,
+                "empty_source": {"pages": 0, "receipt_published": True,
+                                 "source_files": len(empty_before)}}
 
     def exercise(self, compose: list[str]) -> tuple[str, dict[str, Any], dict[str, Any]]:
         base = self.port(compose, "frontend", 80)

@@ -137,6 +137,16 @@ before/after and again after owned Docker cleanup. Inspect `container_import`,
 the `import-*` gates and `import_sources_unchanged_after_cleanup` in the actual
 result. Passing local helper tests alone do not establish these container gates.
 
+The same container path also refuses dirty and genuinely shallow source clones
+with their specific `dirty_source` / `incomplete_source` errors, preserving the
+existing target head and subsequent API content, history, graph and edit receipt.
+A separate owned volume imports an unborn (no commits) Git repository: it must
+publish a versioned zero-page receipt, replay an identical request unchanged,
+refuse a competing request even though no pages exist, and expose an empty page
+list through the real API. All source clones participate in the byte comparison
+after cleanup; `container_import.invalid_sources` and `.empty_source` summarize
+these cases. No additional image builds, pulls or external Git remote are needed.
+
 A passing synthetic stack run still does not establish hosted model or index
 provider behavior, production Git authentication and delivery, production HTTPS
 and reverse-proxy/authentication configuration, or installation and updates on
