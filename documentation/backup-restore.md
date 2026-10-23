@@ -83,6 +83,33 @@ environment; they are deliberately not placed in the archive. Review remote stat
 before re-enabling a target after disaster recovery. Do not use restore as an
 implicit merge or rollback over a live vault.
 
+## Verify an uncertain save after recovery
+
+A restored mutation receipt confirms a **historical publication**, not that the
+page still has those contents. Test this first on an isolated synthetic vault:
+
+1. Save a known edit and retain its original `request_id`, `base_revision`,
+   Markdown payload and successful receipt. Keep these private when using real
+   content; the backup contains receipts but does not restore a browser draft.
+2. Quiesce writers and workers, create the archive, restore into a new path and
+   start the API against that path. Compare current pages, revisions, history
+   and explicit graph links before attempting delivery or cutover.
+3. Replay the identical request against the restored API. It must return the
+   original receipt, with no new content revision or history entry. Do not
+   replace its base revision or request ID just because the service restarted.
+4. Check the current page separately. A later saved edit must remain current;
+   replaying an old create receipt must not resurrect a subsequently deleted
+   page. Reusing the request ID with changed content must fail with
+   `request_id_reused`; a new request against an outdated base must fail with
+   `revision_conflict`.
+
+For an open browser whose save acknowledgement was lost, leave the unchanged
+draft in that same tab and use **Save changes** again after service recovery.
+The editor retains that attempt's immutable request identity. A successful retry
+can confirm the original save without applying it twice. Reloading or closing
+the tab can discard the draft and retry state; a server backup is not browser
+storage recovery. Read the latest page before reconciling any later edit.
+
 ## Current verification boundary
 
 The native synthetic regression covers populated and empty archives, full local
@@ -94,6 +121,17 @@ temporary debris, a deliberate successful retry, and restoration of one exact
 revision's page, history and graph. Replaying its original REST request leaves
 the restored head unchanged. This is local Git/SQLite/ASGI evidence, not an
 off-host recovery or a simultaneous snapshot of external providers.
+An additional native Chromium rehearsal uses the real loopback HTTP service and
+CLI backup/restore. It checks identical decoded receipt text for save, create and
+delete; unchanged current pages/history/graph and Git head; both 409 failures;
+and an old save retry after a later edit and another service restart. At
+390/1440 pixels, a separate browser probe injects HTTP 504 **after** a real
+successful upstream save. The same document and editor retain the draft while
+the demo services stop and restart on the restored vault; retry sends the
+identical request text and confirms the original receipt without a second
+publication. Demo mode already disables development hot reload. This is
+controlled acknowledgement-failure injection, not a dropped-TCP, browser-restart,
+power-loss, external-provider or physical-device test.
 Corrupt source SQLite headers or b-tree pages stop backup creation with
 `invalid_vault`; no archive is published and source bytes remain unchanged.
 SQLite busy/full/I/O failures retain a separate `storage_unavailable` result.

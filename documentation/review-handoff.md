@@ -297,6 +297,22 @@ Git blobs, with only the old handoff excluded), not a fresh install, physical
 device, model answer or complete release rehearsal. The no-key manual steps now
 explicitly submit and retry a question before checking its local persistence.
 
+The separate local recovery rehearsal on unchanged runtime source at `af52a1c9`
+preserves all current pages/history and explicit graph data across CLI restore.
+Real loopback HTTP retries return the original save/create/delete receipt text,
+without another publication or resurrection of a deleted page. Changed payloads
+and stale bases receive the expected distinct 409 errors. An old save receipt
+still confirms its historical publication after a newer edit and another service
+restart, without reverting the current article. A native Chromium probe at
+390/1440 additionally injects HTTP 504 after the upstream save has really
+succeeded, then keeps the same document/editor open during quiesced backup and
+separate restore. **Save changes** reuses the identical request text and confirms
+the receipt with unchanged head/history/graph. Original source vaults remain
+byte-identical after recovery; all seven owned launcher lifecycles cleanly stop.
+The controls and limits are in [Backup/restore](backup-restore.md): cached local
+runtime, synthetic data and controlled acknowledgement failure, not browser
+restart, dropped TCP, off-host restore, external providers or physical devices.
+
 Current Browser/Frontend originals cover the unsent-Chat-draft correction:
 navigation and Back/Forward retain tab-only draft text and selected conversation, returning respects
 current saved messages and deletions, and PWA reload protection remains active
