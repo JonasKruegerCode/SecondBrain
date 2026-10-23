@@ -1149,6 +1149,10 @@ test("mobile direct page and missing link state remain readable", async ({
   await expect(page.getByRole("heading", { name: "This page is missing." })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await page.getByRole("link", { name: "Back to home" }).click();
+  await expect(page).toHaveURL(/\/wiki\/home$/);
+  await expect(page.locator("article h1")).toHaveText("Lantern Bay field atlas");
+  await expect(page.locator("article h1")).toBeFocused();
+  await page.getByRole("link", { name: "All pages" }).click();
   await expect(
     page.getByRole("heading", { name: "A growing collection" }),
   ).toBeVisible();

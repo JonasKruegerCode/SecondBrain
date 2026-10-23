@@ -329,6 +329,10 @@ test("cancel after a real deletion shows the missing page on the same visit", as
     expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
     await page.screenshot({ path: info.outputPath("cancel-deleted-mobile.png"), fullPage: true });
     await page.getByRole("link", { name: "Back to home →", exact: true }).click();
+    await expect(page).toHaveURL(/\/wiki\/home$/);
+    await expect(page.locator("article h1")).toHaveText("Lantern Bay field atlas");
+    await expect(page.locator("article h1")).toBeFocused();
+    await page.getByRole("link", { name: "All pages" }).click();
     await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
     expect((await request.get(`/api/wiki/pages/${fixture.id}`)).status()).toBe(404);
   } finally {
