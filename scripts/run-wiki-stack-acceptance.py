@@ -1001,8 +1001,10 @@ class Run:
                 expected=128,
             )
             self.steps.append("import-untrusted-owner-refused")
-        trusted = [*oneoff, "-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=safe.directory",
-                   "-e", "GIT_CONFIG_VALUE_0=/import-source", "backend", "python", "-m",
+        trusted = [*oneoff, "-e", "GIT_CONFIG_COUNT=2", "-e", "GIT_CONFIG_KEY_0=safe.directory",
+                   "-e", "GIT_CONFIG_VALUE_0=/import-source",
+                   "-e", "GIT_CONFIG_KEY_1=safe.directory",
+                   "-e", "GIT_CONFIG_VALUE_1=/import-source/.git", "backend", "python", "-m",
                    "second_brain.wiki.setup", "--vault", "/managed-vault", "--mode", "import",
                    "--source", "/import-source", "--prefix", "wiki", "--request-id", "stack-import"]
         first = json.loads(self.command(trusted))

@@ -129,13 +129,16 @@ For a Git first start, use a complete clean local clone with its `.git` director
 not a linked worktree whose Git directory is outside the mount. Replace the host
 path and optional prefix deliberately; never mount the active managed vault as
 the source. Read-only mounting protects source files. The one-off container runs
-as root, so scope Git's ownership trust to this exact reviewed mount only:
+as root, so scope Git's ownership trust to the reviewed worktree and its `.git`
+directory. Git's local fetch reads that directory as a bare transfer source and
+requires its own exact exception when the host clone has a different owner:
 
 ```sh
 wiki_compose run --rm --no-deps -T \
   -v "/absolute/path/to/local-clone:/import-source:ro" \
-  -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory \
-  -e GIT_CONFIG_VALUE_0=/import-source backend \
+  -e GIT_CONFIG_COUNT=2 -e GIT_CONFIG_KEY_0=safe.directory \
+  -e GIT_CONFIG_VALUE_0=/import-source \
+  -e GIT_CONFIG_KEY_1=safe.directory -e GIT_CONFIG_VALUE_1=/import-source/.git backend \
   python -m second_brain.wiki.setup --vault /managed-vault --mode import \
   --source /import-source --prefix path/to/wiki --request-id first-import
 ```
@@ -190,4 +193,5 @@ content is available even when they are disabled or pending. Chat, galaxy and PW
 are separate runtime capabilities rather than setup modes. The [PWA guide](pwa.md)
 documents HTTPS, installation, privacy and updates; first-start itself does not
 verify a physical-device installation.
+
 

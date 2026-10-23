@@ -121,7 +121,8 @@ The runner also exercises the documented container Git first start in a separate
 owned project/volume using the already built images by immutable local ID, with
 builds and pulls disabled for that project. It mounts a complete fictional
 two-commit clone read-only at `/import-source`, requires an actual write attempt
-to fail with `EROFS`, and scopes Git's ownership trust to that exact path. When
+to fail with `EROFS`, and scopes Git's ownership trust to that exact worktree
+and `/import-source/.git` (the local bare transfer source). When
 host and container UIDs differ it first requires Git to reject the untrusted
 source; `container_import.foreign_owner_exercised` distinguishes that case from
 a same-owner run.
