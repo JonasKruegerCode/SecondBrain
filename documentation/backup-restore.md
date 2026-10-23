@@ -106,8 +106,13 @@ page still has those contents. Test this first on an isolated synthetic vault:
 For an open browser whose save acknowledgement was lost, leave the unchanged
 draft in that same tab and use **Save changes** again after service recovery.
 The editor retains that attempt's immutable request identity. A successful retry
-can confirm the original save without applying it twice. Reloading or closing
-the tab can discard the draft and retry state; a server backup is not browser
+can confirm the original save without applying it twice. After acknowledgement,
+the editor separately reads the current page. A newer revision, deletion or
+unavailable/invalid read keeps the same draft and explains that the earlier save
+was confirmed. It does not silently adopt a newer base revision. Copy any local
+text you need, then choose **Cancel** to review the current page through a fresh
+read. An unavailable read can instead be retried by saving the unchanged draft.
+Reloading or closing the tab can discard the draft and retry state; a server backup is not browser
 storage recovery. Read the latest page before reconciling any later edit.
 
 ## Current verification boundary

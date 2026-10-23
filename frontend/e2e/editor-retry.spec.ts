@@ -2,6 +2,158 @@ import { expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { test } from "./reading-test";
 
+for (const width of [390, 1440]) {
+  for (const change of ["later edit", "deleted", "recreated", "read unavailable", "read malformed"] as const) {
+    test(`historical save receipt checks current page after ${change} (${width})`, async ({ page, request }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      const fixture = await create(request, "# Receipt review\nOriginal synthetic observation.");
+      const path = `/api/wiki/pages/${fixture.id}`;
+      const payloads: unknown[] = [];
+      let rejectRead = false;
+      try {
+        await page.goto(`/wiki/${fixture.id}`);
+        await page.getByRole("button", { name: "Edit page" }).click();
+        const editor = page.locator("#editor");
+        const identity = await editor.elementHandle();
+        // Use the native undo stack; error reconciliation must keep its DOM.
+        await editor.press("ControlOrMeta+End");
+        await editor.pressSequentially(" A previously confirmed synthetic edit.");
+        const draft = await editor.inputValue();
+        await editor.evaluate((node: HTMLTextAreaElement) => node.setSelectionRange(3, 9, "backward"));
+        const selection = await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd, node.selectionDirection]);
+        await page.route(`**${path}`, async route => {
+          if (route.request().method() === "GET" && rejectRead)
+            return change === "read malformed"
+              ? route.fulfill({ status: 200, contentType: "application/json", body: "null" })
+              : route.fulfill({ status: 503, json: { error: "synthetic_read_unavailable" } });
+          if (route.request().method() !== "POST") return route.continue();
+          payloads.push(route.request().postDataJSON());
+          if (payloads.length > 1) return route.continue();
+          const response = await route.fetch();
+          expect(response.ok()).toBeTruthy();
+          // The real write is committed. Only its first acknowledgement fails.
+          await route.fulfill({ status: 504, json: { error: "synthetic_lost_ack" } });
+        });
+        await page.getByRole("button", { name: "Save changes" }).click();
+        await expect(page.locator(".notice.error")).toContainText("The change may already be saved");
+        const committed = await (await request.get(path)).json();
+        expect(committed.markdown).toBe(draft);
+        if (change === "later edit") {
+          expect((await request.post(path, { data: {
+            markdown: draft + "\nA later independent observation.", base_revision: committed.revision, request_id: randomUUID(),
+          } })).ok()).toBeTruthy();
+        } else if (change === "deleted" || change === "recreated") {
+          expect((await request.delete(path, { data: { base_revision: committed.revision, request_id: randomUUID() } })).ok()).toBeTruthy();
+          if (change === "recreated") {
+            const recreated = await (await request.post(path, { data: { markdown: draft, base_revision: null, request_id: randomUUID() } })).json();
+            expect(recreated.revision).not.toBe(committed.revision);
+          }
+        } else rejectRead = true;
+        const beforePage = await request.get(path);
+        const before = beforePage.ok() ? await beforePage.json() : null;
+        const beforeHistory = await (await request.get(path + "/history")).json();
+        const beforeGraph = await (await request.get("/api/wiki/graph")).json();
+        await page.getByRole("button", { name: "Save changes" }).click();
+        const feedback = page.locator(".notice.error");
+        await expect(feedback).toContainText("Saved locally");
+        await expect(feedback).toContainText(change === "deleted" ? "has since been deleted"
+          : change.startsWith("read ") ? "current page could not be checked" : "has since changed");
+        await expect(editor).toHaveValue(draft);
+        await expect(editor).toBeEditable();
+        expect(await identity!.evaluate(node => node === document.querySelector("#editor"))).toBe(true);
+        expect(await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd, node.selectionDirection])).toEqual(selection);
+        expect(payloads).toHaveLength(2);
+        expect(payloads[1]).toEqual(payloads[0]);
+        expect(await (await request.get(path + "/history")).json()).toEqual(beforeHistory);
+        expect(await (await request.get("/api/wiki/graph")).json()).toEqual(beforeGraph);
+        if (before) expect(await (await request.get(path)).json()).toEqual(before);
+        else expect((await request.get(path)).status()).toBe(404);
+        await page.screenshot({ path: info.outputPath(`historical-receipt-${change}-${width}.png`) });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+        await editor.press("ControlOrMeta+z");
+        await expect(editor).toHaveValue(fixture.markdown);
+        await editor.press("ControlOrMeta+Shift+z");
+        await expect(editor).toHaveValue(draft);
+        if (change.startsWith("read ")) {
+          rejectRead = false;
+          await page.getByRole("button", { name: "Save changes" }).click();
+          await expect(editor).toHaveCount(0);
+          expect(payloads).toHaveLength(3);
+          expect(payloads[2]).toEqual(payloads[0]);
+          await expect(page.locator(".prose")).toContainText("previously confirmed synthetic edit");
+          expect(await (await request.get(path + "/history")).json()).toEqual(beforeHistory);
+          expect((await (await request.get(path)).json()).revision).toBe(committed.revision);
+        } else {
+          await editor.press("ControlOrMeta+End");
+          await editor.pressSequentially(" A further unpublished local draft.");
+          await page.getByRole("button", { name: "Save changes" }).click();
+          await expect(feedback).toContainText("Conflict");
+          expect(payloads[2]).toMatchObject({ base_revision: fixture.revision });
+          expect((payloads[2] as { request_id: string }).request_id).not.toBe((payloads[0] as { request_id: string }).request_id);
+          expect(await (await request.get(path + "/history")).json()).toEqual(beforeHistory);
+          page.once("dialog", dialog => dialog.accept());
+          const freshRead = page.waitForResponse(response => response.url().endsWith(path) && response.request().method() === "GET");
+          await page.getByRole("button", { name: "Cancel", exact: true }).click();
+          expect((await freshRead).status()).toBe(change === "deleted" ? 404 : 200);
+          if (change === "deleted") await expect(page.getByRole("heading", { name: "This page is missing." })).toBeVisible();
+          else {
+            await expect(editor).toHaveCount(0);
+            await expect(page.locator(".revision")).toContainText(before.revision.slice(0, 8));
+            if (change === "later edit") await expect(page.locator(".prose")).toContainText("later independent observation");
+          }
+        }
+      } finally {
+        const current = await request.get(path);
+        if (current.ok()) expect((await request.delete(path, { data: {
+          base_revision: (await current.json()).revision, request_id: randomUUID(),
+        } })).ok()).toBeTruthy();
+        else expect(current.status()).toBe(404);
+      }
+    });
+  }
+
+  test(`a first save acknowledgement checks a concurrent successor (${width})`, async ({ page, request }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const fixture = await create(request, "# First acknowledgement\nA fictional observation.");
+    const path = `/api/wiki/pages/${fixture.id}`;
+    let browserWrites = 0;
+    try {
+      await page.goto(`/wiki/${fixture.id}`);
+      await page.getByRole("button", { name: "Edit page" }).click();
+      const editor = page.locator("#editor"), identity = await editor.elementHandle();
+      const draft = fixture.markdown + "\nThe first submitted edit.";
+      await editor.fill(draft);
+      let successor: { revision: string; markdown: string } | undefined;
+      await page.route(`**${path}`, async route => {
+        if (route.request().method() !== "POST") return route.continue();
+        browserWrites++;
+        const response = await route.fetch();
+        expect(response.ok()).toBeTruthy();
+        const committed = await response.json();
+        const changed = await request.post(path, { data: {
+          markdown: draft + "\nAn independent later edit.", base_revision: committed.revision, request_id: randomUUID(),
+        } });
+        expect(changed.ok()).toBeTruthy();
+        successor = await changed.json();
+        await route.fulfill({ response }); // The first browser response is a real success.
+      });
+      await page.getByRole("button", { name: "Save changes" }).click();
+      await expect(page.locator(".notice.error")).toContainText("The page has since changed");
+      await expect(editor).toHaveValue(draft);
+      expect(await identity!.evaluate(node => node === document.querySelector("#editor"))).toBe(true);
+      expect(browserWrites).toBe(1);
+      expect(await (await request.get(path)).json()).toMatchObject({
+        revision: successor!.revision, markdown: successor!.markdown,
+      });
+      expect((await (await request.get(path + "/history")).json()).history).toHaveLength(3);
+    } finally {
+      const current = await request.get(path);
+      expect(current.ok()).toBeTruthy();
+      expect((await request.delete(path, { data: { base_revision: (await current.json()).revision, request_id: randomUUID() } })).ok()).toBeTruthy();
+    }
+  });
+}
+
 for (const failure of ["empty proxy response", "HTML proxy response", "network abort",
   "JSON null", "JSON empty object", "JSON wrong page", "JSON invalid revision"] as const) {
   test(`unconfirmed save recovery explains ${failure} and replays the same receipt`, async ({ page, request }) => {

@@ -83,6 +83,16 @@ editor. Navigation preserves deliberate keyboard focus and bounded tab-local
 reading positions. Save/conflict/unknown-acknowledgement states retain the draft;
 index and remote status are shown separately.
 
+A valid mutation receipt confirms a historical publication. After each save the
+editor separately reads the current page before closing. If another writer has
+changed, deleted or recreated it, or that read fails validation, the same editor,
+draft, selection, undo history, base revision and retry identity remain intact.
+The notice distinguishes the confirmed save from the current-page problem.
+**Cancel** deliberately discards the local draft and reads this visit afresh;
+another Save of changed text still checks the original base rather than silently
+rebasing over a concurrent writer. A write after the read can still make the
+display stale; this is a snapshot check, not a lock on the page.
+
 While a start-page transaction is pending, the control stays focusable with
 `aria-disabled`; its handler rejects duplicate activation. Completion does not
 steal a later focus choice or replace the editor.
@@ -272,12 +282,28 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Inspected acceptance, 23 October 2026
 
+The current editor reconciliation change has 12 new synthetic cases across
+390/1440: later edits, deletion, byte-identical recreation, unavailable/malformed
+current reads, and a concurrent writer before the first successful acknowledgement.
+They verify retained native editor/selection/undo and original base/request,
+fresh-read Cancel, no extra publication, and eventual read recovery. The two
+first-ack cases fail on the unchanged parent. The corrected local selection passes
+50 Save/conflict/body-timeout/navigation/PWA cases; both TypeScript projects and
+the production frontend build pass. A separate real CLI backup/restore with a
+second writer passes in native Chromium at both widths: the same open editor
+retains the historical draft, then deliberate Cancel opens the latest article.
+Root inspected narrow/broad draft and current-article views. These use cached
+minimal native dependencies and partial source, not a clean locked installation.
+Local WebKit is unavailable; the older broad CI below remains historical evidence,
+not a full regression result for this change.
+
 Test/documentation source `8f9c2fc67bfe52cd9827dd7abe0ac0b2b706418c`, tree
 `98171a3ccb16a4f9f03ce822b5ad9b0a8fb68d48`, was tested at merge
 `a8ce7e9622595f140cbd9d898cbaa1754345599c`. Original checkout logs and
-the Git object establish the identical tree. Application code is unchanged
-from `8203385c`; the new test source adds the four native reload cases.
-Subsequent handoff-only edits do not create another runtime acceptance result.
+the Git object establish the identical tree. Application code in that historical
+run matches `8203385c`; that test source adds the four native reload cases.
+The later current-page reconciliation change has separate local checks below;
+the older full CI result does not validate the newer application code.
 
 The documented synthetic tour was also exercised locally against source
 `38cdb094` at 390/1440 pixels: Home → Mira Quill → archive method → field

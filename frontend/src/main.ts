@@ -1111,13 +1111,36 @@ async function save() {
       result.markdown !== attempt.markdown) {
       throw new Error("The save response could not be confirmed. The change may already be saved. Retry the unchanged draft to check.");
     }
-    page = result;
+    // Mutation receipts are immutable historical acknowledgements. Another
+    // writer may have changed/deleted this page before a retry receives one.
+    // Never promote the receipt to a current read or rebase the retained draft.
+    let current: Page;
+    const confirmed = `Saved locally · revision ${String(result.revision).slice(0, 8)}.`;
+    try {
+      current = await api("/pages/" + encodeURIComponent(attempt.pageId));
+      if (!current || typeof current !== "object" || Array.isArray(current) ||
+        current.id !== attempt.pageId || typeof current.title !== "string" ||
+        typeof current.revision !== "string" || !current.revision.trim() ||
+        typeof current.markdown !== "string") throw new Error("Invalid current page");
+    } catch (error) {
+      noticeError = true;
+      notice = confirmed + ((error as any).status === 404
+        ? " The page has since been deleted. Your draft is preserved. Copy it before choosing Cancel to review the current page."
+        : " The current page could not be checked. Your draft is preserved. Try saving again.");
+      return;
+    }
+    if (current.revision !== result.revision || current.markdown !== result.markdown) {
+      noticeError = true;
+      notice = confirmed + " The page has since changed. Your draft is preserved. Copy it before choosing Cancel to review the current page.";
+      return;
+    }
+    page = current;
     editing = false;
     saveAttempt = null;
     // An independent preference failure may have shown while Save was pending.
     // Its error flag does not describe this confirmed content publication.
     noticeError = false;
-    notice = `Saved locally · revision ${String(result.revision).slice(0, 8)}.`;
+    notice = confirmed;
     deliveryNotice = "Checking workspace indexing and remote delivery…";
     void refreshDelivery(generation, ++deliveryGeneration);
   } catch (e) {
