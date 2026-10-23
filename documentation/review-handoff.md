@@ -59,7 +59,10 @@ The current derivation identity is `managed-snapshots-v35`, defined in
 This revision removes phantom URL-path wikilinks from the bounded nested
 single-star/strong note form when its ASCII words end in one `. ! ? , ; :`
 character. Escaping, invalid closers and arbitrary nesting retain their existing
-separate rules. The fixed 336-case diagnostic retains 63 graph-target mismatches;
+separate rules. A historical 336-case diagnostic reported 63 graph-target mismatches, but its
+case-level corpus and rendered-target oracle are not present in the retained
+evidence. That aggregate has not been reproduced in this review. Recover or
+rebuild explicit synthetic counterexamples before extending this grammar;
 complete Markdown/sanitizer/graph parity is not established.
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
@@ -280,133 +283,85 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Inspected acceptance, 23 October 2026
+## Inspected acceptance, 24 October 2026
 
-The current editor reconciliation change has 12 new synthetic cases across
-390/1440: later edits, deletion, byte-identical recreation, unavailable/malformed
-current reads, and a concurrent writer before the first successful acknowledgement.
-They verify retained native editor/selection/undo and original base/request,
-fresh-read Cancel, no extra publication, and eventual read recovery. The two
-first-ack cases fail on the unchanged parent. The corrected local selection passes
-50 Save/conflict/body-timeout/navigation/PWA cases; both TypeScript projects and
-the production frontend build pass. A separate real CLI backup/restore with a
-second writer passes in native Chromium at both widths: the same open editor
-retains the historical draft, then deliberate Cancel opens the latest article.
-Root inspected narrow/broad draft and current-article views. These use cached
-minimal native dependencies and partial source, not a clean locked installation.
-Local WebKit is unavailable; the older broad CI below remains historical evidence,
-not a full regression result for this change.
+Current application source is [c42fc679](https://github.com/JonasKruegerCode/SecondBrain/commit/c42fc679341d281c299608257997bc1a99e4f317),
+tree `ea6919a1dfac3bea662f65cdd5b8149e4e0119e8`. CI checkout merge
+`2180c13d23107188e8ba9f5ec8d772a6a84104d0` has that same tree.
+This documentation consolidation does not change application or test code.
 
-Test/documentation source `8f9c2fc67bfe52cd9827dd7abe0ac0b2b706418c`, tree
-`98171a3ccb16a4f9f03ce822b5ad9b0a8fb68d48`, was tested at merge
-`a8ce7e9622595f140cbd9d898cbaa1754345599c`. Original checkout logs and
-the Git object establish the identical tree. Application code in that historical
-run matches `8203385c`; that test source adds the four native reload cases.
-The later current-page reconciliation change has separate local checks below;
-the older full CI result does not validate the newer application code.
+The editor now separates a confirmed historical publication from the current
+page. A subsequent GET must match both revision and Markdown before completing
+the editor. Later edits, deletion/recreation, unavailable reads and malformed
+reads retain the native textarea, draft, selection/undo, original base revision
+and retry identity. Deliberate Cancel reads the current article. A changed draft
+does not silently rebase onto another writer's version.
 
-The documented synthetic tour was also exercised locally against source
-`38cdb094` at 390/1440 pixels: Home → Mira Quill → archive method → field
-notebook, lexical search, an editor save and history read, keyboard constellation
-and page selection, explicit new-link evidence, and the unconfigured-chat path.
-Send and Retry return real 503 responses, retain one submitted question and no
-assistant answer; reload retains the question and deletion remains effective
-after relaunching the same persistent browser profile. The start-page record was
-read natively before app code after restart, and the edited article revisions
-persisted. Each new link was checked in the graph before restart. All three
-demo launcher shutdowns returned zero and their recorded
-owned process groups were absent. Original screenshots at both widths were
-personally inspected after waiting for the mounted galaxy; a separate viewport
-capture distinguishes hidden skip-link geometry from a full-page capture
-artifact. This uses cached dependencies and pinned partial source (146 matching
-Git blobs, with only the old handoff excluded), not a fresh install, physical
-device, model answer or complete release rehearsal. The no-key manual steps now
-explicitly submit and retry a question before checking its local persistence.
+Twelve new real-service cases cover those paths at 390/1440 pixels, including
+a concurrent writer before the first successful acknowledgement. Two cases fail
+on the unchanged parent. The final local 50-case Save/conflict/body-timeout/
+navigation/PWA selection, both TypeScript projects and production build pass.
+A separate real CLI backup/restore with a second writer also preserves the same
+document/editor and original retry at both widths; Cancel then reads the latest
+article. Original views were personally inspected. Local checks use cached
+minimal dependencies and partial source; the clean locked CI below is separate.
 
-The separate local recovery rehearsal on unchanged runtime source at `af52a1c9`
-preserves all current pages/history and explicit graph data across CLI restore.
-Real loopback HTTP retries return the original save/create/delete receipt text,
-without another publication or resurrection of a deleted page. Changed payloads
-and stale bases receive the expected distinct 409 errors. An old save receipt
-still confirms its historical publication after a newer edit and another service
-restart, without reverting the current article. A native Chromium probe at
-390/1440 additionally injects HTTP 504 after the upstream save has really
-succeeded, then keeps the same document/editor open during quiesced backup and
-separate restore. **Save changes** reuses the identical request text and confirms
-the receipt with unchanged head/history/graph. Original source vaults remain
-byte-identical after recovery; all seven owned launcher lifecycles cleanly stop.
-The controls and limits are in [Backup/restore](backup-restore.md): cached local
-runtime, synthetic data and controlled acknowledgement failure, not browser
-restart, dropped TCP, off-host restore, external providers or physical devices.
-
-Current Browser/Frontend originals cover the unsent-Chat-draft correction:
-navigation and Back/Forward retain tab-only draft text and selected conversation, returning respects
-current saved messages and deletions, and PWA reload protection remains active
-while another view is open. The unchanged parent fails the three new draft
-counterexamples. The corrected local selection passes 48 chat/concurrency/PWA
-cases, separately from the complete CI below.
-
-Native reload boundary, checked 23 October: four focused real Chromium cases
-cover 390/1440 widths both in Chat and after switching to Search. Dismissing
-the actual beforeunload dialog keeps the same document and unsent text;
-accepting it creates a fresh document with no retained draft. Explicitly clearing
-the draft releases the guard. No chat POST occurs, and draft text is absent
-from the native IndexedDB chat root, chat localStorage keys and sessionStorage.
-These are tab-memory checks, not persistent draft recovery or physical-device
-proof. The initial harness incorrectly waited for a load event after cancellation
-and timed out; triggering native location.reload for that path removes that
-success-only wait. No application code changed for this check.
-The strengthened cases also pass within the 89-case real-service Chromium
-Chat/concurrency/PWA selection (1.8 minutes), with successful owned service
-cleanup; both TypeScript projects pass. Cached native Chromium with the existing
-runtime flags was used. All four new native reload cases now also pass in the
-complete Chromium and reading-WebKit originals below. Current WebKit390/1440
-captures after cancellation and returning from Search were personally viewed.
-This is Linux-WebKit with reading-profile workers blocked, not physical Safari,
-softkeyboard, installation or native-font parity.
-
-| Area | Inspected original run / source | Result and boundary |
+| Area | Inspected original run | Result and boundary |
 | --- | --- | --- |
-| Browser | [39986025133](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39986025133), test source8f9c2fc6 |923 successful executions/14 explained phase-profile skips; all7 result records and owned cleanup pass |
-| Frontend | [39968927737](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39968927737), current runtime |15 native cases/zero failures or skips; both TS projects, production and container builds; push:false/cache-only |
-| Stack | [39959930051](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39959930051), [parent09eaac7a](https://github.com/JonasKruegerCode/SecondBrain/commit/09eaac7afee75ed2893db6adc10dfd4594df461b)/tree753a67c8 |109 gate records/107 distinct labels plus6 HTTPS/auth browser gates, real readonly foreign-owner Git import and edge cases; not a fresh Chat-runtime result |
-| Backend | [39848542316](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542316), retained 9dafdc02 source |Earlier Ruff/MyPy125,1,458 passed/12 dedicated opt-in skips; not a new current-source audit |
-| Indexes | [39848542236](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542236), retained 9dafdc02 source |Seven disposable Neo4j/Qdrant cases with synthetic vectors;320 pages/648 edges, not hosted capacity |
-| SSH | [39848542360](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542360), retained 9dafdc02 source |Five isolated authenticated Git/restart/refusal-preservation cases, not production credentials |
+| Backend | [40026125273](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125273) | Ruff/Mypy, 1,476 passed, 12 opt-in integration skips; container build with push:false |
+| Frontend | [40026125226](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125226) | 15 native tests, no failures/skips; both TS projects, production and container builds; push:false |
+| Indexes | [40026125179](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125179) | Seven disposable Neo4j/Qdrant integrations with synthetic vectors |
+| SSH | [40026125163](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125163) | Five isolated authenticated Git/restart/refusal-preservation integrations |
+| Browser | [40026125184](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125184) | 947 passed executions, 14 explained phase/engine skips, no failure/flaky footers; all seven result records and owned cleanup pass |
+| Stack | [40026125169](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125169) | Both acceptance and image-update originals inspected; synthetic TLS/auth, real import/restart/recovery and retained-image compatibility |
 
+The Backend skips are the separately successful seven index and five SSH cases.
 Browser totals are 114 repeated WebKit transaction/preference diagnostics,
-455 Chromium, first-start2, Git import3, synthetic320: 2, reading-WebKit339
-and worker-WebKit8. Repetitions count as executions, not unique requirements.
-Eight skips select complementary first-start/import phases; six are engine
-exclusions in the WebKit reading profile. That profile blocks workers, while
-the separate worker profile allows them. Dot reporting has no per-title JSON
-ledger. The new four 390/1440 reload cases run in both broad engines; their original
-WebKit captures were personally inspected. A viewport image does not establish
-that every control fits the first screen or that physical soft keyboards work.
+467 Chromium, first-start2, import3, synthetic320 graph2, reading-WebKit351 and
+worker-WebKit8. These count executions, not unique requirements. Eight skips
+select complementary first-start/import phases; six exclude five Blink-only
+minimum-font cases and one Chromium CDP touch case from WebKit. Reading-WebKit
+blocks workers; the separate worker profile allows them.
 
-The retained parent Stack evidence checks EROFS and foreign UID rejection before
-exact two-path Git trust inside a disposable setup container. Two imported pages
-retain history, API edits, the original setup receipt and edit retries across
-restart. Dirty and genuinely shallow clones fail with their specific errors
-without changing the target head. An unborn Git source publishes a versioned
-zero-page receipt, retries identically and refuses a competing first start;
-the actual API list remains empty. All four source clones, including Git metadata,
-remain byte-equal after owned cleanup. Those gates are not native suite case counts.
+Both broad profiles include the twelve new editor cases without a selection
+filter. Ten historical-receipt screenshots per engine corroborate the completed
+suite; the two first-acknowledgement cases take no screenshots. Dot reporting has
+no per-title assertion JSON. Current narrow/broad Chromium and WebKit originals
+were personally viewed, including successor-edit, deletion and malformed-read
+states. Native Linux engines and controlled HTTP errors are not physical-device,
+Safari, dropped-TCP or real-model evidence.
 
-| Verified archive | Bytes / entries | SHA256 |
+Stack acceptance has 109 gate records/107 distinct labels plus six HTTPS/auth
+browser gates, including real readonly foreign-owner Git import, dirty/shallow
+refusals, empty Git import, restart/retry and independent-volume recovery.
+Original source clones remain byte-equal after cleanup. These are gates, not
+native suite test counts.
+
+The separate image-update original retains distinct old/new image IDs and
+checks baseline → forward → rollback → resume on one owned volume. History
+counts are 1 → 2 → 3 → 3; REST/MCP retries add no extra publication. Its forward
+browser trace observes changed worker bytes, retains the native draft when a
+clean tab activates the update, then saves once and reloads. Preference migration,
+empty private CacheStorage and zero page errors/model requests are recorded.
+Browser evidence is forward-only; image rollback/resume cover content, history
+and retry compatibility. Both jobs report successful owned cleanup.
+
+| Verified current artifact | Bytes / entries | SHA256 |
 | --- | --- | --- |
-| Current Browser12517117333 |229,377,206 /984 | `38f4dcb337cc02c7ed510f279697ef883d2596cab5a97388f032ee7a4410837a` |
-| Retained Stack12504422063 |712,044 /6 | `f31141723a5fcf9f045d72184065c2fd2fad5ee74bce2a5306f4330998a50bde` |
+| Browser12533772700 |233,018,423 /1004 | `bc62b62894dc6be6120020cdc4ff1285d8bd747745a7c050a20751629e1d7ba5` |
+| Stack12533011318 |712,247 /6 | `572688bf362f9aced35bfb39ddc2eed0d4a2a2c9fad4458f8c5252192d018c7a` |
+| Image-update12533132777 |16,919 /3 | `32c8e108ef0cf0f0a450e0e80b2f6e1f65dd446e27f66b1884850ac65cd42a9b` |
 
-Both archive checks match GitHub size/digest and safe unique-path/CRC checks.
-Their originals expire 30 October 2026; links/hashes do not guarantee later
-availability. Preserve needed evidence before expiry. Standalone image builds did not publish container images.
+All sizes/digests agree with GitHub metadata/upload originals; unique safe paths
+and CRCs were checked. GitHub originals expire 30 October2026. Needed text
+originals were preserved separately; links/hashes alone do not guarantee later
+availability. No container image was published.
 
-Earlier reader/coediting/operator paths and failed experiments remain in the
-versioned handoff history. Later passes do not diagnose earlier loading,
-preference, new-tab, worker-install or cleanup incidents. Synthetic TLS/providers,
-Linux-WebKit and scripted tours remain separate from real model answer quality,
-production operation, physical installation and human presentation.
+The [preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/c42fc679341d281c299608257997bc1a99e4f317/documentation/review-handoff.md)
+preserves dated operator tours, reload checks, recovery probes, older CI matrices
+and failed experiments. Later passes do not diagnose earlier intermittent
+loading, preference, worker, new-tab or cleanup observations. Run only relevant
+regressions after new changes; do not rerun full CI solely to refresh a date.
 
 ## Known release gates
 
