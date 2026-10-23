@@ -184,3 +184,52 @@ for (const savedUnavailable of [false, true]) {
     } finally { release(); }
   });
 }
+
+// Error recovery follows the same personal/curated Home as the header.
+for (const width of [390, 1440]) {
+  for (const saved of [false, true]) {
+    for (const failure of ["missing", "transport"] as const) {
+      test(`error Home respects the start page and browser history (${failure}, ${saved ? "personal" : "curated"}, ${width})`, async ({ page }, info) => {
+        await page.setViewportSize({ width, height: 900 });
+        if (saved) {
+          await page.goto("/wiki/field-notebook");
+          await page.getByRole("button", { name: "Set as start page", exact: true }).click();
+          await expect(page.locator(".notice")).toHaveText("This is now your start page.");
+        }
+        const failedId = failure === "missing" ? "synthetic-missing-error-home" : "night-sky-survey";
+        if (failure === "transport") {
+          await page.route("**/api/wiki/pages/night-sky-survey", route => route.abort("failed"), { times: 1 });
+        }
+        await page.goto("/wiki/" + failedId);
+        await expect(page.locator("main h1")).toHaveText(failure === "missing" ? "This page is missing." : "Couldn’t open the workspace.");
+        const token = await page.evaluate(() => {
+          const value = crypto.randomUUID();
+          (window as any).__errorHomeDocument = value;
+          return value;
+        });
+        const home = page.getByRole("link", { name: /^Back to home/ });
+        await home.focus();
+        await page.keyboard.press("Enter");
+        const destination = saved ? "field-notebook" : "home";
+        const title = saved ? "Field notebook" : "Lantern Bay field atlas";
+        await expect(page).toHaveURL(new RegExp("/wiki/" + destination + "$"));
+        await expect(page.locator("article h1")).toHaveText(title);
+        await expect(page.locator("article h1")).toBeFocused();
+        expect(await page.evaluate(() => (window as any).__errorHomeDocument)).toBe(token);
+        expect(await page.evaluate(async () => {
+          const modulePath = "/src/start-preference.ts";
+          return (await import(/* @vite-ignore */ modulePath)).readStartPage();
+        })).toBe(saved ? "field-notebook" : "");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: info.outputPath(`error-home-${failure}-${saved ? "personal" : "curated"}-${width}.png`) });
+        await page.goBack();
+        await expect(page).toHaveURL(new RegExp("/wiki/" + failedId + "$"));
+        await expect(page.locator("main h1")).toHaveText(failure === "missing" ? "This page is missing." : "Night sky survey");
+        await page.goForward();
+        await expect(page).toHaveURL(new RegExp("/wiki/" + destination + "$"));
+        await expect(page.locator("article h1")).toHaveText(title);
+        expect(await page.evaluate(() => (window as any).__errorHomeDocument)).toBe(token);
+      });
+    }
+  }
+}

@@ -751,7 +751,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     const message = e instanceof TypeError
       ? "The workspace could not be reached. Check your connection and try again."
       : (e as Error).message;
-    main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${missing ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc(message)}</p>${missing ? "" : '<p><button id="retry-workspace" class="primary">Try again →</button></p>'}<a href="/?overview=1" class="${missing ? "primary" : "subtle"}">Back to home →</a></section>`;
+    main.innerHTML = `<section class="intro"><div class="eyebrow">A THREAD TO FOLLOW</div><h1>${missing ? "This page is missing." : "Couldn’t open the workspace."}</h1><p>${esc(message)}</p>${missing ? "" : '<p><button id="retry-workspace" class="primary">Try again →</button></p>'}<a href="/" class="${missing ? "primary" : "subtle"}">Back to home →</a></section>`;
     const retry = main.querySelector<HTMLButtonElement>("#retry-workspace");
     if (retry) retry.onclick = () => {
       // Reload this visit, retaining its URL and history position. A later
