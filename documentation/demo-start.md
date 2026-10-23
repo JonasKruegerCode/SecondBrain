@@ -240,7 +240,10 @@ viewport/browser, provider enabled or unavailable, and any failed step:
    with the salt marsh pilot result. What remains uncertain?” Inspect the actual
    answers and open their read sources. The atlas explicitly rejects real-world
    navigation use; the pilot's limitations must remain visible. Without a key,
-   record the unavailable state and leave real-model acceptance open.
+   send the first question above and confirm the **not configured** error. The
+   submitted question stays in the conversation with no assistant answer. Choose
+   **Retry**, confirm the same recoverable state without a duplicate question,
+   then continue with reload and deletion below. Leave real-model acceptance open.
 5. Reload the conversation, confirm its locally retained turns, then delete it
    and verify its removal. Stop and restart the demo; reopen the edited article
    and confirm that opening <http://127.0.0.1:5173/> in the same browser profile
@@ -325,4 +328,5 @@ Nothing is seeded on API startup. The CLI requires `--vault`; there is no defaul
 An optional `--template PATH` selects a flat directory of Markdown files instead of the checked-in `examples/demo-vault` template. Each filename becomes a page ID, and each page must begin with a level-one title. Template pages and the target vault must not be symbolic links. Use only clearly synthetic material for a public demo.
 
 The template's examples are cultural and narrative material. They are not real observing forecasts, navigation instructions, harvesting advice, or food safety guidance.
+
 

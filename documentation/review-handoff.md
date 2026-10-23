@@ -279,6 +279,24 @@ the Git object establish the identical tree. Application code is unchanged
 from `8203385c`; the new test source adds the four native reload cases.
 Subsequent handoff-only edits do not create another runtime acceptance result.
 
+The documented synthetic tour was also exercised locally against source
+`38cdb094` at 390/1440 pixels: Home → Mira Quill → archive method → field
+notebook, lexical search, an editor save and history read, keyboard constellation
+and page selection, explicit new-link evidence, and the unconfigured-chat path.
+Send and Retry return real 503 responses, retain one submitted question and no
+assistant answer; reload retains the question and deletion remains effective
+after relaunching the same persistent browser profile. The start-page record was
+read natively before app code after restart, and the edited article revisions
+persisted. Each new link was checked in the graph before restart. All three
+demo launcher shutdowns returned zero and their recorded
+owned process groups were absent. Original screenshots at both widths were
+personally inspected after waiting for the mounted galaxy; a separate viewport
+capture distinguishes hidden skip-link geometry from a full-page capture
+artifact. This uses cached dependencies and pinned partial source (146 matching
+Git blobs, with only the old handoff excluded), not a fresh install, physical
+device, model answer or complete release rehearsal. The no-key manual steps now
+explicitly submit and retry a question before checking its local persistence.
+
 Current Browser/Frontend originals cover the unsent-Chat-draft correction:
 navigation and Back/Forward retain tab-only draft text and selected conversation, returning respects
 current saved messages and deletions, and PWA reload protection remains active
@@ -397,4 +415,5 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
+
 
