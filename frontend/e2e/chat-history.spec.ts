@@ -1,6 +1,7 @@
 import { installWikiChatStorage } from "./wiki-chat-storage";
-import { chromium, expect } from "@playwright/test";
+import { chromium, expect, type Page } from "@playwright/test";
 import { test } from "./reading-test";
+import { chatRoot } from "./chat-storage";
 
 test.beforeEach(async ({ page }) => { await installWikiChatStorage(page); });
 
@@ -308,3 +309,105 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 450 }
     }
   });
 }
+
+const questionA = "Synthetic unsent navigation question alpha.";
+const questionB = "Synthetic unsent navigation question beta.";
+const navigation = (page: Page) => page.getByRole("navigation", { name: "Primary", exact: true });
+const conversation = (page: Page, id: string) => page.locator(`[data-conversation="${id}"]`);
+
+async function expectDraftsPrivate(page: Page) {
+  const root = JSON.stringify(await chatRoot(page));
+  const legacy = await page.evaluate(() => JSON.stringify(Object.fromEntries(
+    Object.keys(localStorage).filter(key => key.startsWith("secondbrain.chat")).map(key => [key, localStorage.getItem(key)]),
+  )));
+  for (const draft of [questionA, questionB]) {
+    expect(root).not.toContain(draft);
+    expect(legacy).not.toContain(draft);
+  }
+}
+
+for (const width of [390, 1440]) {
+  test(`unsent conversation drafts and selection survive SPA and browser navigation (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await installWikiChatStorage(page);
+    let chatPosts = 0;
+    page.on("request", request => {
+      if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") chatPosts++;
+    });
+    await page.goto("/chat");
+    const input = page.getByRole("textbox", { name: "Message", exact: true });
+    await expect(input).toBeEnabled();
+    const first = (await page.locator("[data-conversation].active").getAttribute("data-conversation"))!;
+    await input.fill(questionA);
+    // The very first empty conversation does not yet have a saved identity.
+    await navigation(page).getByRole("link", { name: "Search", exact: true }).click();
+    await navigation(page).getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(conversation(page, first)).toHaveClass(/active/);
+    await expect(input).toHaveValue(questionA);
+    await page.getByRole("button", { name: "New", exact: true }).click();
+    await expect(input).toHaveValue("");
+    const second = (await page.locator("[data-conversation].active").getAttribute("data-conversation"))!;
+    expect(second).not.toBe(first);
+    await input.fill(questionB);
+    await expectDraftsPrivate(page);
+
+    await navigation(page).getByRole("link", { name: "Search", exact: true }).click();
+    await expect(page).toHaveURL(/\/search$/);
+    await navigation(page).getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(conversation(page, second)).toHaveClass(/active/);
+    await expect(input).toHaveValue(questionB);
+    await conversation(page, first).click();
+    await expect(input).toHaveValue(questionA);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/search$/);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/chat$/);
+    await expect(conversation(page, first)).toHaveClass(/active/);
+    await expect(input).toHaveValue(questionA);
+    await conversation(page, second).click();
+    await expect(input).toHaveValue(questionB);
+    await page.screenshot({ path: info.outputPath(`retained-chat-draft-${width}.png`) });
+    await expectDraftsPrivate(page);
+    expect(chatPosts).toBe(0);
+    await input.fill("");
+    await conversation(page, first).click();
+    await input.fill("");
+  });
+}
+
+test("returning to Chat does not resurrect a conversation deleted in another tab with an unsent draft", async ({ page, context }) => {
+  await installWikiChatStorage(page);
+  await page.goto("/chat");
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  await expect(input).toBeEnabled();
+  await input.fill(questionA);
+  const deleted = (await page.locator("[data-conversation].active").getAttribute("data-conversation"))!;
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await expect(input).toHaveValue("");
+  const retained = (await page.locator("[data-conversation].active").getAttribute("data-conversation"))!;
+  await input.fill(questionB);
+  await navigation(page).getByRole("link", { name: "Search", exact: true }).click();
+  const other = await context.newPage();
+  try {
+    await other.goto("/chat");
+    await expect(other.getByRole("textbox", { name: "Message", exact: true })).toBeEnabled();
+    const remote = await chatRoot(other);
+    const removed = remote.conversations.find(item => item.id === deleted);
+    expect(removed).toBeTruthy();
+    await chatRoot(other, {
+      version: 1,
+      conversations: remote.conversations.filter(item => item.id !== deleted),
+      tombstones: [...remote.tombstones, { id: deleted, deleted: Math.max(Date.now(), removed.updated + 1) }],
+    });
+    await navigation(page).getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(conversation(page, retained)).toHaveClass(/active/);
+    await expect(input).toHaveValue(questionB);
+    await expect(conversation(page, deleted)).toHaveCount(0);
+    const root = await chatRoot(page);
+    expect(root.conversations.map(item => item.id)).not.toContain(deleted);
+    expect(root.tombstones.map(item => item.id)).toContain(deleted);
+    await expectDraftsPrivate(page);
+    await input.fill("");
+  } finally { await other.close(); }
+});

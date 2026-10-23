@@ -151,8 +151,13 @@ Legacy localStorage keys are imported only when the root is absent; an explicit
 empty root prevents reimport. Those keys remain backups without dual writes;
 current chat deletion does not erase those older copies. Failed commits can
 retain changes across SPA navigation in the current document, but that fallback
-does not survive reload. An unsent draft is not promised to survive reload or
-route changes. Credentials remain server-side.
+does not survive reload. Unsent message drafts and the selected conversation
+survive ordinary navigation away from Chat and back within the same document,
+including Back/Forward. Draft text stays only in tab memory, outside IndexedDB
+and legacy localStorage; a reload or closed tab can discard it. Returning reads
+current saved messages and deletion markers before restoring drafts, so a
+deleted conversation is not revived. Retained drafts also block PWA reloads
+while another view is open. Credentials remain server-side.
 
 The PWA is online-first. Its worker does not provide a private wiki/chat/API
 offline cache. An update requires changed worker bytes, including a deliberate

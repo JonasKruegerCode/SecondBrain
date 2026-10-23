@@ -37,10 +37,14 @@ let tabConversations: Conversation[] | undefined;
 let tabTombstones: Tombstone[] | undefined;
 let tabDirtyIds: Set<string> | undefined;
 let tabBaselines: Map<string, string> | undefined;
+// Unsent text belongs only to this document, never the persistent chat root.
+// Keep empty conversation identities as well, including the first unsaved one.
+let tabDrafts: { values: Map<string, string>; conversations: Conversation[]; activeId: string } | undefined;
 let reloadBlocker: () => "draft" | "reply" | undefined = () => undefined;
 export function chatReloadBlocker() {
   const active = reloadBlocker();
   if (active) return active;
+  if (tabDrafts?.values.size) return "draft";
   // Failed writes survive SPA navigation only in this document. Protect them
   // even after Chat is unmounted, until persisted or deliberately deleted.
   if (tabConversations?.some(item => item.messages.length > 0 && tabDirtyIds?.has(item.id)))
@@ -169,14 +173,16 @@ function freshConversation(): Conversation {
 
 export function renderChat(main: Element, api: Api, stateChanged: () => void = () => {},
   onReady: () => void = () => {}): () => void {
-  let conversations = tabConversations || [freshConversation()];
+  const retainedDrafts = tabDrafts;
+  tabDrafts = undefined;
+  let conversations = tabConversations || retainedDrafts?.conversations || [freshConversation()];
   let tombstones = tabTombstones || [];
   let storageUnavailable = !!tabConversations;
-  let activeId = conversations[0]?.id || "";
+  let activeId = retainedDrafts?.activeId || conversations[0]?.id || "";
   const dirtyIds = new Set(tabDirtyIds);
   const baselines = new Map(tabBaselines);
   const deletedIds = new Map<string, number>();
-  const drafts = new Map<string, string>();
+  const drafts = new Map(retainedDrafts?.values);
   let busy = false;
   let storagePending = true;
   let requestController: AbortController | undefined;
@@ -589,9 +595,23 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   void storageTransaction(() => {
     const stored = readPersistent();
     if (!tabConversations) {
-      conversations = stored.conversations.length ? stored.conversations : [freshConversation()];
+      const deleted = new Set(stored.tombstones.map(item => item.id));
+      // Read current transcripts/deletions first. Only an empty draft identity
+      // absent from storage may be restored; never revive an old saved branch.
+      conversations = [
+        ...(retainedDrafts?.conversations || []).filter(item => !item.messages.length &&
+          !deleted.has(item.id) && !stored.conversations.some(saved => saved.id === item.id)),
+        ...stored.conversations,
+      ];
+      if (!conversations.length) conversations = [freshConversation()];
       tombstones = stored.tombstones;
-      activeId = conversations[0].id;
+      const selected = conversations.find(item => item.id === activeId) || conversations[0];
+      conversations = [selected, ...conversations.filter(item => item.id !== selected.id)]
+        .slice(0, MAX_CONVERSATIONS);
+      activeId = selected.id;
+      for (const id of drafts.keys()) {
+        if (!conversations.some(item => item.id === id)) drafts.delete(id);
+      }
       baselines.clear();
       stored.conversations.forEach(item => baselines.set(item.id, transcript(item)));
     }
@@ -601,6 +621,11 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     onReady();
   });
   return () => {
+    tabDrafts = drafts.size ? {
+      values: new Map(drafts),
+      conversations: conversations.filter(item => drafts.has(item.id)),
+      activeId,
+    } : undefined;
     alive = false;
     requestController?.abort();
     stateChanged();

@@ -2568,6 +2568,49 @@ for (const finish of ["save", "discard"] as const) {
 }
 
 
+test("PWA protects an unsent Chat draft while reading another page", async ({ page, context }) => {
+  const proxy = await pwaUpdateProxy();
+  const other = await context.newPage();
+  try {
+    await page.goto(`${proxy.origin}/chat`);
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+    const input = page.getByRole("textbox", { name: "Message", exact: true });
+    const draft = "A fictional question to finish after reading.";
+    await input.fill(draft);
+    await offerPwaUpdate(page, proxy);
+    await page.getByRole("navigation", { name: "Primary", exact: true })
+      .getByRole("link", { name: "Search", exact: true }).click();
+    await expect(page).toHaveURL(/\/search$/);
+    const notice = page.locator('.pwa-notice[data-kind="update"]');
+    await expect(notice).toContainText("Send or clear your message drafts");
+    await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+    await page.evaluate(() => {
+      (window as any).__retainedDraftDocument = true;
+      (window as any).__retainedDraftControllerChanges = 0;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        (window as any).__retainedDraftControllerChanges++;
+      });
+    });
+    await other.goto(`${proxy.origin}/?overview=1`);
+    await expect(other.locator('.pwa-notice[data-kind="update"]')).toBeVisible();
+    await Promise.all([
+      other.waitForEvent("load"),
+      other.getByRole("button", { name: "Update now" }).click(),
+    ]);
+    await page.waitForFunction(() => (window as any).__retainedDraftControllerChanges === 1);
+    expect(await page.evaluate(() => (window as any).__retainedDraftDocument)).toBe(true);
+    await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
+    await page.getByRole("navigation", { name: "Primary", exact: true })
+      .getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(input).toHaveValue(draft);
+    await input.fill("");
+    await expect(notice.getByRole("button", { name: "Update now" })).toBeEnabled();
+  } finally {
+    await other.close();
+    await proxy.close();
+  }
+});
+
 for (const finish of ["clear", "send", "stop"] as const) {
   test(`PWA protects a chat draft through ${finish} and another tab's update`, async ({ page, context }, testInfo) => {
     await page.setViewportSize({ width: finish === "clear" ? 1440 : 390, height: 1000 });
