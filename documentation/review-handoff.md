@@ -272,11 +272,12 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Inspected acceptance, 23 October 2026
 
-Runtime source `8203385cbb4ae5b65110d5e247299ae61f798de7`, tree
-`d056df11a7d23b117572ae48d874b3399483a356`, was tested at merge
-`5ea98c8903a7c9ca887a4b232fdc96c71150381c`. Original checkout logs and
-the Git object establish the identical tree. Subsequent handoff-only edits
-do not create another runtime acceptance result.
+Test/documentation source `8f9c2fc67bfe52cd9827dd7abe0ac0b2b706418c`, tree
+`98171a3ccb16a4f9f03ce822b5ad9b0a8fb68d48`, was tested at merge
+`a8ce7e9622595f140cbd9d898cbaa1754345599c`. Original checkout logs and
+the Git object establish the identical tree. Application code is unchanged
+from `8203385c`; the new test source adds the four native reload cases.
+Subsequent handoff-only edits do not create another runtime acceptance result.
 
 Current Browser/Frontend originals cover the unsent-Chat-draft correction:
 navigation and Back/Forward retain tab-only draft text and selected conversation, returning respects
@@ -298,12 +299,15 @@ success-only wait. No application code changed for this check.
 The strengthened cases also pass within the 89-case real-service Chromium
 Chat/concurrency/PWA selection (1.8 minutes), with successful owned service
 cleanup; both TypeScript projects pass. Cached native Chromium with the existing
-runtime flags was used. The four new native reload cases have no fresh WebKit
-or physical-device result yet; older full CI below predates these tests.
+runtime flags was used. All four new native reload cases now also pass in the
+complete Chromium and reading-WebKit originals below. Current WebKit390/1440
+captures after cancellation and returning from Search were personally viewed.
+This is Linux-WebKit with reading-profile workers blocked, not physical Safari,
+softkeyboard, installation or native-font parity.
 
 | Area | Inspected original run / source | Result and boundary |
 | --- | --- | --- |
-| Browser | [39968927705](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39968927705), current runtime |915 successful executions/14 explained phase-profile skips; all7 result records and owned cleanup pass |
+| Browser | [39986025133](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39986025133), test source8f9c2fc6 |923 successful executions/14 explained phase-profile skips; all7 result records and owned cleanup pass |
 | Frontend | [39968927737](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39968927737), current runtime |15 native cases/zero failures or skips; both TS projects, production and container builds; push:false/cache-only |
 | Stack | [39959930051](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39959930051), [parent09eaac7a](https://github.com/JonasKruegerCode/SecondBrain/commit/09eaac7afee75ed2893db6adc10dfd4594df461b)/tree753a67c8 |109 gate records/107 distinct labels plus6 HTTPS/auth browser gates, real readonly foreign-owner Git import and edge cases; not a fresh Chat-runtime result |
 | Backend | [39848542316](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542316), retained 9dafdc02 source |Earlier Ruff/MyPy125,1,458 passed/12 dedicated opt-in skips; not a new current-source audit |
@@ -311,12 +315,12 @@ or physical-device result yet; older full CI below predates these tests.
 | SSH | [39848542360](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542360), retained 9dafdc02 source |Five isolated authenticated Git/restart/refusal-preservation cases, not production credentials |
 
 Browser totals are 114 repeated WebKit transaction/preference diagnostics,
-451 Chromium, first-start2, Git import3, synthetic320: 2, reading-WebKit335
+455 Chromium, first-start2, Git import3, synthetic320: 2, reading-WebKit339
 and worker-WebKit8. Repetitions count as executions, not unique requirements.
 Eight skips select complementary first-start/import phases; six are engine
 exclusions in the WebKit reading profile. That profile blocks workers, while
 the separate worker profile allows them. Dot reporting has no per-title JSON
-ledger. The new 390/1440 draft cases run in both broad engines; their original
+ledger. The new four 390/1440 reload cases run in both broad engines; their original
 WebKit captures were personally inspected. A viewport image does not establish
 that every control fits the first screen or that physical soft keyboards work.
 
@@ -331,7 +335,7 @@ remain byte-equal after owned cleanup. Those gates are not native suite case cou
 
 | Verified archive | Bytes / entries | SHA256 |
 | --- | --- | --- |
-| Current Browser12509427431 |227,797,000 /976 | `669869c289b1797f8aab7b81c0f5e5e3312baebd65aa0781c66bbce6fdf18216` |
+| Current Browser12517117333 |229,377,206 /984 | `38f4dcb337cc02c7ed510f279697ef883d2596cab5a97388f032ee7a4410837a` |
 | Retained Stack12504422063 |712,044 /6 | `f31141723a5fcf9f045d72184065c2fd2fad5ee74bce2a5306f4330998a50bde` |
 
 Both archive checks match GitHub size/digest and safe unique-path/CRC checks.
