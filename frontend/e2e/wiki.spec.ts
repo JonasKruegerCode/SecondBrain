@@ -1,3 +1,4 @@
+import { openAllPages } from "./navigation";
 import { installWikiChatStorage, failWikiChatWrites } from "./wiki-chat-storage";
 import { test, expect, APIRequestContext, Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -664,6 +665,7 @@ test("keyboard users can skip navigation and identify the active view", async ({
   await expect(page.locator("#main-content")).toBeFocused();
 
   const primary = page.getByRole("navigation", { name: "Primary" });
+  await expect(primary.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("href", "/");
   await expect(primary.getByRole("link", { name: "Home" })).toHaveAttribute(
     "aria-current",
     "page",
@@ -684,9 +686,11 @@ test("keyboard users can skip navigation and identify the active view", async ({
     const visibleLabel = (await brand.innerText()).replace("✳", "").replace(/\s+/g, " ").trim();
     const escapedLabel = visibleLabel.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&");
     await expect(brand).toHaveAccessibleName(new RegExp("^" + escapedLabel, "i"));
+    await expect(brand).toHaveAttribute("href", "/");
     await brand.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+    await expect(page).toHaveURL(/\/wiki\/home$/);
+    await expect(page.locator("article h1")).toHaveText("Lantern Bay field atlas");
   }
 
 });
@@ -1534,7 +1538,7 @@ test("late real page response cannot replace a newer article or edit target", as
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route(`**/api/wiki/pages/${a.id}`, async route => { await gate; await route.continue(); });
   await page.goto(`/wiki/${a.id}`);
-  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await openAllPages(page);
   await page.locator(".card").filter({ hasText: title }).click();
   await expect(page.locator("article h1")).toHaveText(title);
   const staleResponse = page.waitForResponse(response => response.url().endsWith(`/api/wiki/pages/${a.id}`));
@@ -2230,7 +2234,7 @@ test("late backlink response cannot replace a newer article and read failures ca
   await page.goto(`/wiki/${old.id}`);
   await page.locator(".page-backlinks summary").click();
   await expect(page.locator(".page-backlinks")).toContainText("Loading incoming links");
-  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await openAllPages(page);
   await page.locator(".card").filter({ hasText: current.title }).click();
   const delayed = page.waitForResponse(response => response.url().endsWith(`/pages/${old.id}/backlinks`));
   release();
@@ -2700,7 +2704,7 @@ for (const finish of ["recover", "delete"] as const) {
       const notice = page.locator('.pwa-notice[data-kind="update"]');
       await expect(notice).toContainText("Recover browser storage or delete unsaved conversations");
       await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();
-      await page.getByRole("link", { name: "Home", exact: true }).click();
+      await openAllPages(page);
       await page.locator('.grid a[href="/wiki/mira-quill"]').click();
       await expect(page.locator("article h1")).toHaveText("Mira Quill — fictional archivist");
       await expect(notice.getByRole("button", { name: "Update now" })).toBeDisabled();

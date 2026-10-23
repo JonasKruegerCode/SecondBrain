@@ -1,3 +1,4 @@
+import { openAllPages } from "./navigation";
 import { test, expect, APIRequestContext, Page, TestInfo } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -83,7 +84,7 @@ test("first start: empty workspace, real first pages, edit and saved preference"
   expect((await get(request, "/pages")).pages).toEqual([]);
   const home = await create(request, "home", homeMarkdown);
   const note = await create(request, "first-note", initialNote);
-  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await openAllPages(page);
   await expect(page.locator(".library .card")).toHaveCount(2);
   await page.getByRole("link", { name: /Open Synthetic welcome/ }).click();
   await expect(page.locator("article h1")).toHaveText("Synthetic welcome");
@@ -132,7 +133,7 @@ test("first start: empty workspace, real first pages, edit and saved preference"
     await fetched;
     await expect(page.locator("main")).toHaveText("Opening your workspace…");
     await page.screenshot({ path: info.outputPath("first-start-real-graph-loading.png"), fullPage: true });
-    await page.getByRole("link", { name: "Home", exact: true }).click();
+    await openAllPages(page);
     await expect(page.locator(".library .card")).toHaveCount(2);
     release();
     await delivered;
@@ -234,7 +235,7 @@ test("first start: real process restart preserves exact pages and browser prefer
   await expect(page.locator(".galaxy-evidence li")).toHaveCount(2);
   await page.getByRole("link", { name: /^Open article/ }).click();
   await expect(page.locator(".prose")).toContainText("silver-cloud-observation");
-  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await openAllPages(page);
   await screenshots(page, info, "first-start-restarted-home", async () => {
     await expect(page.locator(".library .card")).toHaveCount(2);
     await expect(page.locator(".library")).toContainText("2 pages");

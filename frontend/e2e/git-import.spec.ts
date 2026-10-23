@@ -1,3 +1,4 @@
+import { openAllPages } from "./navigation";
 import { test, expect, APIRequestContext, Page, TestInfo } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
@@ -176,7 +177,7 @@ test("Git import: replay and real restart retain exact content and start page", 
   await search(page, "browser-import-edit-marker", note.id);
   await galaxy(page, info, receipt, "git-import-restarted-galaxy");
   await expect(page.locator(".prose")).toContainText("browser-import-edit-marker");
-  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await openAllPages(page);
   await screenshots(page, info, "git-import-restarted-home", async () => {
     await expect(page.locator(".library .card")).toHaveCount(12);
     await expect(page.locator(".library")).toContainText("12 pages");

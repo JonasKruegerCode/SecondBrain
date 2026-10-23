@@ -4,6 +4,40 @@ import { test } from "./reading-test";
 // Real demo content and native preferences. Faults below deliberately abort a
 // request or deny an API; they do not emulate a physical device/storage failure.
 for (const width of [390, 1440]) {
+  test(`global Home and brand respect the curated and personal start (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const saved of [false, true]) {
+      if (saved) {
+        await page.goto("/wiki/field-notebook");
+        await page.getByRole("button", { name: "Set as start page" }).click();
+        await expect(page.locator(".notice")).toHaveText("This is now your start page.");
+      }
+      for (const control of ["Home", "brand"]) {
+        await page.goto("/search");
+        if (control === "Home") {
+          const link = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Home", exact: true });
+          await link.focus();
+          await page.keyboard.press("Enter");
+        } else await page.locator("a.brand").click();
+        await expect(page).toHaveURL(saved ? /\/wiki\/field-notebook$/ : /\/wiki\/home$/);
+        await expect(page.locator("article h1")).toHaveText(saved ? "Field notebook" : "Lantern Bay field atlas");
+        expect(await page.evaluate(async () => {
+          const path = "/src/start-preference.ts";
+          return (await import(/* @vite-ignore */ path)).readStartPage();
+        })).toBe(saved ? "field-notebook" : "");
+      }
+      await page.getByRole("link", { name: "← All pages", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
+      await expect(page.locator(".library .card")).toHaveCount(12);
+    }
+    await page.screenshot({ path: info.outputPath(`global-home-overview-${width}.png`), fullPage: true });
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Home", exact: true }).click();
+    await expect(page).toHaveURL(/\/wiki\/field-notebook$/);
+    await expect(page.locator("article h1")).toHaveText("Field notebook");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath(`global-home-personal-${width}.png`), fullPage: true });
+  });
+
   test(`unavailable saved start and Home fall back once (${width})`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/wiki/field-notebook");

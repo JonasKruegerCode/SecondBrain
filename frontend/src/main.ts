@@ -439,7 +439,7 @@ function shell() {
   const homeActive = !["/search", "/galaxy", "/chat"].includes(location.pathname)
     ? ` class="active"${location.pathname === "/" ? ' aria-current="page"' : ""}`
     : "";
-  app.innerHTML = `<a class="skip-link" href="#main-content">Skip to content</a><div class="ambient"></div><header><a class="brand" href="/?overview=1" aria-label="Secondbrain Your knowledge, connected — Home"><span aria-hidden="true">✳</span> secondbrain <small aria-hidden="true">YOUR KNOWLEDGE, CONNECTED</small></a><nav aria-label="Primary"><a href="/?overview=1"${homeActive}>Home</a><a href="/search"${active("/search")}>Search</a><a href="/galaxy"${active("/galaxy")}>Galaxy</a><a href="/chat"${active("/chat")}>Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><div class="pwa-notice" role="status" hidden><span></span><button type="button"></button></div><p class="route-status sr-only" role="status" aria-live="polite"></p><main id="main-content" tabindex="-1"></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
+  app.innerHTML = `<a class="skip-link" href="#main-content">Skip to content</a><div class="ambient"></div><header><a class="brand" href="/" aria-label="Secondbrain Your knowledge, connected — Home"><span aria-hidden="true">✳</span> secondbrain <small aria-hidden="true">YOUR KNOWLEDGE, CONNECTED</small></a><nav aria-label="Primary"><a href="/"${homeActive}>Home</a><a href="/search"${active("/search")}>Search</a><a href="/galaxy"${active("/galaxy")}>Galaxy</a><a href="/chat"${active("/chat")}>Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><div class="pwa-notice" role="status" hidden><span></span><button type="button"></button></div><p class="route-status sr-only" role="status" aria-live="polite"></p><main id="main-content" tabindex="-1"></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
   renderPwaState();
 }
 
@@ -560,7 +560,7 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     // load. Keep header/main focus chosen while the first real read was pending.
     app.querySelector("header nav a[aria-current]")?.removeAttribute("aria-current");
     if (location.pathname === "/")
-      app.querySelector('header nav a[href="/?overview=1"]')?.setAttribute("aria-current", "page");
+      app.querySelector('header nav a[href="/"]')?.setAttribute("aria-current", "page");
   } else shell();
   const main = app.querySelector("main")!;
   main.innerHTML = '<p class="quiet">Opening your workspace…</p>';

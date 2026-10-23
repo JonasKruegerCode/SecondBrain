@@ -1,3 +1,4 @@
+import { openAllPages } from "./navigation";
 import { holdChatWriter, releaseChatWriter, seedChats } from "./chat-storage";
 import { expect, APIRequestContext, Page } from "@playwright/test";
 import { test } from "./reading-test";
@@ -346,6 +347,10 @@ for (const width of [390, 1440]) {
       await page.keyboard.press("Enter");
       const heading = page.locator("main h1");
       await expect(heading).toBeVisible();
+      if (name === "Home") {
+        await expect(page).toHaveURL(/\/wiki\/home$/);
+        await expect(heading).toHaveText("Lantern Bay field atlas");
+      }
       const observed = await page.evaluate(() => ({ tag: document.activeElement?.tagName, scrollY }));
       console.log(`[view-focus] ${JSON.stringify({ width, name, observed })}`);
       await expect(heading).toBeFocused();
@@ -355,7 +360,7 @@ for (const width of [390, 1440]) {
       await page.screenshot({ path: info.outputPath(`view-focus-${name.toLowerCase()}-${width}.png`) });
       await page.keyboard.press("Tab");
       const next = name === "Search" ? page.getByRole("textbox", { name: "Search pages" }) :
-        name === "Home" ? page.getByRole("link", { name: /Open Lantern Bay field atlas/ }) :
+        name === "Home" ? page.getByRole("navigation", { name: "On this page", exact: true }).getByRole("link", { name: "Three routes into the atlas", exact: true }) :
         name === "Galaxy" ? page.getByRole("link", { name: "Page overview ↗" }) :
         page.locator("#chat-input");
       await expect(next).toBeFocused();
@@ -1224,7 +1229,7 @@ test("leaving chat during native initialization cannot complete the departed rou
     const navigation = page.getByRole("navigation", { name: "Primary", exact: true });
     await navigation.getByRole("link", { name: "Chat", exact: true }).click();
     await expect(page.locator("main [role=status]")).toContainText("Opening your conversations");
-    await navigation.getByRole("link", { name: "Home", exact: true }).click();
+    await openAllPages(page);
     await expect(page.getByRole("heading", { name: "A growing collection", exact: true })).toBeVisible();
     const before = await page.locator("main").innerHTML();
     await releaseChatWriter(peer);
