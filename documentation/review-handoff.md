@@ -8,11 +8,10 @@ production operation and physical-device acceptance remain open. It is not yet
 release- or merge-ready.
 
 Start with the [fictional demo](demo-start.md), then use the contracts and
-verification map below. The
-[full source and evidence history at f7da8a5](https://github.com/JonasKruegerCode/SecondBrain/blob/f7da8a519d4314a3950f6923d0e4c84ddd837cf5/documentation/review-handoff.md)
-preserves detailed reproductions, historical failures and regression matrices.
-It is historical evidence, not a claim about a later revision. This document
-consolidates that material instead of accumulating another run log.
+verification map below. The [previous handoff at 8203385](https://github.com/JonasKruegerCode/SecondBrain/blob/8203385cbb4ae5b65110d5e247299ae61f798de7/documentation/review-handoff.md)
+preserves the earlier inspected matrices, original CI records and links to older
+counterexamples. They are dated evidence, not claims about a later revision.
+This document consolidates that history instead of accumulating run logs.
 
 ## Architecture and data flow
 
@@ -40,19 +39,10 @@ already have published, so Cancel is not an undo operation. Subsequent index or
 remote failure does not turn a published save into a lost write.
 
 The two-tab [editor incarnation regression](../frontend/e2e/editor-incarnation.spec.ts)
-deletes and recreates a page with byteidentical Markdown before attempting the
-old tab's first save. That save must conflict even before another tab changes
-the replacement's content. A later UI save, repeated conflict, preserved draft
-and textarea selection, rejected/accepted Cancel, fresh read and subsequent save
-also verify recovery without changing the visit or adding conflict commits.
-Historical retry receipts are a separate contract: this draft was never
-previously published. Both 390/1440 cases passed locally with real API/Git
-services and native headless Chromium 153; no content or response mocks. The
-minimal local runtime is not the locked full suite, Linux-WebKit, a physical
-device or a provider/index-delivery acceptance. Hosted results for these new
-cases are included in both broad engine profiles of inspected Browser run
-`39848542539` below. Headless synthetic acceptance remains separate from physical
-devices, production operation and real providers.
+covers deletion/recreation with identical Markdown, conflict recovery, retained
+draft/selection and a fresh-read save. A historical retry receipt is a separate
+contract: an unpublished draft cannot replay an earlier publication. These are
+synthetic browser contracts, separate from physical devices and provider delivery.
 
 ### Derived retrieval and delivery
 
@@ -69,7 +59,8 @@ The current derivation identity is `managed-snapshots-v35`, defined in
 This revision removes phantom URL-path wikilinks from the bounded nested
 single-star/strong note form when its ASCII words end in one `. ! ? , ; :`
 character. Escaping, invalid closers and arbitrary nesting retain their existing
-separate rules; this is not complete Markdown-parser parity.
+separate rules. The fixed 336-case diagnostic retains 63 graph-target mismatches;
+complete Markdown/sanitizer/graph parity is not established.
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
 make paid embedding requests. Retention is explicit, dry-run first and scoped to
@@ -116,21 +107,8 @@ inner scroll positions. Search updates highlights on the mounted map and reuses
 identical result markup, preserving geometry and avoiding repeated layout work.
 
 Markdown source, IDs and history are preserved. Rendered prose, safe HTML,
-wikilinks and graph projection have separate regression coverage. The v26 bounded
-760-context Marked comparison improves 123 mismatches to 54 without a new mismatch
-in that matrix. Escapes, mixed delimiters and HTML-anchor contexts still limit
-general parity; do not claim complete Marked/sanitizer/graph equivalence or an
-absence of all phantom-link cases.
-
-A literal star before the bounded single-star URL/trailing-strong form now
-keeps the external URL out of the wiki graph, matching rendered articles.
-The correction covers an extra unescaped or escaped opening star; it does
-not implement a general delimiter-run resolver. Earlier bounded corrections left 92 and then 72 graph-target mismatches in a
-fixed 336-case diagnostic. The current v35 terminal-punctuation correction
-leaves 63; these are successive source revisions, not complete parser parity.
-Raw Markdown, page revisions and Git history are preserved. The derivation
-identity change makes older index receipts pending; rebuilding configured
-embeddings can make paid requests and remains an explicit operation.
+wikilinks and graph projection have separate regressions; the bounded parser
+limits above still apply.
 
 ### Read-only chat and PWA
 
@@ -292,96 +270,63 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Inspected acceptance, 22 October 2026
+## Inspected acceptance, 23 October 2026
 
-Functional source `9dafdc021ad7aa5fda2dd45410eecc2cef39ceef`, tree
-`684b9d9ad44d698fe9dc46b04f3914d5e86077a8`, was checked at merge
-`e1deab8e67b9e4ccaaf505e7867a6c9370c4bee8`. Original checkout logs and
-the Git object establish the same tree and ordered parents main `1f0cd1e7`
-plus functional source `9dafdc02`. Subsequent documentation-only changes do
-not constitute another runtime acceptance result.
+Runtime source `8203385cbb4ae5b65110d5e247299ae61f798de7`, tree
+`d056df11a7d23b117572ae48d874b3399483a356`, was tested at merge
+`5ea98c8903a7c9ca887a4b232fdc96c71150381c`. Original checkout logs and
+the Git object establish the identical tree. Subsequent handoff-only edits
+do not create another runtime acceptance result.
 
-| Area | Inspected original run | Result and boundary |
+Current Browser/Frontend originals cover the unsent-Chat-draft correction:
+navigation and Back/Forward retain tab-only draft text and selected conversation, returning respects
+current saved messages and deletions, and PWA reload protection remains active
+while another view is open. The unchanged parent fails the three new draft
+counterexamples. The corrected local selection passes 48 chat/concurrency/PWA
+cases, separately from the complete CI below.
+
+| Area | Inspected original run / source | Result and boundary |
 | --- | --- | --- |
-| Backend | [39848542316](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542316) | Ruff/MyPy125; 1,458 passed, 12 dedicated opt-in skips; image build |
-| Frontend | [39848542554](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542554) | Both TS projects; proxy5/access2/PWA5/image-protocol2; compile and image build |
-| Indexes | [39848542236](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542236) | Seven real disposable Neo4j/Qdrant cases with synthetic vectors; 320 pages/648 edges |
-| SSH | [39848542360](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542360) | Five authenticated Git/restart and host/agent refusal-preservation cases |
-| Browser | [39848542539](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542539) | Seven passed records; 858 successful executions/14 explained skips, zero reported failed/flaky |
-| Stack | [39848542400](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542400) | 87 gate records/85 unique labels, six synthetic TLS/auth/browser gates, 49 retained-image gate records |
+| Browser | [39968927705](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39968927705), current runtime |915 successful executions/14 explained phase-profile skips; all7 result records and owned cleanup pass |
+| Frontend | [39968927737](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39968927737), current runtime |15 native cases/zero failures or skips; both TS projects, production and container builds; push:false/cache-only |
+| Stack | [39959930051](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39959930051), [parent09eaac7a](https://github.com/JonasKruegerCode/SecondBrain/commit/09eaac7afee75ed2893db6adc10dfd4594df461b)/tree753a67c8 |109 gate records/107 distinct labels plus6 HTTPS/auth browser gates, real readonly foreign-owner Git import and edge cases; not a fresh Chat-runtime result |
+| Backend | [39848542316](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542316), retained 9dafdc02 source |Earlier Ruff/MyPy125,1,458 passed/12 dedicated opt-in skips; not a new current-source audit |
+| Indexes | [39848542236](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542236), retained 9dafdc02 source |Seven disposable Neo4j/Qdrant cases with synthetic vectors;320 pages/648 edges, not hosted capacity |
+| SSH | [39848542360](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39848542360), retained 9dafdc02 source |Five isolated authenticated Git/restart/refusal-preservation cases, not production credentials |
 
-Browser phase totals are WebKit transaction/preference diagnostics114,
-Chromium422, first-start2, Git import3, synthetic320:2, reading-WebKit307
-and worker-WebKit8. Repetitions count as executions, not distinct requirements.
-Eight skips select complementary first-start/import phases; five exclude
-Blink-only minimum-font checks and one excludes CDP-only touch. The reading
-WebKit profile blocks workers; the separate eight worker tests allow them.
-All seven Git-import preservation/retry assertions pass. Original result records
-assert zero exit codes and owned runner cleanup; these are not OS-wide or
-power-loss guarantees. No external model was called.
+Browser totals are 114 repeated WebKit transaction/preference diagnostics,
+451 Chromium, first-start2, Git import3, synthetic320: 2, reading-WebKit335
+and worker-WebKit8. Repetitions count as executions, not unique requirements.
+Eight skips select complementary first-start/import phases; six are engine
+exclusions in the WebKit reading profile. That profile blocks workers, while
+the separate worker profile allows them. Dot reporting has no per-title JSON
+ledger. The new 390/1440 draft cases run in both broad engines; their original
+WebKit captures were personally inspected. A viewport image does not establish
+that every control fits the first screen or that physical soft keyboards work.
 
-The missing-page MCP error correction is covered by direct, HTTP and real SDK
-stdio tests. Two preceding backend attempts remain failed:
-[39847387889](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39847387889)
-caught the new test's SDK union typing before pytest;
-[39847652692](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39847652692)
-passed Ruff/MyPy and 1,457 cases but exposed an old stdio assertion expecting
-the incorrect success flag. The final source narrows the SDK types and corrects
-that assertion. The earlier 21 October editor-focus failures and Optional-page
-test error remain in Git and the pinned historical handoff; later passes do not
-relabel them or establish causes for unrelated intermittent observations.
+The retained parent Stack evidence checks EROFS and foreign UID rejection before
+exact two-path Git trust inside a disposable setup container. Two imported pages
+retain history, API edits, the original setup receipt and edit retries across
+restart. Dirty and genuinely shallow clones fail with their specific errors
+without changing the target head. An unborn Git source publishes a versioned
+zero-page receipt, retries identically and refuses a competing first start;
+the actual API list remains empty. All four source clones, including Git metadata,
+remain byte-equal after owned cleanup. Those gates are not native suite case counts.
 
-Standalone image jobs use `push:false/load:false` and cache-only output.
-The separate stack actually builds and runs images. Its normal path verifies
-synthetic TLS/auth, same-origin writes, shared REST/MCP, isolated chat cancellation,
-DNS/IP churn without restarting the frontend, and create-only restore on a separate
-owned volume. The retained old/new/old/resume path uses distinct real images on
-one volume, history 1→2→3→3, changed worker bytes, retained native editor,
-one browser save/history addition and preference migration. Scripted providers,
-synthetic TLS/SPKI and disposable volumes do not establish production operation.
-
-All listed archives match API sizes/digests and pass safe unique-path/CRC checks:
-
-| Artifact | Bytes / entries | SHA256 |
+| Verified archive | Bytes / entries | SHA256 |
 | --- | --- | --- |
-| Browser12458460505 | 217,826,510 / 934 | `4e65d0943bc03aab6a8321a54428649af08d21fe65dd0952d1daf2f166ef8f59` |
-| Stack12457825223 | 709,107 / 6 | `60c767144526af6b342b6a5e3df450008d6ef18da47e6a7d436f3dcfed6de7e9` |
-| Image-update12456696346 | 16,714 / 3 | `c10d9741b25efa843bf96ce5fede603bbbd54e650d1ec9d8d6ce08ae4ded2359` |
+| Current Browser12509427431 |227,797,000 /976 | `669869c289b1797f8aab7b81c0f5e5e3312baebd65aa0781c66bbce6fdf18216` |
+| Retained Stack12504422063 |712,044 /6 | `f31141723a5fcf9f045d72184065c2fd2fad5ee74bce2a5306f4330998a50bde` |
 
-These workflow artifacts expire 29 October 2026; references and hashes do not
-guarantee availability afterward. Preserve needed evidence before expiry.
-Selected captures were visually inspected; 934 entries do not mean 934 images
-were individually reviewed. Full-page captures do not establish first-screen
-visibility.
+Both archive checks match GitHub size/digest and safe unique-path/CRC checks.
+Their originals expire 30 October 2026; links/hashes do not guarantee later
+availability. Preserve needed evidence before expiry. Standalone image builds did not publish container images.
 
-### Current graph derivation and parser boundary
-
-The current identity is **managed-snapshots-v35**. The bounded nested
-single-star/strong handling accepts ASCII words with one terminal
-`. ! ? , ; :` character while retaining escape, closing and flanking guards.
-For example, `*HTTPS://example.test/[[target]] **Field note.***` renders an
-external article link without inventing a wiki edge to `target`.
-The fixed 336-case diagnostic still has 63 graph-target mismatches; arbitrary
-nesting and general Markdown parity remain outside this correction.
-Markdown, revisions and history are unchanged. Older configured index receipts
-become pending; explicit rebuilding can make paid embedding calls.
-
-### Independent synthetic reader paths
-
-A real Chromium reader walk at 320/1440 completed Home → curated article → search
-→ Galaxy selection/zoom/list → article → Chat. The unconfigured chat correctly
-returned 503, retained the question and offered Retry; no model answer was claimed.
-A separate real browser/MCP HTTP coediting path at 390/1440 preserved drafts
-through foreign saves, deletion/recreation and two 409 conflicts, then deliberately
-reloaded and saved the current page. Both clients agreed on revision/history 5
-and graph links. It used cached native Chromium with nondefault runtime flags
-and blocked workers, not the locked CI environment or a physical device.
-
-The first coediting fixture attempt passed 390px but its reused browser closed
-before 1440px. Separate browser instances passed both widths. This is a local
-fixture correction, not an established product cause. Immediate owned-group/input
-cleanup was recorded, but operational files later reappeared; the cause remains
-unknown and lasting absence is not established.
+Earlier reader/coediting/operator paths and failed experiments remain in the
+versioned handoff history. Later passes do not diagnose earlier loading,
+preference, new-tab, worker-install or cleanup incidents. Synthetic TLS/providers,
+Linux-WebKit and scripted tours remain separate from real model answer quality,
+production operation, physical installation and human presentation.
 
 ## Known release gates
 
