@@ -249,6 +249,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.first_start
         else [
             "e2e/wiki.spec.ts",
+            "e2e/curated-home.spec.ts",
             "e2e/pwa-existing-install.spec.ts",
             "e2e/history.spec.ts",
             "e2e/delivery-recovery.spec.ts",
@@ -280,6 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         suites = ["e2e/scale.spec.ts"]
     if args.browser_engine == "webkit":
         suites = [
+            "e2e/curated-home.spec.ts",
             "e2e/skip-link.spec.ts",
             "e2e/history.spec.ts",
             "e2e/delivery-recovery.spec.ts",
@@ -507,4 +509,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
