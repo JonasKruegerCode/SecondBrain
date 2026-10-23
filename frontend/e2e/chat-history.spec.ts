@@ -320,9 +320,13 @@ async function expectDraftsPrivate(page: Page) {
   const legacy = await page.evaluate(() => JSON.stringify(Object.fromEntries(
     Object.keys(localStorage).filter(key => key.startsWith("secondbrain.chat")).map(key => [key, localStorage.getItem(key)]),
   )));
+  const session = await page.evaluate(() => JSON.stringify(Object.fromEntries(
+    Object.keys(sessionStorage).map(key => [key, sessionStorage.getItem(key)]),
+  )));
   for (const draft of [questionA, questionB]) {
     expect(root).not.toContain(draft);
     expect(legacy).not.toContain(draft);
+    expect(session).not.toContain(draft);
   }
 }
 
@@ -374,6 +378,65 @@ for (const width of [390, 1440]) {
     await conversation(page, first).click();
     await input.fill("");
   });
+}
+
+for (const width of [390, 1440]) {
+  for (const away of [false, true]) {
+    test(`native reload protects an unsent Chat draft${away ? " after leaving Chat" : " in Chat"} (${width})`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 1000 });
+      let chatPosts = 0;
+      page.on("request", request => {
+        if (new URL(request.url()).pathname === "/api/wiki/chat" && request.method() === "POST") chatPosts++;
+      });
+      await page.goto("/chat");
+      const input = page.getByRole("textbox", { name: "Message", exact: true });
+      await expect(input).toBeEnabled();
+      await input.fill(questionA);
+      // A real click gives native beforeunload the required user activation.
+      await input.click();
+      if (away) await navigation(page).getByRole("link", { name: "Search", exact: true }).click();
+      await page.evaluate(() => { (window as any).__draftDocument = "original"; });
+      const cancelledDialog = page.waitForEvent("dialog");
+      // page.reload waits for a load event that a cancelled navigation never
+      // emits in some engines. Trigger the same native browser action without
+      // imposing that success-only navigation wait on the cancellation path.
+      const cancelledReload = page.evaluate(() => { location.reload(); });
+      const keep = await cancelledDialog;
+      expect(keep.type()).toBe("beforeunload");
+      await keep.dismiss();
+      await cancelledReload;
+      expect(await page.evaluate(() => (window as any).__draftDocument)).toBe("original");
+      if (away) await navigation(page).getByRole("link", { name: "Chat", exact: true }).click();
+      await expect(input).toHaveValue(questionA);
+      await expectDraftsPrivate(page);
+      await page.screenshot({ path: info.outputPath(`cancelled-reload-draft-${away ? "away" : "chat"}-${width}.png`) });
+
+      if (away) await navigation(page).getByRole("link", { name: "Search", exact: true }).click();
+      const acceptedDialog = page.waitForEvent("dialog");
+      const acceptedReload = page.reload();
+      const leave = await acceptedDialog;
+      expect(leave.type()).toBe("beforeunload");
+      await leave.accept();
+      await acceptedReload;
+      expect(await page.evaluate(() => (window as any).__draftDocument)).toBeUndefined();
+      if (away) await navigation(page).getByRole("link", { name: "Chat", exact: true }).click();
+      await expect(input).toBeEnabled();
+      await expect(input).toHaveValue("");
+      await expectDraftsPrivate(page);
+      // Explicitly clearing a new draft must release the native reload guard,
+      // including its retained state when another view is open.
+      await input.fill(questionB);
+      await input.fill("");
+      if (away) await navigation(page).getByRole("link", { name: "Search", exact: true }).click();
+      let unexpectedDialogs = 0;
+      page.on("dialog", async dialog => { unexpectedDialogs++; await dialog.accept(); });
+      await page.evaluate(() => { (window as any).__draftDocument = "cleared"; });
+      await page.reload();
+      expect(await page.evaluate(() => (window as any).__draftDocument)).toBeUndefined();
+      expect(unexpectedDialogs).toBe(0);
+      expect(chatPosts).toBe(0);
+    });
+  }
 }
 
 test("returning to Chat does not resurrect a conversation deleted in another tab with an unsent draft", async ({ page, context }) => {

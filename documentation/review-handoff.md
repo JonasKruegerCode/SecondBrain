@@ -285,6 +285,22 @@ while another view is open. The unchanged parent fails the three new draft
 counterexamples. The corrected local selection passes 48 chat/concurrency/PWA
 cases, separately from the complete CI below.
 
+Native reload boundary, checked 23 October: four focused real Chromium cases
+cover 390/1440 widths both in Chat and after switching to Search. Dismissing
+the actual beforeunload dialog keeps the same document and unsent text;
+accepting it creates a fresh document with no retained draft. Explicitly clearing
+the draft releases the guard. No chat POST occurs, and draft text is absent
+from the native IndexedDB chat root, chat localStorage keys and sessionStorage.
+These are tab-memory checks, not persistent draft recovery or physical-device
+proof. The initial harness incorrectly waited for a load event after cancellation
+and timed out; triggering native location.reload for that path removes that
+success-only wait. No application code changed for this check.
+The strengthened cases also pass within the 89-case real-service Chromium
+Chat/concurrency/PWA selection (1.8 minutes), with successful owned service
+cleanup; both TypeScript projects pass. Cached native Chromium with the existing
+runtime flags was used. The four new native reload cases have no fresh WebKit
+or physical-device result yet; older full CI below predates these tests.
+
 | Area | Inspected original run / source | Result and boundary |
 | --- | --- | --- |
 | Browser | [39968927705](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/39968927705), current runtime |915 successful executions/14 explained phase-profile skips; all7 result records and owned cleanup pass |

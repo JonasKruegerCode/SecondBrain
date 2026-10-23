@@ -148,6 +148,9 @@ Unsent message drafts survive a visit to another wiki view and back, including
 browser Back/Forward, within the same open tab. They are not written to browser
 storage or sent until you choose Send. Save or send needed text before deliberately
 reloading or closing the tab; those actions can discard unsent drafts.
+If the browser shows a leave-page confirmation, cancel it to keep the current
+document and its drafts, even after navigating from Chat to Search. Clearing
+the drafts releases that guard. This is not recovery after tab or process loss.
 While a reply is pending, **Stop reply** cancels the browser request and keeps
 the saved question available for Retry. Leaving Chat also aborts its unfinished
 request. The server cancels that invocation when it observes the disconnect;
