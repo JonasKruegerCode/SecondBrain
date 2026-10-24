@@ -380,7 +380,8 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/wiki.spec.ts", "e2e/curated-home.spec.ts", "e2e/pwa-existing-install.spec.ts",
         "e2e/history.spec.ts", "e2e/delivery-recovery.spec.ts",
         "e2e/skip-link.spec.ts", "e2e/article-focus.spec.ts",
-        "e2e/view-focus.spec.ts", "e2e/start-preference.spec.ts",
+        "e2e/view-focus.spec.ts", "e2e/text-enlargement.spec.ts",
+        "e2e/start-preference.spec.ts",
         "e2e/demo-rehearsal.spec.ts",
         "e2e/galaxy-density.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/galaxy-search.spec.ts", "e2e/editor-retry.spec.ts",
@@ -404,6 +405,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/skip-link.spec.ts",
         "e2e/history.spec.ts", "e2e/delivery-recovery.spec.ts",
         "e2e/article-focus.spec.ts", "e2e/view-focus.spec.ts",
+        "e2e/text-enlargement.spec.ts",
         "e2e/start-preference.spec.ts",
         "e2e/demo-rehearsal.spec.ts", "e2e/galaxy-density.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/galaxy-search.spec.ts", "e2e/editor-retry.spec.ts",
@@ -463,6 +465,7 @@ def test_editor_retry_orchestration_contract_without_launching_a_browser(
     expected_command.extend(["--output", str(artifact_dir / f"browser-{engine}")])
     assert browser_calls[0].args[0] == expected_command
     assert browser_calls[0].args[0].count("e2e/editor-retry.spec.ts") == 1
+    assert browser_calls[0].args[0].count("e2e/text-enlargement.spec.ts") == 1
     assert browser_calls[0].kwargs["cwd"] == tmp_path / "frontend"
     assert browser_calls[0].kwargs["env"]["PLAYWRIGHT_BROWSER_ENGINE"] == engine
     expected_python = fixture_python or sys.executable
