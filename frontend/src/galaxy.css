@@ -55,3 +55,8 @@
     outline-offset: -3px;
   }
 }
+
+/* Text enlargement must reflow controls instead of clipping them in the map. */
+.galaxy-heading h1 { overflow-wrap: anywhere; }
+.galaxy-controls { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.galaxy .galaxy-search input { height: auto; min-height: 38px; }

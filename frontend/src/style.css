@@ -768,3 +768,10 @@ textarea {
 .delivery-status { margin: 0 0 24px; }
 .delivery-status button { min-height: 44px; font-size: 12px; padding: 10px 12px; }
 .delivery-status .delivery-notice { margin-bottom: 4px; }
+
+/* Keep the brand within narrow viewports when users enlarge HTML text. */
+.brand { max-width: 100%; flex-wrap: wrap; row-gap: 0; overflow-wrap: anywhere; }
+.brand small { position: static; flex-basis: 100%; margin-left: 46px; }
+.intro h1 { overflow-wrap: anywhere; }
+main > form { flex-wrap: wrap; }
+main > form input { flex-basis: 10rem; }
