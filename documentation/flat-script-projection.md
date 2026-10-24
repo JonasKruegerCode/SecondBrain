@@ -58,3 +58,14 @@ projects pass. The retained [synthetic native observations](evidence/flat-script
 include emitted HTML and native DOM for the 16 bounded/control observations.
 These are restored minimal Python dependencies and native Chromium 153 through
 Playwright 1.64, separate from full locked CI, WebKit and physical devices.
+
+The full 36-form opt-in diagnostic was subsequently rerun on this application:
+72 complete observations, 42 target-set differences (21 repeated forms) versus
+the parent's 48. This is target-set diagnosis, not full parity acceptance.
+All observations retain one native capture, source/revision equality and no
+execution/page errors; owned fixtures/services were removed. Complex closing,
+escape/container states and STYLE/TEXTAREA remain among the differences.
+The first CI backend run stopped at strict test typing before pytest; explicit
+return types, Optional checks and typed read dispatch were then corrected.
+The three changed source/test files pass local strict mypy, and the five new
+tests plus 24 subtests pass again. Full new-head CI remains separate.

@@ -7,7 +7,7 @@ from second_brain.wiki.bounded_script import project_flat_scripts
 
 
 class ProjectionTests(unittest.TestCase):
-    def test_known_inline_pairs(self):
+    def test_known_inline_pairs(self) -> None:
         for tag in ("script", "ScRiPt", "SCRIPT"):
             source = (
                 f"# Fictional\n\nBefore [[kept]] <{tag}>hidden [[removed]]</{tag}> after [[tail]]."
@@ -20,7 +20,7 @@ class ProjectionTests(unittest.TestCase):
             self.assertNotIn("removed", projected)
             self.assertEqual(project_flat_scripts(projected), projected)
 
-    def test_unsupported_is_atomic(self):
+    def test_unsupported_is_atomic(self) -> None:
         unsupported = [
             "`<script>[[kept]]</script>`",
             "```html\n<script>[[kept]]</script>\n```",
@@ -53,7 +53,7 @@ class ProjectionTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertEqual(source, project_flat_scripts(source))
 
-    def test_multiple_spans_preserve_positions(self):
+    def test_multiple_spans_preserve_positions(self) -> None:
         source = "One <script>[[x]]</script> [[a]] <script>[[y]]</script> [[b]]"
         result = project_flat_scripts(source)
         for target in ("[[a]]", "[[b]]"):
@@ -61,7 +61,7 @@ class ProjectionTests(unittest.TestCase):
         self.assertNotIn("[[x]]", result)
         self.assertNotIn("[[y]]", result)
 
-    def test_actual_store_graph_excerpt_source_history_and_retry(self):
+    def test_actual_store_graph_excerpt_source_history_and_retry(self) -> None:
         source = (
             "# Fictional source\n\nNote [[kept]] "
             "<script>hiddenmarker [[removed]]</script> [[missing]]."
@@ -72,6 +72,7 @@ class ProjectionTests(unittest.TestCase):
             wiki.save_page("removed", "# Removed", None, "create-removed")
             receipt = wiki.save_page("source", source, None, "create-source")
             page = wiki.get_page("source")
+            assert page is not None
             self.assertEqual(page["markdown"], source)
             self.assertEqual(page["revision"], receipt["revision"])
             self.assertNotIn("hiddenmarker", page["excerpt"])

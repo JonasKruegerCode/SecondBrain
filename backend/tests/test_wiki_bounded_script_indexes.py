@@ -61,9 +61,12 @@ def test_script_projection_invalidates_both_old_receipts_at_same_head(
     assert current.config_id != old_id
     for kind in adapters:
         assert current.status()["indexes"][kind]["state"] == "pending"
-    for read in (lambda: current.neighbors(["home"]), lambda: current.semantic_search("Home")):
+    for kind in ("graph", "vector"):
         with pytest.raises(WikiError) as error:
-            read()
+            if kind == "graph":
+                current.neighbors(["home"])
+            else:
+                current.semantic_search("Home")
         assert error.value.code == "index_pending"
     adapters["vector"].fail = True
     current.run_once()
@@ -77,7 +80,10 @@ def test_script_projection_invalidates_both_old_receipts_at_same_head(
     assert [p["id"] for p in current.neighbors(["home"])["pages"]] == ["visible"]
     assert current.semantic_search("Home")["results"]
     for kind in adapters:
-        assert current._receipt(kind)["generation"] != receipts[kind]["generation"]
-        assert current._receipt(kind)["revision"] == before["revision"]
+        receipt = current._receipt(kind)
+        old_receipt = receipts[kind]
+        assert receipt is not None and old_receipt is not None
+        assert receipt["generation"] != old_receipt["generation"]
+        assert receipt["revision"] == before["revision"]
     assert store.snapshot() == before
     assert store.history("home") == history
