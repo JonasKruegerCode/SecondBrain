@@ -43,7 +43,10 @@ def test_script_projection_invalidates_both_old_receipts_at_same_head(
     monkeypatch.setenv("SECOND_BRAIN_WIKI_VECTOR_INDEX", "0")
     store = WikiStore(tmp_path)
     store.save_page(
-        "home", "# Home\nNote <script>hidden [[target]]</script> [[visible]].", None, "home"
+        "home",
+        '# Home\nNote <script data-note="x>y">hidden [[target]]</script> [[visible]].',
+        None,
+        "home",
     )
     store.save_page("target", "# Target", None, "target")
     store.save_page("visible", "# Visible", None, "visible")
@@ -51,7 +54,7 @@ def test_script_projection_invalidates_both_old_receipts_at_same_head(
     history = store.history("home")
     adapters = {"graph": Adapter(), "vector": Adapter()}
     old_id = hashlib.sha256(
-        json.dumps({"schema": "managed-snapshots-v35"}, sort_keys=True).encode()
+        json.dumps({"schema": "managed-snapshots-v36"}, sort_keys=True).encode()
     ).hexdigest()
     old = IndexCoordinator(store, adapters, config_id=old_id)
     old.run_once()

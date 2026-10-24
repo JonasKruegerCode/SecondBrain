@@ -97,6 +97,9 @@ for (const width of [390, 1440]) {
         ["Note <script>window.__excludedScript=true; // hiddenmarker [[T]]</script>", false],
         ["Note <script>hiddenmarker</script> [[T]]", true],
         ["Note <script>hiddenmarker [[T]]</script> after <script>[[T]]</script>", false],
+        ['Note <script data-note="x>y">hiddenmarker [[T]]</script>', false],
+        ['Note <ScRiPt DATA-X="[[T]]">hiddenmarker [[T]]</sCrIpT>', false],
+        ['Note <script type="text/javascript">hiddenmarker [[T]]</script>', false],
         ["1.     Note <script>hiddenmarker [[T]]</script>", false],
         ["Note <ſcript>hiddenmarker [[T]]</ſcript>", true],
         ["`<script>hiddenmarker [[T]]</script>`", false],
@@ -112,7 +115,7 @@ for (const width of [390, 1440]) {
           .toEqual([control.id, ...(visible ? [target.id] : [])].sort());
         const current = await (await request.get(`/api/wiki/pages/${saved.id}`)).json();
         expect(current.markdown).toBe(markdown); expect(current.revision).toBe(saved.revision);
-        if ([0, 1, 2, 4].includes(index)) expect(current.excerpt).not.toContain("hiddenmarker");
+        if ([0, 1, 2, 4, 5, 6, 7].includes(index)) expect(current.excerpt).not.toContain("hiddenmarker");
         expect(await page.evaluate(() => (window as any).__excludedScript)).toBeUndefined();
       }
     } finally {

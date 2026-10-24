@@ -54,13 +54,15 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v36`, defined in
+The current derivation identity is `managed-snapshots-v37`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
 This revision excludes simple inline SCRIPT islands from links and excerpts in
 an explicitly bounded whole-document grammar. It accepts flat ASCII prose,
 simple headings and restricted wikilinks, with exact ASCII-case SCRIPT pairs
-whose single-line bodies contain no angle opener, entity, backtick or escape.
-Unsupported syntax anywhere leaves the entire input unchanged; ordered-list
+optionally carrying one restricted double-quoted ASCII attribute. Their
+single-line bodies contain no angle opener, entity, backtick or escape.
+Multiple/unquoted attributes and unsupported syntax anywhere leave the entire
+input unchanged; ordered-list
 code, Unicode lookalike tags and complex HTML are explicit controls. This is
 not general rawtext parity. Markdown, history, lexical source search and browser
 rendering are unchanged. Both old provider receipts become pending at the same

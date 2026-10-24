@@ -7,6 +7,26 @@ from second_brain.wiki.bounded_script import project_flat_scripts
 
 
 class ProjectionTests(unittest.TestCase):
+    def test_one_quoted_attribute_owns_its_angle_and_wikilink_text(self) -> None:
+        for attribute in (
+            'data-note="x>y"',
+            'DATA-X="[[attribute-target]]"',
+            'type="text/javascript"',
+        ):
+            source = (
+                "# Fictional attribute\n\nNote <ScRiPt "
+                + attribute
+                + ">hiddenmarker [[hidden]]</sCrIpT> after [[visible]]."
+            )
+            result = project_flat_scripts(source)
+            self.assertEqual(len(result), len(source))
+            self.assertNotIn("hiddenmarker", result)
+            self.assertNotIn("attribute-target", result)
+            self.assertEqual(result.index("[[visible]]"), source.index("[[visible]]"))
+            self.assertEqual(store.prose_links(source).count("[[visible]]"), 1)
+            self.assertNotIn("[[hidden]]", store.prose_links(source))
+            self.assertNotIn("hiddenmarker", store.plain_text_excerpt(source))
+
     def test_known_inline_pairs(self) -> None:
         for tag in ("script", "ScRiPt", "SCRIPT"):
             source = (
@@ -37,7 +57,11 @@ class ProjectionTests(unittest.TestCase):
             "Note <script>`</script>` [[kept]]</script>",
             "Note <script>\n[[kept]]\n</script>",
             "Note <script>&lt;/script&gt; [[kept]]</script>",
-            'Note <script data-x="x>y">[[kept]]</script>',
+            'Note <script data-x="x>y" data-y="z">[[kept]]</script>',
+            "Note <script data-x=x>[[kept]]</script>",
+            "Note <script data-x='x>y'>[[kept]]</script>",
+            'Note <script data-x="&gt;">[[kept]]</script>',
+            'Note <script data-x="<x>">[[kept]]</script>',
             "<div>Note <script>[[kept]]</script></div>",
             "Note <script>[[kept]]</script >",
             "Note <script/>[[kept]]</script>",

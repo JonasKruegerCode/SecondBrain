@@ -6,7 +6,14 @@ HTML ancestors, escaped delimiters or complex rawtext tokenizer states.
 
 import re
 
-_SCRIPT = re.compile(r"<script>[^<&`\\\r\n]*</script>", re.ASCII | re.IGNORECASE)
+# One exact double-quoted ASCII attribute is admitted. Its quoted '>' is not
+# the tag boundary; entities, escapes, angle openers and multiline values are
+# deliberately outside this grammar, as are multiple/unquoted attributes.
+_SCRIPT = re.compile(
+    r'<script(?: [A-Za-z][A-Za-z0-9-]*="[A-Za-z0-9 ./_:;!?()=+>\[\]-]*")?>'
+    r"[^<&`\\\r\n]*</script>",
+    re.ASCII | re.IGNORECASE,
+)
 _WIKI = re.compile(r"\[\[[A-Za-z0-9][A-Za-z0-9.-]*(?:\|[A-Za-z0-9 ,.;:!?()'/-]+)?\]\]")
 _PLAIN = re.compile(r"[A-Za-z0-9 ,.;:!?()'\"/=+_-]+")
 _HEADING = re.compile(r"#{1,6} [A-Za-z0-9 ,.;:!?()'\"/=+_-]+")
