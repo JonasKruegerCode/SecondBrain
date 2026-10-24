@@ -244,7 +244,8 @@ function markdown(s: string, pageTitle?: string) {
     // rebuild its children through the same sanitizer. Other unsupported
     // elements retain their text-only fallback.
     if (el.namespaceURI === "http://www.w3.org/1999/xhtml" &&
-        (el.tagName === "SPAN" || el.tagName === "KBD" || el.tagName === "MARK" || el.tagName === "SMALL")) {
+        (el.tagName === "SPAN" || el.tagName === "KBD" || el.tagName === "MARK" || el.tagName === "SMALL" ||
+          el.tagName === "SUP" || el.tagName === "SUB" || el.tagName === "U")) {
       const content = document.createDocumentFragment();
       el.childNodes.forEach(child => content.append(clean(child)));
       return content;

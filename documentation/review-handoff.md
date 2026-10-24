@@ -283,7 +283,36 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Inspected acceptance, 24 October 2026
+## Latest renderer follow-up, 24 October 2026
+
+A further real-service diagnostic has 28 explicit synthetic forms at 390/1440.
+On the unchanged application, SUP, SUB and U wrappers flatten generated wiki
+anchors into plain text while graph/backlinks retain their targets. These three
+inert HTML wrappers now use the same namespace-checked recursive child
+sanitizer as SPAN/KBD/MARK/SMALL. Tags and all source attributes are discarded;
+URL/element checks still apply to children. Other unsupported elements retain
+their existing text fallback. Backend, index identity and source Markdown do
+not change; no index rebuild is required.
+
+The versioned corpus now has 26 cases, adding SUP/SUB/U with malicious
+handler/style attributes. Native Chromium passes the four selected real-service
+tests: both 26-case width probes, Save/retry/graph/backlink mutations and both
+existing wrapper safety regressions. All 52 structured case observations agree;
+32.0s browser time, successful service cleanup. Both TypeScript projects and
+production build pass. Local cached dependencies/partial source and Linux
+Chromium are distinct from clean locked CI, native WebKit or physical devices.
+An independent read-only review found no blocker; actual execution remains the
+root agent's separate evidence.
+
+The 28-form diagnostic leaves DETAILS and inline SCRIPT as explicit unresolved
+rendered-link/graph differences. SCRIPT can display inert generated anchor
+markup as text; this is not evidence of script execution. The current change
+does not broaden either element's renderer policy. These concrete examples
+do not reconstruct or reduce the historical 336-case/63-mismatch aggregate.
+New broad Chromium/WebKit and other CI originals must be inspected for the new
+renderer; the complete six-domain matrix below belongs to its predecessor.
+
+## Preceding inspected acceptance, 24 October 2026
 
 Application/test source is [d7787bfd](https://github.com/JonasKruegerCode/SecondBrain/commit/d7787bfdd206c102d713f368e6e389bc4d9d99cd),
 tree `830f8f430b00ddeb76a23c6feb1bf6cf0ad93561`. Actual CI checkout merge
@@ -353,7 +382,7 @@ counterexamples. Later passes do not diagnose earlier intermittent loading,
 preference, worker, new-tab or cleanup observations. Run relevant regressions
 after changes; do not rerun full CI solely to refresh a date.
 
-### Current bounded wrapper correction
+### Preceding MARK/SMALL wrapper correction
 
 A real-service probe found that Markdown wikilinks inside inline `<mark>` and
 `<small>` wrappers existed in graph/backlinks but were flattened into plain

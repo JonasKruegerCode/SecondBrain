@@ -68,7 +68,7 @@ for (const width of [390, 1440]) {
         expect(anchors.every(anchor => anchor.visible && anchor.href === `/wiki/${anchor.target}`)).toBe(true);
         expect(current.markdown).toBe(markdown); expect(current.revision).toBe(source.revision);
         await expect(page.locator('.prose [style],.prose [onclick],.prose [onmouseover]')).toHaveCount(0);
-        await expect(page.locator('.prose mark,.prose small')).toHaveCount(0);
+        await expect(page.locator('.prose mark,.prose small,.prose sup,.prose sub,.prose u')).toHaveCount(0);
         expect(await page.evaluate(() => (window as any).__parityXss)).toBeUndefined();
         if (item.id === "mark" || item.id === "small") {
           await page.screenshot({ path: info.outputPath(`wiki-link-${item.id}-${width}.png`) });

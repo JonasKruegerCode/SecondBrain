@@ -25,4 +25,7 @@ export const wikiLinkCases = [
   { id: "kbd", body: "Note <kbd>[[T|Notebook]]</kbd>", labels: ["Notebook"] },
   { id: "mark", body: 'Note <mark style="color:red" onclick="window.__parityXss=2">[[T|Notebook]]</mark>', labels: ["Notebook"] },
   { id: "small", body: 'Note <small title="discarded" onmouseover="window.__parityXss=3">[[T|Notebook]]</small>', labels: ["Notebook"] },
+  { id: "sup", body: 'Note <sup title="discarded" onclick="window.__parityXss=4">[[T|Notebook]]</sup>', labels: ["Notebook"] },
+  { id: "sub", body: 'Note <sub style="color:red" onmouseover="window.__parityXss=5">[[T|Notebook]]</sub>', labels: ["Notebook"] },
+  { id: "underline", body: 'Note <u title="discarded" onclick="window.__parityXss=6">[[T|Notebook]]</u>', labels: ["Notebook"] },
 ] as const;
