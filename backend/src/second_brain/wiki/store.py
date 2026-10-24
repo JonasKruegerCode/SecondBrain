@@ -18,6 +18,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from second_brain.wiki.bounded_script import project_flat_scripts
+
 REF = "refs/heads/wiki"
 ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
 LINK_RE = re.compile(r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]")
@@ -310,6 +312,8 @@ def prose_blocks(
     An explicit work stack handles nested quotes without Python recursion. Only
     this derived projection changes; original Markdown remains authoritative.
     """
+    if for_links:
+        markdown = project_flat_scripts(markdown)
     output: list[str] = []
     pending: list[tuple[str | _ProseContainer, str, bool]] = [
         (_ProseContainer(markdown, "", False), "", False)
@@ -1481,3 +1485,4 @@ class WikiStore:
         return [
             change for _, change in sorted(changes, key=lambda item: item[0], reverse=True)[:20]
         ]
+

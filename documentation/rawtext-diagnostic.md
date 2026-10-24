@@ -2,8 +2,11 @@
 
 This opt-in developer check records observations from the real article path.
 A completed collection is **not** Markdown/graph parity acceptance. SCRIPT
-article bodies are excluded; backend rawtext link/excerpt projection and
-STYLE/TEXTAREA behavior still have known differences.
+article bodies are excluded; a bounded flat-document backend SCRIPT projection
+now matches simple inline pairs. Complex rawtext link/excerpt projection and
+STYLE/TEXTAREA behavior still have known differences. See the
+[bounded contract](flat-script-projection.md); initial observations below are
+dated parent evidence, not a measurement of the later correction.
 
 Use a disposable local managed demo, never a personal or production vault.
 From the repository root start `make demo` in one terminal. In another:
@@ -68,3 +71,4 @@ source/revision readbacks, fixture deletion and owned service shutdown pass.
 Selected narrow/wide screenshots were personally inspected. Both TypeScript
 projects pass. Cached minimal dependencies and local Chromium are separate
 from clean locked CI, WebKit and physical-device acceptance for this new tool.
+

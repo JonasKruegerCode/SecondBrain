@@ -3,7 +3,7 @@ import { expect } from "@playwright/test";
 import { test } from "./reading-test";
 
 // These assert the article's excluded-SCRIPT policy, not backend link parity.
-// The backend rawtext projection remains a separate known limitation.
+// Complex backend rawtext projection remains a separate known limitation.
 const bodies = [
   'Note <script>Fictional script sentinel [[T|Hidden notebook]]</script>',
   'Note <ScRiPt>Fictional script sentinel [[T|Hidden notebook]]</sCrIpT>',
@@ -75,3 +75,59 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+for (const width of [390, 1440]) {
+  test(`bounded inline SCRIPT graph matches actual article (${width})`, async ({ page, request }) => {
+    const owned: string[] = [];
+    await page.setViewportSize({ width, height: 900 });
+    async function create(markdown: string) {
+      const id = `bounded-script-${randomUUID()}`;
+      const response = await request.post(`/api/wiki/pages/${id}`, {
+        data: { markdown, base_revision: null, request_id: randomUUID() },
+      });
+      expect(response.ok()).toBe(true); owned.push(id);
+      return { id, ...(await response.json()) };
+    }
+    try {
+      const target = await create("# Fictional target");
+      const control = await create("# Fictional control");
+      const inputs = [
+        ["Note <script>hiddenmarker [[T]]</script>", false],
+        ["Note <ScRiPt>hiddenmarker [[T]]</sCrIpT>", false],
+        ["Note <script>window.__excludedScript=true; // hiddenmarker [[T]]</script>", false],
+        ["Note <script>hiddenmarker</script> [[T]]", true],
+        ["Note <script>hiddenmarker [[T]]</script> after <script>[[T]]</script>", false],
+        ["1.     Note <script>hiddenmarker [[T]]</script>", false],
+        ["Note <ſcript>hiddenmarker [[T]]</ſcript>", true],
+        ["`<script>hiddenmarker [[T]]</script>`", false],
+      ] as const;
+      for (const [index, [body, visible]] of inputs.entries()) {
+        const markdown = `# Fictional bounded article\n\nControl [[${control.id}]].\n\n${body.split("[[T]]").join(`[[${target.id}]]`)}`;
+        const saved = await create(markdown);
+        await page.goto(`/wiki/${saved.id}`);
+        await expect(page.locator(`.prose a[href="/wiki/${control.id}"]`)).toBeVisible();
+        await expect(page.locator(`.prose a[href="/wiki/${target.id}"]`)).toHaveCount(visible ? 1 : 0);
+        const graph = await (await request.get("/api/wiki/graph")).json();
+        expect(graph.edges.filter((edge: any) => edge.source === saved.id).map((edge: any) => edge.target).sort())
+          .toEqual([control.id, ...(visible ? [target.id] : [])].sort());
+        const current = await (await request.get(`/api/wiki/pages/${saved.id}`)).json();
+        expect(current.markdown).toBe(markdown); expect(current.revision).toBe(saved.revision);
+        if ([0, 1, 2, 4].includes(index)) expect(current.excerpt).not.toContain("hiddenmarker");
+        expect(await page.evaluate(() => (window as any).__excludedScript)).toBeUndefined();
+      }
+    } finally {
+      const failures: string[] = [];
+      for (const id of owned.reverse()) {
+        try {
+          const read = await request.get(`/api/wiki/pages/${id}`);
+          expect(read.ok()).toBe(true);
+          expect((await request.delete(`/api/wiki/pages/${id}`, { data: {
+            base_revision: (await read.json()).revision, request_id: randomUUID(),
+          } })).ok()).toBe(true);
+        } catch { failures.push(id); }
+      }
+      expect(failures, "Remove every owned fixture, including after a failed cleanup").toEqual([]);
+    }
+  });
+}
+

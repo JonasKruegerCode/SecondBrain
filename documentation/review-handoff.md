@@ -54,12 +54,21 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v35`, defined in
+The current derivation identity is `managed-snapshots-v36`, defined in
 [index_config.py](../backend/src/second_brain/wiki/index_config.py).
-This revision removes phantom URL-path wikilinks from the bounded nested
-single-star/strong note form when its ASCII words end in one `. ! ? , ; :`
-character. Escaping, invalid closers and arbitrary nesting retain their existing
-separate rules. A historical 336-case diagnostic reported 63 graph-target mismatches, but its
+This revision excludes simple inline SCRIPT islands from links and excerpts in
+an explicitly bounded whole-document grammar. It accepts flat ASCII prose,
+simple headings and restricted wikilinks, with exact ASCII-case SCRIPT pairs
+whose single-line bodies contain no angle opener, entity, backtick or escape.
+Unsupported syntax anywhere leaves the entire input unchanged; ordered-list
+code, Unicode lookalike tags and complex HTML are explicit controls. This is
+not general rawtext parity. Markdown, history, lexical source search and browser
+rendering are unchanged. Both old provider receipts become pending at the same
+content HEAD; failed builds remain unreadable. See
+[bounded SCRIPT contract and local checks](flat-script-projection.md).
+
+The preceding bounded emphasized-URL punctuation correction remains included.
+A historical 336-case diagnostic reported 63 graph-target mismatches, but its
 case-level corpus and rendered-target oracle are not present in the retained
 evidence. That aggregate has not been reproduced in this review. Recover or
 rebuild explicit synthetic counterexamples before extending this grammar;
@@ -590,3 +599,4 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
+

@@ -1,0 +1,349 @@
+{
+  "date": "2026-10-24",
+  "engine": "native Linux Chromium 153",
+  "application_parent": "8010719578be047bb46d688bbf04d3a94aac7957",
+  "candidate": "flat-script-v36",
+  "observations": [
+    {
+      "rows": [
+        {
+          "name": "plain",
+          "width": 390,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote",
+          "excerpt": "Control bounded-kept. Note",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"10536cad-d695-4a1a-9a14-ac89f09aaf6f\">Fictional bounded plain</h1>\n",
+              "native": "<h1 data-article-title=\"10536cad-d695-4a1a-9a14-ac89f09aaf6f\">Fictional bounded plain</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "mixed",
+          "width": 390,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote",
+          "excerpt": "Control bounded-kept. Note",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"b3602dbe-8316-4f1b-8b27-eede993104c2\">Fictional bounded mixed</h1>\n",
+              "native": "<h1 data-article-title=\"b3602dbe-8316-4f1b-8b27-eede993104c2\">Fictional bounded mixed</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "execution",
+          "width": 390,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote",
+          "excerpt": "Control bounded-kept. Note",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"04017ab5-7c47-4f37-9a59-4c7bc51ff94f\">Fictional bounded execution</h1>\n",
+              "native": "<h1 data-article-title=\"04017ab5-7c47-4f37-9a59-4c7bc51ff94f\">Fictional bounded execution</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "suffix",
+          "width": 390,
+          "anchors": [
+            "bounded-kept",
+            "bounded-hidden"
+          ],
+          "edges": [
+            "bounded-hidden",
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote bounded-hidden",
+          "excerpt": "Control bounded-kept. Note bounded-hidden",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"8a9cff3c-ed8a-4338-bf62-c856c39865c3\">Fictional bounded suffix</h1>\n",
+              "native": "<h1 data-article-title=\"8a9cff3c-ed8a-4338-bf62-c856c39865c3\">Fictional bounded suffix</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "two",
+          "width": 390,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote after",
+          "excerpt": "Control bounded-kept. Note after",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"1637187f-9650-48ec-94a1-d85429fa3bae\">Fictional bounded two</h1>\n",
+              "native": "<h1 data-article-title=\"1637187f-9650-48ec-94a1-d85429fa3bae\">Fictional bounded two</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "ordered",
+          "width": 390,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote <script>hiddenmarker [[bounded-hidden]]</script>\n",
+          "excerpt": "Control bounded-kept.",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"2beb7b52-b0fe-46e4-b1ce-12893703b9b7\">Fictional bounded ordered</h1>\n",
+              "native": "<h1 data-article-title=\"2beb7b52-b0fe-46e4-b1ce-12893703b9b7\">Fictional bounded ordered</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "unicode",
+          "width": 390,
+          "anchors": [
+            "bounded-kept",
+            "bounded-hidden"
+          ],
+          "edges": [
+            "bounded-hidden",
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote <\u017fcript>hiddenmarker bounded-hidden</\u017fcript>",
+          "excerpt": "Control bounded-kept. Note hiddenmarker bounded-hidden",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"cbdeecfd-cd86-4d25-96c4-cb12fbabfda7\">Fictional bounded unicode</h1>\n",
+              "native": "<h1 data-article-title=\"cbdeecfd-cd86-4d25-96c4-cb12fbabfda7\">Fictional bounded unicode</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "literal",
+          "width": 390,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\n<script>hiddenmarker [[bounded-hidden]]</script>",
+          "excerpt": "Control bounded-kept.",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"a6390434-42f3-45f4-8be2-69dc2c8774f1\">Fictional bounded literal</h1>\n",
+              "native": "<h1 data-article-title=\"a6390434-42f3-45f4-8be2-69dc2c8774f1\">Fictional bounded literal</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        }
+      ],
+      "errors": [],
+      "cleanup": true
+    },
+    {
+      "rows": [
+        {
+          "name": "plain",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote",
+          "excerpt": "Control bounded-kept. Note",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"4c7d2bf9-9bf7-49b9-b1ba-b6bbc5859afd\">Fictional bounded plain</h1>\n",
+              "native": "<h1 data-article-title=\"4c7d2bf9-9bf7-49b9-b1ba-b6bbc5859afd\">Fictional bounded plain</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "mixed",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote",
+          "excerpt": "Control bounded-kept. Note",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"c4233671-acfd-4221-9cef-62e6696d5a15\">Fictional bounded mixed</h1>\n",
+              "native": "<h1 data-article-title=\"c4233671-acfd-4221-9cef-62e6696d5a15\">Fictional bounded mixed</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "execution",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote",
+          "excerpt": "Control bounded-kept. Note",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"f505b291-6eb6-4daf-88e8-bc1d371736d5\">Fictional bounded execution</h1>\n",
+              "native": "<h1 data-article-title=\"f505b291-6eb6-4daf-88e8-bc1d371736d5\">Fictional bounded execution</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "suffix",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept",
+            "bounded-hidden"
+          ],
+          "edges": [
+            "bounded-hidden",
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote bounded-hidden",
+          "excerpt": "Control bounded-kept. Note bounded-hidden",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"efcc3f95-9904-46ce-b3bf-ddf13438db60\">Fictional bounded suffix</h1>\n",
+              "native": "<h1 data-article-title=\"efcc3f95-9904-46ce-b3bf-ddf13438db60\">Fictional bounded suffix</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "two",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote after",
+          "excerpt": "Control bounded-kept. Note after",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"17d7e951-07c3-47cb-a5ae-24d421341ba2\">Fictional bounded two</h1>\n",
+              "native": "<h1 data-article-title=\"17d7e951-07c3-47cb-a5ae-24d421341ba2\">Fictional bounded two</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "ordered",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote <script>hiddenmarker [[bounded-hidden]]</script>\n",
+          "excerpt": "Control bounded-kept.",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"69bb5159-4161-43c9-94f1-b387ab27a985\">Fictional bounded ordered</h1>\n",
+              "native": "<h1 data-article-title=\"69bb5159-4161-43c9-94f1-b387ab27a985\">Fictional bounded ordered</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "unicode",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept",
+            "bounded-hidden"
+          ],
+          "edges": [
+            "bounded-hidden",
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\nNote <\u017fcript>hiddenmarker bounded-hidden</\u017fcript>",
+          "excerpt": "Control bounded-kept. Note hiddenmarker bounded-hidden",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"aa339e1c-196b-4a96-8c66-a0ecd84990e7\">Fictional bounded unicode</h1>\n",
+              "native": "<h1 data-article-title=\"aa339e1c-196b-4a96-8c66-a0ecd84990e7\">Fictional bounded unicode</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        },
+        {
+          "name": "literal",
+          "width": 1440,
+          "anchors": [
+            "bounded-kept"
+          ],
+          "edges": [
+            "bounded-kept"
+          ],
+          "text": "Control bounded-kept.\n\n<script>hiddenmarker [[bounded-hidden]]</script>",
+          "excerpt": "Control bounded-kept.",
+          "captures": [
+            {
+              "input": "<h1 data-article-title=\"4487ece9-5b81-4365-bd59-6a1612e20d7c\">Fictional bounded literal</h1>\n",
+              "native": "<h1 data-article-title=\"4487ece9-5b81-4365-bd59-6a1612e20d7c\">Fictional bounded literal</h1>\n",
+              "scripts": 0
+            }
+          ],
+          "sourcePreserved": true
+        }
+      ],
+      "errors": [],
+      "cleanup": true
+    }
+  ]
+}
+

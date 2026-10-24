@@ -13,9 +13,9 @@ from second_brain.wiki.store import WikiStore
 
 def configured_indexes(store: WikiStore) -> IndexCoordinator:
     adapters: dict[str, Any] = {}
-    # Literal-star prefixes must not invent edges inside bounded emphasized URLs.
+    # Flat inline SCRIPT pairs no longer contribute graph links or excerpts.
     # Old ready receipts must rebuild even when Markdown is unchanged.
-    identity: dict[str, Any] = {"schema": "managed-snapshots-v35"}
+    identity: dict[str, Any] = {"schema": "managed-snapshots-v36"}
     if os.environ.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") == "1":
         from neo4j import GraphDatabase  # noqa: PLC0415
 
@@ -50,3 +50,4 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
         ]
     config_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     return IndexCoordinator(store, adapters, config_id=config_id)
+
