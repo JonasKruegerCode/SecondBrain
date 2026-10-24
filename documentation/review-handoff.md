@@ -285,84 +285,73 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Inspected acceptance, 24 October 2026
 
-The preceding fully inspected application source is [c42fc679](https://github.com/JonasKruegerCode/SecondBrain/commit/c42fc679341d281c299608257997bc1a99e4f317),
-tree `ea6919a1dfac3bea662f65cdd5b8149e4e0119e8`. CI checkout merge
-`2180c13d23107188e8ba9f5ec8d772a6a84104d0` has that same tree.
-The later MARK/SMALL correction below changes rendering; those older full CI
-results do not independently validate the new application.
+Application/test source is [d7787bfd](https://github.com/JonasKruegerCode/SecondBrain/commit/d7787bfdd206c102d713f368e6e389bc4d9d99cd),
+tree `830f8f430b00ddeb76a23c6feb1bf6cf0ad93561`. Actual CI checkout merge
+`05837abfd47d271f797d9d9e1f506c74c9c2da1a` has that same tree, independently
+checked through GitAPI. All six developmental domains now have inspected
+original logs/results for this application. A later documentation-only commit
+does not change that application or its tests.
 
-The editor now separates a confirmed historical publication from the current
-page. A subsequent GET must match both revision and Markdown before completing
-the editor. Later edits, deletion/recreation, unavailable reads and malformed
-reads retain the native textarea, draft, selection/undo, original base revision
-and retry identity. Deliberate Cancel reads the current article. A changed draft
-does not silently rebase onto another writer's version.
-
-Twelve new real-service cases cover those paths at 390/1440 pixels, including
-a concurrent writer before the first successful acknowledgement. Two cases fail
-on the unchanged parent. The final local 50-case Save/conflict/body-timeout/
-navigation/PWA selection, both TypeScript projects and production build pass.
-A separate real CLI backup/restore with a second writer also preserves the same
-document/editor and original retry at both widths; Cancel then reads the latest
-article. Original views were personally inspected. Local checks use cached
-minimal dependencies and partial source; the clean locked CI below is separate.
-
-| Area | Inspected original run | Result and boundary |
+| Domain | Inspected original run | Result and boundary |
 | --- | --- | --- |
-| Backend | [40026125273](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125273) | Ruff/Mypy, 1,476 passed, 12 opt-in integration skips; container build with push:false |
-| Frontend | [40026125226](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125226) | 15 native tests, no failures/skips; both TS projects, production and container builds; push:false |
-| Indexes | [40026125179](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125179) | Seven disposable Neo4j/Qdrant integrations with synthetic vectors |
-| SSH | [40026125163](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125163) | Five isolated authenticated Git/restart/refusal-preservation integrations |
-| Browser | [40026125184](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125184) | 947 passed executions, 14 explained phase/engine skips, no failure/flaky footers; all seven result records and owned cleanup pass |
-| Stack | [40026125169](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40026125169) | Both acceptance and image-update originals inspected; synthetic TLS/auth, real import/restart/recovery and retained-image compatibility |
+| Backend | [40039135574](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135574) | Ruff/Mypy, 1,476 passed, 12 opt-in integration skips; container build with push:false |
+| Frontend | [40039135520](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135520) | 15 native tests, no failures/skips; both TS projects, production and container builds; push:false |
+| Indexes | [40039135485](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135485) | Seven disposable Neo4j/Qdrant integrations with synthetic vectors |
+| SSH | [40039135462](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135462) | Five isolated authenticated Git/restart/refusal-preservation integrations |
+| Browser | [40039135481](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135481) | 951 passed executions, 14 explained phase/engine skips, no failure/flaky footers; all seven result records and owned cleanup pass |
+| Stack | [40039135469](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135469) | Both acceptance and image-update originals inspected; synthetic TLS/auth, real import/restart/recovery and retained-image compatibility |
 
 The Backend skips are the separately successful seven index and five SSH cases.
 Browser totals are 114 repeated WebKit transaction/preference diagnostics,
-467 Chromium, first-start2, import3, synthetic320 graph2, reading-WebKit351 and
+469 Chromium, first-start2, import3, synthetic320 graph2, reading-WebKit353 and
 worker-WebKit8. These count executions, not unique requirements. Eight skips
 select complementary first-start/import phases; six exclude five Blink-only
 minimum-font cases and one Chromium CDP touch case from WebKit. Reading-WebKit
-blocks workers; the separate worker profile allows them.
+blocks workers; the separate worker profile allows them. No external model was
+called. Original results identify the exact checkout merge and confirm cleanup.
 
-Both broad profiles include the twelve new editor cases without a selection
-filter. Ten historical-receipt screenshots per engine corroborate the completed
-suite; the two first-acknowledgement cases take no screenshots. Dot reporting has
-no per-title assertion JSON. Current narrow/broad Chromium and WebKit originals
-were personally viewed, including successor-edit, deletion and malformed-read
-states. Native Linux engines and controlled HTTP errors are not physical-device,
-Safari, dropped-TCP or real-model evidence.
+Both broad profiles include the new two-viewport wrapper corpus and mutation
+probes without a selection filter. Their 92 original JSON rows (23 examples at
+390/1440 in each engine) were independently checked for expected labels/targets,
+visible hydrated hrefs, graph edges, every target backlink, missing/ambiguous
+diagnostics and source/read revisions. Four mutation records confirm identical
+retry, two history entries and removal of the old backlink. Current WebKit
+MARK390 and SMALL1440 originals were personally viewed. Earlier current local
+Chromium views are separate evidence. Dot reporting has no per-title assertion
+JSON; corpus observations are explicit structured log records.
 
 Stack acceptance has 109 gate records/107 distinct labels plus six HTTPS/auth
-browser gates, including real readonly foreign-owner Git import, dirty/shallow
-refusals, empty Git import, restart/retry and independent-volume recovery.
-Original source clones remain byte-equal after cleanup. These are gates, not
-native suite test counts.
+browser gates, including readonly foreign-owner Git import, dirty/shallow and
+empty-source boundaries, actual backend-address churn, restart/retry and
+independent-volume recovery. Original source clones remain byte-equal after
+cleanup. These are gates, not native suite test counts.
 
-The separate image-update original retains distinct old/new image IDs and
-checks baseline → forward → rollback → resume on one owned volume. History
-counts are 1 → 2 → 3 → 3; REST/MCP retries add no extra publication. Its forward
-browser trace observes changed worker bytes, retains the native draft when a
-clean tab activates the update, then saves once and reloads. Preference migration,
-empty private CacheStorage and zero page errors/model requests are recorded.
+The separate image-update original has 49 gate records/28 distinct labels and
+retains distinct old/new image IDs. Baseline → forward → rollback → resume uses
+old/new/old/new images on one owned volume, with history counts 1 → 2 → 3 → 3.
+Historical REST/MCP retries add no extra publication. Its forward browser trace
+observes changed worker bytes, retains the native draft when a clean tab
+activates the update, then saves once and reloads. Preference migration, empty
+private CacheStorage and zero page errors/model requests are recorded.
 Browser evidence is forward-only; image rollback/resume cover content, history
 and retry compatibility. Both jobs report successful owned cleanup.
 
-| Verified current artifact | Bytes / entries | SHA256 |
+| Verified artifact | Bytes / entries | SHA256 |
 | --- | --- | --- |
-| Browser12533772700 |233,018,423 /1004 | `bc62b62894dc6be6120020cdc4ff1285d8bd747745a7c050a20751629e1d7ba5` |
-| Stack12533011318 |712,247 /6 | `572688bf362f9aced35bfb39ddc2eed0d4a2a2c9fad4458f8c5252192d018c7a` |
-| Image-update12533132777 |16,919 /3 | `32c8e108ef0cf0f0a450e0e80b2f6e1f65dd446e27f66b1884850ac65cd42a9b` |
+| Browser12539776570 |234,595,788 /1012 | `eab86cdcbb960cedb52e4dca8a0186e96ece0bb5671a5e59012ee862cdea5aed` |
+| Stack12538601976 |711,791 /6 | `6d1c6f7fade92681a46c22b5f2dae67f74bcceec533424bfdc39f2dc279c0983` |
+| Image-update12538064676 |16,764 /3 | `a1a0a620a695f821a0a5c6ea5830c8081c3264e1df9a64961103c9898d25a378` |
 
 All sizes/digests agree with GitHub metadata/upload originals; unique safe paths
-and CRCs were checked. GitHub originals expire 30 October2026. Needed text
+and full CRCs were checked. GitHub originals expire 30 October2026. Needed text
 originals were preserved separately; links/hashes alone do not guarantee later
 availability. No container image was published.
 
-The [preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/c42fc679341d281c299608257997bc1a99e4f317/documentation/review-handoff.md)
-preserves dated operator tours, reload checks, recovery probes, older CI matrices
-and failed experiments. Later passes do not diagnose earlier intermittent
-loading, preference, worker, new-tab or cleanup observations. Run only relevant
-regressions after new changes; do not rerun full CI solely to refresh a date.
+The [preceding handoff at d7787bfd](https://github.com/JonasKruegerCode/SecondBrain/blob/d7787bfdd206c102d713f368e6e389bc4d9d99cd/documentation/review-handoff.md)
+preserves the prior c42fc679 947/14 matrix, dated operator tours and older
+counterexamples. Later passes do not diagnose earlier intermittent loading,
+preference, worker, new-tab or cleanup observations. Run relevant regressions
+after changes; do not rerun full CI solely to refresh a date.
 
 ### Current bounded wrapper correction
 
@@ -390,8 +379,8 @@ including all 23 cases per width and both mutation paths. The final strengthened
 24-test selection covers adjacent destination/reference/URL/fence/title paths.
 Both TypeScript projects and the production frontend build pass. Current
 narrow/broad MARK originals were personally viewed. These use cached minimal
-local dependencies and partial source; broad Chromium/WebKit CI for the new
-application remains a separate follow-up.
+local dependencies and partial source; the clean locked broad Chromium/WebKit
+originals above now include both probes and all their structured observations.
 
 The unchanged-parent diagnostic records MARK/SMALL graph links with missing
 article anchors at both widths. Earlier probe attempts also exposed a harness
@@ -449,5 +438,6 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
+
 
 
