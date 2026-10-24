@@ -394,6 +394,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/title-promotion.spec.ts",
         "e2e/title-inline.spec.ts",
         "e2e/inline-wrapper.spec.ts",
+        "e2e/script-exclusion.spec.ts",
         "e2e/chat-concurrency.spec.ts",
         "e2e/chat-history.spec.ts",
         "e2e/forced-colors.spec.ts",
@@ -416,6 +417,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/title-promotion.spec.ts",
         "e2e/title-inline.spec.ts",
         "e2e/inline-wrapper.spec.ts",
+        "e2e/script-exclusion.spec.ts",
         "e2e/chat-concurrency.spec.ts",
         "e2e/chat-history.spec.ts",
     ]),
@@ -848,5 +850,3 @@ def test_acceptance_preserves_failed_browser_evidence_across_later_runs(
     assert failed_output == failed_result.parent / expected_outputs[0]
     assert outputs[1:] == [passed_result.parent / name for name in expected_outputs]
     assert all(command.count("--output") == 1 for command in commands)
-
-

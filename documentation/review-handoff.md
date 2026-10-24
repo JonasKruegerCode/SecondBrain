@@ -283,6 +283,27 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
+## Suite selection correction, 24 October 2026
+
+The SCRIPT source on cfba53b5 passed Frontend, Index, SSH, Browser and Stack
+workflows. Backend Ruff/Mypy passed, but pytest reported1470 passed,6 failures
+and12 integration skips: the mocked launcher contract still expected the old
+browser suite lists. Both engine expectations now include script-exclusion
+before chat-concurrency. All six failures reproduced before this test-only
+change;49 non-provider runner tests pass afterward. Ten provider-runner tests
+could not import the minimal local environment's missing pydantic-settings;
+no full local backend pass is claimed. Application and launcher code are unchanged.
+
+The cfba53b5 Browser original40061830359 records955 successful executions and14
+explained skips, including48 SCRIPT observations (12 forms at two widths in
+both Chromium/WebKit) and seven successful service cleanups. Stack40061830384
+records109 gate entries/107 distinct labels plus6 browser gates, and49/28 image
+update entries, with both cleanups. Other runs: Backend40061830257,
+Frontend40061830434, Index40061830256, SSH40061830366. Actual merge6efb4883
+has the same tree b7262c6c as cfba53b5. These are predecessor originals; fresh
+CI for this suite-expectation correction remains to inspect. Backend SCRIPT
+link/excerpt parity, other rawtext boundaries and external release gates remain open.
+
 ## SCRIPT article exclusion, 24 October 2026
 
 Actual parsed SCRIPT nodes are removed before the article sanitizer rebuilds
