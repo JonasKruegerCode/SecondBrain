@@ -283,7 +283,36 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Latest DETAILS correction, 24 October 2026
+## SCRIPT article exclusion, 24 October 2026
+
+Actual parsed SCRIPT nodes are removed before the article sanitizer rebuilds
+content. This also prevents an unsupported ancestor's text-only fallback from
+showing script source or generated anchor serialization. Markdown source is
+not rewritten or reparsed; escaped tags, code examples and ordinary KBD links
+retain their separate behavior. This is a presentation correction, not an
+observed executable-script vulnerability or a complete rawtext parity fix.
+
+The real-service `script-exclusion.spec.ts` covers twelve synthetic script
+forms at 390/1440, including quoted attributes, comments, transformed closing
+tags, blank boundaries and unsupported ancestors. It checks hidden content,
+preserved source/revision, ordinary canonical links, a nonexecuted marker and
+literal escaped/code examples. Backend SCRIPT-body link/excerpt projection
+still needs a coherent token-aware correction and same-HEAD index receipt
+invalidation tests. STYLE/TEXTAREA remain distinct known boundaries. The
+backend and `managed-snapshots-v35` identity are unchanged by this frontend step.
+
+Local verification passes both TypeScript projects, the production build and
+six selected real-service Linux Chromium tests. These include24 SCRIPT-form
+observations, literal-example controls, the existing56 corpus observations
+and Save/retry/graph/backlink mutations at two widths. The two SCRIPT screenshots
+were personally inspected. Services exited normally and their owned process
+groups were absent afterward. Cached minimal dependencies and separate native
+Chromium starts are not a clean locked CI or WebKit result. Both broad engine
+suite lists now include the new regression; current-head CI is still pending.
+Independent review prompted explicit wrapper-prose and complete code-example
+assertions. No real model, production migration or physical device was tested.
+
+## Preceding DETAILS correction, 24 October 2026
 
 Blank-separated Markdown inside DETAILS already produces canonical links and
 graph targets. The unsupported wrapper's text fallback flattened those links.
@@ -303,8 +332,14 @@ Native Chromium at390/1440 passes the four selected corpus/wrapper tests
 TS projects and production build pass. Current narrow/wide DETAILS originals
 were personally viewed; independent review found no blocker and prompted the
 literal-content assertions. Local cached partial-source checks are not new
-WebKit, clean locked CI or device acceptance. New broad CI for this correction
-remains to inspect. Inline SCRIPT remains a concrete unresolved raw-text
+WebKit, clean locked CI or device acceptance. The parent469c3364 six-domain CI
+originals were subsequently inspected: Backend1476/12, Frontend15, Index7,
+SSH5, Browser951 successful executions/14 explained selections and both Stack
+jobs. Chromium and WebKit each contain56 corpus observations (28 forms at two
+widths), all112 rows checked. Runs: Backend40053116458, Frontend40053116358,
+Index40053116455, SSH40053116389, Browser40053116366, Stack40053116412.
+That evidence belongs to469c3364, not the later SCRIPT exclusion above.
+Inline SCRIPT remains a concrete unresolved graph/excerpt raw-text
 boundary: do not enable/reparse its generated markup or infer script execution
 from inert visible serialization. A token-aware projection fix would require
 its own backend/index-identity and regression review.
@@ -510,6 +545,3 @@ original assertion, gesture and timing when investigating a new occurrence.
 
 No merge, auto-merge, production cutover, private migration or deployment is
 authorized by this document.
-
-
-

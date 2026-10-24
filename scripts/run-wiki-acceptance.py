@@ -272,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/title-promotion.spec.ts",
             "e2e/title-inline.spec.ts",
             "e2e/inline-wrapper.spec.ts",
+            "e2e/script-exclusion.spec.ts",
             "e2e/chat-concurrency.spec.ts",
             "e2e/chat-history.spec.ts",
             "e2e/forced-colors.spec.ts",
@@ -303,6 +304,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/title-promotion.spec.ts",
             "e2e/title-inline.spec.ts",
             "e2e/inline-wrapper.spec.ts",
+            "e2e/script-exclusion.spec.ts",
             "e2e/chat-concurrency.spec.ts",
             "e2e/chat-history.spec.ts",
         ]
