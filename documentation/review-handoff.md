@@ -283,6 +283,30 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
+## Full-document rawtext diagnostic, 24 October 2026
+
+The opt-in [rawtext diagnostic](rawtext-diagnostic.md) now captures the actual
+application's emitted Marked HTML, native DOM before/after SCRIPT removal,
+sanitized article, graph/excerpt/backlink/diagnostic data and synthetic lexical
+queries. No renderer copy or backend projection change is introduced. It is
+not selected by normal acceptance and requires WIKI_RAWTEXT_ORACLE=1.
+Local Chromium completes72 observations (36 inputs at390/1440), including48
+target-set differences. This is diagnostic completion, not parity acceptance.
+Independent review checked the capture boundary, owned-only search output and
+best-effort cleanup of all fixture pages. Current implementation limits and
+reproduction commands are in the linked document.
+
+The suite-expectation correction on9ed78731 is now independently confirmed in
+all six original CI domains: Backend1476/12 plus Ruff/Mypy, Frontend15 plus
+TS/build, Index7, SSH5, Browser955 successful executions/14 explained skips,
+and both Stack jobs. Actual merge9bf4ea35 is GitAPI tree-equal to9ed78731.
+Runs: Backend40065393549, Frontend40065393581, Index40065393540, SSH40065393550,
+Browser40065393535, Stack40065393553. All seven browser cleanups pass, as do
+Stack109/107 labels plus6 browser gates and image49/28 cleanups. Both broad
+engines again contain48 total SCRIPT observations. Artifacts match metadata
+size/digest, safe paths and CRC. These originals validate9ed78731, not the later
+test-only diagnostic; release gates and backend rawtext parity remain open.
+
 ## Suite selection correction, 24 October 2026
 
 The SCRIPT source on cfba53b5 passed Frontend, Index, SSH, Browser and Stack
