@@ -26,6 +26,8 @@ for (const width of [390, 1440]) {
       const toggle = page.locator('[data-action="list"]');
       await problems.locator("summary").click();
       await expect(problems).toHaveJSProperty("open", true);
+      // Both directed fixture links must expose their meaning in the accessibility tree.
+      await expect(sidebar.getByRole("img", { name: "links to", exact: true })).toHaveCount(2);
       const evidence = await sidebar.locator(".galaxy-evidence").innerText();
       for (const listOnly of [true, false]) {
         await toggle.focus(); await page.keyboard.press("Enter");
@@ -36,6 +38,7 @@ for (const width of [390, 1440]) {
         await expect(problems).toContainText(`missing-${group}`);
         await expect(page.locator(".galaxy-selected-heading code")).toHaveText(ids[0]);
         expect(await sidebar.locator(".galaxy-evidence").innerText()).toBe(evidence);
+        await expect(sidebar.getByRole("img", { name: "links to", exact: true })).toHaveCount(2);
         // Reveal the diagnostic only after its state/focus assertions. A
         // mobile mode button can otherwise leave it below the screenshot.
         await problems.scrollIntoViewIfNeeded();
@@ -504,3 +507,4 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
