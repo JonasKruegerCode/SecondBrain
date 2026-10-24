@@ -283,7 +283,33 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Latest renderer follow-up, 24 October 2026
+## Latest DETAILS correction, 24 October 2026
+
+Blank-separated Markdown inside DETAILS already produces canonical links and
+graph targets. The unsupported wrapper's text fallback flattened those links.
+XHTML DETAILS/SUMMARY now use the existing recursive sanitizer and discard
+their wrapper tags/attributes. This is expanded safe content, not interactive
+disclosure support. Raw same-line HTML content is not reparsed as Markdown.
+
+The corpus now has28 cases: the added prose fixture preserves its Notebook
+link and summary text; the raw fixture preserves literal brackets/summary text
+and has no Notebook edge/backlink. Both retain an independent Control link.
+Hostile wrapper attributes are discarded, and children still pass normal URL
+and element checks. Backend, index identity, source Markdown and permissions
+are unchanged; no index rebuild is required.
+
+Native Chromium at390/1440 passes the four selected corpus/wrapper tests
+(34.3s); final strengthened corpus assertions are verified separately. Both
+TS projects and production build pass. Current narrow/wide DETAILS originals
+were personally viewed; independent review found no blocker and prompted the
+literal-content assertions. Local cached partial-source checks are not new
+WebKit, clean locked CI or device acceptance. New broad CI for this correction
+remains to inspect. Inline SCRIPT remains a concrete unresolved raw-text
+boundary: do not enable/reparse its generated markup or infer script execution
+from inert visible serialization. A token-aware projection fix would require
+its own backend/index-identity and regression review.
+
+## Preceding SUP/SUB/U follow-up, 24 October 2026
 
 A further real-service diagnostic has 28 explicit synthetic forms at 390/1440.
 On the unchanged application, SUP, SUB and U wrappers flatten generated wiki
@@ -309,8 +335,25 @@ rendered-link/graph differences. SCRIPT can display inert generated anchor
 markup as text; this is not evidence of script execution. The current change
 does not broaden either element's renderer policy. These concrete examples
 do not reconstruct or reduce the historical 336-case/63-mismatch aggregate.
-New broad Chromium/WebKit and other CI originals must be inspected for the new
-renderer; the complete six-domain matrix below belongs to its predecessor.
+The six-domain originals for this SUP/SUB/U source have now been inspected:
+Backend [40048626162](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626162)
+1476/12 with Ruff/Mypy; Frontend [40048626132](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626132)
+15 native passes, TS/builds, push:false; Index [40048626084](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626084)
+7; SSH [40048626073](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626073) 5;
+Browser [40048626056](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626056)
+951 successful executions/14 explained skips, seven original records and cleanup;
+Stack [40048626128](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626128)
+109 gate records/107 labels plus six browser gates, separate49/28 image update,
+both cleanups. Actual checkout merge `ad2d4a120ada3ef4592e4e11b7a9e5ffc2c8676a`
+is independently tree-equal to60da3385. Both broad engines contain52 corpus
+observations (26 cases at two widths); all104 original rows independently
+agree with expected labels/targets, graph, backlinks, diagnostics and revisions.
+Browser totals include114 repeated WebKit diagnostics; eight skips select
+complementary phases, six exclude Blink font/CDP touch checks. Reading-WebKit
+blocks workers, separate eight worker tests allow them. Image browser continuity
+is forward-only; rollback/resume cover content/history/retry. Artifact size,
+digest, safe paths and full CRC pass; needed text originals preserved.
+These originals validate60da3385, not the later DETAILS correction above.
 
 ## Preceding inspected acceptance, 24 October 2026
 

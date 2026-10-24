@@ -28,4 +28,6 @@ export const wikiLinkCases = [
   { id: "sup", body: 'Note <sup title="discarded" onclick="window.__parityXss=4">[[T|Notebook]]</sup>', labels: ["Notebook"] },
   { id: "sub", body: 'Note <sub style="color:red" onmouseover="window.__parityXss=5">[[T|Notebook]]</sub>', labels: ["Notebook"] },
   { id: "underline", body: 'Note <u title="discarded" onclick="window.__parityXss=6">[[T|Notebook]]</u>', labels: ["Notebook"] },
+  { id: "details-prose", body: '<details open onclick="window.__parityXss=7">\n<summary style="color:red">Fictional details</summary>\n\n[[T|Notebook]]\n\n</details>', labels: ["Notebook"] },
+  { id: "details-raw", body: '<details><summary>Fictional raw details</summary>[[T|Notebook]]</details>', labels: [] },
 ] as const;
