@@ -1,5 +1,7 @@
 .agents
 .env
+.env.wiki
+.env.wiki.inspect
 __pycache__
 .vscode
 
@@ -16,3 +18,4 @@ frontend/dist
 
 # Vault (lokale Kopie des Wissens-Repos — nicht Teil dieses Repos)
 vault/
+.demo/

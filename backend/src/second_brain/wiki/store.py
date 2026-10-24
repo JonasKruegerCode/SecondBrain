@@ -1,0 +1,1488 @@
+"""Markdown snapshots with one Git ref as the publication boundary.
+
+This opt-in profile uses an isolated local bare repository. It deliberately does
+not turn a legacy working tree into a second writer. Remote sync and external
+indices are not yet attached; reads and mutations require only local Git.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+import tempfile
+import unicodedata
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any, NamedTuple
+
+from second_brain.wiki.bounded_script import project_flat_scripts
+
+REF = "refs/heads/wiki"
+ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
+LINK_RE = re.compile(r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]")
+TYPED_LINK_RE = re.compile(
+    r"(?m)^\s*(?:[-*]\s+)?([A-Za-z][\w -]*?)::\s*"
+    r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]"
+)
+MAX_BYTES = 1_000_000
+# Marked 12 block definitions: their destination/title is metadata, not prose.
+# Keep its permissive grammar, including multiline titles and escaped labels.
+_DEFINITION_RE = re.compile(
+    r" {0,3}\[(?!\s*\])(?:\\.|[^\[\]\\])+\]: *(?:\n *)?"
+    r"(?:[^<\s][^\s]*|<.*?>)"
+    r"(?:(?: +(?:\n *)?| *\n *)"
+    r"""(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\)))?"""
+    r" *(?:\n+|$)"
+)
+# Marked12's bounded inline link grammar. Labels remain prose; destinations
+# and titles are metadata. Balanced destination parentheses are handled below.
+_INLINE_LINK_RE = re.compile(
+    r"!?\[((?:\[(?:\\.|[^\[\]\\])*\]|\\.|`[^`]*`|[^\[\]\\`])*?)\]"
+    r"\(\s*(<(?:\\.|[^\n<>\\])+>|[^\s\x00-\x1f]*)"
+    r"""(?:\s+("(?:\\"?|[^"\\])*"|'(?:\\'?|[^'\\])*'|\((?:\\\)?|[^)\\])*\)))?"""
+    r"\s*\)"
+)
+# Marked12 URL/autolink token boundaries; punctuation trimming runs to a fixpoint.
+# Marked12 consumes a valid inline HTML tag as one token. Attribute values
+# are metadata, even when they contain brackets or quoted angle brackets.
+_INLINE_HTML_SPACE = r"[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]"
+_INLINE_HTML_TAG_RE = re.compile(
+    rf"</[a-zA-Z][A-Za-z0-9_:-]*{_INLINE_HTML_SPACE}*>"
+    rf"|<[a-zA-Z][A-Za-z0-9_-]*(?:{_INLINE_HTML_SPACE}+[a-zA-Z:_][A-Za-z0-9_.:-]*"
+    rf'''(?:{_INLINE_HTML_SPACE}*={_INLINE_HTML_SPACE}*"[^"]*"'''
+    rf"|{_INLINE_HTML_SPACE}*={_INLINE_HTML_SPACE}*'[^']*'"
+    rf"""|{_INLINE_HTML_SPACE}*={_INLINE_HTML_SPACE}*(?:(?!{_INLINE_HTML_SPACE})[^"'=<>`])+)?)*?"""
+    rf"{_INLINE_HTML_SPACE}*/?>"
+)
+_AUTOLINK_RE = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s\x00-\x1f<>]*>")
+_URL_RE = re.compile(r"(?:ftp://|https?://|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*", re.I)
+# A URL at the start of a simple emphasis scope is a fresh inline token.
+# Recognize only exact short delimiter runs with plain inner prose; code, tags,
+# escaping and nested delimiters remain the responsibility of the outer scanner.
+_EMPHASIS_URL_RE = re.compile(
+    r"(?P<delimiter>\*{1,3}|_{1,3})"
+    r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+)"
+    r"(?:[ \t\n]+[^\s<*_`\\~]+)*?(?P=delimiter)",
+    re.I,
+)
+# One bounded nested form: outer single-star emphasis with a trailing
+# strong segment containing ASCII words and one optional terminal sentence
+# punctuation character. No general nesting or punctuation grammar is inferred.
+_EMPHASIS_URL_TRAILING_STRONG_RE = re.compile(
+    r"(?P<delimiter>\*)"
+    r"(?P<url>(?:ftp://|https?://|www\.)[^\s<*_`\\~]+)"
+    r"(?:[ \t]+[^\s<*_`\\~]+)*?"
+    r"[ \t]+\*\*[A-Za-z0-9]+(?:[ \t]+[A-Za-z0-9]+)*[.!?,;:]?\*\*"
+    r"(?P=delimiter)",
+    re.I,
+)
+# Marked masks raw links, backtick pairs and angle spans before resolving
+# emphasis, even if an opener is escaped for the later inline tokenizer.
+_EMPHASIS_MASK_RE = re.compile(r"\[[^\[\]]*?\]\([^()]*?\)|`[^`]*?`|<[^<>]*?>")
+_JS_WHITESPACE_RE = re.compile(rf"{_INLINE_HTML_SPACE}\Z")
+_URL_BACKPEDAL_RE = re.compile(
+    r"""(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![A-Za-z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+"""
+)
+_COMMENT_TOKEN_RE = re.compile(r"`+|<!--")
+FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(?P<body>.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+GALAXY_GROUP_RE = re.compile(r"[A-Za-z0-9][\w.-]{0,79}\Z", re.UNICODE)
+
+
+def split_frontmatter(markdown: str) -> tuple[str, dict[str, Any]]:
+    """Read the tiny, documented galaxy subset without rewriting user YAML.
+
+    The Markdown/Git bytes remain authoritative. Unknown or malformed fields are
+    ignored so opening an existing Obsidian-style page never makes it unreadable.
+    """
+    match = FRONTMATTER_RE.match(markdown)
+    if match is None:
+        return markdown, {}
+    fields: dict[str, str] = {}
+    for line in match.group("body").splitlines():
+        item = re.fullmatch(r"([a-z][a-z0-9_-]{0,63}):[ \t]*(.*)", line.strip())
+        if item is None:
+            continue
+        value = item.group(2).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        fields[item.group(1)] = value
+    group = fields.get("galaxy_group", "")
+    label = fields.get("galaxy_label", "")
+    if not GALAXY_GROUP_RE.fullmatch(group):
+        return markdown[match.end() :], {}
+    galaxy: dict[str, Any] = {"group": group}
+    if label and len(label) <= 80 and "\n" not in label:
+        galaxy["label"] = label
+    if fields.get("galaxy_anchor", "").casefold() == "true":
+        galaxy["anchor"] = True
+    return markdown[match.end() :], galaxy
+
+
+def _code_span_ends(text: str) -> dict[int, int]:
+    """Index exact backtick runs, honoring escapes only before opening code.
+
+    An escaped first tick is literal; the rest of its run can still open code.
+    Closing runs are maximal and backslashes inside code are ordinary bytes.
+    """
+    runs = list(re.finditer(r"`+", text))
+    following: dict[int, int] = {}
+    ends: dict[int, int] = {}
+    for run in reversed(runs):
+        opening = run.start() + int(_markdown_escaped(text, run.start()))
+        length = run.end() - opening
+        if length and length in following:
+            ends[opening] = following[length]
+        following[run.end() - run.start()] = run.end()
+    return ends
+
+
+def _without_comments(line: str, in_comment: bool, *, has_later_close: bool) -> tuple[str, bool]:
+    """Read prose comments before interpreting fence markers, preserving inline code."""
+    parts: list[str] = []
+    code_ends = _code_span_ends(line)
+    position = 0
+    last_close = line.rfind("-->")
+    has_visible = False
+    while position < len(line):
+        if in_comment:
+            if not parts:
+                parts.append(" ")
+            closing = line.find("-->", position)
+            if closing < 0:
+                return "".join(parts), True
+            position = closing + 3
+            in_comment = False
+        else:
+            token = _COMMENT_TOKEN_RE.search(line, position)
+            if token is None:
+                parts.append(line[position:])
+                break
+            start = token.start()
+            end = token.end()
+            prefix = line[position:start]
+            parts.append(prefix)
+            has_visible = has_visible or bool(prefix.strip())
+            if token.group().startswith("`"):
+                # Consume comments in source order: a tick inside a comment
+                # must never steal a later prose code opener.
+                code_end = code_ends.get(start, code_ends.get(start + 1))
+                end = code_end if code_end is not None else end
+                parts.append(line[start:end])
+                has_visible = True
+            else:
+                # Marked accepts these two complete inline comment tokens.
+                if line.startswith((">", "->"), end):
+                    position = end + (1 if line.startswith(">", end) else 2)
+                    continue
+                # Inline comments require a terminator in this inline scope.
+                if last_close < end and not has_later_close:
+                    parts.append(token.group())
+                    has_visible = True
+                    position = end
+                    continue
+                if not has_visible:
+                    parts.append(" ")
+                in_comment = True
+            position = end
+    return "".join(parts), in_comment
+
+
+# These are paragraph interrupters in the installed Marked 12 blockquote
+# grammar. Quote containers admit lazy continuation, even around code fences.
+_QUOTE_PREFIX = re.compile(r"^ {0,3}>[ \t]?")
+_HTML_BLOCK_TAGS = (
+    "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|"
+    "details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|"
+    "h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|"
+    "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|"
+    "th|thead|title|tr|track|ul"
+)
+_QUOTE_INTERRUPT = re.compile(
+    r"^(?: {0,3}(?:#{1,6}(?:\s|$)|>|(?:[*+-]|1[.)]) )"
+    r"| {0,3}(?:(?:-[\t ]*){3,}|(?:_[\t ]*){3,}|(?:\*[\t ]*){3,})$"
+    rf"|</?(?:{_HTML_BLOCK_TAGS})(?: +|\n|/?>)|<(?:script|pre|style|textarea|!--))",
+)
+
+
+def _dedent_columns(line: str, columns: int) -> str:
+    """Remove only container indentation; tabs in targets and prose are data."""
+    position = 0
+    width = 0
+    while position < len(line) and width < columns and line[position] in " \t":
+        width += 1 if line[position] == " " else 4 - width % 4
+        position += 1
+    return " " * max(0, width - columns) + line[position:]
+
+
+def _quote_end(lines: list[str], start: int, indent: int, terminated: bool) -> tuple[int, str]:
+    """Collect one quote container, preserving its lazy paragraph continuations."""
+    inner: list[str] = []
+    index = start
+    while index < len(lines):
+        expanded = lines[index].expandtabs(4)
+        if indent and len(expanded) - len(expanded.lstrip(" ")) < indent:
+            break
+        line = _dedent_columns(lines[index], indent)
+        prefix = _QUOTE_PREFIX.match(line)
+        if prefix is None:
+            break
+        content = line[prefix.end() :]
+        inner.append(content)
+        index += 1
+        if not content:
+            continue
+        while index < len(lines):
+            expanded = lines[index].expandtabs(4)
+            if indent and len(expanded) - len(expanded.lstrip(" ")) < indent:
+                break
+            candidate = _dedent_columns(lines[index], indent)
+            has_newline = index + 1 < len(lines) or terminated
+            fence = has_newline and re.match(r"^ {0,3}(?:`{3,}(?=[^`]*$)|~{3,})", candidate)
+            if (
+                not candidate.strip()
+                or fence
+                or _QUOTE_INTERRUPT.match(candidate + ("\n" if has_newline else ""))
+            ):
+                break
+            inner.append(candidate)
+            index += 1
+    return index, "\n".join(inner)
+
+
+class _ProseContainer(NamedTuple):
+    markdown: str
+    prefix: str
+    quoted: bool
+    list_item: bool = False
+
+
+_LIST_START = re.compile(r"^( {0,3})([-+*]|[0-9]{1,9}[.)])((?:[ \t].+)?)$")
+
+
+def _list_item_end(lines: list[str], start: int, match: re.Match[str]) -> tuple[int, str, int]:
+    """Normalize one list item using Marked's item/continuation boundaries.
+
+    List indentation is removed only from the container. Outdented lazy lines
+    stay in the item until a block boundary or a preceding blank ends them.
+    """
+    tail = re.sub(r"^\t+", lambda item: " " * (3 * len(item.group())), match.group(3))
+    original = match.group(3)
+    spaces = len(original) - len(original.lstrip(" "))
+    spaces = 1 if spaces > 4 else spaces
+    indent = len(match.group(1)) + len(match.group(2)) + (spaces if original else 1)
+    inner = [tail[spaces:]]
+    index = start + 1
+    if not tail and index < len(lines) and not lines[index].strip(" "):
+        return index + 1, "", indent
+    limit = min(3, indent - 1)
+    bullet = re.compile(rf"^ {{0,{limit}}}(?:[*+-]|[0-9]{{1,9}}[.)])(?:[ \t].*)?$")
+    fence = re.compile(rf"^ {{0,{limit}}}(?:`{{3}}|~{{3}})")
+    heading = re.compile(rf"^ {{0,{limit}}}#")
+    rule = re.compile(rf"^ {{0,{limit}}}(?:(?:- *){{3,}}|(?:_ *){{3,}}|(?:\* *){{3,}})$")
+    blank = False
+    previous = tail
+    while index < len(lines):
+        line = lines[index]
+        if fence.match(line) or heading.match(line) or bullet.match(line) or rule.match(line):
+            break
+        leading = len(line) - len(line.lstrip(" "))
+        if leading >= indent or not line.strip():
+            inner.append(line[indent:])
+        else:
+            previous_leading = len(previous) - len(previous.lstrip(" "))
+            if blank or previous_leading >= 4 or fence.match(previous) or heading.match(previous):
+                break
+            if rule.match(previous):
+                break
+            inner.append(line)
+        blank = blank or not line.strip()
+        previous = line[indent:]
+        index += 1
+    return index, "\n".join(inner).rstrip("\n"), indent
+
+
+def prose_blocks(
+    markdown: str, *, for_links: bool = False, for_excerpt: bool = False, for_title: bool = False
+) -> str:
+    """Project prose without making quoted code into links or quoted H1s into titles.
+
+    An explicit work stack handles nested quotes without Python recursion. Only
+    this derived projection changes; original Markdown remains authoritative.
+    """
+    if for_links:
+        markdown = project_flat_scripts(markdown)
+    output: list[str] = []
+    pending: list[tuple[str | _ProseContainer, str, bool]] = [
+        (_ProseContainer(markdown, "", False), "", False)
+    ]
+    while pending:
+        segment, prefix, quoted = pending.pop()
+        if isinstance(segment, _ProseContainer):
+            # A list may use only two columns of indentation. Keep its provenance
+            # when title matching admits real top-level H1s indented 0–3 spaces.
+            if for_title and segment.list_item:
+                continue
+            quoted = quoted or segment.quoted
+            prefix += segment.prefix
+            parts = _prose_segments(
+                segment.markdown,
+                quoted=quoted,
+                top=not segment.list_item,
+                for_links=for_links,
+                for_excerpt=for_excerpt,
+            )
+            pending.extend((part, prefix, quoted) for part in reversed(parts))
+        else:
+            output.append(prefix + segment)
+    return "\n".join(output)
+
+
+def _prose_segments(
+    markdown: str, *, quoted: bool, top: bool, for_links: bool = False, for_excerpt: bool = False
+) -> list[str | _ProseContainer]:
+    # Marked normalizes only line-leading tabs at each container level.
+    # Expanding whole lines would change tabs inside explicit link targets.
+    markdown = re.sub(
+        r"(?m)^( *)(\t+)",
+        lambda match: match.group(1) + "    " * len(match.group(2)),
+        markdown,
+    )
+    lines: list[str | _ProseContainer] = []
+    fence = ""
+    block_comment = False
+    raw_html = ""
+    delimited_html = ""
+    blank_html = False
+    paragraph = False
+    paragraph_barrier = False
+    table = 0
+    previous_prose = ""
+    # Marked normalizes CR/CRLF only. splitlines() would turn e.g. U+0085
+    # inside an invalid tag into valid HTML whitespace before tokenization.
+    markdown = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    source_lines = markdown.split("\n")
+    if source_lines[-1] == "":
+        source_lines.pop()
+    # One normalized source and line offsets avoid repeatedly joining the tail
+    # for a document with many reference definitions. HTML suffix parsing can
+    # shorten the current line; account for that without changing source bytes.
+    definition_source = "\n".join(source_lines)
+    source_offsets: list[int] = []
+    source_lengths = [len(line) for line in source_lines]
+    source_offset = 0
+    for length in source_lengths:
+        source_offsets.append(source_offset)
+        source_offset += length + 1
+    # Block structure is read from raw source before inline tokenization. An
+    # inline comment cannot swallow a heading/fence/container in another block.
+    scopes: list[list[int]] = []
+    scope: list[int] = []
+    table_lines: dict[int, int] = {}
+    last_prose_line = -2
+
+    def append_prose(text: str, *, separate: bool = False) -> None:
+        nonlocal scope, last_prose_line
+        if separate or not paragraph or last_prose_line != line_number - 1:
+            scope = []
+            scopes.append(scope)
+        scope.append(len(lines))
+        if table:
+            table_lines[len(lines)] = table
+        lines.append(text)
+        last_prose_line = line_number
+
+    skip_until = 0
+    for line_number, line in enumerate(source_lines):
+        if line_number < skip_until:
+            continue
+        expanded = line.expandtabs(4)
+        indent = len(expanded) - len(expanded.lstrip(" "))
+        relative = expanded
+        terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
+        if table and (
+            indent >= 4
+            or _QUOTE_INTERRUPT.match(line + ("\n" if terminated else ""))
+            or re.match(r"^ {0,3}(?:`{3,}(?=[^`]*$)|~{3,})", relative)
+        ):
+            table = False
+            paragraph_barrier = False
+        # Generic HTML blocks are literal until a blank, even after a closing
+        # tag. This state precedes Markdown containers inside the HTML body.
+        if blank_html:
+            if line.strip(" "):
+                continue
+            blank_html = False
+        # Marked's raw HTML blocks keep Markdown literal through the entire
+        # closing-tag line. Blank lines, headings and fences inside are data.
+        if raw_html:
+            paragraph = False
+            if re.search(rf"</{raw_html}>", relative, re.IGNORECASE | re.ASCII):
+                raw_html = ""
+            continue
+        if block_comment:
+            # A type-2 HTML token owns the whole closing line, including any
+            # apparent Markdown suffix. Inline comments use the separate helper.
+            block_comment = "-->" not in line
+            continue
+        # Types 3/4/5 HTML stop at their delimiter, not at a blank or the
+        # end of the closing line. Marked restarts block parsing on any suffix.
+        # They do not interrupt a top-level paragraph or GFM table; list block
+        # text (top=False) admits them between its own text tokens.
+        html_consumed = False
+        while delimited_html or (
+            not fence
+            and not table
+            and (not top or not paragraph)
+            and re.match(r"^ {0,3}(?:<\?|<![A-Z]|<!\[CDATA\[)", line, re.I | re.ASCII)
+        ):
+            html_consumed = True
+            if not delimited_html:
+                opening = line.lstrip(" ")
+                delimited_html = (
+                    "?>"
+                    if opening.startswith("<?")
+                    else ("]]>" if opening[:9].upper() == "<![CDATA[" else ">")
+                )
+            paragraph = False
+            paragraph_barrier = False
+            previous_prose = ""
+            _, closing, line = line.partition(delimited_html)
+            if not closing:
+                line = ""
+                break
+            delimited_html = ""
+            # Container collectors below must see the remainder too. The
+            # original Markdown/Git bytes are never changed by this projection.
+            source_lines[line_number] = line
+        if delimited_html or (html_consumed and not line):
+            continue
+        expanded = line if html_consumed else line.expandtabs(4)
+        indent = len(expanded) - len(expanded.lstrip(" "))
+        relative = expanded
+        comment_open = re.match(r"^ {0,3}<!--", line) if not fence else None
+        if comment_open and ((not table and (not top or not paragraph)) or line.startswith("<!--")):
+            body = line[comment_open.end() :]
+            block_comment = not (body.startswith((">", "->")) or "-->" in body)
+            paragraph = False
+            paragraph_barrier = False
+            table = False
+            previous_prose = ""
+            continue
+        if not fence and _QUOTE_PREFIX.match(relative):
+            paragraph = False
+            skip_until, inner = _quote_end(
+                source_lines, line_number, 0, markdown.endswith(("\r", "\n"))
+            )
+            lines.append(_ProseContainer(inner, "> ", True))
+            continue
+        # Quoted fences use the renderer's exact closing grammar, including
+        # mixed marker suffixes. Invalid backtick info remains visible prose.
+        if quoted:
+            quoted_line = line
+            if fence:
+                paragraph = False
+                if re.fullmatch(rf" {{0,3}}{re.escape(fence)}[~`]* *", quoted_line):
+                    fence = ""
+                continue
+            match = re.match(r"^ {0,3}(`{3,}(?=[^`]*$)|~{3,})", quoted_line)
+            if match:
+                paragraph = False
+                fence = match.group(1)
+                continue
+        else:
+            # Fence info is literal, including comment markers. Removing a
+            # comment must not create a fence delimiter.
+            match = re.match(r"^ {0,3}(`{3,}|~{3,})", relative)
+            if match:
+                paragraph = False
+                marker = match.group(1)
+                if not fence:
+                    fence = marker
+                elif (
+                    marker[0] == fence[0]
+                    and len(marker) >= len(fence)
+                    and not relative[match.end() :].strip(" \t")
+                ):
+                    fence = ""
+                continue
+            if fence:
+                paragraph = False
+                continue
+        terminated = line_number + 1 < len(source_lines) or markdown.endswith(("\r", "\n"))
+        html_line = relative + ("\n" if terminated else "")
+        html = re.match(r"^ {0,3}<(?ai:(script|pre|style|textarea))[\s>]", html_line)
+        if html:
+            paragraph = False
+            tag = html.group(1).lower()
+            if not re.search(rf"</{tag}>", relative, re.IGNORECASE | re.ASCII):
+                raw_html = tag
+            continue
+        # Marked's HTML start grammar differs from its paragraph/table
+        # interrupters: only column-zero type-6 tags interrupt existing prose.
+        # List contents use block text (top=False), not top-level paragraphs.
+        html_line = line + ("\n" if terminated else "")
+        block_html = re.match(
+            rf"^ {{0,3}}</?(?:{_HTML_BLOCK_TAGS})(?: +|\n|/?>)",
+            html_line,
+            re.IGNORECASE | re.ASCII,
+        )
+        standalone_html = re.fullmatch(
+            r" {0,3}(?:<(?!script|pre|style|textarea)[a-z][\w-]*"
+            r"""(?: +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'"""
+            r"""| *= *[^\s"'=<>`]+)?)*? */?>"""
+            r"|</(?!script|pre|style|textarea)[a-z][\w-]*\s*>)[ \t]*",
+            line,
+            re.IGNORECASE | re.ASCII,
+        )
+        html_interrupt = bool(block_html and line.startswith("<"))
+        if table and (indent >= 4 or html_interrupt):
+            table = False
+        if (block_html and (not top or not paragraph or html_interrupt) and not table) or (
+            standalone_html and not table and (not top or not paragraph)
+        ):
+            blank_html = True
+            paragraph = False
+            paragraph_barrier = False
+            continue
+        if not paragraph and not table:
+            position = source_offsets[line_number] + source_lengths[line_number] - len(line)
+            definition = _DEFINITION_RE.match(definition_source, position)
+            if definition:
+                consumed = definition.group()
+                skip_until = line_number + consumed.count("\n") + int(not consumed.endswith("\n"))
+                paragraph_barrier = False
+                previous_prose = ""
+                continue
+        # Definition-like lines inside a paragraph/table remain ordinary prose.
+        # Invalid definitions must not create a new paragraph boundary either.
+        html_boundary = re.match(r"^ {0,3}<[!?]", relative)
+        table_rule = (
+            paragraph
+            and re.search(r"[:|]", relative)
+            and re.fullmatch(r" {0,3}\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *", relative)
+            and len(_table_cells(previous_prose)) == len(_table_cells(relative))
+        )
+        if html_boundary or table_rule:
+            paragraph_barrier = True
+            paragraph = False
+        if table_rule:
+            table = len(_table_cells(previous_prose))
+            # The preceding prose line becomes the table header only after
+            # this delimiter row has been recognized.
+            if lines and isinstance(lines[-1], str):
+                table_lines[len(lines) - 1] = table
+            # Alignment syntax is structure, not visible cell content.
+            append_prose("", separate=True)
+            continue
+
+        # Parse list contents before quote/fence contents on the next pass.
+        # Keeping a projection-only prefix prevents a nested H1 becoming the
+        # page identity while allowing ordinary list prose into excerpts.
+        list_item = _LIST_START.match(line)
+        if (
+            list_item
+            and top
+            and (
+                (paragraph and not list_item.group(3).strip())
+                or (
+                    (paragraph or table)
+                    and list_item.group(2)[0].isdigit()
+                    and list_item.group(2) not in ("1.", "1)")
+                )
+            )
+        ):
+            # Only nonempty items (ordered items starting at 1) interrupt a
+            # top-level paragraph. Table rows also reject non-1 interruption.
+            list_item = None
+        if list_item:
+            paragraph = False
+            skip_until, inner, content_indent = _list_item_end(source_lines, line_number, list_item)
+            table = False
+            lines.append(_ProseContainer(inner, " " * content_indent, False, True))
+            continue
+
+        if not expanded.strip():
+            paragraph = False
+            paragraph_barrier = False
+            table = False
+            previous_prose = ""
+            append_prose(line, separate=True)
+            continue
+        if indent < 4:
+            append_prose(line, separate=bool(re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", expanded)))
+            setext = paragraph and re.fullmatch(r" {0,3}(?:=+|-+) *", expanded)
+            paragraph = not bool(
+                paragraph_barrier
+                or table
+                or setext
+                or re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", expanded)
+                or re.fullmatch(r" {0,3}(?:(?:- *){3,}|(?:_ *){3,}|(?:\* *){3,})", expanded)
+            )
+            previous_prose = line
+        elif paragraph:
+            # Marked merges indented code candidates into existing paragraph
+            # text. Preserve indentation so literal headings stay non-titles.
+            append_prose(line)
+
+    for indices in scopes:
+        indices = [index for index in indices if index not in table_lines]
+        last_close = max(
+            (offset for offset, index in enumerate(indices) if "-->" in str(lines[index])),
+            default=-1,
+        )
+        in_inline_comment = False
+        for offset, index in enumerate(indices):
+            text = lines[index]
+            assert isinstance(text, str)
+            lines[index], in_inline_comment = _without_comments(
+                text, in_inline_comment, has_later_close=offset < last_close
+            )
+        if for_links and indices:
+            # Inline code can cross soft line breaks, but never another block.
+            # Preserve line boundaries so typed links cannot become new lines.
+            projected = _without_inline_link_metadata(
+                "\n".join(str(lines[index]) for index in indices), mask_urls=not for_excerpt
+            )
+            for index, text in zip(indices, projected.split("\n"), strict=True):
+                lines[index] = text
+    for index, columns in table_lines.items():
+        text = lines[index]
+        assert isinstance(text, str)
+        lines[index] = _without_cell_comments(
+            text, columns, for_links=for_links, for_excerpt=for_excerpt
+        )
+    return lines
+
+
+def _table_cells(row: str) -> list[str]:
+    """Marked's GFM split: unescaped pipes delimit even inside code spans."""
+    cells: list[str] = []
+    start = 0
+    slashes = 0
+
+    for offset, char in enumerate(row):
+        if char == "|" and slashes % 2 == 0:
+            cells.append(row[start:offset])
+            start = offset + 1
+        slashes = slashes + 1 if char == "\\" else 0
+    cells.append(row[start:])
+    if cells and not cells[0].strip():
+        cells.pop(0)
+    if cells and not cells[-1].strip():
+        cells.pop()
+    # Marked removes one escaping backslash before inline tokenization.
+    return [cell.strip().replace(r"\|", "|") for cell in cells]
+
+
+def _without_cell_comments(
+    row: str, columns: int, *, for_links: bool = False, for_excerpt: bool = False
+) -> str:
+    """Project only rendered cells, with independent comment/code scopes."""
+    parts: list[str] = []
+    for cell in _table_cells(row)[:columns]:
+        text = _without_comments(cell, False, has_later_close=False)[0]
+        parts.append(
+            _without_inline_link_metadata(text, mask_urls=not for_excerpt) if for_links else text
+        )
+    # A leading pipe also keeps cell text from becoming a new ATX title or
+    # typed relation in the projection. Source bytes are never rewritten.
+    # A raw pipe can also look like a wiki alias separator. Keep cells on
+    # distinct projected lines so an apparent link cannot span two cells.
+    # The dot preserves the excerpt's visible column separator; the leading
+    # pipe on subsequent lines keeps cell content from becoming metadata.
+    separator = " ·\n| " if for_links else " | "
+    return ("| " if row.lstrip().startswith("|") else "") + separator.join(parts)
+
+
+def prose_links(markdown: str) -> str:
+    """Ignore literal examples, comments and inline link metadata for navigation."""
+    return prose_blocks(markdown, for_links=True)
+
+
+def _trim_url_tail(url: str) -> str:
+    """Skip suffixes the Marked backpedal fixpoint would remove one at a time.
+
+    A trailing entity-like ``&name;`` must disappear as a whole: dropping only
+    its semicolon would change the regex's entity-sensitive ampersand branch.
+    A contiguous closing-parenthesis suffix can retain at most its first ``)``
+    via the balanced-parenthesis branch. Leave that one to the original regex.
+    """
+    end = len(url)
+    while end and url[end - 1] in "?!.,:;*_'\"~":
+        if url[end - 1] == ";":
+            start = end - 1
+            while start and url[start - 1].isascii() and url[start - 1].isalnum():
+                start -= 1
+            if start < end - 1 and start and url[start - 1] == "&":
+                end = start - 1
+                continue
+        end -= 1
+    if end and url[end - 1] == ")":
+        start = end - 1
+        while start and url[start - 1] == ")":
+            start -= 1
+        end = start + 1
+    return url[:end]
+
+
+def _autolink_end(text: str, position: int, *, bare: bool = True) -> int | None:
+    if text[position] == "<" and not _markdown_escaped(text, position):
+        angle = _AUTOLINK_RE.match(text, position)
+        if angle is not None:
+            return angle.end()
+    if not bare:
+        return None
+    match = _URL_RE.match(text, position)
+    if match is None:
+        return None
+    # An escaped ASCII punctuation token ends Marked's current text run.
+    # Its following URL gets a fresh, case-insensitive tokenizer attempt.
+    escaped_prefix = (
+        position > 1
+        and text[position - 1] in r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
+        and _markdown_escaped(text, position - 1)
+    )
+    # Otherwise its case-sensitive text lookahead keeps embedded uppercase
+    # schemes in ordinary prose, despite the URL tokenizer being insensitive.
+    if (
+        position
+        and not escaped_prefix
+        and not text.startswith(("http://", "https://", "ftp://", "www."), position)
+    ):
+        return None
+    url = match.group()
+    while True:
+        url = _trim_url_tail(url)
+        backpedal = _URL_BACKPEDAL_RE.match(url)
+        shortened = backpedal.group() if backpedal is not None else ""
+        if shortened == url:
+            return position + len(url) if url else None
+        url = shortened
+
+
+def _emphasized_url_span(text: str, position: int) -> tuple[int, int] | None:
+    """Locate the leading URL in a bounded, valid inline emphasis scope.
+
+    Unicode punctuation/symbols and whitespace determine delimiter flanking,
+    as in Marked. Matching a scope never rewrites its prose or delimiters.
+    """
+    if text[position] not in "*_" or _markdown_escaped(text, position):
+        return None
+    delimiter = text[position]
+    if position and text[position - 1] == delimiter:
+        # Marked can leave one literal star before this existing bounded scope:
+        # **URL **words*** -> * + em(URL + strong(words)).
+        # An escaped literal star also starts a fresh single-star scope.
+        trailing_strong = delimiter == "*" and _EMPHASIS_URL_TRAILING_STRONG_RE.match(
+            text, position
+        )
+        previous_is_literal = (
+            _markdown_escaped(text, position - 1)
+            or position == 1
+            or text[position - 2] != "*"
+            or _markdown_escaped(text, position - 2)
+        )
+        if not trailing_strong or not previous_is_literal:
+            return None
+    previous = text[position - 1] if position else ""
+    if delimiter == "_" and previous and unicodedata.category(previous)[0] in "LN":
+        return None
+    match = _EMPHASIS_URL_RE.match(text, position) or _EMPHASIS_URL_TRAILING_STRONG_RE.match(
+        text, position
+    )
+    if match is None or (match.end() < len(text) and text[match.end()] == delimiter):
+        return None
+    closing = match.end() - len(match.group("delimiter"))
+    before = text[closing - 1]
+    after = text[match.end()] if match.end() < len(text) else ""
+    before_punctuation = unicodedata.category(before)[0] in "PS"
+    after_punctuation = bool(after) and unicodedata.category(after)[0] in "PS"
+    # A punctuation-adjacent closer before a word is an opener, not a closer.
+    if _JS_WHITESPACE_RE.fullmatch(before) or (
+        before_punctuation
+        and after
+        and not (_JS_WHITESPACE_RE.fullmatch(after) or after_punctuation)
+    ):
+        return None
+    if delimiter == "_" and after and not (_JS_WHITESPACE_RE.fullmatch(after) or after_punctuation):
+        return None
+    inner = match.group("url")
+    end = _autolink_end(inner, 0)
+    if end is None:
+        return None
+    start = match.start("url")
+    return start, start + end
+
+
+def _without_inline_link_metadata(text: str, *, mask_urls: bool = True) -> str:
+    """Project valid inline links in source order within one block/cell.
+
+    The frontend extension consumes a wikilink before ordinary link syntax.
+    Code spans likewise shield their contents. Mask with spaces to preserve
+    line boundaries and avoid manufacturing typed relations or new links.
+    """
+    emphasis_masks = iter(_EMPHASIS_MASK_RE.finditer(text))
+    protected_inline = next(emphasis_masks, None)
+    parts: list[str] = []
+    code_ends = _code_span_ends(text)
+    position = 0
+    in_anchor = False
+    while position < len(text):
+        code_end = code_ends.get(position)
+        if code_end is not None:
+            parts.append(re.sub(r"[^\n]", " ", text[position:code_end]))
+            position = code_end
+            continue
+        if text[position] == "<" and not _markdown_escaped(text, position):
+            anchor = _INLINE_HTML_TAG_RE.match(text, position)
+            if anchor is not None:
+                tag = anchor.group().lower()
+                if tag.startswith("<a "):
+                    in_anchor = True
+                elif tag.startswith("</a>"):
+                    in_anchor = False
+                parts.append(re.sub(r"[^\n]", " ", anchor.group()))
+                position = anchor.end()
+                continue
+        while protected_inline is not None and protected_inline.end() <= position:
+            protected_inline = next(emphasis_masks, None)
+        emphasis_masked = protected_inline is not None and protected_inline.start() <= position
+        if mask_urls and not in_anchor and not emphasis_masked:
+            emphasized_url = _emphasized_url_span(text, position)
+            if emphasized_url is not None:
+                start, end = emphasized_url
+                parts.append(text[position:start] + " " * (end - start))
+                position = end
+                continue
+        if mask_urls:
+            url_end = _autolink_end(text, position, bare=not in_anchor)
+            if url_end is not None:
+                parts.append(re.sub(r"[^\n]", " ", text[position:url_end]))
+                position = url_end
+                continue
+        if text[position] in "[!" and not _markdown_escaped(text, position):
+            wiki = LINK_RE.match(text, position) if text.startswith("[[", position) else None
+            if wiki is not None and wiki.group(1).strip():
+                parts.append(wiki.group())
+                position = wiki.end()
+                continue
+            match = _INLINE_LINK_RE.match(text, position)
+            if match is not None:
+                href = match.group(2).strip()
+                valid = True
+                end = match.end()
+                if href.startswith("<"):
+                    slashes = len(href[:-1]) - len(href[:-1].rstrip("\\"))
+                    valid = href.endswith(">") and slashes % 2 == 0
+                else:
+                    level = 0
+                    offset = 0
+                    destination = match.group(2)
+                    while offset < len(destination):
+                        char = destination[offset]
+                        if char == "\\":
+                            offset += 2
+                            continue
+                        if char == "(":
+                            level += 1
+                        elif char == ")":
+                            level -= 1
+                            if level < 0:
+                                end = match.start(2) + offset + 1
+                                break
+                        offset += 1
+                if valid:
+                    label_end = match.end(1) + 1
+                    if text[position] == "!":
+                        # Image alt is plain text. Drop the image's outer
+                        # brackets so ![[alt]] cannot invent a wikilink.
+                        parts.append(" " + match.group(1) + " ")
+                        parts.append(re.sub(r"[^\n]", " ", text[label_end:end]))
+                    else:
+                        # Keep wrapper syntax for existing excerpt formatting.
+                        parts.append(text[position:label_end] + "(")
+                        parts.append(re.sub(r"[^\n]", " ", text[label_end + 1 : end - 1]))
+                        parts.append(")")
+                    position = end
+                    continue
+        parts.append(text[position])
+        position += 1
+    return _without_code_spans("".join(parts))
+
+
+def _without_code_spans(text: str) -> str:
+    """Mask inline code within one block/cell without joining source lines."""
+    parts: list[str] = []
+    position = 0
+    for start, end in sorted(_code_span_ends(text).items()):
+        if start < position:
+            continue
+        parts.append(text[position:start])
+        parts.append(re.sub(r"[^\n]", " ", text[start:end]))
+        position = end
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def _markdown_escaped(text: str, position: int) -> bool:
+    """Markdown consumes backslashes in pairs before an opening delimiter."""
+    start = position
+    while start and text[start - 1] == "\\":
+        start -= 1
+    return (position - start) % 2 == 1
+
+
+def _wiki_link_matches(text: str) -> Iterator[re.Match[str]]:
+    """Consume accepted tokens, retrying after an escaped literal opener.
+
+    Marked consumes an escaped bracket as text before trying the following
+    wikilink. A rejected outer candidate must not swallow that next token.
+    Accepted candidates remain nonoverlapping, including their labels.
+    """
+    position = 0
+    while match := LINK_RE.search(text, position):
+        if _markdown_escaped(text, match.start()):
+            position = match.start() + 1
+        else:
+            yield match
+            position = match.end()
+
+
+def plain_text_excerpt(markdown: str) -> str:
+    """Collapse article prose into a short, presentation-safe summary.
+
+    Excerpts are part of the page API and appear outside the Markdown renderer,
+    so formatting tokens must not leak into cards, search results, or chat tool
+    context. This intentionally keeps human-readable labels while dropping
+    structural Markdown and non-prose blocks.
+    """
+    lines = []
+    for raw_line in prose_blocks(markdown, for_links=True, for_excerpt=True).splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ">")):
+            continue
+        if "|" in line and re.fullmatch(r"[|:\-\s]+", line):
+            continue
+        line = re.sub(r"^\s*(?:[-+*]|\d+[.)])\s+", "", line)
+        line = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"\[\[([^|\]]+)\|([^\]]+)\]\]", r"\2", line)
+        line = re.sub(r"\[\[([^\]]+)\]\]", r"\1", line)
+        line = re.sub(r"<(https?://[^>]+)>", r"\1", line)
+        line = re.sub(r"<[^>]+>", " ", line)
+        line = line.strip("|").replace("|", " · ")
+        line = line.replace("*", "").replace("~~", "")
+        line = re.sub(r"(?<!\w)_{1,2}|_{1,2}(?!\w)", "", line)
+        line = line.replace("`", "")
+        if line:
+            lines.append(line)
+    excerpt = " ".join(" ".join(lines).split())
+    if len(excerpt) <= 220:
+        return excerpt
+    boundary = excerpt[:219].rsplit(" ", 1)[0].rstrip(" ,.;:-")
+    return f"{boundary or excerpt[:219]}…"
+
+
+class WikiError(Exception):
+    def __init__(self, code: str, message: str, **details: Any) -> None:
+        self.code = code
+        self.message = message
+        self.details = details
+        super().__init__(message)
+
+
+class WikiStore:
+    """A single-ref content store; separate processes use Git's compare-and-swap."""
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path).resolve()
+        self.path.mkdir(parents=True, exist_ok=True)
+        self.repo = self.path / ".wiki.git"
+        if self.repo.is_symlink():
+            raise WikiError("invalid_vault", "The managed repository must not be a symlink.")
+        if not self.repo.exists():
+            # Existing Markdown must be explicitly imported, never silently ignored.
+            if any(self.path.rglob("*.md")):
+                raise WikiError(
+                    "import_required", "Existing Markdown requires a controlled import."
+                )
+            result = subprocess.run(
+                ["git", "init", "--bare", "--initial-branch=wiki", str(self.repo)],
+                capture_output=True,
+                check=False,
+            )
+            if result.returncode:
+                raise WikiError("storage_unavailable", "Unable to initialize local history.")
+
+    def _git(
+        self,
+        *args: str,
+        data: bytes | None = None,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+    ) -> bytes:
+        result = self._git_result(*args, data=data, env=env)
+        if check and result.returncode:
+            raise WikiError("storage_unavailable", "Local Git operation failed.")
+        return result.stdout
+
+    def _git_result(
+        self,
+        *args: str,
+        data: bytes | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        process_env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "Managed Wiki",
+            "GIT_AUTHOR_EMAIL": "wiki@localhost",
+            "GIT_COMMITTER_NAME": "Managed Wiki",
+            "GIT_COMMITTER_EMAIL": "wiki@localhost",
+            "GIT_LITERAL_PATHSPECS": "1",
+            **(env or {}),
+        }
+        return subprocess.run(
+            ["git", "--git-dir", str(self.repo), *args],
+            input=data,
+            capture_output=True,
+            env=process_env,
+            check=False,
+        )
+
+    def _head(self) -> str:
+        result = self._git_result("rev-parse", "--verify", REF)
+        if result.returncode == 0:
+            return result.stdout.decode().strip()
+        # A failed revision lookup is not proof of an unborn wiki. Git's quiet
+        # symbolic-ref probe distinguishes malformed packed/loose refs from a
+        # missing direct ref; lstat also rejects dangling refs and directories.
+        # Only --verify's missing-ref exit qualifies, never an abnormal exit.
+        if (
+            result.returncode == 128
+            and self._git_result("symbolic-ref", "--quiet", REF).returncode == 1
+        ):
+            try:
+                (self.repo / REF).lstat()
+            except FileNotFoundError:
+                return ""
+            except OSError:
+                pass
+        raise WikiError("storage_unavailable", "Local Git operation failed.")
+
+    def check_health(self) -> None:
+        """Fail when the local content authority is no longer readable.
+
+        An empty, unborn vault is healthy. Once a revision exists, Git must be
+        able to resolve it as a commit. This is deliberately a cheap read-only
+        readiness probe rather than a full page listing or a synthetic write.
+        """
+        if self.repo.is_symlink() or not self.repo.is_dir():
+            raise WikiError("storage_unavailable", "Local history is unavailable.")
+        if self._git("rev-parse", "--is-bare-repository").decode().strip() != "true":
+            raise WikiError("storage_unavailable", "Local history is unavailable.")
+        head = self._head()
+        if head:
+            self._git("cat-file", "-e", f"{head}^{{commit}}")
+
+    @staticmethod
+    def _validate_id(page_id: str) -> None:
+        if not ID_RE.fullmatch(page_id) or page_id in {".", ".."}:
+            raise WikiError("invalid_id", "Use a stable page ID without slashes or whitespace.")
+
+    def _blob(self, head: str, path: str) -> bytes | None:
+        if not head:
+            return None
+        if not self._git("ls-tree", head, "--", path):
+            return None
+        return self._git("show", f"{head}:{path}")
+
+    @staticmethod
+    def _page(page_id: str, data: bytes, revision: str) -> dict[str, Any]:
+        markdown = data.decode("utf-8")
+        content, galaxy = split_frontmatter(markdown)
+        title = next(
+            (
+                match.group(1).strip()
+                for match in re.finditer(
+                    r"^ {0,3}#[ \t]+([^\n]+)$",
+                    prose_blocks(content, for_title=True),
+                    re.MULTILINE,
+                )
+                if match.group(1).strip()
+            ),
+            page_id,
+        )
+        page = {
+            "id": page_id,
+            "title": title,
+            "markdown": markdown,
+            "revision": revision,
+            "excerpt": plain_text_excerpt(content),
+        }
+        if galaxy:
+            page["galaxy"] = galaxy
+        return page
+
+    def get_page(self, page_id: str) -> dict[str, Any] | None:
+        self._validate_id(page_id)
+        head = self._head()
+        data = self._blob(head, f"pages/{page_id}.md")
+        revision = self._blob(head, f"revisions/{page_id}")
+        return (
+            self._page(page_id, data, revision.decode() if revision else "")
+            if data is not None
+            else None
+        )
+
+    def _pages(self, head: str) -> list[dict[str, Any]]:
+        blobs = self._snapshot_blobs(head, "pages/", "revisions/")
+        pages = []
+        for name, data in blobs.items():
+            if name.startswith("pages/") and name.endswith(".md"):
+                page_id = name.removeprefix("pages/").removesuffix(".md")
+                revision = blobs.get(f"revisions/{page_id}", b"").decode()
+                pages.append(self._page(page_id, data, revision))
+        return sorted(pages, key=lambda page: (page["title"].casefold(), page["id"]))
+
+    def _snapshot_blobs(self, head: str, *prefixes: str) -> dict[str, bytes]:
+        """Read one tree with two Git processes, rather than four per page."""
+        if not head:
+            return {}
+        rows = self._git("ls-tree", "-r", "-z", head, "--", *prefixes)
+        entries: list[tuple[str, bytes]] = []
+        for row in rows.split(b"\0"):
+            if row:
+                metadata, raw_path = row.split(b"\t", 1)
+                _, kind, sha = metadata.split()
+                if kind == b"blob":
+                    entries.append((raw_path.decode(), sha))
+        batch = self._git("cat-file", "--batch", data=b"".join(sha + b"\n" for _, sha in entries))
+        blobs: dict[str, bytes] = {}
+        offset = 0
+        for path, _ in entries:
+            end = batch.index(b"\n", offset)
+            size = int(batch[offset:end].split()[2])
+            offset = end + 1
+            blobs[path] = batch[offset : offset + size]
+            offset += size + 1
+        return blobs
+
+    def list_pages(self) -> list[dict[str, Any]]:
+        return self._pages(self._head())
+
+    def search(self, query: str) -> list[dict[str, Any]]:
+        terms = query.casefold().strip().split()
+        if not terms:
+            return []
+        pages = self.list_pages()
+        hits = [
+            p for p in pages if all(t in (p["id"] + " " + p["markdown"]).casefold() for t in terms)
+        ]
+        return sorted(
+            hits,
+            key=lambda p: (
+                0 if query.casefold() in {p["id"].casefold(), p["title"].casefold()} else 1,
+                p["title"].casefold(),
+            ),
+        )[:50]
+
+    def graph(self) -> dict[str, Any]:
+        result: dict[str, Any] = self.snapshot()["graph"]
+        return result
+
+    def backlinks(self, page_id: str, limit: int = 20) -> dict[str, Any]:
+        """Read bounded incoming explicit links from one immutable content snapshot."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise WikiError("invalid_payload", "limit must be an integer between 1 and 100.")
+        snapshot = self.snapshot()
+        pages = {page["id"]: page for page in snapshot["pages"]}
+        if page_id not in pages:
+            raise WikiError("not_found", "The page does not exist.")
+        sources: dict[str, set[str]] = {}
+        for edge in snapshot["graph"]["edges"]:
+            if edge["target"] != page_id or edge["source"] == page_id:
+                continue
+            relations = sources.setdefault(edge["source"], set())
+            if edge.get("rel"):
+                relations.add(edge["rel"])
+        ordered = sorted(sources, key=lambda key: (pages[key]["title"].casefold(), key))
+        return {
+            "revision": snapshot["revision"],
+            "target_revision": pages[page_id]["revision"],
+            "backlinks": [
+                {
+                    key: value
+                    for key, value in pages[source].items()
+                    if key in {"id", "title", "revision", "excerpt"}
+                }
+                | {"relations": sorted(sources[source])}
+                for source in ordered[:limit]
+            ],
+            "total": len(ordered),
+            "truncated": len(ordered) > limit,
+        }
+
+    @staticmethod
+    def _resolve_target(
+        raw_target: str, source: str, ids: set[str], titles: dict[str, set[str]]
+    ) -> tuple[str, list[str]]:
+        target = raw_target.split("#", 1)[0].strip()
+        if not target and raw_target.strip().startswith("#"):
+            target = source
+        if target in ids:
+            return target, [target]
+        return target, sorted(titles.get(target.casefold(), set()))
+
+    def resolve_links(self, targets: list[str], source: str = "") -> dict[str, Any]:
+        """Resolve a bounded article batch against one immutable content snapshot."""
+        head = self._head()
+        pages = {p["id"]: p for p in self._pages(head)}
+        titles: dict[str, set[str]] = {}
+        for page in pages.values():
+            titles.setdefault(page["title"].casefold(), set()).add(page["id"])
+        ids = set(pages)
+        resolutions = []
+        for raw in targets:
+            _, candidates = self._resolve_target(raw, source, ids, titles)
+            resolutions.append(
+                {
+                    "target": raw,
+                    "status": "resolved"
+                    if len(candidates) == 1
+                    else ("ambiguous" if candidates else "missing"),
+                    "fragment": raw.partition("#")[2],
+                    "candidates": [{"id": key, "title": pages[key]["title"]} for key in candidates],
+                }
+            )
+        return {"revision": head or None, "resolutions": resolutions}
+
+    def snapshot(self) -> dict[str, Any]:
+        """Capture content and its derived graph at one immutable Git commit."""
+        head = self._head()
+        pages = self._pages(head)
+        return {"revision": head or None, "pages": pages, "graph": self._graph(pages, head)}
+
+    @staticmethod
+    def _graph(pages: list[dict[str, Any]], head: str) -> dict[str, Any]:
+        ids = {p["id"] for p in pages}
+        titles: dict[str, set[str]] = {}
+        for page in pages:
+            titles.setdefault(page["title"].casefold(), set()).add(page["id"])
+        edges: set[tuple[str, str, str | None]] = set()
+        missing: set[tuple[str, str]] = set()
+        ambiguous: set[tuple[str, str, tuple[str, ...]]] = set()
+        for page in pages:
+            content, _ = split_frontmatter(page["markdown"])
+            prose = prose_links(content)
+            links: list[tuple[str, str | None]] = [
+                (match.group(2), re.sub(r"[^\w]+", "_", match.group(1).strip().lower()).strip("_"))
+                for match in TYPED_LINK_RE.finditer(prose)
+                if not _markdown_escaped(prose, match.start(2) - 2)
+            ]
+            links.extend((match.group(1), None) for match in _wiki_link_matches(prose))
+            outgoing: set[tuple[str, str | None]] = set()
+            for raw_target, rel in links:
+                target, candidates = WikiStore._resolve_target(raw_target, page["id"], ids, titles)
+                if not target:
+                    continue
+                if len(candidates) > 1:
+                    ambiguous.add((page["id"], target, tuple(candidates)))
+                    continue
+                if not candidates:
+                    missing.add((page["id"], target))
+                    continue
+                resolved = candidates[0]
+                outgoing.add((resolved, rel))
+            typed_targets = {target for target, rel in outgoing if rel is not None}
+            edges.update(
+                (page["id"], target, rel)
+                for target, rel in outgoing
+                if rel is not None or target not in typed_targets
+            )
+        return {
+            "nodes": [
+                {
+                    "id": p["id"],
+                    "title": p["title"],
+                    **({"galaxy": p["galaxy"]} if "galaxy" in p else {}),
+                }
+                for p in pages
+            ],
+            "edges": [
+                {"source": a, "target": b, "type": "wikilink", **({"rel": rel} if rel else {})}
+                for a, b, rel in sorted(edges, key=lambda edge: (edge[0], edge[1], edge[2] or ""))
+            ],
+            "missing_targets": [{"source": a, "target": b} for a, b in sorted(missing)],
+            "ambiguous_targets": [
+                {"source": a, "target": b, "candidates": list(candidates)}
+                for a, b, candidates in sorted(ambiguous)
+            ],
+            "status": "current",
+            "source": "markdown",
+            "revision": head or None,
+        }
+
+    def save_page(
+        self,
+        page_id: str,
+        markdown: str,
+        base_revision: str | None,
+        request_id: str,
+    ) -> dict[str, Any]:
+        return self._mutate(page_id, markdown, base_revision, request_id)
+
+    def delete_page(
+        self,
+        page_id: str,
+        base_revision: str,
+        request_id: str,
+    ) -> dict[str, Any]:
+        return self._mutate(page_id, None, base_revision, request_id)
+
+    def _mutate(
+        self,
+        page_id: str,
+        markdown: str | None,
+        base_revision: str | None,
+        request_id: str,
+    ) -> dict[str, Any]:
+        self._validate_id(page_id)
+        if not request_id.strip() or len(request_id) > 200:
+            raise WikiError(
+                "invalid_request_id", "Provide a stable request ID up to 200 characters."
+            )
+        try:
+            data = markdown.encode() if markdown is not None else None
+            if data is not None and len(data) > MAX_BYTES:
+                raise WikiError("content_too_large", "Pages are limited to one megabyte.")
+            payload = json.dumps([page_id, markdown, base_revision], ensure_ascii=False).encode()
+            request_bytes = request_id.encode()
+        except UnicodeEncodeError:
+            # JSON can contain escaped unpaired surrogates. Reject them before
+            # reading publication state or reserving an idempotency receipt.
+            raise WikiError("invalid_payload", "Provide valid Unicode text.") from None
+        fingerprint = hashlib.sha256(payload).hexdigest()
+        request_path = f"requests/{hashlib.sha256(request_bytes).hexdigest()}.json"
+        page_path = f"pages/{page_id}.md"
+        # Retry unrelated concurrent writes. The page's base stays fixed on every retry.
+        for _ in range(8):
+            head = self._head()
+            recorded = self._blob(head, request_path)
+            if recorded:
+                receipt = json.loads(recorded)
+                if receipt["fingerprint"] != fingerprint:
+                    raise WikiError("request_id_reused", "This request ID has a different payload.")
+                return dict(receipt["result"])
+            old = self._blob(head, page_path)
+            revision_blob = self._blob(head, f"revisions/{page_id}")
+            current = revision_blob.decode() if old is not None and revision_blob else None
+            if current != base_revision:
+                raise WikiError(
+                    "revision_conflict",
+                    "The page changed. Read it again before saving.",
+                    current_revision=current,
+                )
+            if data is None and old is None:
+                raise WikiError("not_found", "The page no longer exists.")
+            new_revision = hashlib.sha256((head + fingerprint + request_id).encode()).hexdigest()
+            result: dict[str, Any] = (
+                self._page(page_id, data, new_revision) if data is not None else {"id": page_id}
+            )
+            result.update(
+                {
+                    "publication": "saved" if data is not None else "deleted",
+                    "index": {"graph": "pending", "vector": "pending"},
+                    "remote_sync": "not_configured",
+                    "request_id": request_id,
+                }
+            )
+            receipt_data = json.dumps(
+                {"fingerprint": fingerprint, "result": result}, ensure_ascii=False
+            ).encode()
+            with tempfile.TemporaryDirectory(prefix="wiki-index-") as tmp:
+                env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+                self._git("read-tree", head if head else "--empty", env=env)
+                if data is None:
+                    deletion = f"0 {'0' * 40}\t{page_path}\n0 {'0' * 40}\trevisions/{page_id}\n"
+                    self._git("update-index", "--index-info", data=deletion.encode(), env=env)
+                else:
+                    blob = self._git("hash-object", "-w", "--stdin", data=data).decode().strip()
+                    self._git(
+                        "update-index", "--add", "--cacheinfo", "100644", blob, page_path, env=env
+                    )
+                    revision_sha = (
+                        self._git("hash-object", "-w", "--stdin", data=new_revision.encode())
+                        .decode()
+                        .strip()
+                    )
+                    self._git(
+                        "update-index",
+                        "--add",
+                        "--cacheinfo",
+                        "100644",
+                        revision_sha,
+                        f"revisions/{page_id}",
+                        env=env,
+                    )
+                blob = self._git("hash-object", "-w", "--stdin", data=receipt_data).decode().strip()
+                self._git(
+                    "update-index", "--add", "--cacheinfo", "100644", blob, request_path, env=env
+                )
+                tree = self._git("write-tree", env=env).decode().strip()
+                parents = ["-p", head] if head else []
+                commit = self._git(
+                    "commit-tree",
+                    tree,
+                    *parents,
+                    data=f"wiki: {result['publication']} {page_id}\n".encode(),
+                )
+                new_head = commit.decode().strip()
+                # A single atomic ref transition publishes content and its retry receipt.
+                self._git("update-ref", REF, new_head, head or "0" * 40, check=False)
+                if self._head() == new_head:
+                    return result
+                # A later successful writer can already have advanced our commit.
+                recorded = self._blob(self._head(), request_path)
+                if recorded and json.loads(recorded)["fingerprint"] == fingerprint:
+                    return dict(json.loads(recorded)["result"])
+        raise WikiError("busy", "Concurrent writes prevented publication. Retry the same request.")
+
+    def history(self, page_id: str) -> list[dict[str, str]]:
+        self._validate_id(page_id)
+        head = self._head()
+        if not head:
+            return []
+        format_arg = "--format=%H%x09%aI%x09%at%x09%s"
+        rows = (
+            self._git("log", "-20", "--first-parent", format_arg, head, "--", f"pages/{page_id}.md")
+            .decode()
+            .splitlines()
+        )
+        # Imports retain original objects and their path map. Include source
+        # history even though managed page paths can differ from source paths.
+        for data in self._snapshot_blobs(head, "imports/").values():
+            provenance = json.loads(data)
+            path = provenance["paths"].get(page_id)
+            source = provenance["source_revision"]
+            if path and source:
+                rows.extend(
+                    self._git("log", "-20", "--follow", format_arg, source, "--", path)
+                    .decode()
+                    .splitlines()
+                )
+        seen: set[str] = set()
+        changes = []
+        for row in rows:
+            commit, date, timestamp, message = row.split("\t", 3)
+            if commit not in seen:
+                seen.add(commit)
+                changes.append(
+                    (int(timestamp), {"commit": commit, "date": date, "message": message})
+                )
+        return [
+            change for _, change in sorted(changes, key=lambda item: item[0], reverse=True)[:20]
+        ]
+

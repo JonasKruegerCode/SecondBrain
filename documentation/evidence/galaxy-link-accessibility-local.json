@@ -1,0 +1,1239 @@
+{
+  "date": "2026-10-24",
+  "parent_commit": "e088d4748721abb2c680668ef3c5dad26b704f3d",
+  "environment": {
+    "browser": "native Linux Chromium 153",
+    "playwright": "1.64.0",
+    "axe": "4.14.0",
+    "services": "real synthetic Git/Managed API/Vite; no request or storage mocks",
+    "source": "restored partial checkout and cached minimal dependencies"
+  },
+  "method": "Inject unmodified npm axe-core into the loaded document after hydration. Run wcag2a, wcag2aa, wcag21aa, best-practice tags. Fresh browser per width. Seven views in one tab per width. Read-only UI navigation; editor cancel without editing; no chat submission.",
+  "regression": {
+    "unmodified_parent": "both new semantic assertions fail: expected 2 named directional images, received 0",
+    "patched": "11 article-galaxy tests passed; both TS projects and production build passed",
+    "scope": "direction arrows gain role=img so their existing links to label has a supported role; map/list keyboard toggles retain two named fixture arrows"
+  },
+  "cleanup": "all four diagnostic/regression service supervisors exited 0; exact owned process groups absent; regression-owned pages deleted with graph baseline restored",
+  "visual_review": "selected link evidence screenshots personally inspected at 390 and 1440; no visual style change",
+  "limits": [
+    "Zero automatic violations does not establish WCAG conformance.",
+    "Contrast remains incomplete for gradient/SVG backgrounds, overlap/clipping and non-text glyphs; no blanket contrast pass.",
+    "No physical devices, Safari, screenreader or native font/softkeyboard acceptance.",
+    "No configured model, production or private content used."
+  ],
+  "observations": [
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "home",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 1,
+          "targets": [
+            [
+              ".prose > p:nth-child(2)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "article",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 9,
+          "targets": [
+            [
+              ".prose > p:nth-child(2)"
+            ],
+            [
+              "th:nth-child(3)"
+            ],
+            [
+              "th:nth-child(4)"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4)"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(4)"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(4)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements",
+            "Element's background color could not be determined because it's partially obscured by another element"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "editor",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "search-results",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 9,
+          "targets": [
+            [
+              "form > span"
+            ],
+            [
+              "a[href$=\"field-notebook\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"harvest-calendar\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"home\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"lantern-festival\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"navigation-history\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"night-sky-survey\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"salt-marsh\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"tide-clock\"] > .card-foot > span"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "galaxy",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 20,
+          "targets": [
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[data-label=\"Archive practice\"]"
+            ],
+            [
+              "text[data-label=\"4 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Atlas crossroads\"]"
+            ],
+            [
+              "text[data-label=\"2 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Shore observations\"]"
+            ],
+            [
+              ".galaxy-neighborhood:nth-child(3) > .galaxy-count[y=\"325.5882352941176\"][data-label=\"3 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Sky & navigation\"]"
+            ],
+            [
+              ".galaxy-neighborhood:nth-child(4) > .galaxy-count[y=\"325.5882352941176\"][data-label=\"3 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[y=\"119.11764705882354\"]"
+            ],
+            [
+              "text[x=\"551.2941176470588\"]"
+            ],
+            [
+              "text[x=\"594\"]"
+            ],
+            [
+              "text[y=\"419.11764705882354\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element content is too short to determine if it is actual text content",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "galaxy-selection",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "node_count": 18,
+          "targets": [
+            [
+              "li:nth-child(1) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(3) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(4) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(5) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(6) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(7) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(8) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(9) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(10) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(11) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(12) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(13) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(14) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(15) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(16) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(17) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(18) > div > span[aria-label=\"links to\"]"
+            ]
+          ],
+          "reasons": [
+            "aria-label attribute is not well supported on \"span\" elements with no valid role attribute."
+          ],
+          "representative_node": {
+            "target": [
+              "li:nth-child(1) > div > span[aria-label=\"links to\"]"
+            ],
+            "html": "<span aria-label=\"links to\">\u2192</span>",
+            "checks": [
+              {
+                "id": "aria-prohibited-attr",
+                "message": "aria-label attribute is not well supported on \"span\" elements with no valid role attribute.",
+                "data": {
+                  "role": null,
+                  "nodeName": "span",
+                  "messageKey": "noRoleSingular",
+                  "prohibited": [
+                    "aria-label"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "color-contrast",
+          "node_count": 15,
+          "targets": [
+            [
+              "button[data-action=\"overview\"]"
+            ],
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[y=\"87.52941176470588\"]"
+            ],
+            [
+              ".galaxy-count"
+            ],
+            [
+              "text[x=\"0\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ],
+            [
+              "li:nth-child(1) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > .galaxy-article[data-open=\"harvest-calendar\"][href$=\"harvest-calendar\"]"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined because it's partially obscured by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 390,
+      "view": "chat-empty",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "home",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 1,
+          "targets": [
+            [
+              "ul > li:nth-child(2)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "article",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 2,
+          "targets": [
+            [
+              "tr:nth-child(1) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "editor",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "search-results",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 9,
+          "targets": [
+            [
+              "form > span"
+            ],
+            [
+              "a[href$=\"field-notebook\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"harvest-calendar\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"home\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"lantern-festival\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"navigation-history\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"night-sky-survey\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"salt-marsh\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"tide-clock\"] > .card-foot > span"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "galaxy",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 22,
+          "targets": [
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[data-label=\"Archive practice\"]"
+            ],
+            [
+              "text[data-label=\"4 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Atlas crossroads\"]"
+            ],
+            [
+              "text[data-label=\"2 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Shore observations\"]"
+            ],
+            [
+              "text[x=\"916.6666666666666\"][data-label=\"3 pages \u00b7 curated\"][y=\"36.49484536082474\"]"
+            ],
+            [
+              "text[y=\"310.97938144329896\"]"
+            ],
+            [
+              "text[y=\"336.49484536082474\"]"
+            ],
+            [
+              "text[x=\"491.33333333333326\"]"
+            ],
+            [
+              "text[x=\"337.3333333333333\"]"
+            ],
+            [
+              "text[data-x=\"183.33333333333334\"]"
+            ],
+            [
+              "text[x=\"704\"]"
+            ],
+            [
+              "text[x=\"608.6666666666667\"]"
+            ],
+            [
+              "text[x=\"396\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element content is too short to determine if it is actual text content",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "galaxy-selection",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "aria-prohibited-attr",
+          "node_count": 18,
+          "targets": [
+            [
+              "li:nth-child(1) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(3) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(4) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(5) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(6) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(7) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(8) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(9) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(10) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(11) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(12) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(13) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(14) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(15) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(16) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(17) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(18) > div > span[aria-label=\"links to\"]"
+            ]
+          ],
+          "reasons": [
+            "aria-label attribute is not well supported on \"span\" elements with no valid role attribute."
+          ],
+          "representative_node": {
+            "target": [
+              "li:nth-child(1) > div > span[aria-label=\"links to\"]"
+            ],
+            "html": "<span aria-label=\"links to\">\u2192</span>",
+            "checks": [
+              {
+                "id": "aria-prohibited-attr",
+                "message": "aria-label attribute is not well supported on \"span\" elements with no valid role attribute.",
+                "data": {
+                  "role": null,
+                  "nodeName": "span",
+                  "messageKey": "noRoleSingular",
+                  "prohibited": [
+                    "aria-label"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "color-contrast",
+          "node_count": 15,
+          "targets": [
+            [
+              "button[data-action=\"overview\"]"
+            ],
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[y=\"101.28813559322035\"]"
+            ],
+            [
+              ".galaxy-count"
+            ],
+            [
+              "text[x=\"0\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ],
+            [
+              "li:nth-child(1) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > span[aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(3) > div > span[aria-label=\"links to\"]"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "parent",
+      "width": 1440,
+      "view": "chat-empty",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "home",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 1,
+          "targets": [
+            [
+              ".prose > p:nth-child(2)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "article",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 9,
+          "targets": [
+            [
+              ".prose > p:nth-child(2)"
+            ],
+            [
+              "th:nth-child(3)"
+            ],
+            [
+              "th:nth-child(4)"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4)"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(4)"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(4)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements",
+            "Element's background color could not be determined because it's partially obscured by another element"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "editor",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "search-results",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 9,
+          "targets": [
+            [
+              "form > span"
+            ],
+            [
+              "a[href$=\"field-notebook\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"harvest-calendar\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"home\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"lantern-festival\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"navigation-history\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"night-sky-survey\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"salt-marsh\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"tide-clock\"] > .card-foot > span"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "galaxy",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 20,
+          "targets": [
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[data-label=\"Archive practice\"]"
+            ],
+            [
+              "text[data-label=\"4 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Atlas crossroads\"]"
+            ],
+            [
+              "text[data-label=\"2 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Shore observations\"]"
+            ],
+            [
+              ".galaxy-neighborhood:nth-child(3) > .galaxy-count[y=\"325.5882352941176\"][data-label=\"3 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Sky & navigation\"]"
+            ],
+            [
+              ".galaxy-neighborhood:nth-child(4) > .galaxy-count[y=\"325.5882352941176\"][data-label=\"3 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[y=\"119.11764705882354\"]"
+            ],
+            [
+              "text[x=\"551.2941176470588\"]"
+            ],
+            [
+              "text[x=\"594\"]"
+            ],
+            [
+              "text[y=\"419.11764705882354\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element content is too short to determine if it is actual text content",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "galaxy-selection",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 15,
+          "targets": [
+            [
+              "button[data-action=\"overview\"]"
+            ],
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[y=\"87.52941176470588\"]"
+            ],
+            [
+              ".galaxy-count"
+            ],
+            [
+              "text[x=\"0\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ],
+            [
+              "li:nth-child(1) > div > span[role=\"img\"][aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > span[role=\"img\"][aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > .galaxy-article[data-open=\"harvest-calendar\"][href$=\"harvest-calendar\"]"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined because it's partially obscured by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 390,
+      "view": "chat-empty",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "home",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 1,
+          "targets": [
+            [
+              "ul > li:nth-child(2)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "article",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 2,
+          "targets": [
+            [
+              "tr:nth-child(1) > td:nth-child(3)"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4)"
+            ]
+          ],
+          "reasons": [
+            "Element's background color could not be determined because it partially overlaps other elements"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "editor",
+      "violations": [],
+      "incomplete": []
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "search-results",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 9,
+          "targets": [
+            [
+              "form > span"
+            ],
+            [
+              "a[href$=\"field-notebook\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"harvest-calendar\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"home\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"lantern-festival\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"navigation-history\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"night-sky-survey\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"salt-marsh\"] > .card-foot > span"
+            ],
+            [
+              "a[href$=\"tide-clock\"] > .card-foot > span"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "galaxy",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 22,
+          "targets": [
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[data-label=\"Archive practice\"]"
+            ],
+            [
+              "text[data-label=\"4 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Atlas crossroads\"]"
+            ],
+            [
+              "text[data-label=\"2 pages \u00b7 curated\"]"
+            ],
+            [
+              "text[data-label=\"Shore observations\"]"
+            ],
+            [
+              "text[x=\"916.6666666666666\"][data-label=\"3 pages \u00b7 curated\"][y=\"36.49484536082474\"]"
+            ],
+            [
+              "text[y=\"310.97938144329896\"]"
+            ],
+            [
+              "text[y=\"336.49484536082474\"]"
+            ],
+            [
+              "text[x=\"491.33333333333326\"]"
+            ],
+            [
+              "text[x=\"337.3333333333333\"]"
+            ],
+            [
+              "text[data-x=\"183.33333333333334\"]"
+            ],
+            [
+              "text[x=\"704\"]"
+            ],
+            [
+              "text[x=\"608.6666666666667\"]"
+            ],
+            [
+              "text[x=\"396\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element content is too short to determine if it is actual text content",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "galaxy-selection",
+      "violations": [],
+      "incomplete": [
+        {
+          "id": "color-contrast",
+          "node_count": 15,
+          "targets": [
+            [
+              "button[data-action=\"overview\"]"
+            ],
+            [
+              ".galaxy-breadcrumb > span"
+            ],
+            [
+              "button[data-action=\"zoom-out\"]"
+            ],
+            [
+              "button[data-action=\"reset\"]"
+            ],
+            [
+              "button[data-action=\"list\"]"
+            ],
+            [
+              "text[y=\"101.28813559322035\"]"
+            ],
+            [
+              ".galaxy-count"
+            ],
+            [
+              "text[x=\"0\"]"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(1)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(2)"
+            ],
+            [
+              ".galaxy-mapnote > span:nth-child(3)"
+            ],
+            [
+              "summary"
+            ],
+            [
+              "li:nth-child(1) > div > span[role=\"img\"][aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(2) > div > span[role=\"img\"][aria-label=\"links to\"]"
+            ],
+            [
+              "li:nth-child(3) > div > span[role=\"img\"][aria-label=\"links to\"]"
+            ]
+          ],
+          "reasons": [
+            "Element content contains only non-text characters",
+            "Element's background color could not be determined because element contains an image node",
+            "Element's background color could not be determined because it is overlapped by another element",
+            "Element's background color could not be determined due to a background gradient"
+          ]
+        }
+      ]
+    },
+    {
+      "application": "patched",
+      "width": 1440,
+      "view": "chat-empty",
+      "violations": [],
+      "incomplete": []
+    }
+  ]
+}
