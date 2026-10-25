@@ -210,7 +210,7 @@ def _read_archive(archive: Path, destination: Path) -> tuple[dict[str, Any], Pat
             pass
     try:
         manifest = json.loads((extracted / "manifest.json").read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeError, OSError) as exc:
+    except (ValueError, RecursionError, OSError) as exc:
         raise _error("backup_invalid", "The archive manifest is invalid.") from exc
     if (
         not isinstance(manifest, dict)
@@ -296,9 +296,10 @@ def restore_backup(archive: Path | str, vault: Path | str) -> dict[str, Any]:
                 shutil.copyfile(item, prepared / name)
         restored = WikiStore(prepared)
         snapshot = restored.snapshot()
-        if snapshot["revision"] != manifest["revision"] or len(snapshot["pages"]) != manifest[
-            "page_count"
-        ]:
+        if (
+            snapshot["revision"] != manifest["revision"]
+            or len(snapshot["pages"]) != manifest["page_count"]
+        ):
             raise _error("backup_invalid", "The restored snapshot does not match the manifest.")
         for name in SQLITE_FILES:
             item = prepared / name
