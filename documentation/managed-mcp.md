@@ -33,6 +33,12 @@ with HTTP 307 to `/mcp`, preserving the method and body; configure clients with
 the canonical slash-free URL. Stdio startup remains
 `python -m second_brain.wiki.mcp` with the same explicit vault variable.
 
+HTTP POST bodies are capped at 1,100,000 actual bytes, including JSON overhead,
+independently of Content-Length. Oversized requests return HTTP 413; malformed
+JSON, invalid Unicode encoding and decoder-depth failures return HTTP 400 with
+a generic JSON-RPC parse error. Host, Origin and Bearer checks run before body
+reads. These transport failures do not call wiki tools or publish content.
+
 `SECOND_BRAIN_WIKI_API_KEY` optionally configures the server-side Bearer secret,
 the same variable used by the managed REST factory. Supply it through the
 process's secret environment, never frontend code, browser storage, URLs, or

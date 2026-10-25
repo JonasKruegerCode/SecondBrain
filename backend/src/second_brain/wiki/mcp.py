@@ -254,7 +254,59 @@ class _HttpBoundary:
                 }
             await send(message)
 
-        await self.app(scope, receive, private_send)
+        downstream_receive = receive
+        if scope["method"] == "POST":
+            # The SDK reads the whole body and exposes decoder failures as 500s.
+            # Bound actual streamed bytes (not Content-Length) before SDK parsing.
+            body = bytearray()
+            while True:
+                incoming = await receive()
+                if incoming["type"] == "http.disconnect":
+                    return
+                chunk = incoming.get("body", b"")
+                if len(body) + len(chunk) > 1_100_000:
+                    await JSONResponse(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": None,
+                            "error": {
+                                "code": -32600,
+                                "message": "Request body is too large.",
+                            },
+                        },
+                        status_code=413,
+                    )(scope, receive, private_send)
+                    return
+                body.extend(chunk)
+                if not incoming.get("more_body", False):
+                    break
+            try:
+                json.loads(body)
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                await JSONResponse(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {
+                            "code": -32700,
+                            "message": "Provide a valid JSON request.",
+                        },
+                    },
+                    status_code=400,
+                )(scope, receive, private_send)
+                return
+            delivered = False
+
+            async def replay_body() -> Message:
+                nonlocal delivered
+                if not delivered:
+                    delivered = True
+                    return {"type": "http.request", "body": bytes(body), "more_body": False}
+                return await receive()
+
+            downstream_receive = replay_body
+
+        await self.app(scope, downstream_receive, private_send)
 
 
 def create_http_app(
@@ -272,6 +324,7 @@ def create_http_app(
 
     Without a key, run only on loopback. Public hosts/origins need explicit allowlists
     and a configured key behind TLS; forwarded headers are not trusted here.
+    POST bodies are limited to 1,100,000 bytes, matching the managed REST boundary.
     """
     if not allowed_hosts:
         raise ValueError("At least one explicit allowed Host is required.")
