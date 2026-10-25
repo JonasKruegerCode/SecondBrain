@@ -20,18 +20,21 @@ Bearer deployment, not an OAuth authorization server.
 
 Use an isolated managed vault, never a vault simultaneously written by the
 legacy system. No vault is selected and no server is created at import time.
-With the backend environment installed, run from `backend/`:
+With the locked backend environment installed using `poetry sync --no-interaction`,
+run from `backend/`. `poetry run` selects that environment without requiring shell activation:
 
 ```sh
 SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/isolated-vault \
-  uvicorn second_brain.wiki.mcp:http_app_factory --factory --host 127.0.0.1 --port 3001
+  poetry run python -m uvicorn second_brain.wiki.mcp:http_app_factory \
+    --factory --host 127.0.0.1 --port 3001
 ```
 
 Connect a Streamable HTTP MCP client to `http://127.0.0.1:3001/mcp`. Requests must
 use the protocol's normal JSON content type and Accept headers. `/mcp/` redirects
 with HTTP 307 to `/mcp`, preserving the method and body; configure clients with
 the canonical slash-free URL. Stdio startup remains
-`python -m second_brain.wiki.mcp` with the same explicit vault variable.
+`poetry run python -m second_brain.wiki.mcp` from `backend/` with the same
+explicit vault variable.
 
 HTTP POST bodies are capped at 1,100,000 actual bytes, including JSON overhead,
 independently of Content-Length. Oversized requests return HTTP 413; malformed
