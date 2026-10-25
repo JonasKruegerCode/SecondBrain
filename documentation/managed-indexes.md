@@ -72,9 +72,11 @@ receipt. Independent graph and search receipts let one backend recover without
 claiming the other is ready. The configuration fingerprint is shared across enabled backends:
 changing graph or vector configuration invalidates both receipts until rebuilt.
 
-The current snapshot derivation identity is `managed-snapshots-v35`, defined in
-`backend/src/second_brain/wiki/index_config.py`. It projects titles, excerpts and
-explicit links with bounded Markdown code, comment, container, HTML and link
+The snapshot derivation identity is defined in the `schema` field of
+[`configured_indexes`](../backend/src/second_brain/wiki/index_config.py).
+That source is authoritative for the checked-out revision. Snapshot derivation
+projects titles, excerpts and explicit links with bounded Markdown code,
+comment, container, HTML and link
 metadata rules. This is not complete renderer/parser parity. An older derivation
 identity invalidates ready receipts even if the Markdown/Git revision is unchanged.
 The startup delivery worker, or the explicit one-shot command below, builds fresh
