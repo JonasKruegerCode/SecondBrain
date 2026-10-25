@@ -99,7 +99,7 @@ def create_app(
                 return JSONResponse({"error": "content_too_large"}, status_code=413)
         try:
             body = json.loads(chunks)
-        except (ValueError, UnicodeDecodeError) as exc:
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
             raise WikiError("invalid_payload", "Provide a JSON request.") from exc
         if not isinstance(body, dict):
             raise WikiError("invalid_payload", "Provide a JSON object.")
@@ -194,7 +194,7 @@ def create_app(
                 return JSONResponse({"error": "content_too_large"}, status_code=413)
         try:
             body = json.loads(chunks)
-        except (ValueError, UnicodeDecodeError) as exc:
+        except (ValueError, UnicodeDecodeError, RecursionError) as exc:
             raise WikiError("invalid_payload", "Provide a JSON request.") from exc
         if not isinstance(body, dict):
             raise WikiError("invalid_payload", "Provide a JSON object.")
