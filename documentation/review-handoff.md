@@ -8,10 +8,9 @@ production operation and physical-device acceptance remain open. It is not yet
 release- or merge-ready.
 
 Start with the [fictional demo](demo-start.md), then use the contracts and
-verification map below. The [previous handoff at 8203385](https://github.com/JonasKruegerCode/SecondBrain/blob/8203385cbb4ae5b65110d5e247299ae61f798de7/documentation/review-handoff.md)
-preserves the earlier inspected matrices, original CI records and links to older
-counterexamples. They are dated evidence, not claims about a later revision.
-This document consolidates that history instead of accumulating run logs.
+verification map below. Historical implementation and CI details are retained in the pinned preceding
+handoff linked under Current verification. This entry point keeps the current
+contracts, reproducible start paths and explicit release limits.
 
 ## Architecture and data flow
 
@@ -294,263 +293,50 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Full-document rawtext diagnostic, 24 October 2026
+## Current verification, inspected 26 October 2026
 
-The opt-in [rawtext diagnostic](rawtext-diagnostic.md) now captures the actual
-application's emitted Marked HTML, native DOM before/after SCRIPT removal,
-sanitized article, graph/excerpt/backlink/diagnostic data and synthetic lexical
-queries. No renderer copy or backend projection change is introduced. It is
-not selected by normal acceptance and requires WIKI_RAWTEXT_ORACLE=1.
-Local Chromium completes72 observations (36 inputs at390/1440), including48
-target-set differences. This is diagnostic completion, not parity acceptance.
-Independent review checked the capture boundary, owned-only search output and
-best-effort cleanup of all fixture pages. Current implementation limits and
-reproduction commands are in the linked document.
+Application head [fbdabcb0](https://github.com/JonasKruegerCode/SecondBrain/commit/fbdabcb0512abe272907129c5054605489b7f3a8)
+has tree `d0560686bc47d844959ff640dee892d802b99339`.
+All six workflows and nine jobs pass on attempt 1. The actual CI checkout
+`d2b45690c69148ae8418e58c82da240cfad17757` has that exact tree, checked through GitAPI.
+A later documentation-only edit does not change this tested application.
 
-The suite-expectation correction on9ed78731 is now independently confirmed in
-all six original CI domains: Backend1476/12 plus Ruff/Mypy, Frontend15 plus
-TS/build, Index7, SSH5, Browser955 successful executions/14 explained skips,
-and both Stack jobs. Actual merge9bf4ea35 is GitAPI tree-equal to9ed78731.
-Runs: Backend40065393549, Frontend40065393581, Index40065393540, SSH40065393550,
-Browser40065393535, Stack40065393553. All seven browser cleanups pass, as do
-Stack109/107 labels plus6 browser gates and image49/28 cleanups. Both broad
-engines again contain48 total SCRIPT observations. Artifacts match metadata
-size/digest, safe paths and CRC. These originals validate9ed78731, not the later
-test-only diagnostic; release gates and backend rawtext parity remain open.
-
-## Suite selection correction, 24 October 2026
-
-The SCRIPT source on cfba53b5 passed Frontend, Index, SSH, Browser and Stack
-workflows. Backend Ruff/Mypy passed, but pytest reported1470 passed,6 failures
-and12 integration skips: the mocked launcher contract still expected the old
-browser suite lists. Both engine expectations now include script-exclusion
-before chat-concurrency. All six failures reproduced before this test-only
-change;49 non-provider runner tests pass afterward. Ten provider-runner tests
-could not import the minimal local environment's missing pydantic-settings;
-no full local backend pass is claimed. Application and launcher code are unchanged.
-
-The cfba53b5 Browser original40061830359 records955 successful executions and14
-explained skips, including48 SCRIPT observations (12 forms at two widths in
-both Chromium/WebKit) and seven successful service cleanups. Stack40061830384
-records109 gate entries/107 distinct labels plus6 browser gates, and49/28 image
-update entries, with both cleanups. Other runs: Backend40061830257,
-Frontend40061830434, Index40061830256, SSH40061830366. Actual merge6efb4883
-has the same tree b7262c6c as cfba53b5. These are predecessor originals; fresh
-CI for this suite-expectation correction remains to inspect. Backend SCRIPT
-link/excerpt parity, other rawtext boundaries and external release gates remain open.
-
-## SCRIPT article exclusion, 24 October 2026
-
-Actual parsed SCRIPT nodes are removed before the article sanitizer rebuilds
-content. This also prevents an unsupported ancestor's text-only fallback from
-showing script source or generated anchor serialization. Markdown source is
-not rewritten or reparsed; escaped tags, code examples and ordinary KBD links
-retain their separate behavior. This is a presentation correction, not an
-observed executable-script vulnerability or a complete rawtext parity fix.
-
-The real-service `script-exclusion.spec.ts` covers twelve synthetic script
-forms at 390/1440, including quoted attributes, comments, transformed closing
-tags, blank boundaries and unsupported ancestors. It checks hidden content,
-preserved source/revision, ordinary canonical links, a nonexecuted marker and
-literal escaped/code examples. Backend SCRIPT-body link/excerpt projection
-still needs a coherent token-aware correction and same-HEAD index receipt
-invalidation tests. STYLE/TEXTAREA remain distinct known boundaries. The
-backend and `managed-snapshots-v35` identity are unchanged by this frontend step.
-
-Local verification passes both TypeScript projects, the production build and
-six selected real-service Linux Chromium tests. These include24 SCRIPT-form
-observations, literal-example controls, the existing56 corpus observations
-and Save/retry/graph/backlink mutations at two widths. The two SCRIPT screenshots
-were personally inspected. Services exited normally and their owned process
-groups were absent afterward. Cached minimal dependencies and separate native
-Chromium starts are not a clean locked CI or WebKit result. Both broad engine
-suite lists now include the new regression; current-head CI is still pending.
-Independent review prompted explicit wrapper-prose and complete code-example
-assertions. No real model, production migration or physical device was tested.
-
-## Preceding DETAILS correction, 24 October 2026
-
-Blank-separated Markdown inside DETAILS already produces canonical links and
-graph targets. The unsupported wrapper's text fallback flattened those links.
-XHTML DETAILS/SUMMARY now use the existing recursive sanitizer and discard
-their wrapper tags/attributes. This is expanded safe content, not interactive
-disclosure support. Raw same-line HTML content is not reparsed as Markdown.
-
-The corpus now has28 cases: the added prose fixture preserves its Notebook
-link and summary text; the raw fixture preserves literal brackets/summary text
-and has no Notebook edge/backlink. Both retain an independent Control link.
-Hostile wrapper attributes are discarded, and children still pass normal URL
-and element checks. Backend, index identity, source Markdown and permissions
-are unchanged; no index rebuild is required.
-
-Native Chromium at390/1440 passes the four selected corpus/wrapper tests
-(34.3s); final strengthened corpus assertions are verified separately. Both
-TS projects and production build pass. Current narrow/wide DETAILS originals
-were personally viewed; independent review found no blocker and prompted the
-literal-content assertions. Local cached partial-source checks are not new
-WebKit, clean locked CI or device acceptance. The parent469c3364 six-domain CI
-originals were subsequently inspected: Backend1476/12, Frontend15, Index7,
-SSH5, Browser951 successful executions/14 explained selections and both Stack
-jobs. Chromium and WebKit each contain56 corpus observations (28 forms at two
-widths), all112 rows checked. Runs: Backend40053116458, Frontend40053116358,
-Index40053116455, SSH40053116389, Browser40053116366, Stack40053116412.
-That evidence belongs to469c3364, not the later SCRIPT exclusion above.
-Inline SCRIPT remains a concrete unresolved graph/excerpt raw-text
-boundary: do not enable/reparse its generated markup or infer script execution
-from inert visible serialization. A token-aware projection fix would require
-its own backend/index-identity and regression review.
-
-## Preceding SUP/SUB/U follow-up, 24 October 2026
-
-A further real-service diagnostic has 28 explicit synthetic forms at 390/1440.
-On the unchanged application, SUP, SUB and U wrappers flatten generated wiki
-anchors into plain text while graph/backlinks retain their targets. These three
-inert HTML wrappers now use the same namespace-checked recursive child
-sanitizer as SPAN/KBD/MARK/SMALL. Tags and all source attributes are discarded;
-URL/element checks still apply to children. Other unsupported elements retain
-their existing text fallback. Backend, index identity and source Markdown do
-not change; no index rebuild is required.
-
-The versioned corpus now has 26 cases, adding SUP/SUB/U with malicious
-handler/style attributes. Native Chromium passes the four selected real-service
-tests: both 26-case width probes, Save/retry/graph/backlink mutations and both
-existing wrapper safety regressions. All 52 structured case observations agree;
-32.0s browser time, successful service cleanup. Both TypeScript projects and
-production build pass. Local cached dependencies/partial source and Linux
-Chromium are distinct from clean locked CI, native WebKit or physical devices.
-An independent read-only review found no blocker; actual execution remains the
-root agent's separate evidence.
-
-The 28-form diagnostic leaves DETAILS and inline SCRIPT as explicit unresolved
-rendered-link/graph differences. SCRIPT can display inert generated anchor
-markup as text; this is not evidence of script execution. The current change
-does not broaden either element's renderer policy. These concrete examples
-do not reconstruct or reduce the historical 336-case/63-mismatch aggregate.
-The six-domain originals for this SUP/SUB/U source have now been inspected:
-Backend [40048626162](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626162)
-1476/12 with Ruff/Mypy; Frontend [40048626132](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626132)
-15 native passes, TS/builds, push:false; Index [40048626084](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626084)
-7; SSH [40048626073](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626073) 5;
-Browser [40048626056](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626056)
-951 successful executions/14 explained skips, seven original records and cleanup;
-Stack [40048626128](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40048626128)
-109 gate records/107 labels plus six browser gates, separate49/28 image update,
-both cleanups. Actual checkout merge `ad2d4a120ada3ef4592e4e11b7a9e5ffc2c8676a`
-is independently tree-equal to60da3385. Both broad engines contain52 corpus
-observations (26 cases at two widths); all104 original rows independently
-agree with expected labels/targets, graph, backlinks, diagnostics and revisions.
-Browser totals include114 repeated WebKit diagnostics; eight skips select
-complementary phases, six exclude Blink font/CDP touch checks. Reading-WebKit
-blocks workers, separate eight worker tests allow them. Image browser continuity
-is forward-only; rollback/resume cover content/history/retry. Artifact size,
-digest, safe paths and full CRC pass; needed text originals preserved.
-These originals validate60da3385, not the later DETAILS correction above.
-
-## Preceding inspected acceptance, 24 October 2026
-
-Application/test source is [d7787bfd](https://github.com/JonasKruegerCode/SecondBrain/commit/d7787bfdd206c102d713f368e6e389bc4d9d99cd),
-tree `830f8f430b00ddeb76a23c6feb1bf6cf0ad93561`. Actual CI checkout merge
-`05837abfd47d271f797d9d9e1f506c74c9c2da1a` has that same tree, independently
-checked through GitAPI. All six developmental domains now have inspected
-original logs/results for this application. A later documentation-only commit
-does not change that application or its tests.
-
-| Domain | Inspected original run | Result and boundary |
+| Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40039135574](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135574) | Ruff/Mypy, 1,476 passed, 12 opt-in integration skips; container build with push:false |
-| Frontend | [40039135520](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135520) | 15 native tests, no failures/skips; both TS projects, production and container builds; push:false |
-| Indexes | [40039135485](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135485) | Seven disposable Neo4j/Qdrant integrations with synthetic vectors |
-| SSH | [40039135462](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135462) | Five isolated authenticated Git/restart/refusal-preservation integrations |
-| Browser | [40039135481](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135481) | 951 passed executions, 14 explained phase/engine skips, no failure/flaky footers; all seven result records and owned cleanup pass |
-| Stack | [40039135469](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40039135469) | Both acceptance and image-update originals inspected; synthetic TLS/auth, real import/restart/recovery and retained-image compatibility |
+| Backend | [40239085187](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085187) | Ruff, Mypy over 132 source files; 1,494 passed, 12 opt-in integration skips, 28 subtests |
+| Frontend | [40239085196](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085196) | TypeScript, 15 native tests in four groups, production and container builds |
+| Indexes | [40239085245](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085245) | Seven disposable integration cases |
+| SSH | [40239085185](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085185) | Five authenticated synthetic Git cases |
+| Browser | [40239085184](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085184) | Seven acceptance phases succeed in original runner logs |
+| Stack | [40239085189](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085189) | Managed stack and retained-image update jobs succeed |
 
-The Backend skips are the separately successful seven index and five SSH cases.
-Browser totals are 114 repeated WebKit transaction/preference diagnostics,
-469 Chromium, first-start2, import3, synthetic320 graph2, reading-WebKit353 and
-worker-WebKit8. These count executions, not unique requirements. Eight skips
-select complementary first-start/import phases; six exclude five Blink-only
-minimum-font cases and one Chromium CDP touch case from WebKit. Reading-WebKit
-blocks workers; the separate worker profile allows them. No external model was
-called. Original results identify the exact checkout merge and confirm cleanup.
+All job/step records, seven original test/acceptance logs and both image-build
+logs were inspected. The 12 backend skips are the separately successful seven
+index and five SSH cases. Both builds use `push: false` and cache-only outputs;
+these runs publish no application image.
 
-Both broad profiles include the new two-viewport wrapper corpus and mutation
-probes without a selection filter. Their 92 original JSON rows (23 examples at
-390/1440 in each engine) were independently checked for expected labels/targets,
-visible hydrated hrefs, graph edges, every target backlink, missing/ambiguous
-diagnostics and source/read revisions. Four mutation records confirm identical
-retry, two history entries and removal of the old backlink. Current WebKit
-MARK390 and SMALL1440 originals were personally viewed. Earlier current local
-Chromium views are separate evidence. Dot reporting has no per-title assertion
-JSON; corpus observations are explicit structured log records.
+The latest application correction preserves structured `backup_invalid` errors
+when archive manifests exceed JSON nesting or integer-conversion limits.
+Two regressions exercise both the function and actual CLI, unchanged source,
+history and archive bytes, no invalid destination publication or leftover staging,
+then successful restore and receipt replay from the intact archive.
+The focused 46 backup/restore tests, Ruff/format and focused Mypy also pass locally.
+This is separate from off-host recovery and production operation.
 
-Stack acceptance has 109 gate records/107 distinct labels plus six HTTPS/auth
-browser gates, including readonly foreign-owner Git import, dirty/shallow and
-empty-source boundaries, actual backend-address churn, restart/retry and
-independent-volume recovery. Original source clones remain byte-equal after
-cleanup. These are gates, not native suite test counts.
+New browser-result JSON, screenshots and cleanup counts have **not** been
+individually reinspected for this head. The last fully inspected browser artifact
+is `261c0dfe`: 963 successful executions and 14 explained skips. Those totals
+are not projected onto this application. Tests count executions, not unique
+requirements. Linux-WebKit is not Safari/iOS, synthetic TLS/providers are not
+production services, and emulation does not establish device or answer quality.
 
-The separate image-update original has 49 gate records/28 distinct labels and
-retains distinct old/new image IDs. Baseline → forward → rollback → resume uses
-old/new/old/new images on one owned volume, with history counts 1 → 2 → 3 → 3.
-Historical REST/MCP retries add no extra publication. Its forward browser trace
-observes changed worker bytes, retains the native draft when a clean tab
-activates the update, then saves once and reloads. Preference migration, empty
-private CacheStorage and zero page errors/model requests are recorded.
-Browser evidence is forward-only; image rollback/resume cover content, history
-and retry compatibility. Both jobs report successful owned cleanup.
-
-| Verified artifact | Bytes / entries | SHA256 |
-| --- | --- | --- |
-| Browser12539776570 |234,595,788 /1012 | `eab86cdcbb960cedb52e4dca8a0186e96ece0bb5671a5e59012ee862cdea5aed` |
-| Stack12538601976 |711,791 /6 | `6d1c6f7fade92681a46c22b5f2dae67f74bcceec533424bfdc39f2dc279c0983` |
-| Image-update12538064676 |16,764 /3 | `a1a0a620a695f821a0a5c6ea5830c8081c3264e1df9a64961103c9898d25a378` |
-
-All sizes/digests agree with GitHub metadata/upload originals; unique safe paths
-and full CRCs were checked. GitHub originals expire 30 October2026. Needed text
-originals were preserved separately; links/hashes alone do not guarantee later
-availability. No container image was published.
-
-The [preceding handoff at d7787bfd](https://github.com/JonasKruegerCode/SecondBrain/blob/d7787bfdd206c102d713f368e6e389bc4d9d99cd/documentation/review-handoff.md)
-preserves the prior c42fc679 947/14 matrix, dated operator tours and older
-counterexamples. Later passes do not diagnose earlier intermittent loading,
-preference, worker, new-tab or cleanup observations. Run relevant regressions
-after changes; do not rerun full CI solely to refresh a date.
-
-### Preceding MARK/SMALL wrapper correction
-
-A real-service probe found that Markdown wikilinks inside inline `<mark>` and
-`<small>` wrappers existed in graph/backlinks but were flattened into plain
-article text. These two inert wrappers now use the existing HTML-namespace
-checked recursive child sanitizer, alongside SPAN/KBD. Wrapper tags and all
-source attributes are discarded; descendants still pass normal URL/element
-filtering. Other unsupported elements retain their text-only fallback.
-Markdown, API contracts, graph derivation identity and stored content do not
-change. No index rebuild is needed for this renderer-only correction.
-
-The versioned [23-case corpus](../frontend/e2e/wiki-link-cases.ts) and
-[real-service probe](../frontend/e2e/inline-wrapper.spec.ts) retain explicit
-expected labels/targets, a nonempty control, visible hydrated anchors, actual
-graph edges, backlinks to every fixture target, missing/ambiguous diagnostics
-and byte/revision readback. Both viewport probes also save a changed link, replay
-the exact request, check two history entries and changed backlinks, reload and
-navigate through the new link. Exact synthetic inputs and observed projections
-are printed as `[wiki-link-parity]` rows in the allowlisted browser log; this is
-reproducible current evidence, not the lost historical 336-case selection.
-
-Local native Chromium at 390/1440 passes the focused eight-test selection,
-including all 23 cases per width and both mutation paths. The final strengthened
-24-test selection covers adjacent destination/reference/URL/fence/title paths.
-Both TypeScript projects and the production frontend build pass. Current
-narrow/broad MARK originals were personally viewed. These use cached minimal
-local dependencies and partial source; the clean locked broad Chromium/WebKit
-originals above now include both probes and all their structured observations.
-
-The unchanged-parent diagnostic records MARK/SMALL graph links with missing
-article anchors at both widths. Earlier probe attempts also exposed a harness
-hydration race, a mistaken comment-block oracle (same-line Markdown remains
-unparsed in both projections), and an ES2020 `replaceAll` type error. Those were
-corrected in the probe; they are not additional product defects. The historical
-63-mismatch aggregate is not reduced or revalidated by this new bounded corpus.
+The [preceding handoff at fbdabcb0](https://github.com/JonasKruegerCode/SecondBrain/blob/fbdabcb0512abe272907129c5054605489b7f3a8/documentation/review-handoff.md)
+preserves dated wrapper/SCRIPT diagnostics, historical CI matrices, artifact
+hashes and earlier counterexamples. They explain earlier decisions; they are not
+current test counters or active release instructions. The bounded SCRIPT and
+rawtext limits remain documented in the architecture section above and the
+[diagnostic guide](rawtext-diagnostic.md). Do not infer complete renderer/graph
+parity from an earlier aggregate.
 
 ## Known release gates
 
