@@ -47,6 +47,22 @@ def _wait_for_http(
 def _stop_process_group(
     process: subprocess.Popen[bytes], process_state: Path | None = None
 ) -> None:
+    # Cleanup has bounded waits and must finish escalation/reaping even when
+    # Ctrl+C is pressed again. Restore handlers on success and failure; do not
+    # mask signals that could be inherited by a newly started service.
+    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        for signum in previous:
+            signal.signal(signum, signal.SIG_IGN)
+        _stop_owned_process_group(process, process_state)
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
+def _stop_owned_process_group(
+    process: subprocess.Popen[bytes], process_state: Path | None = None
+) -> None:
     groups: list[int] = []
     failed = False
     if process_state is not None:
