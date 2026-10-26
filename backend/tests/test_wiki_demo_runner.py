@@ -853,3 +853,56 @@ def test_acceptance_preserves_failed_browser_evidence_across_later_runs(
     assert failed_output == failed_result.parent / expected_outputs[0]
     assert outputs[1:] == [passed_result.parent / name for name in expected_outputs]
     assert all(command.count("--output") == 1 for command in commands)
+
+
+@pytest.mark.parametrize("boundary", ["readiness", "browser"])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_acceptance_interrupt_retains_failed_evidence(
+    boundary: str, cleanup_fails: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Injected KeyboardInterrupt, not a physical keyboard or browser probe."""
+    main = cast(Callable[..., int], acceptance_runner()["main"])
+    namespace = main.__globals__
+    monkeypatch.setitem(namespace, "__file__", str(tmp_path / "scripts" / "run.py"))
+    supervisor = MagicMock(pid=4321)
+
+    def start(command: list[str], **kwargs: Any) -> Any:
+        vault = Path(command[command.index("--vault") + 1])
+        vault.mkdir()
+        (vault / "owned-fixture").write_text("synthetic retained input")
+        return supervisor
+
+    def run(command: list[str], **kwargs: Any) -> Any:
+        if command[0] != "git":
+            raise KeyboardInterrupt
+        return MagicMock(returncode=0, stdout="synthetic-head")
+
+    processes = MagicMock()
+    processes.Popen.side_effect = start
+    processes.run.side_effect = run
+    processes.TimeoutExpired = subprocess.TimeoutExpired
+    cleanup = MagicMock(
+        side_effect=RuntimeError("synthetic cleanup failure") if cleanup_fails else None,
+    )
+    monkeypatch.setitem(namespace, "subprocess", processes)
+    monkeypatch.setitem(namespace, "_wait_for_http", MagicMock(
+        side_effect=KeyboardInterrupt if boundary == "readiness" else None,
+    ))
+    monkeypatch.setitem(namespace, "_stop_process_group", cleanup)
+
+    assert main([]) == 1
+    cleanup.assert_called_once()
+    files = list((tmp_path / ".demo" / "acceptance").glob("*/result.json"))
+    assert len(files) == 1
+    result = json.loads(files[0].read_text())
+    assert result["status"] == "failed"
+    assert result["failure"].startswith("acceptance interrupted")
+    assert ("synthetic cleanup failure" in result["failure"]) is cleanup_fails
+    assert result["service_cleanup_ok"] is not cleanup_fails
+    assert result["vault_retained"] is True
+    assert result["browser_exit_code"] is None
+    assert result["browser_phases"] == []
+    assert (files[0].parent / "vault" / "owned-fixture").read_text() == (
+        "synthetic retained input"
+    )

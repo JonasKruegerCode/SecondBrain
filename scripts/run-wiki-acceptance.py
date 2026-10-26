@@ -418,6 +418,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _stop_process_group(supervisor, process_state)
                 supervisor = None
         status = "passed"
+    except KeyboardInterrupt:
+        # Preserve failed evidence after an ordinary Ctrl+C, including any
+        # subsequent cleanup failure. Never report a cancelled run as passed.
+        failure = "acceptance interrupted"
     except (OSError, RuntimeError) as exc:
         failure = str(exc)
     finally:
