@@ -80,8 +80,19 @@ SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/restored-vault \
 Index receipts that do not match the restored content are reported as pending and
 rebuilt. Remote delivery configuration and credentials come from the deployment
 environment; they are deliberately not placed in the archive. Review remote state
-before re-enabling a target after disaster recovery. Do not use restore as an
-implicit merge or rollback over a live vault.
+before re-enabling a target after disaster recovery. The archive preserves the
+local delivery ledger but deliberately excludes the transport's
+`.wiki-remote.git` prepared objects and `.wiki-remote.sqlite3` push receipts.
+Consequently, a push that reached the remote but lost its acknowledgement before
+backup cannot be automatically confirmed from this archive alone. A delivery
+pass blocks with a remote conflict rather than guessing that publication
+succeeded or overwriting the remote. If a newer local edit was captured, one pass
+may first clear the older pending payload before the next pass reports that
+conflict. Inspect both content revisions and the observed remote head, then use
+the explicit [delivery reconciliation procedure](managed-delivery.md). A remote
+descendant remains untouched while the target is blocked. Local page-mutation
+receipts described below are preserved independently of transport receipts.
+Do not use restore as an implicit merge or rollback over a live vault.
 
 ## Verify an uncertain save after recovery
 
