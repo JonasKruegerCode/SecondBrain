@@ -6,7 +6,7 @@ test.skip(
   "Run against a generated scale vault with PLAYWRIGHT_SCALE=1.",
 );
 
-test("broad lexical search explains its bounded result set", async ({ page }) => {
+test("broad lexical search explains its bounded result set", async ({ page }, testInfo) => {
   await page.goto("/search");
   await page.getByRole("textbox", { name: "Search pages" }).fill("generated test data");
   await page.getByRole("button", { name: "Search →", exact: true }).click();
@@ -19,6 +19,17 @@ test("broad lexical search explains its bounded result set", async ({ page }) =>
   await expect(page.locator("#search-status")).toHaveText(
     "Showing the first 50 matches for “generated test data”. More pages match; refine your search.",
   );
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect(page.getByRole("textbox", { name: "Search pages" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search →", exact: true })).toBeVisible();
+    await expect(page.locator("#results .search-limit")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await page.screenshot({
+      path: testInfo.outputPath(`bounded-search-${width}.png`),
+      fullPage: true,
+    });
+  }
 });
 
 test("contextual large-vault entry selects its real cluster without enabling the map", async ({ page }) => {
