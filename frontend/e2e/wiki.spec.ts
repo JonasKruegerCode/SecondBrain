@@ -467,7 +467,8 @@ test("demo galaxy summarizes bridges without dropping its pages or internal link
     }
     await page.goto("/galaxy");
     await expect(page.locator(".galaxy-star")).toHaveCount(12);
-    await expect(page.locator(".galaxy-edge:not(.is-bridge)")).toHaveCount(22);
+    // Includes the explicit salt-marsh → shellfish-kitchen shore-route link.
+    await expect(page.locator(".galaxy-edge:not(.is-bridge)")).toHaveCount(23);
     await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(6);
     expect((await page.locator(".galaxy-aggregate-link title").allTextContents()).sort()).toEqual([...bridges].sort());
     await expect(page.locator(".galaxy-mapnote")).toContainText("Combined links between constellations");
