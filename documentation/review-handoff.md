@@ -295,48 +295,66 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Current verification, inspected 26 October 2026
 
-Application head [fbdabcb0](https://github.com/JonasKruegerCode/SecondBrain/commit/fbdabcb0512abe272907129c5054605489b7f3a8)
-has tree `d0560686bc47d844959ff640dee892d802b99339`.
+Verified application head [8e4a4088](https://github.com/JonasKruegerCode/SecondBrain/commit/8e4a4088506e58db3c59aa80e04507a9c42162df)
+has tree `1053c74adabd895b6dfca75f02e7d9055c648ef2`. It includes the
+runtime lifecycle fix from `df934ea4` and a two-line import-order correction.
+The documentation commit containing this refreshed handoff follows that tested
+application without changing runtime or test code.
+
 All six workflows and nine jobs pass on attempt 1. The actual CI checkout
-`d2b45690c69148ae8418e58c82da240cfad17757` has that exact tree, checked through GitAPI.
-A later documentation-only edit does not change this tested application.
+`3456bec962dc2d1c5f446c7ac06830d36950c1d9` has exactly the verified
+application tree, checked through GitAPI.
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40239085187](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085187) | Ruff, Mypy over 132 source files; 1,494 passed, 12 opt-in integration skips, 28 subtests |
-| Frontend | [40239085196](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085196) | TypeScript, 15 native tests in four groups, production and container builds |
-| Indexes | [40239085245](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085245) | Seven disposable integration cases |
-| SSH | [40239085185](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085185) | Five authenticated synthetic Git cases |
-| Browser | [40239085184](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085184) | Seven acceptance phases succeed in original runner logs |
-| Stack | [40239085189](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40239085189) | Managed stack and retained-image update jobs succeed |
+| Backend | [40284651286](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651286) | Ruff, Mypy over 135 source files; 1,512 passed, 12 opt-in integration skips, 28 subtests; image build succeeds |
+| Frontend | [40284651508](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651508) | TypeScript, 15 native tests in four groups, production and image builds |
+| Indexes | [40284651389](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651389) | Seven disposable integration cases |
+| SSH | [40284651477](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651477) | Five authenticated synthetic Git cases |
+| Browser | [40284651463](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651463) | All seven acceptance phases and evidence upload succeed |
+| Stack | [40284651285](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651285) | Managed stack and retained-image update jobs succeed |
 
-All job/step records, seven original test/acceptance logs and both image-build
-logs were inspected. The 12 backend skips are the separately successful seven
-index and five SSH cases. Both builds use `push: false` and cache-only outputs;
-these runs publish no application image.
+All job/step records and nine original job logs were inspected. The 12 backend
+skips are the separately successful seven index and five SSH cases. Both builds
+use `push: false` and cache-only outputs; these runs publish no application image.
 
-The latest application correction preserves structured `backup_invalid` errors
-when archive manifests exceed JSON nesting or integer-conversion limits.
-Two regressions exercise both the function and actual CLI, unchanged source,
-history and archive bytes, no invalid destination publication or leftover staging,
-then successful restore and receipt replay from the intact archive.
-The focused 46 backup/restore tests, Ruff/format and focused Mypy also pass locally.
-This is separate from off-host recovery and production operation.
+Browser artifact `12634577170` is 240,392,727 bytes with SHA-256
+`5194487c2bff951ec6da099c2aa7e64098053ebea39175df1ccc0ae2fc41fee9`.
+All 1,028 ZIP entries pass path/CRC checks: 1,004 PNGs and 24 JSON/log files.
+All seven result records report `status: passed`, no failure, successful service
+cleanup, no retained vault and no external model calls. The seven original logs
+independently total 963 successful executions and 14 explained skips. These are
+repeated executions, not 963 unique requirements.
 
-New browser-result JSON, screenshots and cleanup counts have **not** been
-individually reinspected for this head. The last fully inspected browser artifact
-is `261c0dfe`: 963 successful executions and 14 explained skips. Those totals
-are not projected onto this application. Tests count executions, not unique
-requirements. Linux-WebKit is not Safari/iOS, synthetic TLS/providers are not
-production services, and emulation does not establish device or answer quality.
+Six selected WebKit screenshots were inspected at 390 and 1,440 pixels: curated
+Home, article-to-galaxy and recovered delivery. They show the intended bright
+wiki shell, readable mobile/desktop article flow, space-style galaxy and visible
+focus/skip controls without an obvious clipped primary control in this sample.
+This remains a screenshot sample, not physical-device, native zoom or screen-reader
+acceptance.
 
-The [preceding handoff at fbdabcb0](https://github.com/JonasKruegerCode/SecondBrain/blob/fbdabcb0512abe272907129c5054605489b7f3a8/documentation/review-handoff.md)
-preserves dated wrapper/SCRIPT diagnostics, historical CI matrices, artifact
-hashes and earlier counterexamples. They explain earlier decisions; they are not
-current test counters or active release instructions. The bounded SCRIPT and
-rawtext limits remain documented in the architecture section above and the
-[diagnostic guide](rawtext-diagnostic.md). Do not infer complete renderer/graph
-parity from an earlier aggregate.
+The graph attachments confirm at both widths that a text-only edit changes the
+revision while preserving measured layout, nodes and edges. A link mutation adds
+exactly one directed wikilink and removes none; before/after capture state is
+identical. The functional behavior matches the separately inspected parent
+artifact, now with direct evidence from the verified application head.
+
+The lifecycle regression set adds 14 cases, 12 of which failed before their
+respective fixes. Together with existing REST, delivery, MCP and index cases,
+87 focused tests pass. Partial provider construction and worker start/stop
+failures release owned resources; shutdown still attempts every client after
+one close error. A real loopback REST/HTTP-MCP rehearsal confirmed authenticated
+read/initialize and preserved snapshot/receipt across orderly Uvicorn shutdown.
+Injected failures and loopback services do not establish hosted-provider,
+production, off-host or physical-device behavior.
+
+Recovery parents remain relevant: portable restore keeps local history, delivery
+ledger and mutation receipts, but does not copy remote Git objects or remote push
+receipts; an unconfirmable prior push therefore blocks for review. Host restore
+inspection starts with delivery, Git and optional providers disabled. Detailed
+historical matrices and diagnostic failures remain in Git/CI and the
+[preceding pinned handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/fbdabcb0512abe272907129c5054605489b7f3a8/documentation/review-handoff.md);
+they are audit history, not current counters.
 
 ## Known release gates
 
