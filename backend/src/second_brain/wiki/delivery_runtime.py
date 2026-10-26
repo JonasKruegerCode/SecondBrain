@@ -63,7 +63,11 @@ class DeliveryWorker:
         self._stop.clear()
         self.last_error = None
         self._thread = threading.Thread(target=self._run, name="wiki-delivery", daemon=True)
-        self._thread.start()
+        try:
+            self._thread.start()
+        except Exception:
+            self._thread = None
+            raise
 
     def notify(self) -> None:
         self._wake.set()

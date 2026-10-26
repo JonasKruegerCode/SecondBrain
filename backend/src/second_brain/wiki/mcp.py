@@ -349,18 +349,20 @@ def create_http_app(
 
     @asynccontextmanager
     async def lifespan(server: Starlette) -> AsyncIterator[Any]:
-        if worker is not None:
-            worker.start()
         try:
+            if worker is not None:
+                worker.start()
             async with original_lifespan(server) as state:
                 yield state
         finally:
-            if worker is not None:
-                from starlette.concurrency import run_in_threadpool  # noqa: PLC0415
+            try:
+                if worker is not None:
+                    from starlette.concurrency import run_in_threadpool  # noqa: PLC0415
 
-                await run_in_threadpool(worker.stop)
-            if close_indexes:
-                indexes.close()
+                    await run_in_threadpool(worker.stop)
+            finally:
+                if close_indexes:
+                    indexes.close()
 
     app.router.lifespan_context = lifespan
     app.add_middleware(
@@ -428,9 +430,11 @@ def main() -> None:
             worker.start()
         create_mcp(store, indexes=indexes, delivery=delivery, worker=worker).run(transport="stdio")
     finally:
-        if worker is not None:
-            worker.stop()
-        indexes.close()
+        try:
+            if worker is not None:
+                worker.stop()
+        finally:
+            indexes.close()
 
 
 if __name__ == "__main__":

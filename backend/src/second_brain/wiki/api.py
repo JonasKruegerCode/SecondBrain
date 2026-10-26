@@ -262,15 +262,17 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        if worker is not None:
-            worker.start()
         try:
+            if worker is not None:
+                worker.start()
             yield
         finally:
-            if worker is not None:
-                await run_in_threadpool(worker.stop)
-            if close_indexes:
-                indexes.close()
+            try:
+                if worker is not None:
+                    await run_in_threadpool(worker.stop)
+            finally:
+                if close_indexes:
+                    indexes.close()
 
     app = Starlette(
         routes=[

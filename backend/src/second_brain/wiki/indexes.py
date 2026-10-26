@@ -71,10 +71,17 @@ class IndexCoordinator:
             db.close()
 
     def close(self) -> None:
+        error: Exception | None = None
         for adapter in self.adapters.values():
             client = getattr(adapter, "client", None) or getattr(adapter, "driver", None)
             if client is not None:
-                client.close()
+                try:
+                    client.close()
+                except Exception as exc:
+                    if error is None:
+                        error = exc
+        if error is not None:
+            raise error
 
     def _receipt(self, kind: str) -> dict[str, Any] | None:
         with self._db() as db:
@@ -93,18 +100,14 @@ class IndexCoordinator:
             fcntl.flock(lock, fcntl.LOCK_SH)
             yield
 
-    def _record_attempt(
-        self, kind: str, generation: str, revision: str, created_at: float
-    ) -> None:
+    def _record_attempt(self, kind: str, generation: str, revision: str, created_at: float) -> None:
         with self._db() as db:
             db.execute(
                 "INSERT INTO generations VALUES (?,?,?,?,?,?)",
                 (kind, generation, revision, self.config_id, "building", created_at),
             )
 
-    def _record_result(
-        self, kind: str, generation: str, revision: str, state: str
-    ) -> None:
+    def _record_result(self, kind: str, generation: str, revision: str, state: str) -> None:
         with self._db() as db:
             db.execute(
                 "UPDATE generations SET state=? WHERE kind=? AND generation=?",
@@ -310,9 +313,7 @@ class IndexCoordinator:
         with self._reader():
             snapshot, receipt = self._current("graph")
             try:
-                ids = self.adapters["graph"].neighbors(
-                    receipt["generation"], seeds, hops, limit
-                )
+                ids = self.adapters["graph"].neighbors(receipt["generation"], seeds, hops, limit)
             except Exception as exc:
                 raise WikiError("index_unavailable", "The graph provider is unavailable.") from exc
             selected = set(ids)
