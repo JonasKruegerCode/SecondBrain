@@ -38,9 +38,9 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
             identity["graph"] = [uri, user, database]
         if os.environ.get("SECOND_BRAIN_WIKI_VECTOR_INDEX") == "1":
             from qdrant_client import QdrantClient  # noqa: PLC0415
+
             from second_brain.core.config import settings  # noqa: PLC0415
             from second_brain.llm.embedder import get_embedder  # noqa: PLC0415
-
             from second_brain.wiki.index_adapters import QdrantSnapshotAdapter  # noqa: PLC0415
 
             url = os.environ["QDRANT_URL"]
