@@ -199,9 +199,10 @@ saved Home, direct URLs and readable current content. A clean navigation receivi
 new HTML is not by itself proof that the protected PWA update path ran.
 Reload older open Chat tabs so they use the updated browser storage implementation.
 First preserve composer drafts, finish pending replies, and save any unsaved
-fallback conversation or deliberately delete its unsaved messages. Reloading
-does not preserve that fallback, and leaving Chat does not preserve its composer
-draft.
+fallback conversation or deliberately delete its unsaved messages. Reloading or closing the tab does not preserve that fallback or an unsent
+composer draft. Ordinary navigation to another wiki view and back in the same
+open tab retains the draft, including browser Back/Forward; see the
+[demo tour](demo-start.md#take-a-short-tour).
 Use the [PWA guide](pwa.md) for installation, privacy and precise limits. Physical
 Home Screen/standalone/touch checks remain separate from browser emulation.
 
