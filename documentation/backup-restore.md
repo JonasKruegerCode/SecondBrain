@@ -68,14 +68,40 @@ content revision, page count, and local SQLite integrity before publishing the
 new directory. An existing destination is refused, so recovery never overwrites
 the source vault. A failed restore leaves no partially published destination.
 
-Start the API against the restored path, inspect `/api/wiki/health`, open several
-pages and history entries, and run one delivery pass after configuring the same
-optional providers:
+First start a loopback inspection service with background delivery, outbound Git,
+optional index providers and chat explicitly disabled. These command-scoped
+settings override inherited deployment flags; stopping the service ends this
+inspection. Do not reconnect a production proxy or clients yet.
 
 ```sh
 SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/restored-vault \
+SECOND_BRAIN_WIKI_DELIVERY=0 \
+SECOND_BRAIN_WIKI_GIT_SYNC=0 \
+SECOND_BRAIN_WIKI_GRAPH_INDEX=0 \
+SECOND_BRAIN_WIKI_VECTOR_INDEX=0 \
+OPENROUTER_API_KEY= \
+  "$WIKI_PYTHON" -m uvicorn second_brain.wiki.api:app_factory \
+  --factory --host 127.0.0.1 --port 8000
+```
+
+Inspect `/api/wiki/health`, pages, history and graph before any delivery work.
+The existing REST API key still applies if configured. This disables external
+work, not local editing: keep other writers stopped and do not change the vault
+during inspection. Lexical search and the Markdown graph remain available.
+
+After inspection, stop that service and deliberately configure only the optional
+index providers you want to rebuild. Keep outbound Git disabled for this manual
+pass:
+
+```sh
+SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/restored-vault \
+SECOND_BRAIN_WIKI_GIT_SYNC=0 \
   "$WIKI_PYTHON" -m second_brain.wiki.delivery_runtime --once
 ```
+
+`SECOND_BRAIN_WIKI_DELIVERY=0` controls the background worker only; it does not
+suppress an explicit `--once`. The separate Git flag is therefore required here.
+Review the remote and its recovery boundary below before enabling Git delivery.
 
 Index receipts that do not match the restored content are reported as pending and
 rebuilt. Remote delivery configuration and credentials come from the deployment
