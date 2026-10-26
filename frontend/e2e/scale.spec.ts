@@ -9,7 +9,7 @@ test.skip(
 test("broad lexical search explains its bounded result set", async ({ page }) => {
   await page.goto("/search");
   await page.getByRole("textbox", { name: "Search pages" }).fill("generated test data");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: "Search →", exact: true }).click();
 
   await expect(page.locator("#results h2")).toHaveText("Showing the first 50 matches");
   await expect(page.locator("#results .search-limit")).toHaveText(
