@@ -23,4 +23,4 @@ The sheltered inlet sounded different from the open boardwalk, but the trial cha
 
 ## Connections beyond ecology
 
-The [[oral-history|oral history collection]] project collects imagined memories of the inlet. The [[harvest-calendar|harvest calendar]] compares ecological rhythms with kitchen traditions. A quiet listening station will be part of the [[lantern-festival|lantern festival]].
+The [[oral-history|oral history collection]] project collects imagined memories of the inlet. The [[shellfish-kitchen|shellfish kitchen notebook]] connects this shore landscape with remembered meals. The [[harvest-calendar|harvest calendar]] compares ecological rhythms with kitchen traditions. A quiet listening station will be part of the [[lantern-festival|lantern festival]].

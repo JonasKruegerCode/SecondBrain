@@ -20,7 +20,7 @@ The imagined observatory maps how the horizon changes the view of the stars. Its
 
 ## Connections
 
-The [[tide-clock|tide clock]] determines when the pier route is accessible in the fictional setting. [[navigation-history|navigation stories]] explains why sky landmarks became a shared language. [[mira-quill|Mira Quill]] will preserve the survey's questions using [[archive-method|archive method]].
+The [[tide-clock|tide clock]] illustrates a modeled phase for the planned pier scene. It does not establish access conditions or replace observations. [[navigation-history|navigation stories]] explains why sky landmarks became a shared language. [[mira-quill|Mira Quill]] will preserve the survey's questions using [[archive-method|archive method]].
 
 ## Next experiment
 
