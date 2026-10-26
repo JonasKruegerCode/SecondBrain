@@ -416,6 +416,12 @@ form input {
   padding: 28px 0;
   grid-column: 1/-1;
 }
+.search-limit {
+  color: var(--muted-text);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: -12px 0 24px;
+}
 .toolbar {
   display: flex;
   justify-content: space-between;

@@ -173,7 +173,10 @@ def test_read_write_conflict_and_private_cache_headers(tmp_path: Path) -> None:
         assert stale.json()["error"] == "revision_conflict"
         assert client.get("/api/wiki/pages/harbor").json()["markdown"] == payload["markdown"]
         assert client.get("/api/wiki/pages/unknown").status_code == 404
-        assert client.get("/api/wiki/search?q=fictional").json()["mode"] == "lexical"
+        search = client.get("/api/wiki/search?q=fictional").json()
+        assert search["mode"] == "lexical"
+        assert search["limit"] == 50
+        assert search["truncated"] is False
         assert len(client.get("/api/wiki/pages/harbor/history").json()["history"]) == 1
         assert client.post("/api/wiki/pages/harbor", json=[]).status_code == 400
         assert client.post("/api/wiki/pages/harbor", content="not json").status_code == 400
@@ -186,6 +189,41 @@ def test_read_write_conflict_and_private_cache_headers(tmp_path: Path) -> None:
             ).status_code
             == 403
         )
+
+
+def test_lexical_search_reports_its_result_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows: list[dict[str, object]] = [
+        {
+            "id": f"page-{index:02d}",
+            "title": f"Shared result {index:02d}",
+            "revision": "synthetic-revision",
+            "excerpt": "Synthetic result.",
+            "markdown": "# Private response body",
+        }
+        for index in range(51)
+    ]
+
+    def search(self: WikiStore, query: str, *, limit: int = 50) -> list[dict[str, object]]:
+        assert query == "shared"
+        assert limit == 51
+        return rows[:limit]
+
+    monkeypatch.setattr(WikiStore, "search", search)
+    with TestClient(create_app(tmp_path)) as client:
+        response = client.get("/api/wiki/search?q=shared")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "mode": "lexical",
+        "limit": 50,
+        "truncated": True,
+        "results": [
+            {key: value for key, value in row.items() if key != "markdown"}
+            for row in rows[:50]
+        ],
+    }
 
 
 def test_optional_access_key_protects_reads_and_writes(tmp_path: Path) -> None:

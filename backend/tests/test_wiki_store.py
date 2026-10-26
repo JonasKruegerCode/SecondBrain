@@ -301,6 +301,28 @@ def test_lexical_search_and_graph_refresh_with_delete(tmp_path: Path) -> None:
     assert store.graph()["revision"] != graph["revision"]
 
 
+def test_lexical_search_keeps_a_bounded_default_and_supports_one_extra_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = WikiStore(tmp_path)
+    pages = [
+        {
+            "id": f"page-{index:02d}",
+            "title": f"Shared result {index:02d}",
+            "markdown": "# Shared result\nBounded search fixture.",
+        }
+        for index in range(51)
+    ]
+    monkeypatch.setattr(store, "list_pages", lambda: pages)
+
+    assert len(store.search("bounded search")) == 50
+    assert len(store.search("bounded search", limit=51)) == 51
+    invalid_limits: list[Any] = [0, -1, True, "51"]
+    for invalid in invalid_limits:
+        with pytest.raises(WikiError, match="positive integer"):
+            store.search("bounded search", limit=invalid)
+
+
 def test_graph_does_not_treat_code_examples_as_links(tmp_path: Path) -> None:
     store = WikiStore(tmp_path)
     store.save_page(

@@ -659,10 +659,20 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
         try {
           const data = await api("/search?q=" + encodeURIComponent(q));
           if (!current()) return;
-          results.innerHTML = `<div class="section-heading"><h2>${data.results.length} ${data.results.length === 1 ? "result" : "results"}</h2></div><div class="grid">${data.results.length ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
+          const count = data.results.length;
+          const truncated = data.truncated === true;
+          const countLabel = truncated
+            ? `Showing the first ${count} matches`
+            : `${count} ${count === 1 ? "result" : "results"}`;
+          const refine = truncated
+            ? '<p class="search-limit">More pages match. Refine your search to find a specific page.</p>'
+            : "";
+          results.innerHTML = `<div class="section-heading"><h2>${countLabel}</h2></div>${refine}<div class="grid">${count ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
           results.setAttribute("aria-busy", "false");
-          searchStatus.textContent = data.results.length
-            ? `${data.results.length} ${data.results.length === 1 ? "result" : "results"} ${scope}.`
+          searchStatus.textContent = count
+            ? truncated
+              ? `Showing the first ${count} matches ${scope}. More pages match; refine your search.`
+              : `${count} ${count === 1 ? "result" : "results"} ${scope}.`
             : `No pages found ${scope}. Try another word or phrase.`;
         } catch (e) {
           if (!current()) return;

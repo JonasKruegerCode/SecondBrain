@@ -28,6 +28,7 @@ TYPED_LINK_RE = re.compile(
     r"\[\[([^\]|\n]+)(?:\|[^\]\n]*)?\]\]"
 )
 MAX_BYTES = 1_000_000
+SEARCH_RESULT_LIMIT = 50
 # Marked 12 block definitions: their destination/title is metadata, not prose.
 # Keep its permissive grammar, including multiline titles and escaped labels.
 _DEFINITION_RE = re.compile(
@@ -1173,7 +1174,9 @@ class WikiStore:
     def list_pages(self) -> list[dict[str, Any]]:
         return self._pages(self._head())
 
-    def search(self, query: str) -> list[dict[str, Any]]:
+    def search(self, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -> list[dict[str, Any]]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise WikiError("invalid_payload", "Search limit must be a positive integer.")
         terms = query.casefold().strip().split()
         if not terms:
             return []
@@ -1187,7 +1190,7 @@ class WikiStore:
                 0 if query.casefold() in {p["id"].casefold(), p["title"].casefold()} else 1,
                 p["title"].casefold(),
             ),
-        )[:50]
+        )[:limit]
 
     def graph(self) -> dict[str, Any]:
         result: dict[str, Any] = self.snapshot()["graph"]

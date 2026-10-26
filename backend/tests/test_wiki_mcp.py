@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 from mcp.types import CallToolResult, TextContent
 
 from second_brain.wiki.mcp import create_mcp
@@ -59,4 +60,28 @@ async def test_managed_mcp_shares_rest_store_and_guidance(tmp_path: Path) -> Non
     }
     assert isinstance(missing.content[0], TextContent)
     assert json.loads(missing.content[0].text) == missing.structuredContent
+
+
+async def test_managed_mcp_lexical_search_reports_truncation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = WikiStore(tmp_path)
+    rows = [
+        {"id": f"page-{index:02d}", "title": f"Shared result {index:02d}"}
+        for index in range(51)
+    ]
+
+    def search(query: str, *, limit: int = 50) -> list[dict[str, str]]:
+        assert query == "shared"
+        assert limit == 51
+        return rows[:limit]
+
+    monkeypatch.setattr(store, "search", search)
+    result = _data(await create_mcp(store).call_tool("search_wiki", {"query": "shared"}))
+    assert result == {
+        "mode": "lexical",
+        "results": rows[:50],
+        "limit": 50,
+        "truncated": True,
+    }
 

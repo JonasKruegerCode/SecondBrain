@@ -21,7 +21,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
-from second_brain.wiki.store import WikiError, WikiStore
+from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
 
 GUIDANCE = """# Managed Wiki editing guide (v3)
 
@@ -44,7 +44,8 @@ Use get_delivery_status for current publication/index progress and cached Git
 verification. Server factories own a recoverable worker unless explicitly disabled;
 optional providers and remote Git must be configured by the operator.
 A current Git acknowledgement is a past verification, never a live remote claim.
-Lexical search always works without optional providers.
+Lexical search always works without optional providers. It returns at most 50
+results and sets truncated=true when a narrower query is needed.
 search_wiki mode semantic uses current vectors; mode graph_rag adds bounded graph
 context without generating an answer. get_neighbors expands explicit links.
 Graph reads derive explicit links and typed relations from one Markdown snapshot;
@@ -125,7 +126,13 @@ def create_mcp(
             return indexes.graph_search(query)
         if mode != "lexical":
             raise ValueError("mode must be lexical, semantic or graph_rag")
-        return {"mode": "lexical", "results": store.search(query)}
+        rows = store.search(query, limit=SEARCH_RESULT_LIMIT + 1)
+        return {
+            "mode": "lexical",
+            "results": rows[:SEARCH_RESULT_LIMIT],
+            "limit": SEARCH_RESULT_LIMIT,
+            "truncated": len(rows) > SEARCH_RESULT_LIMIT,
+        }
 
     @mcp.tool()
     def get_index_status() -> dict[str, Any]:

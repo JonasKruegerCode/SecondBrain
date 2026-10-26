@@ -6,6 +6,21 @@ test.skip(
   "Run against a generated scale vault with PLAYWRIGHT_SCALE=1.",
 );
 
+test("broad lexical search explains its bounded result set", async ({ page }) => {
+  await page.goto("/search");
+  await page.getByRole("textbox", { name: "Search pages" }).fill("generated test data");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+
+  await expect(page.locator("#results h2")).toHaveText("Showing the first 50 matches");
+  await expect(page.locator("#results .search-limit")).toHaveText(
+    "More pages match. Refine your search to find a specific page.",
+  );
+  await expect(page.locator("#results .card")).toHaveCount(50);
+  await expect(page.locator("#search-status")).toHaveText(
+    "Showing the first 50 matches for “generated test data”. More pages match; refine your search.",
+  );
+});
+
 test("contextual large-vault entry selects its real cluster without enabling the map", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/wiki/scale-0319");

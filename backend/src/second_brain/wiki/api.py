@@ -23,7 +23,7 @@ from second_brain.wiki.chat import WikiChat
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
-from second_brain.wiki.store import WikiError, WikiStore
+from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
 
 
 def _same_origin_authority(origin: str, host: str | None) -> bool:
@@ -133,11 +133,19 @@ def create_app(
             return JSONResponse(await run_in_threadpool(indexes.graph_search, query))
         if request.query_params.get("mode", "lexical") != "lexical":
             raise WikiError("invalid_payload", "mode must be lexical, semantic or graph_rag.")
-        rows = await run_in_threadpool(store.search, query)
+        rows = await run_in_threadpool(
+            store.search, query, limit=SEARCH_RESULT_LIMIT + 1
+        )
+        truncated = len(rows) > SEARCH_RESULT_LIMIT
         return JSONResponse(
             {
-                "results": [{k: v for k, v in p.items() if k != "markdown"} for p in rows],
+                "results": [
+                    {k: v for k, v in p.items() if k != "markdown"}
+                    for p in rows[:SEARCH_RESULT_LIMIT]
+                ],
                 "mode": "lexical",
+                "limit": SEARCH_RESULT_LIMIT,
+                "truncated": truncated,
             }
         )
 
