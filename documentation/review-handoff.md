@@ -299,26 +299,48 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Current verification, inspected 27 October 2026
 
-Verified head [102ea115](https://github.com/JonasKruegerCode/SecondBrain/commit/102ea115f1d564fb0440d3bbbf7eff411dd2dfaa)
-has tree `d5c0d4a41700d5cd37d743260da905b33f58e889`.
-It includes the bounded lexical-search response, completed fictional shore
-route and corrected 23-edge galaxy assertion. The documentation-only commit
-refreshing this handoff follows that tested head without changing runtime or tests.
+Verified runtime/test head [831ac8a1](https://github.com/JonasKruegerCode/SecondBrain/commit/831ac8a131508e2f4aaf0c39f3d204a790fb9dff)
+has tree `7736992036c341dfa009af2bb061aa7e79aa0cb7`.
+It retains the bounded lexical-search response, completed fictional shore route
+and corrected 23-edge galaxy assertion. Since the preceding handoff it also
+includes two startup/recovery corrections:
 
-All six workflows and nine jobs passed. The records were inspected, and the
-six completed workflow conclusions were reconfirmed on 27 October:
+- [b47013d2](https://github.com/JonasKruegerCode/SecondBrain/commit/b47013d2db471d8e6345a1a714039ae71cf2f887):
+  SQLite backup reports `storage_unavailable` after ten seconds without copy
+  progress under a busy/locked ledger, cleans the incomplete output and permits
+  retry after release. The bound applies to stalled progress, not total backup
+  duration. The 56 focused backup regressions include actual SQLite locks and a
+  CLI timeout/retry; they do not establish off-host or power-loss recovery.
+- [831ac8a1](https://github.com/JonasKruegerCode/SecondBrain/commit/831ac8a131508e2f4aaf0c39f3d204a790fb9dff):
+  deeply nested invalid demo-marker JSON produces the existing friendly preflight
+  error instead of a decoder traceback, including with `--empty`. The 32
+  start-state cases include real CLI failures and unchanged vault bytes; service
+  launches in those cases are test doubles.
+
+This documentation refresh follows that head without changing runtime or tests.
+
+All six workflows and nine jobs passed. The six completed workflow conclusions
+were reconfirmed on 27 October; backend and browser original job logs were read:
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40418508820](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508820) | Ruff, Mypy over 136 source files; 1,523 passed, 12 separate integration skips, 28 subtests; image build succeeds |
-| Frontend | [40418508802](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508802) | TypeScript, native contract tests, production and image builds |
-| Indexes | [40418508803](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508803) | Disposable index integration succeeds |
-| SSH | [40418508862](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508862) | Authenticated synthetic Git integration succeeds |
-| Browser | [40418508809](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508809) | All seven acceptance phases and evidence upload succeed; Chromium main phase 475 passed |
-| Stack | [40418508852](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508852) | Managed stack and retained-image update jobs succeed |
+| Backend | [40465622660](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622660) | Ruff, Mypy over 137 source files; 1,539 passed, 12 separate integration skips, 28 subtests; image build succeeds |
+| Frontend | [40465622588](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622588) | TypeScript, native contract tests, production and image builds |
+| Indexes | [40465622671](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622671) | Disposable index integration succeeds |
+| SSH | [40465622610](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622610) | Authenticated synthetic Git integration succeeds |
+| Browser | [40465622544](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622544) | Seven acceptance phases succeed; no new archive download or screenshot inspection |
+| Stack | [40465622661](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622661) | Managed stack and retained-image update jobs succeed |
 
 The integration skips above are exercised separately, not waived acceptance.
 PR image builds publish no application images.
+
+### Directly inspected browser artifact: earlier head 102ea115
+
+The hash/CRC and visual evidence below belongs to
+[102ea115](https://github.com/JonasKruegerCode/SecondBrain/commit/102ea115f1d564fb0440d3bbbf7eff411dd2dfaa),
+tree `d5c0d4a41700d5cd37d743260da905b33f58e889`, browser
+[40418508809](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508809).
+It is not a fresh archive or visual check of the later backup/marker corrections.
 
 Browser artifact `12697899364` is 242,927,851 bytes with SHA-256
 `5a5168887459d45f5871ce411628ce9d08cfd082186a231f68201a78d6128798`.
@@ -328,13 +350,13 @@ external model calls. The CI checkout `f6388288` has exactly the verified
 branch tree; that generated test commit is not a merge authorization.
 The original artifact expires on 2 November 2026 at 23:45 UTC.
 
-Two current galaxy overview screenshots at 390 and 1,440 pixels were inspected:
+Two galaxy overview screenshots from that archive at 390 and 1,440 pixels were inspected:
 twelve fictional pages, 82 explicit links and four separated constellations.
 The mobile card list is readable; bridge labels are denser in the small map.
 Earlier search screenshots at 320/390/1,440 pixels were inspected only through
 their upper 1,600 pixels; this does not establish every result card's rendering.
 Earlier graph-mutation evidence remains historical, not a fresh comparison of
-the current archive. No physical device or real model was accepted by these runs.
+that archive. No physical device or real model was accepted by these runs.
 
 The public atlas now completes the salt-marsh → shellfish-kitchen shore route
 and consistently separates its tide model from real access observations.
