@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 
 import pytest
-from second_brain.wiki.api import create_app
 from starlette.testclient import TestClient
+
+from second_brain.wiki.api import create_app
 
 
 def _file_hashes(root: Path) -> dict[str, str]:
