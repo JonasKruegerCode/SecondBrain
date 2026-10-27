@@ -46,7 +46,11 @@ synthetic browser contracts, separate from physical devices and provider deliver
 ### Derived retrieval and delivery
 
 Exact page reads, lexical search, local history and explicit Markdown graph
-navigation work without Neo4j, Qdrant or a model. Optional graph/vector adapters
+navigation work without Neo4j, Qdrant or a model.
+The lexical REST response is bounded to 50 results and reports `limit` and
+`truncated`. A truncated result is not a complete match inventory; refine the
+query to locate a specific page. The browser exposes that limit and refinement
+hint. Semantic and graph-RAG modes keep their own provider contracts. Optional graph/vector adapters
 build separate immutable generations and publish separate receipts for the exact
 content revision, configuration and generation. Pending, stale, failed or missing
 generations cannot be served as current. A lost provider generation requires
@@ -293,68 +297,54 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Current verification, inspected 26 October 2026
+## Current verification, inspected 27 October 2026
 
-Verified application head [8e4a4088](https://github.com/JonasKruegerCode/SecondBrain/commit/8e4a4088506e58db3c59aa80e04507a9c42162df)
-has tree `1053c74adabd895b6dfca75f02e7d9055c648ef2`. It includes the
-runtime lifecycle fix from `df934ea4` and a two-line import-order correction.
-The documentation commit containing this refreshed handoff follows that tested
-application without changing runtime or test code.
+Verified head [102ea115](https://github.com/JonasKruegerCode/SecondBrain/commit/102ea115f1d564fb0440d3bbbf7eff411dd2dfaa)
+has tree `d5c0d4a41700d5cd37d743260da905b33f58e889`.
+It includes the bounded lexical-search response, completed fictional shore
+route and corrected 23-edge galaxy assertion. The documentation-only commit
+refreshing this handoff follows that tested head without changing runtime or tests.
 
-All six workflows and nine jobs pass on attempt 1. The actual CI checkout
-`3456bec962dc2d1c5f446c7ac06830d36950c1d9` has exactly the verified
-application tree, checked through GitAPI.
+All six workflows and nine jobs passed. The records were inspected, and the
+six completed workflow conclusions were reconfirmed on 27 October:
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40284651286](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651286) | Ruff, Mypy over 135 source files; 1,512 passed, 12 opt-in integration skips, 28 subtests; image build succeeds |
-| Frontend | [40284651508](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651508) | TypeScript, 15 native tests in four groups, production and image builds |
-| Indexes | [40284651389](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651389) | Seven disposable integration cases |
-| SSH | [40284651477](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651477) | Five authenticated synthetic Git cases |
-| Browser | [40284651463](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651463) | All seven acceptance phases and evidence upload succeed |
-| Stack | [40284651285](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40284651285) | Managed stack and retained-image update jobs succeed |
+| Backend | [40418508820](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508820) | Ruff, Mypy over 136 source files; 1,523 passed, 12 separate integration skips, 28 subtests; image build succeeds |
+| Frontend | [40418508802](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508802) | TypeScript, native contract tests, production and image builds |
+| Indexes | [40418508803](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508803) | Disposable index integration succeeds |
+| SSH | [40418508862](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508862) | Authenticated synthetic Git integration succeeds |
+| Browser | [40418508809](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508809) | All seven acceptance phases and evidence upload succeed; Chromium main phase 475 passed |
+| Stack | [40418508852](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508852) | Managed stack and retained-image update jobs succeed |
 
-All job/step records and nine original job logs were inspected. The 12 backend
-skips are the separately successful seven index and five SSH cases. Both builds
-use `push: false` and cache-only outputs; these runs publish no application image.
+The integration skips above are exercised separately, not waived acceptance.
+PR image builds publish no application images.
 
-Browser artifact `12634577170` is 240,392,727 bytes with SHA-256
-`5194487c2bff951ec6da099c2aa7e64098053ebea39175df1ccc0ae2fc41fee9`.
-All 1,028 ZIP entries pass path/CRC checks: 1,004 PNGs and 24 JSON/log files.
-All seven result records report `status: passed`, no failure, successful service
-cleanup, no retained vault and no external model calls. The seven original logs
-independently total 963 successful executions and 14 explained skips. These are
-repeated executions, not 963 unique requirements.
+Browser artifact `12697899364` is 242,927,851 bytes with SHA-256
+`5a5168887459d45f5871ce411628ce9d08cfd082186a231f68201a78d6128798`.
+All 1,031 ZIP entries passed CRC checks. All seven result records report
+`passed`, no failure, successful service cleanup, no retained vault and no
+external model calls. The CI checkout `f6388288` has exactly the verified
+branch tree; that generated test commit is not a merge authorization.
+The original artifact expires on 2 November 2026 at 23:45 UTC.
 
-Six selected WebKit screenshots were inspected at 390 and 1,440 pixels: curated
-Home, article-to-galaxy and recovered delivery. They show the intended bright
-wiki shell, readable mobile/desktop article flow, space-style galaxy and visible
-focus/skip controls without an obvious clipped primary control in this sample.
-This remains a screenshot sample, not physical-device, native zoom or screen-reader
-acceptance.
+Two current galaxy overview screenshots at 390 and 1,440 pixels were inspected:
+twelve fictional pages, 82 explicit links and four separated constellations.
+The mobile card list is readable; bridge labels are denser in the small map.
+Earlier search screenshots at 320/390/1,440 pixels were inspected only through
+their upper 1,600 pixels; this does not establish every result card's rendering.
+Earlier graph-mutation evidence remains historical, not a fresh comparison of
+the current archive. No physical device or real model was accepted by these runs.
 
-The graph attachments confirm at both widths that a text-only edit changes the
-revision while preserving measured layout, nodes and edges. A link mutation adds
-exactly one directed wikilink and removes none; before/after capture state is
-identical. The functional behavior matches the separately inspected parent
-artifact, now with direct evidence from the verified application head.
+The public atlas now completes the salt-marsh → shellfish-kitchen shore route
+and consistently separates its tide model from real access observations.
+Reuse the launcher for edited demos; template verification intentionally refuses
+later edits. Use a fresh destination to try the revised template.
 
-The lifecycle regression set adds 14 cases, 12 of which failed before their
-respective fixes. Together with existing REST, delivery, MCP and index cases,
-87 focused tests pass. Partial provider construction and worker start/stop
-failures release owned resources; shutdown still attempts every client after
-one close error. A real loopback REST/HTTP-MCP rehearsal confirmed authenticated
-read/initialize and preserved snapshot/receipt across orderly Uvicorn shutdown.
-Injected failures and loopback services do not establish hosted-provider,
-production, off-host or physical-device behavior.
-
-Recovery parents remain relevant: portable restore keeps local history, delivery
-ledger and mutation receipts, but does not copy remote Git objects or remote push
-receipts; an unconfirmable prior push therefore blocks for review. Host restore
-inspection starts with delivery, Git and optional providers disabled. Detailed
-historical matrices and diagnostic failures remain in Git/CI and the
-[preceding pinned handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/fbdabcb0512abe272907129c5054605489b7f3a8/documentation/review-handoff.md);
-they are audit history, not current counters.
+The [preceding pinned handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/102ea115f1d564fb0440d3bbbf7eff411dd2dfaa/documentation/review-handoff.md)
+preserves the earlier lifecycle, graph and recovery evidence with their original
+scope. These are audit history, not parallel current counters. The open gates
+and unresolved observations below still apply.
 
 ## Known release gates
 
