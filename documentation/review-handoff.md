@@ -299,11 +299,10 @@ A filtered/repeated diagnostic pass is not full-suite acceptance.
 
 ## Current verification, inspected 27 October 2026
 
-Verified runtime/test head [831ac8a1](https://github.com/JonasKruegerCode/SecondBrain/commit/831ac8a131508e2f4aaf0c39f3d204a790fb9dff)
-has tree `7736992036c341dfa009af2bb061aa7e79aa0cb7`.
+Verified runtime/test head [47c28e0d](https://github.com/JonasKruegerCode/SecondBrain/commit/47c28e0d5c4ad4f2f8b885aaf967b14b78308808)
+has tree `ec93e737cdf34d242fd66676d73141c855a771ce`.
 It retains the bounded lexical-search response, completed fictional shore route
-and corrected 23-edge galaxy assertion. Since the preceding handoff it also
-includes two startup/recovery corrections:
+and corrected 23-edge galaxy assertion. The startup/recovery corrections include:
 
 - [b47013d2](https://github.com/JonasKruegerCode/SecondBrain/commit/b47013d2db471d8e6345a1a714039ae71cf2f887):
   SQLite backup reports `storage_unavailable` after ten seconds without copy
@@ -311,28 +310,49 @@ includes two startup/recovery corrections:
   retry after release. The bound applies to stalled progress, not total backup
   duration. The 56 focused backup regressions include actual SQLite locks and a
   CLI timeout/retry; they do not establish off-host or power-loss recovery.
-- [831ac8a1](https://github.com/JonasKruegerCode/SecondBrain/commit/831ac8a131508e2f4aaf0c39f3d204a790fb9dff):
-  deeply nested invalid demo-marker JSON produces the existing friendly preflight
-  error instead of a decoder traceback, including with `--empty`. The 32
-  start-state cases include real CLI failures and unchanged vault bytes; service
-  launches in those cases are test doubles.
+- [831ac8a1](https://github.com/JonasKruegerCode/SecondBrain/commit/831ac8a131508e2f4aaf0c39f3d204a790fb9dff)
+  and [21817d5a](https://github.com/JonasKruegerCode/SecondBrain/commit/21817d5a50e640346d5f1486e9595776dd299700):
+  deeply nested invalid marker JSON and non-string state values produce friendly
+  errors in the launcher, setup and resume. The launcher refuses invalid markers
+  even with `--empty`. CLI failures check unchanged vault bytes; service-launch
+  assertions in these preflight cases use test doubles.
+- [ffbfd6cb](https://github.com/JonasKruegerCode/SecondBrain/commit/ffbfd6cbb836ca1f3685f10aaf49504c99a341ee):
+  invalid UTF-8 template pages produce a named-file refusal instead of a decoder
+  traceback, before managed storage is touched. Four real CLI cases cover fresh
+  and completed destinations, byte preservation and repair/retry.
+- [47c28e0d](https://github.com/JonasKruegerCode/SecondBrain/commit/47c28e0d5c4ad4f2f8b885aaf967b14b78308808):
+  the complete template is checked against the store's ID rules and one-megabyte
+  encoded-byte limit before marker or repository creation. Sixteen real CLI
+  cases failed on the previous code and pass after the fix; a seventeenth accepts
+  valid Unicode/dot/minus IDs and exactly 1,000,000 UTF-8 bytes. An invalid initial
+  seed leaves an absent or empty destination unchanged; repairing its template
+  allows the same command to succeed. This is not an atomic multi-page seed
+  guarantee against storage failures or interruption. Existing partial seeds
+  still need explicit `--resume` with the same template.
 
-This documentation refresh follows that head without changing runtime or tests.
+The combined local startup regressions pass 88 cases in a partial Python
+environment with actual temporary Git/file storage. Those focused checks are
+separate from the full locked CI below. This documentation refresh follows the
+verified runtime head without changing runtime or tests.
 
-All six workflows and nine jobs passed. The six completed workflow conclusions
-were reconfirmed on 27 October; backend and browser original job logs were read:
+All six workflows and nine jobs passed. Every job/step status and the original
+backend/browser logs were inspected on 27 October:
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40465622660](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622660) | Ruff, Mypy over 137 source files; 1,539 passed, 12 separate integration skips, 28 subtests; image build succeeds |
-| Frontend | [40465622588](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622588) | TypeScript, native contract tests, production and image builds |
-| Indexes | [40465622671](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622671) | Disposable index integration succeeds |
-| SSH | [40465622610](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622610) | Authenticated synthetic Git integration succeeds |
-| Browser | [40465622544](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622544) | Seven acceptance phases succeed; no new archive download or screenshot inspection |
-| Stack | [40465622661](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40465622661) | Managed stack and retained-image update jobs succeed |
+| Backend | [40538710900](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40538710900) | Ruff and Mypy pass; 1,575 passed, 12 separate integration skips, 28 subtests; image build succeeds |
+| Frontend | [40538710937](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40538710937) | TypeScript, native contract tests, production and image builds |
+| Indexes | [40538710883](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40538710883) | Disposable index integration succeeds |
+| SSH | [40538710878](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40538710878) | Authenticated synthetic Git integration succeeds |
+| Browser | [40538711007](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40538711007) | Seven acceptance phases succeed; no new archive download or screenshot inspection |
+| Stack | [40538710902](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40538710902) | Managed stack and retained-image update jobs succeed |
 
 The integration skips above are exercised separately, not waived acceptance.
-PR image builds publish no application images.
+The optional WebKit first-install diagnostic is normally skipped. Both image-build
+logs confirm `push: false` and `load: false`; no application images were published.
+Browser artifact `12751801133` was uploaded by the current CI, but has not been
+downloaded, CRC-checked or visually inspected. The direct evidence below remains
+pinned to its earlier head.
 
 ### Directly inspected browser artifact: earlier head 102ea115
 
@@ -340,7 +360,7 @@ The hash/CRC and visual evidence below belongs to
 [102ea115](https://github.com/JonasKruegerCode/SecondBrain/commit/102ea115f1d564fb0440d3bbbf7eff411dd2dfaa),
 tree `d5c0d4a41700d5cd37d743260da905b33f58e889`, browser
 [40418508809](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40418508809).
-It is not a fresh archive or visual check of the later backup/marker corrections.
+It is not a fresh archive or visual check of the later startup/recovery corrections.
 
 Browser artifact `12697899364` is 242,927,851 bytes with SHA-256
 `5a5168887459d45f5871ce411628ce9d08cfd082186a231f68201a78d6128798`.
