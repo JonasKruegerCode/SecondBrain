@@ -85,7 +85,7 @@ def _require_completed_seed(vault: Path) -> None:
             or marker.get("state") not in ("seeding", "complete")
         ):
             raise ValueError("invalid marker")
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         raise SystemExit(
             "Demo marker is invalid or unreadable; inspect or restore it before starting."
         ) from exc

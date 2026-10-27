@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import runpy
 import signal
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -162,12 +165,16 @@ def test_partial_seed_requires_explicit_resume_before_any_service(
         '{"format":1,"state":"unknown"}',
         '{"format":1,"state":[]}',
         '{"format":1,"state":{}}',
+        "[" * 11_000 + "0" + "]" * 11_000,
+        '{"format":1,"state":' + "[" * 11_000 + "0" + "]" * 11_000 + "}",
     ],
 )
+@pytest.mark.parametrize("empty", [False, True])
 def test_invalid_demo_marker_never_starts_services(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     marker: str,
+    empty: bool,
 ) -> None:
     vault = tmp_path / "vault"
     WikiStore(vault)
@@ -175,8 +182,29 @@ def test_invalid_demo_marker_never_starts_services(
     before = snapshot(vault)
     main, processes = launcher(tmp_path, monkeypatch)
     with pytest.raises(SystemExit, match="marker"):
-        main(["--vault", str(vault)])
+        main(["--vault", str(vault)] + (["--empty"] if empty else []))
     processes.assert_not_called()
+    assert snapshot(vault) == before
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_marker_decoder_limit_has_friendly_cli_error(tmp_path: Path, empty: bool) -> None:
+    root = Path(__file__).resolve().parents[2]
+    vault = tmp_path / "vault"
+    WikiStore(vault)
+    (vault / demo.MARKER).write_text("[" * 11_000 + "0" + "]" * 11_000)
+    before = snapshot(vault)
+    result = subprocess.run(
+        [sys.executable, str(root / "scripts" / "run-wiki-demo.py"),
+         "--vault", str(vault)] + (["--empty"] if empty else []),
+        env={"PATH": os.environ["PATH"], "PYTHONPATH": str(root / "backend" / "src")},
+        capture_output=True, check=False, timeout=5,
+    )
+    assert result.returncode == 1
+    assert result.stdout == b""
+    assert result.stderr.decode().strip() == (
+        "Demo marker is invalid or unreadable; inspect or restore it before starting."
+    )
     assert snapshot(vault) == before
 
 
