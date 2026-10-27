@@ -38,7 +38,10 @@ def _read_template(template: Path) -> dict[str, str]:
             continue
         if not path.is_file() or path.is_symlink():
             raise DemoSeedError(f"Template pages must be regular files: {path}")
-        markdown = path.read_text(encoding="utf-8")
+        try:
+            markdown = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise DemoSeedError(f"Template page must be UTF-8: {path.name}") from exc
         content, _ = split_frontmatter(markdown)
         if not content.lstrip().startswith("# ") or not markdown.strip():
             raise DemoSeedError(f"Template page needs a level-one title: {path.name}")
