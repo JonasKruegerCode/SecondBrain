@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import zlib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from second_brain.wiki.exporter import _publish
 from second_brain.wiki.store import REF, WikiError, WikiStore
 
 ARCHIVE_VERSION = 1
+SQLITE_BUSY_TIMEOUT = 10.0
 SQLITE_FILES = (".wiki-indexes.sqlite3", ".wiki-delivery.sqlite3")
 PLAIN_FILES = (".second-brain-demo.json",)
 ALLOWED_MEMBERS = {
@@ -75,12 +77,23 @@ def _hash(path: Path) -> dict[str, int | str]:
 
 def _copy_sqlite(source: Path, destination: Path) -> None:
     source_uri = f"{source.as_uri()}?mode=ro"
+    deadline = time.monotonic() + SQLITE_BUSY_TIMEOUT
+
+    def progress(status: int, remaining: int, total: int) -> None:
+        nonlocal deadline
+        if status in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+            if time.monotonic() >= deadline:
+                raise _error("storage_unavailable", "Backup storage is unavailable.")
+        else:
+            # Bound stalls, not the total duration of a large progressing copy.
+            deadline = time.monotonic() + SQLITE_BUSY_TIMEOUT
+
     try:
         with (
-            sqlite3.connect(source_uri, uri=True, timeout=10) as current,
+            sqlite3.connect(source_uri, uri=True, timeout=0) as current,
             sqlite3.connect(destination) as copied,
         ):
-            current.backup(copied)
+            current.backup(copied, pages=256, progress=progress, sleep=0.05)
             if copied.execute("PRAGMA integrity_check").fetchone() != ("ok",):
                 raise _error("invalid_vault", "Managed SQLite metadata is invalid.")
     except sqlite3.DatabaseError as exc:

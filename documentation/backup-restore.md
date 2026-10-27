@@ -40,6 +40,11 @@ The command excludes transient lock files and never copies provider-owned index
 storage. Its manifest records the exact content revision, page count, byte sizes,
 and SHA-256 checksums.
 
+If SQLite metadata remains locked for ten seconds without copy progress, the
+command exits with `storage_unavailable` and publishes no archive. Temporary
+backup files are removed; retry the same new archive path after releasing the
+writer lock. This bounds a stalled copy, not the total duration of a large backup.
+
 The command is designed to tolerate ordinary concurrent page writes: it captures
 one named Git revision, not a half-written working tree. For a release backup,
 still quiesce writers and delivery workers so the archive and the separately
