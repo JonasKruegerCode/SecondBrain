@@ -91,14 +91,14 @@ def _seed_locked(
     marker_path = vault / MARKER
     try:
         marker = json.loads(marker_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, RecursionError) as exc:
         raise DemoSeedError("Demo marker is unreadable; no pages were changed.") from exc
     if not isinstance(marker, dict) or marker.get("format") != FORMAT_VERSION:
         raise DemoSeedError("Unrecognized demo marker; no pages were changed.")
     if marker.get("fingerprint") != fingerprint:
         raise DemoSeedError("Template differs from this seed; no pages were changed.")
     state = marker.get("state")
-    if state not in {"seeding", "complete"}:
+    if state not in ("seeding", "complete"):
         raise DemoSeedError("Unrecognized demo state; no pages were changed.")
     if state == "seeding" and not resume:
         raise DemoSeedError(
@@ -172,13 +172,13 @@ def seed_vault(
     if not fresh:
         try:
             marker = json.loads(marker_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, RecursionError) as exc:
             raise DemoSeedError("Demo marker is unreadable; no content was changed.") from exc
         if not isinstance(marker, dict) or marker.get("format") != FORMAT_VERSION:
             raise DemoSeedError("Unrecognized demo marker; no content was changed.")
         if marker.get("fingerprint") != fingerprint:
             raise DemoSeedError("Template differs from this seed; no content was changed.")
-        if marker.get("state") not in {"complete", "seeding"}:
+        if marker.get("state") not in ("complete", "seeding"):
             raise DemoSeedError("Unrecognized demo state; no content was changed.")
         if marker.get("state") == "complete" and not (vault / ".wiki.git").is_dir():
             raise DemoSeedError("Completed demo repository is missing; no content was changed.")
