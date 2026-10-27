@@ -80,6 +80,10 @@ operator guides instead of these isolated-preview settings.
 Restart with this launcher to retain later edits. Repeating template setup
 verifies the original template and refuses edited content; an interrupted seed
 needs explicit `--resume` with the same template.
+Normal template seeding and the scale profile reject an existing nonempty raw
+folder or a regular file with `Demo start refused: ...`, without changing those
+inputs. Choose a new directory; do not delete existing content to force a demo.
+An existing managed wiki follows the reopening rules above.
 The launcher refuses unfinished or invalid demo markers before starting services;
 `--empty` does not bypass this check or recover a partial template. After explicit
 resume, completed demos retain later edits without revalidating the original template.

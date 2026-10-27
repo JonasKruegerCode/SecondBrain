@@ -11,8 +11,8 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from second_brain.wiki.demo import FORMAT_VERSION, MARKER, seed_vault
-from second_brain.wiki.scale_demo import create_scale_vault
+from second_brain.wiki.demo import FORMAT_VERSION, MARKER, DemoSeedError, seed_vault
+from second_brain.wiki.scale_demo import ScaleFixtureError, create_scale_vault
 
 
 def _wait_for_children(
@@ -138,7 +138,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.vault
             else Path(tempfile.mkdtemp(prefix="scale-vault-", dir=scale_root)) / "vault"
         )
-        result = create_scale_vault(vault, count=args.scale_pages)
+        try:
+            result = create_scale_vault(vault, count=args.scale_pages)
+        except ScaleFixtureError as exc:
+            raise SystemExit(f"Demo start refused: {exc}") from None
         print(
             f"Scale fixture: {result['pages']} pages, {result['edges']} links, vault {vault}",
             flush=True,
@@ -147,7 +150,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         vault = (args.vault or root / ".demo" / "vault").resolve()
     _require_completed_seed(vault)
     if args.scale_pages is None and not (vault / ".wiki.git").exists() and not args.empty:
-        seed_vault(vault)
+        try:
+            seed_vault(vault)
+        except DemoSeedError as exc:
+            raise SystemExit(f"Demo start refused: {exc}") from None
     if not (root / "frontend" / "node_modules").is_dir():
         raise SystemExit("Run `cd frontend && npm ci` first.")
     env = {
