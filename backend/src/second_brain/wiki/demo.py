@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from second_brain.wiki.store import WikiError, WikiStore, split_frontmatter
+from second_brain.wiki.store import MAX_BYTES, WikiError, WikiStore, split_frontmatter
 
 MARKER = ".second-brain-demo.json"
 FORMAT_VERSION = 1
@@ -39,9 +39,15 @@ def _read_template(template: Path) -> dict[str, str]:
         if not path.is_file() or path.is_symlink():
             raise DemoSeedError(f"Template pages must be regular files: {path}")
         try:
+            WikiStore._validate_id(path.stem)
+        except WikiError as exc:
+            raise DemoSeedError(f"Template page ID is invalid: {path.name}") from exc
+        try:
             markdown = path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise DemoSeedError(f"Template page must be UTF-8: {path.name}") from exc
+        if len(markdown.encode("utf-8")) > MAX_BYTES:
+            raise DemoSeedError(f"Template page exceeds the one-megabyte limit: {path.name}")
         content, _ = split_frontmatter(markdown)
         if not content.lstrip().startswith("# ") or not markdown.strip():
             raise DemoSeedError(f"Template page needs a level-one title: {path.name}")

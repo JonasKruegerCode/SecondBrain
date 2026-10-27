@@ -188,6 +188,15 @@ before creating only missing ones. A custom synthetic template can be selected
 with `--template PATH`. Source/prefix flags apply only to import; template/resume
 flags apply only to template, so unrelated arguments are refused.
 
+Custom templates must use valid stable page IDs as filenames and UTF-8 Markdown
+pages of at most one megabyte each (measured as encoded bytes, not characters).
+The complete template is checked for these content errors before a seed marker,
+managed repository or first page is created. Fix the named file and retry the
+same command. An initial seed refused by this preflight leaves its destination
+unchanged, so it needs no partial-vault cleanup. This preflight
+does not make a multi-page seed atomic against storage failures or interruption;
+those still require the explicit resume procedure above.
+
 Raw Markdown folders require deliberate migration; they are not adopted silently.
 Use the [verified backup/restore command](backup-restore.md) to preserve the
 authoritative Git history, request receipts and known local metadata without
