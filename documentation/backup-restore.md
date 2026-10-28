@@ -168,6 +168,12 @@ temporary debris, a deliberate successful retry, and restoration of one exact
 revision's page, history and graph. Replaying its original REST request leaves
 the restored head unchanged. This is local Git/SQLite/ASGI evidence, not an
 off-host recovery or a simultaneous snapshot of external providers.
+A separate CLI portability regression relocates the archive, removes its synthetic
+source vault and sending directory, and restores from the remaining archive alone.
+Empty and populated histories retain the exact snapshot, explicit graph, local
+index namespace, demo metadata and mutation receipts. Replaying historical
+create/edit receipts does not resurrect a later-deleted page. This checks local
+source independence; it does not establish off-host or production recovery.
 An additional native Chromium rehearsal uses the real loopback HTTP service and
 CLI backup/restore. It checks identical decoded receipt text for save, create and
 delete; unchanged current pages/history/graph and Git head; both 409 failures;
