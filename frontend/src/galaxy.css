@@ -60,3 +60,10 @@
 .galaxy-heading h1 { overflow-wrap: anywhere; }
 .galaxy-controls { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .galaxy .galaxy-search input { height: auto; min-height: 38px; }
+
+/* Focus belongs to the star, not its repositioned text label. */
+.galaxy-star:focus-visible { outline: none; }
+.galaxy-star:focus-visible .galaxy-hit { fill: transparent; stroke: #a8e2ff; stroke-width: 2; }
+@media (forced-colors: active) {
+  .galaxy-star:focus-visible .galaxy-hit { stroke: Highlight; }
+}

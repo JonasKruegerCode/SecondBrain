@@ -524,7 +524,9 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     const svg = star.ownerSVGElement;
     const position = star.transform.baseVal.consolidate()?.matrix;
     if (!svg || !position) return;
-    const margin = 26 / (svg.getScreenCTM()?.a || 1);
+    // The focus ring surrounds the 18-unit hit circle and scales with
+    // zoom. Retain the minimum screen margin while exposing its full stroke.
+    const margin = Math.max(26 / (svg.getScreenCTM()?.a || 1), 20);
     // SVG focus does not scroll a clipped viewBox as HTML focus would. Move
     // only enough to expose the star and its focus ring in the current map.
     const visible = () => {

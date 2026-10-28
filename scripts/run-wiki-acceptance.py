@@ -276,6 +276,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "e2e/start-preference.spec.ts",
             "e2e/demo-rehearsal.spec.ts",
             "e2e/galaxy-density.spec.ts",
+            "e2e/galaxy-focus-bounds.spec.ts",
             "e2e/article-galaxy.spec.ts",
             "e2e/galaxy-search.spec.ts",
             "e2e/editor-retry.spec.ts",
