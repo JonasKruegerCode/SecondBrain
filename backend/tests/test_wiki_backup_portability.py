@@ -28,15 +28,20 @@ def test_relocated_archive_recovers_without_source(tmp_path: Path, populated: bo
             ("home", "# Synthetic recovery\n\n[[notes]]"),
             ("notes", "# Synthetic notes\n\nOriginal."),
         ]:
-            payload = [page_id, markdown, None, f"create-{page_id}"]
+            payload: tuple[str, str, str | None, str] = (
+                page_id,
+                markdown,
+                None,
+                f"create-{page_id}",
+            )
             requests.append(
                 {"method": "save_page", "args": payload, "receipt": store.save_page(*payload)}
             )
         first = requests[-1]["receipt"]
-        payload = ["notes", "# Synthetic notes\n\nLater.", first["revision"], "edit-notes"]
+        payload = ("notes", "# Synthetic notes\n\nLater.", first["revision"], "edit-notes")
         edited = store.save_page(*payload)
         requests.append({"method": "save_page", "args": payload, "receipt": edited})
-        deleted = ["notes", edited["revision"], "delete-notes"]
+        deleted = ("notes", edited["revision"], "delete-notes")
         requests.append(
             {"method": "delete_page", "args": deleted, "receipt": store.delete_page(*deleted)}
         )
