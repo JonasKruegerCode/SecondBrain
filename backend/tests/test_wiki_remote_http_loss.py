@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,11 +21,20 @@ import pytest
 from second_brain.wiki.store import WikiStore
 
 CLIENT = """
-import json, sys
+import json, sys, time
+from pathlib import Path
 from second_brain.wiki.remote import ManagedGitSync
 from second_brain.wiki.store import WikiStore, WikiError
 store = WikiStore(sys.argv[1])
 sync = ManagedGitSync(store, sys.argv[2], 'wiki', 'notes')
+if len(sys.argv) > 4:
+    gate = Path(sys.argv[4])
+    gate.with_suffix('.ready').touch()
+    deadline = time.monotonic() + 10
+    while not gate.exists():
+        if time.monotonic() > deadline:
+            raise RuntimeError('Client start gate timed out')
+        time.sleep(.01)
 try:
     output = {'ok': True, 'receipt': sync.push(sys.argv[3], None, 'publication')}
 except WikiError as error:
@@ -137,8 +147,43 @@ def client(vault: Path, url: str, base: str) -> dict[str, Any]:
     return output
 
 
+def concurrent_clients(vault: Path, url: str, base: str) -> list[dict[str, Any]]:
+    # Both independent clients reopen durable state before either enters push.
+    # The product's SQLite transaction, rather than this gate, owns serialization.
+    gates = [vault.parent / f"retry-{index}" for index in range(2)]
+    processes: list[subprocess.Popen[str]] = []
+    try:
+        for gate in gates:
+            processes.append(subprocess.Popen(
+                [sys.executable, "-c", CLIENT, str(vault), url, base, str(gate)],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src")),
+            ))
+        deadline = time.monotonic() + 10
+        while not all(gate.with_suffix(".ready").exists() for gate in gates):
+            assert all(process.poll() is None for process in processes), "Client exited before gate"
+            assert time.monotonic() < deadline, "Clients did not reach the start gate"
+            time.sleep(.01)
+        for gate in gates:
+            gate.touch()
+        results = []
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=25)
+            assert process.returncode == 0, stderr
+            results.append(json.loads(stdout))
+        return results
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+
+
+@pytest.mark.parametrize("concurrent", [False, True])
 @pytest.mark.parametrize("move", ["before-receive", "unchanged", "descendant", "foreign"])
-def test_lost_http_reply_recovers_prepared_publication(tmp_path: Path, move: str) -> None:
+def test_lost_http_reply_recovers_prepared_publication(
+    tmp_path: Path, move: str, concurrent: bool
+) -> None:
     remote = tmp_path / "remote.git"
     subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
     git(remote, "config", "http.receivepack", "true")
@@ -162,7 +207,12 @@ def test_lost_http_reply_recovers_prepared_publication(tmp_path: Path, move: str
         # A retry must use its frozen snapshot, not this later local content.
         store.save_page("Beta", "# Beta\nNot part of the prepared snapshot.", None, "later")
         later = store._head()
-        result = client(store.path, url, base)
+        results = (
+            concurrent_clients(store.path, url, base) if concurrent
+            else [client(store.path, url, base)]
+        )
+        result = results[0]
+        assert all(item == result for item in results)
         if move == "foreign":
             assert result == {"ok": False, "code": "remote_conflict"}
             assert counts["posts"] == 1
