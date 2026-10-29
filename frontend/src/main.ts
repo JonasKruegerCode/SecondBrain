@@ -784,7 +784,7 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
   if (!page) return;
   const main = app.querySelector("main")!;
   const feedback = `<p class="notice ${noticeError ? "error" : ""}" role="status" aria-atomic="true">${esc(notice)}</p>`;
-  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1>${editing && noticeAtSave ? "" : feedback}${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><textarea id="editor" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><div class="editor-feedback"><span>Your draft stays here if saving fails.</span>${noticeAtSave ? feedback : ""}</div><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : `<div class="article-toc"></div><div class="prose"></div>`}<div class="delivery-status"><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p><button id="check-delivery" class="subtle" type="button">Check sync status</button></div><details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
+  main.innerHTML = `<div class="toolbar"><a href="/?overview=1">← All pages</a><div><button id="start" class="subtle">Set as start page</button><button id="edit" class="primary">${editing ? "Cancel" : "Edit page ↗"}</button></div></div><article><div class="eyebrow">WIKI PAGE <span class="revision">REVISION ${esc(String(page.revision).slice(0, 8))}</span></div><h1 tabindex="-1">${esc(page.title)}</h1>${editing && noticeAtSave ? "" : feedback}${editing ? `<label for="editor">Markdown · links use [[page-id|label]]</label><p id="editor-wrap-notice" class="editor-wrap-notice" hidden>Very long source lines scroll horizontally to keep editing responsive. Your Markdown is unchanged.</p><textarea id="editor" wrap="off" spellcheck="false" ${saving ? "disabled" : ""}>${esc(draft)}</textarea><div class="editor-footer"><div class="editor-feedback"><span>Your draft stays here if saving fails.</span>${noticeAtSave ? feedback : ""}</div><button id="save" class="primary" ${saving ? "disabled" : ""}>${saving ? "Saving…" : "Save changes →"}</button></div>` : `<div class="article-toc"></div><div class="prose"></div>`}<div class="delivery-status"><p class="delivery-notice" aria-live="polite">${esc(deliveryNotice)}</p><button id="check-delivery" class="subtle" type="button">Check sync status</button></div><details class="page-history"><summary>Local Git history</summary><p class="history-context">Recent commits for this page, stored in your local workspace.</p><div class="history-content" role="status">Open to load recent changes.</div></details></article>`;
   if (!editing) {
     const connections = document.createElement("a");
     connections.className = "article-connections";
@@ -1015,9 +1015,28 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
     const editor = main.querySelector<HTMLTextAreaElement>("#editor")!;
     // HTML parsing discards an initial textarea newline. Assign the value after
     // construction so opening the editor preserves every leading blank line.
+    const wrapNotice = main.querySelector<HTMLElement>("#editor-wrap-notice")!;
+    const updateEditorWrapping = () => {
+      // Native soft wrapping can stall on a single huge paragraph. Change only
+      // presentation, never insert line breaks into the user's Markdown. Avoid
+      // replacing the textarea so selection, composition and undo survive.
+      let lineLength = 0;
+      let longLine = false;
+      for (let i = 0; i < draft.length; i++) {
+        const code = draft.charCodeAt(i);
+        lineLength = code === 10 || code === 13 ? 0 : lineLength + 1;
+        if (lineLength > 8192) { longLine = true; break; }
+      }
+      editor.wrap = longLine ? "off" : "soft";
+      wrapNotice.hidden = !longLine;
+      if (longLine) editor.setAttribute("aria-describedby", "editor-wrap-notice");
+      else editor.removeAttribute("aria-describedby");
+    };
+    updateEditorWrapping();
     editor.value = draft;
     editor.addEventListener("input", (e) => {
       draft = (e.target as HTMLTextAreaElement).value;
+      updateEditorWrapping();
       renderPwaState();
     });
     main.querySelector("#save")!.addEventListener("click", () => void save());

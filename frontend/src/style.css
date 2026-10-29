@@ -783,3 +783,9 @@ textarea {
 .intro h1 { overflow-wrap: anywhere; }
 main > form { flex-wrap: wrap; }
 main > form input { flex-basis: 10rem; }
+
+.editor-wrap-notice {
+  color: var(--muted-text);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}

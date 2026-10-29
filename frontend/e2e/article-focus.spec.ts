@@ -38,6 +38,98 @@ for (const width of [320, 390, 1440]) {
   });
 }
 
+
+for (const width of [320, 390, 1440]) {
+  test(`long source lines remain editable without changing Markdown (${width})`, async ({ page, request }, info) => {
+    const id = `long-source-${randomUUID()}`, endpoint = `/api/wiki/pages/${id}`;
+    const unit = "Synthetic Küste: e\u0301 and é. 海岸 🌊 🧑‍🚀; ";
+    const markdown = "# Synthetic long source\n\n" + unit.repeat(4000);
+    expect((await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } })).ok()).toBe(true);
+    try {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/wiki/${id}`);
+      await page.getByRole("button", { name: "Edit page", exact: false }).click();
+      const editor = page.locator("#editor");
+      await expect(editor).toHaveAttribute("wrap", "off");
+      await expect(editor).toHaveValue(markdown);
+      await expect(page.locator("#editor-wrap-notice")).toBeVisible();
+      await expect(editor).toHaveAttribute("aria-describedby", "editor-wrap-notice");
+      await editor.press("Control+End");
+      await page.keyboard.type("z");
+      await expect(editor).toHaveValue(markdown + "z");
+      await page.keyboard.press("Backspace");
+      await expect(editor).toHaveValue(markdown);
+      await editor.press("Control+z");
+      await expect(editor).toHaveValue(markdown + "z");
+      await editor.press("Control+Shift+z");
+      await expect(editor).toHaveValue(markdown);
+      await page.keyboard.insertText("\nSaved synthetic note.\n");
+      const edited = markdown + "\nSaved synthetic note.\n";
+      await expect(editor).toHaveValue(edited);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: info.outputPath(`long-source-editor-${width}.png`) });
+      await page.getByRole("button", { name: "Save changes", exact: false }).click();
+      await expect(editor).toHaveCount(0);
+      expect((await (await request.get(endpoint)).json()).markdown).toBe(edited);
+      await page.reload();
+      await page.getByRole("button", { name: "Edit page", exact: false }).click();
+      await expect(editor).toHaveValue(edited);
+      await expect(editor).toHaveAttribute("wrap", "off");
+      const current = await (await request.get(endpoint)).json();
+      const external = edited + "\nExternal saved note.\n";
+      expect((await request.post(endpoint, { data: { markdown: external, base_revision: current.revision, request_id: randomUUID() } })).ok()).toBe(true);
+      await editor.press("Control+End");
+      await page.keyboard.insertText("\nLocal unsaved note.\n");
+      await page.getByRole("button", { name: "Save changes", exact: false }).click();
+      await expect(page.locator(".notice").filter({ hasText: "Conflict:" })).toBeVisible();
+      await expect(editor).toHaveValue(edited + "\nLocal unsaved note.\n");
+      await expect(editor).toHaveAttribute("wrap", "off");
+      expect((await (await request.get(endpoint)).json()).markdown).toBe(external);
+    } finally {
+      const current = await (await request.get(endpoint)).json();
+      expect((await request.delete(endpoint, { data: { base_revision: current.revision, request_id: randomUUID() } })).ok()).toBe(true);
+    }
+  });
+}
+
+test("editor wrapping adapts to pasted and removed long lines without replacing the native input", async ({ page, request }) => {
+  const id = `wrap-boundary-${randomUUID()}`, endpoint = `/api/wiki/pages/${id}`;
+  const markdown = "# Wrapping boundary\n\n" + "x".repeat(8192);
+  expect((await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } })).ok()).toBe(true);
+  try {
+    await page.goto(`/wiki/${id}`);
+    await page.getByRole("button", { name: "Edit page", exact: false }).click();
+    const editor = page.locator("#editor"), original = await editor.elementHandle();
+    await expect(editor).toHaveAttribute("wrap", "soft");
+    await expect(page.locator("#editor-wrap-notice")).toBeHidden();
+    await expect(editor).not.toHaveAttribute("aria-describedby", "editor-wrap-notice");
+    await editor.press("Control+End");
+    await page.keyboard.insertText("y");
+    await expect(editor).toHaveAttribute("wrap", "off");
+    await expect(editor).toHaveValue(markdown + "y");
+    await expect(editor).toBeFocused();
+    expect(await original!.evaluate(node => node === document.querySelector("#editor"))).toBe(true);
+    await page.keyboard.press("Backspace");
+    await expect(editor).toHaveAttribute("wrap", "soft");
+    await expect(editor).toHaveValue(markdown);
+    await editor.press("Control+z");
+    await expect(editor).toHaveAttribute("wrap", "off");
+    await expect(editor).toHaveValue(markdown + "y");
+    await editor.press("Control+Shift+z");
+    await expect(editor).toHaveAttribute("wrap", "soft");
+    await expect(editor).toHaveValue(markdown);
+    // Many short source lines retain wrapping even when total size is large.
+    const shortLines = "\n" + ("short synthetic line\n").repeat(2000);
+    await editor.fill(shortLines);
+    await expect(editor).toHaveAttribute("wrap", "soft");
+    await expect(editor).toHaveValue(shortLines);
+    expect((await (await request.get(endpoint)).json()).markdown).toBe(markdown);
+  } finally {
+    const current = await (await request.get(endpoint)).json();
+    expect((await request.delete(endpoint, { data: { base_revision: current.revision, request_id: randomUUID() } })).ok()).toBe(true);
+  }
+});
+
 async function arrival(page: Page, title: string, info: TestInfo, width: number, step: string) {
   const heading = page.locator("article > h1");
   await expect(heading).toHaveText(title);
