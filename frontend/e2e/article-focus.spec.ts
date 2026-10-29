@@ -39,11 +39,34 @@ for (const width of [320, 390, 1440]) {
 }
 
 
+// Engines may coalesce a typed character and its immediate deletion into one
+// undo unit. Compare with that engine's native textarea, not Chromium's grouping.
+async function nativeUndoAfterDeletion(page: Page, markdown: string, character: string) {
+  await page.setContent('<textarea id="native-probe" wrap="off"></textarea>');
+  const probe = page.locator("#native-probe");
+  await probe.evaluate((node: HTMLTextAreaElement, value) => { node.value = value; }, markdown);
+  await probe.press("ControlOrMeta+End");
+  await page.keyboard.insertText(character);
+  await probe.press("ControlOrMeta+z");
+  await expect(probe).toHaveValue(markdown);
+  await probe.press("ControlOrMeta+Shift+z");
+  await expect(probe).toHaveValue(markdown + character);
+  await page.keyboard.press("Backspace");
+  await expect(probe).toHaveValue(markdown);
+  await probe.press("ControlOrMeta+z");
+  const undone = await probe.inputValue();
+  expect([markdown, markdown + character]).toContain(undone);
+  await probe.press("ControlOrMeta+Shift+z");
+  await expect(probe).toHaveValue(markdown);
+  return undone;
+}
+
 for (const width of [320, 390, 1440]) {
   test(`long source lines remain editable without changing Markdown (${width})`, async ({ page, request }, info) => {
     const id = `long-source-${randomUUID()}`, endpoint = `/api/wiki/pages/${id}`;
     const unit = "Synthetic Küste: e\u0301 and é. 海岸 🌊 🧑‍🚀; ";
     const markdown = "# Synthetic long source\n\n" + unit.repeat(4000);
+    const nativeUndone = await nativeUndoAfterDeletion(page, markdown, "z");
     expect((await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } })).ok()).toBe(true);
     try {
       await page.setViewportSize({ width, height: 844 });
@@ -54,14 +77,18 @@ for (const width of [320, 390, 1440]) {
       await expect(editor).toHaveValue(markdown);
       await expect(page.locator("#editor-wrap-notice")).toBeVisible();
       await expect(editor).toHaveAttribute("aria-describedby", "editor-wrap-notice");
-      await editor.press("Control+End");
-      await page.keyboard.type("z");
+      await editor.press("ControlOrMeta+End");
+      await page.keyboard.insertText("z");
+      await expect(editor).toHaveValue(markdown + "z");
+      await editor.press("ControlOrMeta+z");
+      await expect(editor).toHaveValue(markdown);
+      await editor.press("ControlOrMeta+Shift+z");
       await expect(editor).toHaveValue(markdown + "z");
       await page.keyboard.press("Backspace");
       await expect(editor).toHaveValue(markdown);
-      await editor.press("Control+z");
-      await expect(editor).toHaveValue(markdown + "z");
-      await editor.press("Control+Shift+z");
+      await editor.press("ControlOrMeta+z");
+      await expect(editor).toHaveValue(nativeUndone);
+      await editor.press("ControlOrMeta+Shift+z");
       await expect(editor).toHaveValue(markdown);
       await page.keyboard.insertText("\nSaved synthetic note.\n");
       const edited = markdown + "\nSaved synthetic note.\n";
@@ -78,7 +105,7 @@ for (const width of [320, 390, 1440]) {
       const current = await (await request.get(endpoint)).json();
       const external = edited + "\nExternal saved note.\n";
       expect((await request.post(endpoint, { data: { markdown: external, base_revision: current.revision, request_id: randomUUID() } })).ok()).toBe(true);
-      await editor.press("Control+End");
+      await editor.press("ControlOrMeta+End");
       await page.keyboard.insertText("\nLocal unsaved note.\n");
       await page.getByRole("button", { name: "Save changes", exact: false }).click();
       await expect(page.locator(".notice").filter({ hasText: "Conflict:" })).toBeVisible();
@@ -95,6 +122,7 @@ for (const width of [320, 390, 1440]) {
 test("editor wrapping adapts to pasted and removed long lines without replacing the native input", async ({ page, request }) => {
   const id = `wrap-boundary-${randomUUID()}`, endpoint = `/api/wiki/pages/${id}`;
   const markdown = "# Wrapping boundary\n\n" + "x".repeat(8192);
+  const nativeUndone = await nativeUndoAfterDeletion(page, markdown, "y");
   expect((await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } })).ok()).toBe(true);
   try {
     await page.goto(`/wiki/${id}`);
@@ -103,19 +131,25 @@ test("editor wrapping adapts to pasted and removed long lines without replacing 
     await expect(editor).toHaveAttribute("wrap", "soft");
     await expect(page.locator("#editor-wrap-notice")).toBeHidden();
     await expect(editor).not.toHaveAttribute("aria-describedby", "editor-wrap-notice");
-    await editor.press("Control+End");
+    await editor.press("ControlOrMeta+End");
     await page.keyboard.insertText("y");
     await expect(editor).toHaveAttribute("wrap", "off");
     await expect(editor).toHaveValue(markdown + "y");
     await expect(editor).toBeFocused();
     expect(await original!.evaluate(node => node === document.querySelector("#editor"))).toBe(true);
+    await editor.press("ControlOrMeta+z");
+    await expect(editor).toHaveValue(markdown);
+    await expect(editor).toHaveAttribute("wrap", "soft");
+    await editor.press("ControlOrMeta+Shift+z");
+    await expect(editor).toHaveValue(markdown + "y");
+    await expect(editor).toHaveAttribute("wrap", "off");
     await page.keyboard.press("Backspace");
     await expect(editor).toHaveAttribute("wrap", "soft");
     await expect(editor).toHaveValue(markdown);
-    await editor.press("Control+z");
-    await expect(editor).toHaveAttribute("wrap", "off");
-    await expect(editor).toHaveValue(markdown + "y");
-    await editor.press("Control+Shift+z");
+    await editor.press("ControlOrMeta+z");
+    await expect(editor).toHaveAttribute("wrap", nativeUndone === markdown ? "soft" : "off");
+    await expect(editor).toHaveValue(nativeUndone);
+    await editor.press("ControlOrMeta+Shift+z");
     await expect(editor).toHaveAttribute("wrap", "soft");
     await expect(editor).toHaveValue(markdown);
     // Many short source lines retain wrapping even when total size is large.
