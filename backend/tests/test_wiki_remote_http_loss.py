@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -27,7 +28,7 @@ from second_brain.wiki.remote import ManagedGitSync
 from second_brain.wiki.store import WikiStore, WikiError
 store = WikiStore(sys.argv[1])
 sync = ManagedGitSync(store, sys.argv[2], 'wiki', 'notes')
-if len(sys.argv) > 4:
+if len(sys.argv) == 5:
     gate = Path(sys.argv[4])
     gate.with_suffix('.ready').touch()
     deadline = time.monotonic() + 10
@@ -57,7 +58,7 @@ def git(repo: Path, *args: str, data: bytes | None = None) -> str:
 
 @contextmanager
 def lossy_remote(
-    root: Path, remote: Path, *, before_receive: bool
+    root: Path, remote: Path, *, before_receive: bool, drop_first: bool = True
 ) -> Iterator[tuple[str, dict[str, int]]]:
     counts = {"posts": 0, "drops": 0, "received": 0}
     failures: list[str] = []
@@ -85,7 +86,7 @@ def lossy_remote(
             data = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             if receiving:
                 counts["posts"] += 1
-            dropping = receiving and counts["drops"] == 0
+            dropping = drop_first and receiving and counts["drops"] == 0
             if not (dropping and before_receive):
                 result = subprocess.run(
                     ["git", "http-backend"], input=data, capture_output=True, timeout=15,
@@ -231,5 +232,89 @@ def test_lost_http_reply_recovers_prepared_publication(
             before_replay = dict(counts)
             assert client(store.path, url, base) == result
             assert counts == before_replay
+        assert store._head() == later
+        git(remote, "fsck", "--full")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Hard process termination requires POSIX signals")
+@pytest.mark.parametrize("boundary,move", [
+    ("_push", "unchanged"), ("_ack", "unchanged"),
+    ("_ack", "descendant"), ("_ack", "foreign"),
+])
+def test_hard_client_exit_recovers_prepared_http_publication(
+    tmp_path: Path, boundary: str, move: str
+) -> None:
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    git(remote, "config", "http.receivepack", "true")
+    store = WikiStore(tmp_path / "vault")
+    store.save_page("Alpha", "# Alpha\nSynthetic hard-exit evidence.", None, "create")
+    base = store._head()
+    marker = tmp_path / "client-at-boundary"
+    # Pause the real interpreter at a function entry; replace no product method.
+    # _push starts after preparation is committed, _ack after Git is reaped.
+    crashing = CLIENT.replace("try:\n", """
+def pause(frame, event, arg):
+    if event == 'call' and frame.f_code.co_name == sys.argv[5]:
+        marker = Path(sys.argv[4])
+        pending = marker.with_suffix(".tmp")
+        pending.write_text(frame.f_code.co_filename)
+        pending.replace(marker)
+        while True:
+            time.sleep(.01)
+sys.setprofile(pause)
+try:
+""", 1)
+    with lossy_remote(tmp_path, remote, before_receive=False, drop_first=False) as (url, counts):
+        process = subprocess.Popen(
+            [sys.executable, "-c", crashing, str(store.path), url, base, str(marker), boundary],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1] / "src")),
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while not marker.exists():
+                assert process.poll() is None, "Client exited before crash boundary"
+                assert time.monotonic() < deadline, "Client did not reach crash boundary"
+                time.sleep(.01)
+            assert marker.read_text().endswith("second_brain/wiki/remote.py")
+            with sqlite3.connect(store.path / ".wiki-remote.sqlite3") as db:
+                commit, receipt = db.execute(
+                    "SELECT commit_id, result FROM requests WHERE id='publication'"
+                ).fetchone()
+                assert receipt is None
+            process.kill()
+            stdout, stderr = process.communicate(timeout=5)
+            assert process.returncode == -9, (stdout, stderr)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=5)
+        published = observed = ""
+        if boundary == "_push":
+            assert counts["posts"] == 0
+            assert not git(remote, "for-each-ref", "--format=%(objectname)", "refs/heads/wiki")
+        else:
+            published = observed = git(remote, "rev-parse", "refs/heads/wiki")
+            assert published == commit
+            assert counts == {"posts": 1, "drops": 0, "received": 1}
+            if move != "unchanged":
+                tree = git(remote, "rev-parse", published + "^{tree}")
+                parents = ["-p", published] if move == "descendant" else []
+                observed = git(remote, "commit-tree", tree, *parents, data=b"Independent change\n")
+                git(remote, "update-ref", "refs/heads/wiki", observed)
+        store.save_page("Beta", "# Beta\nNot part of this publication.", None, "later")
+        later = store._head()
+        result = client(store.path, url, base)
+        if move == "foreign":
+            assert result == {"ok": False, "code": "remote_conflict"}
+        else:
+            assert result["ok"] is True
+            assert result["receipt"]["published_revision"] == commit
+            assert result["receipt"]["last_verified_remote_revision"] == (observed or commit)
+            assert client(store.path, url, base) == result
+        assert counts == {"posts": 1, "drops": 0, "received": 1}
+        assert git(remote, "rev-parse", "refs/heads/wiki") == (observed or commit)
+        assert git(remote, "ls-tree", "-r", "--name-only", observed or commit) == "notes/Alpha.md"
         assert store._head() == later
         git(remote, "fsck", "--full")
