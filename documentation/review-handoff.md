@@ -297,36 +297,49 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Current verification, inspected 28 October 2026
+## Current verification, inspected 29 October 2026
 
-The tested head is [faac488a](https://github.com/JonasKruegerCode/SecondBrain/commit/faac488a4e1381ef14bd3198a93da42d66db68ca),
-tree `18e5972d6fbaf2e1f0bd70c7e6eb9487dd9645dd`. All six workflows and
+The tested head is [db9861bc](https://github.com/JonasKruegerCode/SecondBrain/commit/db9861bc412c449a8b2bb7f5a08d892143835999),
+tree `5635b9cd68c119db8be88cf85209b61463c97c2d`. All six workflows and
 nine jobs passed. Job/step statuses and original backend/browser logs were
-inspected on 28 October; the complete run list was checked again when updating
-this handoff.
+inspected on 29 October.
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40619129388](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40619129388) | Ruff and Mypy over 143 files pass; 1,605 passed, 12 separate integration skips, 28 subtests in 123.38 seconds; image build succeeds |
-| Frontend | [40619129322](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40619129322) | TypeScript, native contract tests, production and image builds |
-| Indexes | [40619129403](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40619129403) | Disposable index integration succeeds |
-| SSH | [40619129301](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40619129301) | Authenticated synthetic Git integration succeeds |
-| Browser | [40619129305](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40619129305) | Seven acceptance phases succeed |
-| Stack | [40619129343](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40619129343) | Managed stack and retained-image update jobs succeed |
+| Backend | [40785904016](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904016) | Ruff and Mypy over 143 files pass; 1,605 passed, 12 separate integration skips, 28 subtests in 154.58 seconds; image build succeeds |
+| Frontend | [40785904175](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904175) | TypeScript, native contract tests, production and image builds |
+| Indexes | [40785904006](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904006) | Disposable index integration succeeds |
+| SSH | [40785904005](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904005) | Authenticated synthetic Git integration succeeds |
+| Browser | [40785904231](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904231) | Seven acceptance phases succeed |
+| Stack | [40785904173](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904173) | Managed stack and retained-image update jobs succeed |
 
 The integration skips are exercised separately, not waived acceptance.
 The optional WebKit first-install diagnostic is normally skipped. Both
 application image-build logs confirm `push: false` and `load: false`; no
 application images were published. GitHub's generated merge checkout
-`babe9ce95b5ae1e45b70a009d84e04b0ecfa04a8` has exactly the tested branch
+`8dd25fa6ea97b677cb3c354ea52a00aa415f776f` has exactly the tested branch
 tree; it is not a human merge or merge authorization.
 
-Application code is unchanged since
-[03a58411](https://github.com/JonasKruegerCode/SecondBrain/commit/03a5841100340a14e52f5cd4f17d05bd7232810f).
-Later commits add the backup portability regression and correct its explicit
-tuple types. The complete replacement CI closes that test's earlier type-check
-failure. This documentation update does not change application or test behavior
-and does not transfer the tested head's green status to a new documentation head.
+Application change [0574d638](https://github.com/JonasKruegerCode/SecondBrain/commit/0574d638ef6ccafea91e41164d37bdb6458292c6)
+replaces the galaxy's clipped group focus rectangle with a dedicated star ring
+and accounts for its scaled extent when revealing keyboard targets.
+Six browser regressions cover full painted focus bounds at 320/390/1440 pixels,
+normal and emulated forced colors, multiple stars and returning focus to the
+core. Ten related Unicode/grapheme, dense-graph, label-spacing and forced-color
+cases also passed locally, as did typecheck and production build.
+Narrow forced-color and desktop screenshots were actually inspected.
+These are bounded Chromium checks, not a complete accessibility or device audit.
+The following test-only commit aligns the existing expected launcher command
+with that new suite; all 63 runner contracts passed locally, and the complete CI
+above closes its earlier three expectation failures. No API, storage, processing
+or compatibility contract changed.
+
+This documentation update does not change application or test behavior and does
+not transfer the tested head's green status to a new documentation head.
+Earlier CI history is retained in the
+[preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/3dcc0e4399686ed5bbfc92125bcf34a4c48d769f/documentation/review-handoff.md).
+Directly inspected older image/browser archives remain separately pinned below;
+the newer CI logs were inspected, but their archives were not downloaded again.
 
 Recent reliability coverage includes:
 
@@ -351,8 +364,8 @@ Recent reliability coverage includes:
 
 ### Directly inspected artifacts: application head 03a58411
 
-The following archives are pinned to the unchanged application head above,
-not to a new manual run or a fresh archive download for faac488a.
+The following archives are pinned to the older application head 03a58411,
+not to the later focus change or a fresh archive download for db9861bc.
 The browser workflow is
 [40593709562](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40593709562).
 
@@ -437,6 +450,11 @@ original assertion, gesture and timing when investigating a new occurrence.
   process. Complete receipts allow cleanup of recorded groups; incomplete
   receipts do not guarantee shutdown. Resolve retained owned processes before
   rerunning on the same ports. This is not power-loss recovery.
+- Axe Core 4.14.0 reports a label/name mismatch for a long star title shortened
+  mid-word, while its complete accessible name and panel heading are preserved.
+  This is a reproducible scanner observation, not an established speech-control
+  failure or a blanket false-positive waiver. Actual speech/screen-reader review
+  and other unassessed rendered contrasts remain open.
 - Renderer minimum-text-size, reduced-motion/forced-colors, SVG focus and
   touch-emulated checks have bounded coverage. Native font/glyph coverage,
   very dense maps, real devices and complete accessibility remain separate.
