@@ -1,5 +1,42 @@
 import { expect, Page, TestInfo, type CDPSession } from "@playwright/test";
 import { test } from "./reading-test";
+import { randomUUID } from "node:crypto";
+
+for (const width of [320, 390, 1440]) {
+  test(`long article contents preserves the reading entry and keyboard section navigation (${width})`, async ({ page, request }, info) => {
+    const id = `contents-${randomUUID()}`, endpoint = `/api/wiki/pages/${id}`;
+    const markdown = "# Field compendium\n\nRead the introduction before exploring the sections.\n\n" +
+      Array.from({ length: 20 }, (_, i) => `## Observation ${i + 1}\n\nSynthetic field observation.\n\n`).join("");
+    const created = await request.post(endpoint, { data: { markdown, base_revision: null, request_id: randomUUID() } });
+    expect(created.ok()).toBe(true);
+    try {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/wiki/${id}`);
+      const contents = page.locator(".article-toc details"), summary = contents.locator("summary");
+      await expect(contents).not.toHaveAttribute("open", "");
+      await expect(page.locator(".prose p").first()).toBeInViewport();
+      expect((await contents.boundingBox())!.height).toBeLessThan(100);
+      await page.screenshot({ path: info.outputPath(`long-contents-closed-${width}.png`) });
+      await summary.focus();
+      await page.keyboard.press("Enter");
+      await expect(contents).toHaveAttribute("open", "");
+      const last = contents.getByRole("link", { name: "Observation 20", exact: true });
+      await last.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".prose h2").last()).toBeFocused();
+      await expect(page.locator(".prose h2").last()).toBeInViewport();
+      await summary.focus();
+      await page.keyboard.press("Space");
+      await expect(contents).not.toHaveAttribute("open", "");
+      await expect(summary).toBeFocused();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect((await (await request.get(endpoint)).json()).markdown).toBe(markdown);
+    } finally {
+      const current = await (await request.get(endpoint)).json();
+      expect((await request.delete(endpoint, { data: { base_revision: current.revision, request_id: randomUUID() } })).ok()).toBe(true);
+    }
+  });
+}
 
 async function arrival(page: Page, title: string, info: TestInfo, width: number, step: string) {
   const heading = page.locator("article > h1");

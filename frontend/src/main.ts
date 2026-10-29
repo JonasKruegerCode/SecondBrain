@@ -825,7 +825,10 @@ function renderPage(focusTarget?: "editor" | "edit" | "start" | "heading",
         rendered.titleHeading.remove();
       }
       const toc = main.querySelector<HTMLElement>(".article-toc")!;
-      toc.innerHTML = `<nav aria-label="On this page"><div class="eyebrow">ON THIS PAGE</div><ol>${headings.map(h => `<li class="toc-level-${h.tagName.slice(1)}"><a href="#${h.id}">${esc(h.dataset.sectionLabel ?? h.textContent ?? "Untitled section")}</a></li>`).join("")}</ol></nav>`;
+      const contents = `<nav aria-label="On this page"><ol>${headings.map(h => `<li class="toc-level-${h.tagName.slice(1)}"><a href="#${h.id}">${esc(h.dataset.sectionLabel ?? h.textContent ?? "Untitled section")}</a></li>`).join("")}</ol></nav>`;
+      toc.innerHTML = headings.length > 12
+        ? `<details><summary>On this page · ${headings.length} sections</summary>${contents}</details>`
+        : `<div class="eyebrow">ON THIS PAGE</div>${contents}`;
       toc.addEventListener("click", (event) => {
         // Let the browser open modified activations in another tab/window.
         if (!plainLinkClick(event)) return;

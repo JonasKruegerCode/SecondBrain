@@ -734,6 +734,8 @@ textarea {
 .article-toc:empty { display: none; }
 .article-toc { margin: 28px 0; padding: 20px 24px; border: 1px solid #dce7dc; border-radius: 10px; background: #f3f7ef; }
 .article-toc nav { display: block; }
+.article-toc summary { cursor: pointer; color: #287969; font-weight: 600; }
+.article-toc summary:focus-visible { outline: 2px solid #287969; outline-offset: 5px; border-radius: 3px; }
 .article-toc a { padding: 6px 0; border-radius: 0; }
 .article-toc ol { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
 .article-toc a { display: inline-block; color: #287969; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
