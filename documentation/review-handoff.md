@@ -316,59 +316,67 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Verified application baseline, inspected 30 October 2026
+## Pinned executable baseline, inspected 30 October 2026
 
-The tested application head is [0ef7179f](https://github.com/JonasKruegerCode/SecondBrain/commit/0ef7179f3073ec210f87792eb6bb91f1d8f3aff1),
-tree `61a891c52dfd80d7e0d4931964cf1f15df487270`. It fixes preservation of
-opaque provider continuation fields between tool rounds; the
-[regression](../backend/tests/test_wiki_chat_completion.py) covers structured,
-text and combined metadata without exposing it to later turns or API output.
-The full locked local backend run passed 1,619 tests and 28 subtests with 13
-skips; 73 focused chat tests, Ruff/format and strict Mypy over 144 sources passed.
-The local skips are one Docker E2E, seven index and five SSH cases.
+The pinned executable head is [09da1245](https://github.com/JonasKruegerCode/SecondBrain/commit/09da12458cdb72c38c1806981c3e66c369dfe393),
+tree `cfe8aa110881c45c2f6828ffc410bb5dee2089cc`. It includes provider continuation
+metadata and stale-tab deletion protection, preserving existing deletion timestamps.
+The previous Chromium run caught a timestamp regression (490 passed / one failed);
+the original assertion was retained and now passes. The three new stale-tab cases
+cover late reply, retry and a deliberate fresh message after marker eviction.
+Local DOM/IndexedDB-double controls fail on the respective predecessors and pass
+with the fixes; never-saved work survives an aborted write. A two-document double
+also exercises 101 actual UI deletions. These checks are distinct from native CI.
+
+Earlier full locked local backend evidence on `0ef7179f`: 1,619 passed,
+28 subtests, 13 skips; 73 focused chat tests, Ruff/format and strict Mypy over
+144 sources passed. The local skips are one Docker E2E, seven index and five SSH cases.
 
 All six CI workflows and nine jobs passed; all job/step statuses and nine
 original logs were inspected. GitHub's generated checkout
-`25fc02aa4f4d817c30d5b15d166e931f35c8ac98` has exactly the tested branch tree
+`d4f4fc1dd08cf3207f5b2f0cdcec0d26d9a968e1` has exactly the tested branch tree
 and the expected main/branch parents. It is not a human merge or authorization.
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [41025566830](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41025566830) | Ruff, Mypy over 144 sources; 1,620 passed, 12 separate integration skips, 28 subtests in 153.14s; image build succeeds |
-| Frontend | [41025566860](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41025566860) | TypeScript, proxy 5/access 3/PWA 5/image-update 2 contracts, production and image builds |
-| Indexes | [41025566926](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41025566926) | 7 disposable Neo4j/Qdrant cases |
-| SSH | [41025566995](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41025566995) | 5 authenticated synthetic Git cases |
-| Browser | [41025566923](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41025566923) | All seven phases: WebKit transaction preflight, full Chromium, first start/restart, Git import, synthetic320, WebKit reading, WebKit workers |
-| Stack/update | [41025566835](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41025566835) | 109 stack gates and 49 retained-image update gates |
+| Backend | [41104861766](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41104861766) | Ruff, Mypy over 144 sources; 1,620 passed, 12 separate integration skips, 28 subtests in 174.17s; image build succeeds |
+| Frontend | [41104861836](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41104861836) | TypeScript, proxy 5/access 3/PWA 5/image-update 2 contracts, production and image builds |
+| Indexes | [41104861745](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41104861745) | 7 disposable Neo4j/Qdrant cases |
+| SSH | [41104861886](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41104861886) | 5 authenticated synthetic Git cases |
+| Browser | [41104861655](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41104861655) | All seven phases; logs confirm 114 repeated WebKit preflight, 491 full Chromium and 369 WebKit reading cases; first start/restart, Git import, synthetic320 and WebKit workers pass |
+| Stack/update | [41104861716](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41104861716) | 109 stack gates and 49 retained-image update gates |
 
-The twelve backend integration skips run in separate index/SSH jobs. Browser
-phase success is not a newly counted case total; the optional installation
-diagnostic was skipped. Both application image builds use `push:false` and
-`load:false`; no branch images were published. This handoff refresh changes only
-documentation relative to `0ef7179f`; its evidence is pinned to that application
-head and does not automatically certify a later commit. Check
-[PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18) for later heads.
+The twelve backend integration skips run in separate index/SSH jobs. The
+optional installation diagnostic was skipped. Both application image builds use
+`push:false` and `load:false`; no branch images were published. These results
+certify only the pinned executable baseline, not arbitrary later changes. Check
+[PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18) for the latest
+branch head and whether its executable sources differ.
 
-### Current directly inspected artifacts
+### Directly inspected artifacts for the pinned baseline
 
-All three archives below identify generated checkout `25fc02aa` and passed
+All three archives below identify generated checkout `d4f4fc1d` and passed
 complete ZIP CRC checks. Downloads and original records were inspected; these
 are existing CI results, not a new local Docker or production run.
 
 | Artifact | Bytes / entries | SHA-256 |
 | --- | --- | --- |
-| Browser `12964638024` | 246,014,350 / 1,049 | `9cabb57d23ee6b766167d84b2b5b4a81b6e66b8c767d0fc62f04041922291563` |
-| Stack `12962689716` | 712,703 / 6 | `7268def88bdba0592c4d8f68f944470965bc362315b929e2c8c876a48f8c9d1a` |
-| Image update `12962964962` | 16,860 / 3 | `efbf4a7e8f9dbbcd1ad88ec0666483c3311ea28e715bc3422d7d9ed1c5555877` |
+| Browser `13001783601` | 246,002,475 / 1,049 | `3f77afa66bb8f373116821d6cc2f5b8bac05adfcc97ac347719ac36abb225fd8` |
+| Stack `13000347775` | 712,094 / 6 | `7b95c1d061f0b9607465ab560fe3122976ab6b42af07ac415cb0ea4d6942ccc7` |
+| Image update `13000252586` | 16,492 / 3 | `96b6bad6567ffab0cd652ab46f1d5d39129228f447843c4345f0b3e3a5872ac2` |
 
 The browser archive has seven successful phase results, successful cleanup,
-no retained vault and no external model calls. Seven current captures were
-actually inspected: Home and demo galaxy at 390/1440px, plus WebKit long-line
-editor at 320/390/1440px. Horizontal source scrolling stays within the editor;
-its notice and Unicode are visible. Saved graph records at both widths confirm
-one added directed edge, bridge count 1 to 2 and stable cores/unrelated stars.
-Three leaves in the changed cluster reorder with their new degree. This is
-bounded visual/functional coverage, not an IME/accessibility/device certificate.
+no retained vault and no external model calls. Original browser logs confirm the
+case totals above; first-start phases each pass one case, Git import three
+one-case phases, synthetic320 three cases and WebKit workers eight cases.
+A 390px Chromium chat capture and 1440px WebKit chat capture were inspected.
+These are scripted provider replies, not real-model answer-quality evidence.
+
+Earlier direct inspection on `0ef7179f` covered Home/demo galaxy at 390/1440px
+and the WebKit long-line editor at 320/390/1440px. Its graph records show one
+added directed edge, bridge count 1 to 2, stable cores/unrelated stars and three
+locally reordered leaves. That remains bounded historical visual coverage,
+not an IME/accessibility/device certificate.
 
 The stack archive confirms synthetic HTTPS/auth, browser save/reload, a backend
 address change without restarting the frontend, independent-volume local restore
