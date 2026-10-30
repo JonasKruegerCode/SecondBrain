@@ -635,3 +635,67 @@ for (const finish of ["stop", "leave"] as const) {
     await peer.close();
   });
 }
+
+for (const operation of ["reply", "retry", "send"] as const) {
+  test(`expired chat deletion markers cannot revive a stale transcript on ${operation}`, async ({ page, context }) => {
+    await page.goto("/chat");
+    await seedChats(page, [{ id: "expired-deletion", title: "Synthetic removed history", updated: 1,
+      messages: [{ role: "user", content: "Synthetic removed question." }] }]);
+    await page.reload();
+    await expect(page.getByLabel("Message")).toBeEnabled();
+    let requests = 0;
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let started!: () => void;
+    const requestStarted = new Promise<void>(resolve => { started = resolve; });
+    await page.route("**/api/wiki/chat", async route => {
+      requests++;
+      started();
+      if (operation === "reply") await held;
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        answer: "Synthetic fresh answer.", sources: [], activity: [],
+      }) });
+    });
+    if (operation === "reply") {
+      await page.getByLabel("Message").fill("Synthetic pending question.");
+      await page.getByRole("button", { name: "Send", exact: false }).click();
+      await requestStarted;
+    }
+    const peer = await context.newPage();
+    await peer.goto("/chat");
+    await expect(peer.getByLabel("Message")).toBeEnabled();
+    await peer.getByRole("button", { name: "Delete conversation", exact: true }).click();
+    await expect(peer.getByLabel("Message")).toBeEnabled();
+    expect((await chatRoot(peer)).tombstones.map(item => item.id)).toContain("expired-deletion");
+    // This is the native IndexedDB state after 100 newer deletions have displaced
+    // the old marker. No provider or elapsed-time behavior is being simulated.
+    const removed = await chatRoot(peer);
+    removed.tombstones = Array.from({ length: 100 }, (_, index) => ({
+      id: `newer-deletion-${index}`, deleted: Date.now() + index,
+    }));
+    await chatRoot(peer, removed);
+    if (operation === "reply") release();
+    else if (operation === "retry") await page.getByRole("button", { name: "Retry", exact: true }).click();
+    else {
+      await page.getByLabel("Message").fill("Synthetic fresh question.");
+      await page.getByRole("button", { name: "Send", exact: false }).click();
+    }
+    await expect(page.getByLabel("Message")).toBeEnabled();
+    if (operation === "send") await expect(page.locator(".chat-message.assistant")).toContainText("Synthetic fresh answer.");
+    else await expect(page.locator(".chat-conversation-notice")).toContainText("removed from saved history");
+    const saved = await chatRoot(page);
+    expect(saved.conversations.map(item => item.id)).not.toContain("expired-deletion");
+    expect(JSON.stringify(saved.conversations)).not.toContain("Synthetic removed question.");
+    expect(JSON.stringify(saved.conversations)).not.toContain("Synthetic pending question.");
+    expect(requests).toBe(operation === "retry" ? 0 : 1);
+    if (operation === "send") {
+      const fresh = saved.conversations.find(item => item.messages.length);
+      expect(fresh.messages.map((item: { content: string }) => item.content)).toEqual([
+        "Synthetic fresh question.", "Synthetic fresh answer.",
+      ]);
+    }
+    await page.reload();
+    expect(JSON.stringify((await chatRoot(page)).conversations)).not.toContain("Synthetic removed question.");
+    await peer.close();
+  });
+}

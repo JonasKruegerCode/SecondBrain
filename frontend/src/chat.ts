@@ -265,6 +265,14 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
   };
 
   const current = () => conversations.find(item => item.id === activeId) || conversations[0];
+  const wasRemoved = (stored: Stored, id: string) => !stored.unavailable && (
+    stored.tombstones.some(item => item.id === id) ||
+    // A bounded deletion ledger eventually drops old UUIDs. A transcript that
+    // this tab previously read from storage must still exist to be extended.
+    // Absence also covers normal history eviction; never revive the old text.
+    (baselines.has(id) && baselines.get(id) !== transcript(undefined) &&
+      !stored.conversations.some(item => item.id === id))
+  );
   const preserveUnsavedBranch = (item: Conversation, stored: ReturnType<typeof readPersistent>) => {
     const latest = stored.conversations.find(saved => saved.id === item.id);
     if (stored.unavailable || !dirtyIds.has(item.id) || !latest) return item;
@@ -305,6 +313,11 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     for (const [id, timestamp] of deletedIds) {
       deleted.set(id, Math.max(deleted.get(id) ?? -1, timestamp));
     }
+    for (const item of conversations) {
+      if (wasRemoved(stored, item.id)) {
+        deleted.set(item.id, Math.max(deleted.get(item.id) ?? -1, Date.now()));
+      }
+    }
     // UUIDs are never reused: a retained deletion marker wins over later stale
     // edits and answers as well as over unedited snapshots.
     for (const id of merged.keys()) {
@@ -315,7 +328,9 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       .slice(0, MAX_TOMBSTONES);
     conversations = [...merged.values()].sort((a, b) => b.updated - a.updated);
     if (deleted.has(activeId)) {
-      conversationNotice = "This conversation was deleted in another tab.";
+      conversationNotice = stored.tombstones.some(item => item.id === activeId)
+        ? "This conversation was deleted in another tab."
+        : "This conversation was removed from saved history in another tab.";
       contextNotice = "";
     }
     if (!conversations.length) {
@@ -441,11 +456,11 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         drafts.delete(activeId);
         let item = current();
         const stored = readPersistent();
-        if (stored.tombstones.some(deleted => deleted.id === item.id)) {
+        if (wasRemoved(stored, item.id)) {
           item = freshConversation();
           conversations.unshift(item);
           activeId = item.id;
-          conversationNotice = "The previous conversation was deleted in another tab. Your message started a new conversation.";
+          conversationNotice = "The previous conversation was removed from saved history in another tab. Your message started a new conversation.";
         }
         const latest = stored.conversations.find(saved => saved.id === item.id);
         if (!stored.unavailable && !dirtyIds.has(item.id) && latest && transcript(latest) !== transcript(item)) {
@@ -485,7 +500,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     const ready = await storageTransaction(() => {
       let conversation = current();
       // A retry must not send a transcript deleted while this tab was stale.
-      if (readPersistent().tombstones.some(item => item.id === conversation.id)) {
+      if (wasRemoved(readPersistent(), conversation.id)) {
         error = "";
         persist();
         return;
@@ -551,6 +566,10 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
         if (activeId !== requestId || controller.signal.aborted) return;
         const afterRequest = readPersistent();
         const latest = afterRequest.conversations.find(item => item.id === requestId);
+        if (wasRemoved(afterRequest, requestId)) {
+          persist();
+          return;
+        }
         // A late answer belongs to the context actually sent. Preserve both branches.
         if (!afterRequest.unavailable && !afterRequest.tombstones.some(item => item.id === requestId) &&
             transcript(latest) !== requestSnapshot) {
@@ -574,7 +593,7 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
     } catch (cause) {
       await storageTransaction(() => {
         if (activeId !== requestId) return;
-        if (readPersistent().tombstones.some(item => item.id === requestId)) {
+        if (wasRemoved(readPersistent(), requestId)) {
           persist();
           return;
         }

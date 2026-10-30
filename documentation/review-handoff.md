@@ -13,6 +13,9 @@ verification map below. Historical implementation and CI details remain in the
 This entry point keeps current contracts, reproducible start paths and explicit
 release limits.
 
+
+A stale chat tab also checks whether its previously saved conversation still exists, even after the bounded deletion ledger has evicted the old marker. Late replies and retries cannot recreate the removed transcript; a deliberate new message starts a fresh conversation. This includes ordinary history eviction. The same IndexedDB transaction performs the check and merge; never-saved work retains its existing recovery path. Three browser regressions cover late reply, retry and new-message paths after marker eviction.
+
 ## Architecture and data flow
 
 ### One content authority
