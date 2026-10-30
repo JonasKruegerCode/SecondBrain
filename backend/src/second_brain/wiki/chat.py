@@ -241,6 +241,14 @@ class WikiChat:
                         reply.get("content") if isinstance(reply.get("content"), str) else None
                     ),
                     "tool_calls": tool_calls,
+                    # Some providers require signed reasoning state with the
+                    # matching tool results. Keep it opaque and request-local;
+                    # it is never part of the answer or browser transcript.
+                    **{
+                        key: reply[key]
+                        for key in ("reasoning", "reasoning_details")
+                        if key in reply
+                    },
                 }
             )
             for call in tool_calls:

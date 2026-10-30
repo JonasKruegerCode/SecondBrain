@@ -158,6 +158,9 @@ Only actually delivered page content counts as a read source. Long-page
 continuation uses offsets and the expected page revision; changed snapshots
 require reading again. Incomplete/truncated provider completion cannot become a
 successful answer. Scripted providers verify contracts, not real answer quality.
+Opaque provider reasoning fields are preserved through tool-result continuation
+within one request, as required by [OpenRouter's reasoning contract](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#preserving-reasoning).
+They are not returned to the browser or retained for a later user turn.
 
 Conversations are bounded, deletable browser-local data; there is no backend chat
 archive or wiki-write tool. A versioned IndexedDB root stores conversations and

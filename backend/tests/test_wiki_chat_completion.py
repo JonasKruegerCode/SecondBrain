@@ -142,3 +142,76 @@ def test_api_rejects_partial_choice_and_allows_deliberate_retry(
         assert retried.json()["sources"] == []
         assert len(requests) == 2 and requests[0] == requests[1]
         assert len(store.history("harbor")) == 1
+
+
+@pytest.mark.parametrize("metadata_kind", ["details", "text", "both"])
+def test_tool_continuation_preserves_opaque_reasoning_only_inside_current_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    metadata_kind: str,
+) -> None:
+    marker = "synthetic-private-continuation"
+    metadata: dict[str, Any] = {}
+    if metadata_kind in {"details", "both"}:
+        metadata["reasoning_details"] = [
+            {"type": "reasoning.encrypted", "data": marker, "id": "opaque-1", "index": 0},
+            {"type": "reasoning.text", "text": marker, "signature": "synthetic-signature"},
+        ]
+    if metadata_kind in {"text", "both"}:
+        metadata["reasoning"] = marker
+
+    def read(page_id: str, call_id: str) -> dict[str, Any]:
+        return {
+            "id": call_id,
+            "type": "function",
+            "function": {"name": "read_page", "arguments": json.dumps({"page_id": page_id})},
+        }
+
+    first = {"content": None, "tool_calls": [read("harbor", "r1")], **metadata}
+    second = {"content": None, "tool_calls": [read("beacon", "r2")], **metadata}
+    provider, requests = provider_with_choices(
+        monkeypatch,
+        [
+            {"finish_reason": "tool_calls", "message": first},
+            {"finish_reason": "tool_calls", "message": second},
+            {"finish_reason": "stop", "message": {"content": "The beacon is amber."}},
+            {"finish_reason": "stop", "message": {"content": "Yes, amber."}},
+        ],
+    )
+    store = WikiStore(tmp_path)
+    for page_id, markdown in (
+        ("harbor", "# Harbor\n\nSee [[beacon]]."),
+        ("beacon", "# Beacon\n\nThe fictional beacon is amber."),
+    ):
+        store.save_page(page_id, markdown, None, f"seed-{page_id}")
+    before = store.snapshot()
+    indexes = IndexCoordinator(store)
+    chat = WikiChat(store, indexes, provider)
+    with TestClient(create_app(tmp_path, indexes=indexes, chat=chat)) as client:
+        response = client.post(
+            "/api/wiki/chat", json={"messages": [{"role": "user", "content": "What color?"}]}
+        )
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json()["answer"] == "The beacon is amber."
+        assert {source["id"] for source in response.json()["sources"]} == {"harbor", "beacon"}
+        for request, expected_messages in ((requests[1], [first]), (requests[2], [first, second])):
+            assistant = [m for m in request["messages"] if m["role"] == "assistant"]
+            assert assistant == [{"role": "assistant", **m} for m in expected_messages]
+        assert marker not in response.text and marker not in caplog.text
+        followup = client.post(
+            "/api/wiki/chat",
+            json={
+                "messages": [
+                    {"role": "user", "content": "What color?"},
+                    {"role": "assistant", "content": response.json()["answer"]},
+                    {"role": "user", "content": "Is it still amber?"},
+                ]
+            },
+        )
+        assert followup.status_code == 200 and followup.json()["answer"] == "Yes, amber."
+        assert marker not in json.dumps(requests[3])
+        assert marker not in followup.text and marker not in caplog.text
+        assert store.snapshot() == before
+    assert len(requests) == 4
