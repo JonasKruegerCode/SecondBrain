@@ -8,9 +8,10 @@ production operation and physical-device acceptance remain open. It is not yet
 release- or merge-ready.
 
 Start with the [fictional demo](demo-start.md), then use the contracts and
-verification map below. Historical implementation and CI details are retained in the pinned preceding
-handoff linked under Current verification. This entry point keeps the current
-contracts, reproducible start paths and explicit release limits.
+verification map below. Historical implementation and CI details remain in the
+[pinned preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/c422e5a93d7a69675e73bf9fed9eff398cc0f289/documentation/review-handoff.md).
+This entry point keeps current contracts, reproducible start paths and explicit
+release limits.
 
 ## Architecture and data flow
 
@@ -136,6 +137,18 @@ identical result markup, preserving geometry and avoiding repeated layout work.
 Markdown source, IDs and history are preserved. Rendered prose, safe HTML,
 wikilinks and graph projection have separate regressions; the bounded parser
 limits above still apply.
+
+Long source lines above 8,192 UTF-16 code units use horizontal scrolling inside
+the native editor, with a visible explanatory notice. Normal lines keep wrapping.
+The linear scan does not insert Markdown line breaks, replace the textarea or
+reset its native undo history. This mitigates the reproduced long-line layout
+failure; it does not establish a universal input-size or device-performance
+bound. Long articles with more than twelve section headings start with a native
+collapsed contents disclosure; every section link remains available.
+Application change `f5ecc632` introduced the long-line behavior. Test-only
+`c422e5a9` compares type/delete undo grouping with a plain native textarea in the
+same engine, alongside fixed exact Undo/Redo values immediately after insertion.
+It corrects four WebKit-specific test expectations without changing the app.
 
 ### Read-only chat and PWA
 
@@ -297,115 +310,76 @@ browser storage receipt. CI allowlists synthetic screenshots, structural
 attachments, logs and result records; originals expire after seven days.
 A filtered/repeated diagnostic pass is not full-suite acceptance.
 
-## Current verification, inspected 29 October 2026
+## Verified application baseline, inspected 30 October 2026
 
-The tested head is [db9861bc](https://github.com/JonasKruegerCode/SecondBrain/commit/db9861bc412c449a8b2bb7f5a08d892143835999),
-tree `5635b9cd68c119db8be88cf85209b61463c97c2d`. All six workflows and
-nine jobs passed. Job/step statuses and original backend/browser logs were
-inspected on 29 October.
+The tested head is [c422e5a9](https://github.com/JonasKruegerCode/SecondBrain/commit/c422e5a93d7a69675e73bf9fed9eff398cc0f289),
+tree `abe00a2167ed5528bca212e1f72251abe77285a8`. All six workflows and
+nine jobs passed; all job/step statuses and nine original logs were inspected.
+GitHub's generated merge `2b2ae9036fa47ede12bb28bc00e9189f88e1ed35`
+has exactly that branch tree and the expected main/branch parents. It is not a
+human merge or merge authorization.
 
 | Domain | Original workflow | Inspected result |
 | --- | --- | --- |
-| Backend | [40785904016](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904016) | Ruff and Mypy over 143 files pass; 1,605 passed, 12 separate integration skips, 28 subtests in 154.58 seconds; image build succeeds |
-| Frontend | [40785904175](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904175) | TypeScript, native contract tests, production and image builds |
-| Indexes | [40785904006](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904006) | Disposable index integration succeeds |
-| SSH | [40785904005](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904005) | Authenticated synthetic Git integration succeeds |
-| Browser | [40785904231](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904231) | Seven acceptance phases succeed |
-| Stack | [40785904173](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40785904173) | Managed stack and retained-image update jobs succeed |
+| Backend | [40972204565](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40972204565) | Ruff, Mypy over 144 sources; 1,617 passed, 12 separate integration skips, 28 subtests in 169.13s; image build succeeds |
+| Frontend | [40972204608](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40972204608) | TypeScript, proxy/access/PWA/image-update protocol tests, production and image builds |
+| Indexes | [40972204627](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40972204627) | 7 disposable Neo4j/Qdrant cases |
+| SSH | [40972204664](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40972204664) | 5 authenticated synthetic Git cases |
+| Browser | [40972204589](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40972204589) | WebKit transaction preflight 114; full Chromium 488; first start/restart, Git import and synthetic320 3; WebKit reading 366 passed / 6 pre-existing profile skips; WebKit workers 8 |
+| Stack/update | [40972204562](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40972204562) | Disposable HTTPS/auth stack and retained old/new/old/resumed images |
 
-The integration skips are exercised separately, not waived acceptance.
-The optional WebKit first-install diagnostic is normally skipped. Both
-application image-build logs confirm `push: false` and `load: false`; no
-application images were published. GitHub's generated merge checkout
-`8dd25fa6ea97b677cb3c354ea52a00aa415f776f` has exactly the tested branch
-tree; it is not a human merge or merge authorization.
+The backend integration skips run in separate index/SSH jobs. All four new
+long-line editor cases pass in Chromium and WebKit. Both application image
+builds use `push:false` and `load:false`; no branch images were published.
+This documentation revision changes no application or test behavior and does
+not transfer the baseline's CI status to a new documentation head. Check
+[PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18) for later heads.
 
-Application change [0574d638](https://github.com/JonasKruegerCode/SecondBrain/commit/0574d638ef6ccafea91e41164d37bdb6458292c6)
-replaces the galaxy's clipped group focus rectangle with a dedicated star ring
-and accounts for its scaled extent when revealing keyboard targets.
-Six browser regressions cover full painted focus bounds at 320/390/1440 pixels,
-normal and emulated forced colors, multiple stars and returning focus to the
-core. Ten related Unicode/grapheme, dense-graph, label-spacing and forced-color
-cases also passed locally, as did typecheck and production build.
-Narrow forced-color and desktop screenshots were actually inspected.
-These are bounded Chromium checks, not a complete accessibility or device audit.
-The following test-only commit aligns the existing expected launcher command
-with that new suite; all 63 runner contracts passed locally, and the complete CI
-above closes its earlier three expectation failures. No API, storage, processing
-or compatibility contract changed.
+### Current directly inspected artifacts
 
-This documentation update does not change application or test behavior and does
-not transfer the tested head's green status to a new documentation head.
-Earlier CI history is retained in the
-[preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/3dcc0e4399686ed5bbfc92125bcf34a4c48d769f/documentation/review-handoff.md).
-Directly inspected older image/browser archives remain separately pinned below;
-the newer CI logs were inspected, but their archives were not downloaded again.
+All three archives below identify generated checkout `2b2ae903` and passed
+complete ZIP CRC checks. Downloads and original records were inspected; these
+are existing CI results, not a new local Docker or production run.
 
-Recent reliability coverage includes:
+| Artifact | Bytes / entries | SHA-256 |
+| --- | --- | --- |
+| Browser `12942416634` | 246,009,694 / 1,049 | `1437e00ce0d1cbd7cd4aba580dd80efa3cf8fe98287694d6032c13ac81f0e95b` |
+| Stack `12939999020` | 712,972 / 6 | `e10eec5943b8f9581e015625fa4a49970a46d4474b70e7234e1a663bb140d4b4` |
+| Image update `12940433892` | 16,869 / 3 | `4848e29ad42251497836567b2459ae879273f07776dae0d12e1207d564638331` |
 
-- Complete template preflight validates IDs, UTF-8 and encoded byte limits before
-  creating seed storage. Invalid initial input leaves absent/empty destinations
-  unchanged; repair permits retry. Interrupted multi-page seeding and unexpected
-  storage failures still require explicit recovery.
-- Twenty-four real REST cases reject escaped unpaired surrogates in Markdown,
-  base revisions and request IDs without changing vault bytes. Corrected retry,
-  idempotent replay and valid Unicode survive reopening; application behavior
-  was already correct.
-- Expected demo/scale destination failures now give concise refusals for
-  populated raw folders and regular files, preserving their bytes. Four real
-  CLI regressions failed before the correction and passed after it; the focused
-  launcher/supervisor run passed 105 cases.
-- Archive-only recovery moves the archive and removes its synthetic source vault
-  and sender directory before invoking the restore CLI. Empty and populated
-  cases preserve snapshot, history, graph, local index namespace, demo metadata
-  and mutation receipts. Replaying old create/edit receipts does not resurrect a
-  later-deleted page. All 58 focused backup cases pass; local source independence
-  does not establish off-host, power-loss or production recovery.
+The browser archive has seven successful phase results, successful cleanup,
+no retained vault and no external model calls. Three current WebKit long-line
+editor screenshots at 320/390/1440px were actually inspected. Horizontal source
+scrolling remains within the editor and its notice is readable; this is bounded
+visual coverage, not a full IME/accessibility/device certification.
 
-### Directly inspected artifacts: application head 03a58411
+The stack archive confirms synthetic HTTPS/auth, browser save/reload, a backend
+address change without restarting the frontend, independent-volume local restore
+and read-only import-source preservation. Both desktop/narrow Home screenshots
+were inspected. Browser certificate trust uses a disposable SPKI allowlist;
+this does not certify the installation's actual proxy, trust store or HTTPS.
 
-The following archives are pinned to the older application head 03a58411,
-not to the later focus change or a fresh archive download for db9861bc.
-The browser workflow is
-[40593709562](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40593709562).
+The update archive confirms distinct baseline/candidate/rollback/resume images
+on one owned volume. Page history stays at 1/2/3/3; prior REST/MCP receipts replay
+without extra history. A kept two-tab Chromium browser retains its dirty native
+editor, saves deliberately, migrates the start preference and reports zero page
+errors and empty CacheStorage. This is one compatibility pair without hosted
+indexes, real models or physical installation.
 
-Browser artifact `12777382003` is 242,932,236 bytes with SHA-256
-`365269d5e39258e81245e4f70531fcdffad9537f519ae51bd1cdf4a4a93a3b10`.
-All 1,031 ZIP entries passed CRC checks. Seven result records report success,
-no retained vault, successful service cleanup and no external model calls.
-The generated checkout `3a5126744e379c97a8544a1de72a1e688bf2a941`
-has exactly the 03a58411 branch tree.
+A separate local connected tour at 1440/390px used the real demo services:
+Home, fictional personal area, start preference, search, UI save/reload/history,
+a new explicit galaxy link, and the genuine unconfigured-chat 503/Retry path.
+After browser and service restart, exact source/history, start preference,
+completed conversation deletion and deleted-page absence remained intact.
+Eleven synthetic captures were inspected; one loading capture is excluded from
+article visual evidence. The harness required corrected button selectors,
+waiting for deletion completion and a fresh process receipt. These corrections
+are not product fixes, crash guarantees or real model-answer acceptance.
 
-Twelve actual Chromium screenshots were inspected at 390 and 1,440 pixels:
-global Home, article opening, focused galaxy, code, table columns and image
-reading. The light cards/article view and separate dark galaxy are readable in
-this bounded sample. Tables wrap and wide images fit; missing/rejected images
-retain alternative text. Code focus is visible; screenshots follow a deliberate
-ArrowRight action, explaining clipped line starts. Full graph-link evidence
-appears alongside abbreviated labels. Article-opening captures cover only the
-upper 844 pixels. Screenshot appearance and source-test security/keyboard
-assertions are separate evidence, not a new manual browser tour, full
-accessibility audit, physical installation or real chat-quality review.
-
-The image-update artifact `12775581997` from stack
-[40593709613](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/40593709613)
-is 16,738 bytes with SHA-256
-`ad6429d8440f8fbea438e5efc536f95de06a3abab3a8c103086b30a18053ceb6`.
-All three ZIP entries passed CRC; result, browser and Compose logs were read.
-Baseline `dceee9fd` → candidate → rollback → resume used distinct actual
-images and one owned volume, preserving content, history and retry receipts.
-A kept Chromium browser observed changed worker bytes, preserved its dirty
-native editor, saved once deliberately and migrated its start-page preference.
-CacheStorage remained empty; cleanup passed. This is one isolated compatibility
-pair, without hosted indexes, real models, production HTTPS or physical devices.
-
-The atlas completes the salt-marsh → shellfish-kitchen shore route and
-separates its tide model from real access observations. Reopen edited demos with
-the launcher; template verification deliberately refuses later edits.
-The [preceding pinned handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/faac488a4e1381ef14bd3198a93da42d66db68ca/documentation/review-handoff.md)
-retains the earlier startup corrections, CI and artifact evidence with their
-original scope. Those are audit history, not parallel current counters.
-The open gates and unresolved observations below still apply.
+Earlier CI counts, focus changes, Unicode/template checks and older artifact
+pins remain in the [preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/c422e5a93d7a69675e73bf9fed9eff398cc0f289/documentation/review-handoff.md).
+They are audit history, not parallel current counters. Real provider quality,
+private migration, physical devices and production remain separate gates below.
 
 ## Known release gates
 
