@@ -314,8 +314,8 @@ export function renderChat(main: Element, api: Api, stateChanged: () => void = (
       deleted.set(id, Math.max(deleted.get(id) ?? -1, timestamp));
     }
     for (const item of conversations) {
-      if (wasRemoved(stored, item.id)) {
-        deleted.set(item.id, Math.max(deleted.get(item.id) ?? -1, Date.now()));
+      if (!deleted.has(item.id) && wasRemoved(stored, item.id)) {
+        deleted.set(item.id, Date.now());
       }
     }
     // UUIDs are never reused: a retained deletion marker wins over later stale
