@@ -1,0 +1,372 @@
+# Install, update and recover the managed Compose preview
+
+Use a reviewed source revision and the managed Compose file. This guide prepares
+an operator procedure; it does not authorize a production deployment or migrate
+an existing legacy vault. Docker Engine and Compose v2 are required for runtime
+commands. Start with the [first-start choices](first-start.md), keep the existing
+authenticated HTTPS proxy, and use the [MCP guide](managed-mcp.md) for its separate
+Bearer/Host/Origin boundary.
+
+The source-build route below needs Git, Docker Engine with Compose v2, and network
+access to the Docker bases and package registries used by the Dockerfiles. Python,
+Poetry and Node run inside the build containers; their native host installations
+are needed only for the separate development/demo route. Use the complete reviewed
+checkout, including `backend/`, `frontend/`, their lockfiles and the Compose files.
+Do not run the legacy `docker-compose.yml` in place of the managed file.
+
+## Keep one installation identity
+
+Run from the root of a clean checkout of the reviewed `secondbrain-2.0` revision.
+Record its full commit with `git rev-parse HEAD`. Check `git status --short` before
+changing revisions; preserve local work rather than overwriting it.
+
+For a **new** installation choose one project name:
+
+```sh
+export WIKI_PROJECT=secondbrain-wiki
+wiki_compose() {
+  docker compose -p "$WIKI_PROJECT" --env-file .env.wiki \
+    -f docker-compose.wiki.yml "$@"
+}
+```
+
+For an **existing** installation, use its actual project name instead. Inspect
+the `com.docker.compose.project` container/volume labels if necessary. Do not
+adopt this example name over an existing installation: the named `managed_wiki`
+volume is project-prefixed, so a different project can appear to be an empty wiki.
+Keep this project name, Compose files, environment file and volume mapping for
+every start, backup and update. An explicit volume `name:` override also matters.
+If using the [proxy-network override](../README.md#docker-compose-preview), add
+its `-f` argument to this function and retain it throughout the procedure.
+Use distinct proxy-network aliases for each installation; route to those aliases
+rather than a generic `frontend` or `mcp` name shared by several projects.
+
+Copy `.env.wiki.example` to the ignored `.env.wiki` only on initial setup. Set a
+real MCP secret and exact proxy authorities/origins. The browser API does not
+receive the MCP Bearer key; protect frontend, assets and `/api/wiki` with the
+existing proxy authentication. Configure OpenRouter only if paid chat is wanted.
+The base managed Compose profile does not enable optional index/remote-Git
+providers; configuring those is a separate reviewed operator step. `--env-file`
+supplies Compose interpolation, not every container's process environment. Merely
+adding provider variables to `.env.wiki` does not pass them to the services. A
+reviewed override must map the required variables into both API and MCP, with the
+same index configuration and only one delivery worker. Follow the
+[index](managed-indexes.md) and [delivery](managed-delivery.md) contracts.
+
+Preserve the browser's public `Host` authority through the proxy to the frontend;
+its Nginx forwards that authority to the API, which checks it against a present
+`Origin` on writes/chat. Rewriting it to an internal service name can leave reads
+working while saves fail with `403 origin_rejected`. For MCP, forward the Bearer
+header and configure its actual incoming Host and optional Origin independently.
+
+Check interpolation without printing secrets, then build and start:
+
+```sh
+wiki_compose config --quiet
+wiki_compose build backend mcp frontend
+wiki_compose up -d --no-build --wait
+wiki_compose ps
+```
+
+For a new installation that should contain a template or imported Git pages,
+build first, then run one of the [container first-start commands](first-start.md#container-first-start)
+against this same project/volume **before** `up`. Native setup into a host
+directory does not populate the Compose named volume. The default empty start
+above is also intentional and remains usable without optional providers.
+
+The preview defaults to frontend `127.0.0.1:8080` and MCP `127.0.0.1:3001`.
+`WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` select different host ports while retaining
+loopback binding. Port `0` requests an available Docker-assigned port; discover it
+with `wiki_compose port frontend 80` or `wiki_compose port mcp 3001`.
+A new volume starts empty; services never auto-seed it. Backend health means the
+local content authority is readable, not that model, index or remote delivery is
+accepted. `--wait` does not replace checking frontend/MCP through the actual proxy.
+Keep unrelated legacy/production services and volumes separate. Ordinary
+`stop`/`start` retains this content. **Do not use `down --volumes` or volume prune
+for an update:** that can delete the persistent wiki.
+
+## Prepare an update and archive current content
+
+Finish or preserve browser drafts and pending replies first; quiesce external
+writers. Browser chat history and the saved start-page preference are outside
+the server wiki archive. Unsaved chat fallback lasts only in its current tab;
+recover storage and save it, or deliberately delete its unsaved messages, before
+reloading. Record the current source commit, Compose/env/proxy configuration and
+actual image IDs. Protect environment/proxy credentials separately: the wiki
+archive does not contain them. Retain the old images locally with distinct tags
+before rebuilding, so a later recovery need not recreate them from mutable bases.
+For example, obtain each running image ID with:
+
+```sh
+docker inspect --format '{{.Image}}' "$(wiki_compose ps -q backend)"
+docker inspect --format '{{.Image}}' "$(wiki_compose ps -q mcp)"
+docker inspect --format '{{.Image}}' "$(wiki_compose ps -q frontend)"
+```
+
+Stop all managed writers and create a new archive through a one-off backend
+container. The service volume remains mounted even when its regular container is
+stopped. Run this **before** changing the source revision or image selection:
+
+```sh
+umask 077
+mkdir -p .demo/operator-backups
+WIKI_ARCHIVE="wiki-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+wiki_compose stop frontend backend mcp
+wiki_compose run --rm --no-deps -T \
+  -v "$PWD/.demo/operator-backups:/backups" \
+  backend sh -c 'exec python -m second_brain.wiki.backup create \
+    --vault "${SECOND_BRAIN_WIKI_VAULT:?Set the active managed vault}" \
+    --archive "$1"' sh "/backups/$WIKI_ARCHIVE"
+```
+
+The vault path expands inside the one-off container, using the service environment
+including any recovery override such as `/managed-vault/restored`. The archive
+path is passed as a quoted argument from the host shell.
+
+Require a successful CLI result and retain its exact content revision/page count.
+The archive must be new and outside the vault. Container-created files may be
+owned by root; restrict directory access and use the operator's appropriate
+permissions to inspect/copy them. Copy the archive to protected storage outside
+this checkout and host before treating it as a disaster-recovery backup. If backup
+fails, resolve it before updating; the unchanged current configuration can be
+started again with `wiki_compose up -d --no-build --wait`.
+
+## Apply a reviewed application version
+
+Select the reviewed source commit in the clean checkout, retaining the existing
+ignored environment, overrides and project identity. Build all three services
+from that version. Backend and MCP share one authority and must be compatible;
+avoid a prolonged mixed-version writer deployment.
+
+For a frontend update requiring an in-app notice, ensure the reviewed version
+changes the bytes of `frontend/public/service-worker.js`, including its `RELEASE`
+value. A change only to other assets does not create a waiting worker. This is a
+manual release requirement, not an automatic build stamp. Then:
+
+```sh
+wiki_compose config --quiet
+wiki_compose build backend mcp frontend
+wiki_compose up -d --no-build --wait
+wiki_compose ps
+```
+
+`up` recreates changed services while preserving mounted volumes. `restart`
+alone does not apply changed images, environment or Compose configuration. A
+reviewed Git commit pins application source, not every build input: Docker base
+tags and apt repositories remain mutable. Record the resulting image IDs; an
+older-source rebuild is not proof of the identical former image.
+
+Published application images are an alternative **only when those exact artifacts
+exist and their provenance is reviewed**. PR image builds do not publish this
+branch; both application workflows publish only on their configured `main` push
+path. A green PR build is not a downloadable preview image. Do not substitute
+`latest` from the default branch. Keep the matching Compose/env/override files
+even for image-only operation; no host Poetry or Node installation is required.
+Use a local override
+with concrete reviewed digests/retained image IDs for all services:
+
+```yaml
+services:
+  backend:
+    image: ${WIKI_BACKEND_IMAGE:?Select the reviewed backend image}
+  mcp:
+    image: ${WIKI_MCP_IMAGE:?Select the matching reviewed MCP image}
+  frontend:
+    image: ${WIKI_FRONTEND_IMAGE:?Select the reviewed frontend image}
+```
+
+Add this override's `-f` argument to `wiki_compose`, set the three selections in
+the protected environment, and check `config --quiet`. For registry digests,
+explicitly `wiki_compose pull backend mcp frontend` first. For retained local
+images, do not pull. In either case use
+`wiki_compose up -d --no-build --pull never --wait`; the inherited build entries
+are not used. Do not mix this image-selected route with the source build command.
+
+## Check service and browser recovery
+
+Through the actual authenticated HTTPS host, check anonymous denial for the wiki,
+API, manifest and worker; authenticated Home/article/history access; a deliberate
+revisioned edit/retry; and MCP initialize/read with its separate credentials.
+Compare content revision/history with the backup and expected later edits. Check
+optional index/delivery receipts independently before claiming those targets fresh.
+
+Keep an already open browser tab for the PWA check. Compare served worker bytes
+with the previous release, bring the app to the foreground and inspect **Update
+now**. An unsaved editor, pending save, unsent chat or pending reply should block
+reload. Finish/save or deliberately discard before updating; check another dirty
+tab also preserves its draft. After safe activation, confirm controlled reload,
+saved Home, direct URLs and readable current content. A clean navigation receiving
+new HTML is not by itself proof that the protected PWA update path ran.
+Reload older open Chat tabs so they use the updated browser storage implementation.
+First preserve composer drafts, finish pending replies, and save any unsaved
+fallback conversation or deliberately delete its unsaved messages. Reloading or closing the tab does not preserve that fallback or an unsent
+composer draft. Ordinary navigation to another wiki view and back in the same
+open tab retains the draft, including browser Back/Forward; see the
+[demo tour](demo-start.md#take-a-short-tour).
+Use the [PWA guide](pwa.md) for installation, privacy and precise limits. Physical
+Home Screen/standalone/touch checks remain separate from browser emulation.
+
+## Recover without overwriting current content
+
+If service verification fails, retain diagnostics and archive any post-update
+content before recovery. Select the previously recorded actual images using the
+image override, **after** checking that they can read the current store format.
+Use the same project and volume; switching application images does not undo wiki
+edits. Revalidate auth, content/history and service/worker behavior. An old worker
+also needs different bytes to be an update; do not clear browser storage to force
+one, because that can erase locally stored conversations and the saved start page.
+
+If content restoration is required, restore the chosen archive into an independent
+new volume/path and inspect it before routing users or writers there. Select a
+unique new volume name and the reviewed restore-capable backend image. For example:
+
+```sh
+: "${WIKI_RECOVERY_VOLUME:?Choose a new recovery volume name}"
+: "${WIKI_BACKEND_IMAGE:?Select the reviewed backend image}"
+# An existing name is not proof of an independent recovery. Stop if it exists.
+if docker volume inspect "$WIKI_RECOVERY_VOLUME" >/dev/null 2>&1; then
+  echo "Choose a new recovery volume name" >&2
+  exit 1
+fi
+docker image inspect "$WIKI_BACKEND_IMAGE" >/dev/null
+docker volume create "$WIKI_RECOVERY_VOLUME"
+docker run --rm --network none --pull never --entrypoint python \
+  -v "$WIKI_RECOVERY_VOLUME:/recovery" \
+  -v "$PWD/.demo/operator-backups:/backups:ro" \
+  "$WIKI_BACKEND_IMAGE" -m second_brain.wiki.backup restore \
+  --archive "/backups/$WIKI_ARCHIVE" --vault /recovery/restored
+```
+
+Restore refuses an existing `restored` destination. Do not remove an earlier
+recovery to make this command pass; choose another new destination instead. To
+inspect the recovered wiki through Compose, use the checked-in
+`docker-compose.wiki.recovery.yml` with the base file. It selects the restored
+subdirectory and external volume, disables paid chat and remote delivery, and
+uses only the three explicitly selected local images. It inherits local HTTP
+access, not the installation's public proxy. Create an ignored inspection env
+file (for example `.env.wiki.inspect`) with these values:
+
+```dotenv
+WIKI_RECOVERY_VOLUME=the-new-volume-you-just-restored
+WIKI_BACKEND_IMAGE=sha256:the-retained-backend-image-id
+WIKI_MCP_IMAGE=sha256:the-retained-mcp-image-id
+WIKI_FRONTEND_IMAGE=sha256:the-retained-frontend-image-id
+SECOND_BRAIN_WIKI_API_KEY=choose-a-separate-long-random-inspection-secret
+WIKI_FRONTEND_PORT=0
+WIKI_MCP_PORT=0
+```
+
+Replace the placeholders with the actual full IDs recorded before the update.
+Verify each exists with `docker image inspect`; the `:?` checks require values
+but do not validate image provenance or prohibit a mutable tag. Use a unique
+inspection project, and only these two Compose files (no public proxy override):
+
+```sh
+wiki_inspect() {
+  docker compose -p secondbrain-recovery-inspect --env-file .env.wiki.inspect \
+    -f docker-compose.wiki.yml -f docker-compose.wiki.recovery.yml "$@"
+}
+wiki_inspect config --quiet
+wiki_inspect up -d --no-build --pull never --wait
+wiki_inspect port frontend 80
+wiki_inspect port mcp 3001
+wiki_inspect ps
+```
+
+Use the returned loopback addresses to verify reads/history/receipts before a
+deliberate cutover. This is a writable inspection copy; any deliberate edit or
+retry must target it, never the original. Do not attach two different writer
+deployments to the same vault. When inspection is complete, `wiki_inspect down`
+removes its containers and network while retaining the external recovery volume.
+Retain both the original volume and recovery until accepted. The dedicated env
+file is private; never commit it or print resolved configuration with secrets.
+The
+[backup/restore guide](backup-restore.md) explains the create-only restore and
+provider/remote boundaries. Never restore over the live source or silently discard
+post-backup edits. An incompatible old image is not a safe rollback just because
+it once ran.
+
+## Evidence boundary
+
+The [disposable stack acceptance](managed-stack-acceptance.md) builds source and
+checks real container restart, shared REST/MCP writes, synthetic HTTPS/auth,
+address recovery and the checked-in recovery overlay with retained image IDs,
+stopped one-off backup, an independent external volume and dynamic loopback ports.
+Inspect the actual run result before treating this newly wired path as passed.
+Browser acceptance separately
+checks worker transitions and draft/reply guards. Neither proves this operator's
+proxy, private content, published image availability, production upgrade or
+physical installation. Inspect the reviewed revision's actual CI records and
+perform the deployment-specific checks before release signoff.
+
+Compose behavior: [project names](https://docs.docker.com/compose/how-tos/project-name/),
+[network aliases](https://docs.docker.com/reference/compose-file/services/#aliases),
+[up](https://docs.docker.com/reference/cli/docker/compose/up/),
+[restart](https://docs.docker.com/reference/cli/docker/compose/restart/) and
+[run](https://docs.docker.com/reference/cli/docker/compose/run/).
+
+
+## Disposable old/new image compatibility gate
+
+`python3 scripts/run-wiki-update-acceptance.py --baseline-source PATH` builds a
+clean checkout of the pinned baseline `dceee9fd63ccd36b5c6d5bd0ebd6cb11b5e25477`
+and the current clean candidate checkout. The managed-stack workflow obtains
+both sources and runs this as a separate bounded Docker job. It keeps distinct
+actual local image IDs and one token-owned synthetic volume, then starts old,
+new, old again and the candidate again. Every transition stops both writers;
+REST/MCP reads, exact histories, replayed request receipts, rejected stale writes
+and writes made after rollback must survive the next image selection. Ports are
+rediscovered after each recreation. No registry image is published.
+
+The result records the exact source pair, image IDs, completed phases and owned
+resource cleanup. A green guardrail unit test is not a successful Docker run;
+inspect this job's original `result.json` and logs. This is one concrete server
+compatibility pair, not a guarantee that every former version can read a newer
+store. Mutable Docker bases and package mirrors remain build inputs. This gate
+records whether worker bytes differ but does not keep a browser across versions:
+PWA activation/draft guards across a real release, proxy/auth, external indexes,
+production migration and physical installation remain separate acceptance.
+
+## Browser CI runtime
+
+The managed browser workflow uses the official
+`mcr.microsoft.com/playwright:v1.64.0-noble` image as non-root UID 1001, matching
+the checked-in npm lock. It still runs `npm ci`, then refuses a version mismatch
+or missing Chromium/WebKit executable before the existing acceptance phases.
+The prebuilt system libraries avoid repeating an apt download that has consumed
+the entire job limit on the hosted mirror. Update the image and version guard
+alongside a deliberate Playwright lockfile change; do not silently skip missing
+browser requirements. Image pull, Python/toolcache permissions and actual browser
+launch still require a successful hosted run. All acceptance phases and evidence
+limits remain in place. This is CI infrastructure, not a production deployment.
+See the [official container CI example](https://playwright.dev/docs/ci#via-containers).
+## Real PWA image-update rehearsal
+
+The image-update CI job also runs the opt-in kept-browser check:
+
+```sh
+python3 scripts/run-wiki-update-acceptance.py --baseline-source .demo/update-baseline --pwa
+```
+
+This requires the locked frontend dependencies and Playwright Chromium in
+addition to the local Docker prerequisites above. The pinned baseline and
+candidate are built as actual different images; the candidate worker has a
+deliberate checked-in release change. The check refuses identical served worker
+bytes. It keeps one browser/context and a stable loopback gateway origin while
+the selected frontend container changes. A dirty tab must retain its native
+editor, draft and selection when a clean second tab activates the real waiting
+worker. It then saves through the real API and deliberately reloads. History,
+the saved start-page preference, Home/root navigation and empty CacheStorage
+are checked; provider endpoints remain disabled.
+
+The gateway forwards the real image responses; it does not substitute worker
+scripts or lifecycle events. Its HTTP loopback origin is browser-trusted for
+service workers, **not production HTTPS or physical installation evidence**.
+The original server old/new/old/resume checks continue after the browser closes.
+Without `--pwa`, the runner retains its server-only behavior. A passing local
+same-app worker-file rehearsal is useful driver integration evidence and does
+not replace this Docker image pair or the operator's deployment-specific test.
+Inspect `pwa_baseline`, `pwa_forward`, `pwa_crossversion` and `pwa-browser.log`
+alongside the selected image IDs, content/history receipts and cleanup result.
+
+
