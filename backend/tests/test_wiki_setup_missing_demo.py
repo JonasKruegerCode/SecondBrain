@@ -62,9 +62,8 @@ class MissingDemoSetupTests(unittest.TestCase):
                     elif kind == "dangling-symlink":
                         repo.symlink_to(root / "absent", target_is_directory=True)
                     before = storage_bytes(root)
-                    options = {"source": source} if mode == "import" else {}
                     with self.assertRaises(WikiError) as caught:
-                        setup_vault(vault, mode, **options)
+                        setup_vault(vault, mode, source=source if mode == "import" else None)
                     self.assertEqual(caught.exception.code, "storage_unavailable")
                     self.assertEqual(storage_bytes(root), before)
 
