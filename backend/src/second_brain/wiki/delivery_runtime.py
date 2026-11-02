@@ -23,7 +23,9 @@ def configured_delivery(store: WikiStore, indexes: IndexCoordinator) -> Delivery
         raise ValueError("Managed Git enable flag must be 0, 1 or unset.")
     from second_brain.wiki.git_config import legacy_git_settings  # noqa: PLC0415
 
-    explicit_target = os.environ.get("SECOND_BRAIN_WIKI_GIT_REMOTE", "").strip()
+    explicit_target = (
+        os.environ.get("SECOND_BRAIN_WIKI_GIT_REMOTE", "").strip() if enabled == "1" else ""
+    )
     legacy_target, legacy_branch, credentials, legacy_trust = legacy_git_settings(explicit_target)
     target = explicit_target or legacy_target
     if not target and enabled != "1":

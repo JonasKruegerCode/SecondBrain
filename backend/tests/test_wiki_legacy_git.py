@@ -158,3 +158,16 @@ def test_bitbucket_token_and_explicit_target_ssh_selection(monkeypatch: pytest.M
     assert credentials.token == "synthetic-bitbucket-token"
     _, _, ssh, _ = legacy_git_settings("git@example.invalid:wiki.git")
     assert ssh.method == "ssh"
+
+
+def test_unenabled_managed_target_is_not_adopted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SECOND_BRAIN_WIKI_GIT_REMOTE", "https://synthetic-token@example.invalid/wiki"
+    )
+    store = WikiStore(tmp_path / "managed")
+    assert configured_delivery(store, IndexCoordinator(store)).remote is None
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_GIT_SYNC", "1")
+    with pytest.raises(ValueError, match="target and branch"):
+        configured_delivery(store, IndexCoordinator(store))
