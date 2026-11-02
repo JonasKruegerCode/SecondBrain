@@ -142,8 +142,8 @@ class Neo4jSnapshotAdapter:
 class QdrantSnapshotAdapter:
     """A separate collection for each immutable managed generation."""
 
-    def __init__(self, client: QdrantClient, embedder: Embedder, dimension: int) -> None:
-        if dimension < 1:
+    def __init__(self, client: QdrantClient, embedder: Embedder, dimension: int | None) -> None:
+        if dimension is not None and dimension < 1:
             raise ValueError("dimension must be positive")
         self.client = client
         self.embedder = embedder
@@ -153,32 +153,42 @@ class QdrantSnapshotAdapter:
     def _collection(generation: str) -> str:
         return "managed_wiki_" + _generation(generation)
 
-    def _vector(self, text: str) -> list[float]:
+    def _vector(self, text: str, dimension: int | None) -> list[float]:
         vector = self.embedder.embed(text)
-        if len(vector) != self.dimension or any(not math.isfinite(v) for v in vector):
+        if (
+            not vector
+            or (dimension is not None and len(vector) != dimension)
+            or any(not math.isfinite(v) for v in vector)
+        ):
             raise ValueError("Embedding has invalid dimension or nonfinite values")
         return vector
 
     def build(self, generation: str, snapshot: dict[str, Any]) -> None:
         collection = self._collection(generation)
-        points = [
-            models.PointStruct(
-                id=str(uuid5(NAMESPACE_URL, page["id"])),
-                vector=self._vector(page["markdown"]),
-                payload={
-                    "id": page["id"],
-                    "revision": page["revision"],
-                    "snapshot_revision": snapshot["revision"],
-                },
+        dimension = self.dimension
+        points: list[models.PointStruct] = []
+        for page in _pages(snapshot):
+            vector = self._vector(page["markdown"], dimension)
+            if dimension is None:
+                dimension = len(vector)
+            points.append(
+                models.PointStruct(
+                    id=str(uuid5(NAMESPACE_URL, page["id"])),
+                    vector=vector,
+                    payload={
+                        "id": page["id"],
+                        "revision": page["revision"],
+                        "snapshot_revision": snapshot["revision"],
+                    },
+                )
             )
-            for page in _pages(snapshot)
-        ]
+        if dimension is None:
+            # An empty generation still needs the provider's actual output shape.
+            dimension = len(self._vector("Managed wiki embedding dimension probe", None))
         # Creating an existing collection fails: never overwrite a completed generation.
         self.client.create_collection(
             collection_name=collection,
-            vectors_config=models.VectorParams(
-                size=self.dimension, distance=models.Distance.COSINE
-            ),
+            vectors_config=models.VectorParams(size=dimension, distance=models.Distance.COSINE),
         )
         if points:
             self.client.upsert(collection_name=collection, points=points, wait=True)
@@ -186,9 +196,16 @@ class QdrantSnapshotAdapter:
     def search(self, generation: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be 1..1000")
+        collection = self._collection(generation)
+        dimension = self.dimension
+        if dimension is None:
+            vectors = self.client.get_collection(collection).config.params.vectors
+            if not isinstance(vectors, models.VectorParams):
+                raise ValueError("Managed collection must have one unnamed vector dimension")
+            dimension = vectors.size
         result = self.client.query_points(
-            collection_name=self._collection(generation),
-            query=self._vector(query),
+            collection_name=collection,
+            query=self._vector(query, dimension),
             limit=limit,
             with_payload=True,
         )

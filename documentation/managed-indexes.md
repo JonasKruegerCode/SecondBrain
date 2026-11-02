@@ -46,12 +46,17 @@ verify that configuration separately.
 `QdrantSnapshotAdapter(client, embedder, dimension)` uses a separate
 `managed_wiki_<generation>` collection for each attempt, never `wiki_pages`.
 The injected embedder's `embed(text)` method embeds full Markdown; vectors must
-match the configured dimension and contain only finite values. All vectors are
+match the configured dimension and contain only finite values. Pass `None` to
+infer the dimension from the actual page embeddings instead of a model-name
+guess. An empty auto-sized snapshot makes one explicit embedding probe. All vectors are
 validated before collection creation. Writes request `wait=True`, and a build
 returns only after they complete. An empty snapshot creates an empty searchable
 collection. `search(generation, query, limit=10)` returns `id`, page `revision`, and
 `score`, with cosine similarity and a limit in 1–1000.
 
+Auto-sized searches read the dimension from the persisted collection and validate
+the actual query vector against it, including after a process restart. Provider
+dimension drift fails rather than silently serving a different vector space.
 Use the same embedding model and dimension for indexing and querying a generation.
 Changing an endpoint, model, dimension, or other indexing configuration requires a
 new configuration identity and fresh generation. Tests use a real embedded
@@ -102,23 +107,29 @@ per-index states.
 ## Enable and operate
 
 Run the managed API or MCP profile with `SECOND_BRAIN_WIKI_VAULT` pointing to its
-managed vault. The `configured_indexes(store)` factory enables adapters only when
-these exact opt-in flags equal `1`:
+managed vault. `configured_indexes(store)` reads the same `.env`, then `../.env`,
+then process ENV precedence as the legacy configuration. An explicitly supplied,
+nonempty `NEO4J_URI` or `QDRANT_URL` enables that index automatically. Settings'
+default localhost endpoints and a chat key alone do not start provider work.
+Managed flags override detection: `0` disables, `1` requires the provider,
+empty/unset inherits the configured endpoint. Other flag values are refused.
 
 | Backend | Opt-in flag | Required configuration |
 | --- | --- | --- |
-| Graph | `SECOND_BRAIN_WIKI_GRAPH_INDEX=1` | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`; optional `NEO4J_DATABASE` |
-| Vector | `SECOND_BRAIN_WIKI_VECTOR_INDEX=1` | `QDRANT_URL`, `SECOND_BRAIN_WIKI_VECTOR_DIMENSION`, existing `LLM_PROVIDER` and embedding-provider credentials/model settings; optional `QDRANT_API_KEY` |
+| Graph | `SECOND_BRAIN_WIKI_GRAPH_INDEX` | `NEO4J_URI`, existing `NEO4J_USER`/`NEO4J_PASSWORD`; optional `NEO4J_DATABASE` |
+| Vector | `SECOND_BRAIN_WIKI_VECTOR_INDEX` | `QDRANT_URL`, existing `LLM_PROVIDER` and embedding credentials/model; optional `QDRANT_API_KEY` and `SECOND_BRAIN_WIKI_VECTOR_DIMENSION` |
 
-The vector opt-in deliberately loads the existing embedding provider factory.
+An enabled vector index loads the existing embedding provider factory.
 Choose `LLM_PROVIDER=openrouter` with server-side `OPENROUTER_API_KEY`, or
 `LLM_PROVIDER=gcp` with `GCP_API_KEY`. Set `EMBEDDING_MODEL` deliberately and
-match `SECOND_BRAIN_WIKI_VECTOR_DIMENSION` to that model's actual output.
+optionally set `SECOND_BRAIN_WIKI_VECTOR_DIMENSION` to that model's actual output.
+Blank/unset dimension uses the actual provider vectors; no new dimension setting
+is required for an existing installation. An explicit dimension is still checked.
 `OPENROUTER_EMBEDDING_PROVIDER` and `GCP_ENDPOINT_URL` are optional routing
 settings for their respective providers. Keep keys outside the vault and
 frontend; these commands can make paid embedding requests when vector indexing
 is enabled. Provider/model quality remains a separate acceptance gate.
-Without opt-in, ordinary managed wiki startup needs neither backend nor an
+Without configured endpoints or explicit enablement, startup needs neither backend nor an
 embedding provider. Keep the same configuration in API, MCP, and worker processes.
 
 The managed Compose file passes the table's flags, endpoints, credentials,
@@ -128,11 +139,11 @@ operator ENV file supplied with `--env-file`; they are server-side only. An empt
 means no API-key authentication. Database services are not started by this
 Compose file: supply reachable endpoints, not a host-only localhost address.
 
-Migration limit: old `QDRANT_URL` / `NEO4J_*` / embedding variables alone still
-do not enable managed indexes. Legacy inferred vector dimensions; managed
-snapshots require the model's actual dimension explicitly. This is a remaining
-configuration migration difference, not proof that a reused legacy ENV retains
-semantic retrieval automatically. Preserve the original databases and verify
+Existing explicit provider endpoints now activate managed indexes without new
+flags, and the vector dimension is inferred as in the legacy workflow. This is
+real provider work, including potentially paid embedding requests on rebuild;
+use an explicit `0` to disable it for an isolated demo or inspection. Preserve
+the original databases and verify
 current graph/vector receipts plus semantic and graph_rag requests before
 accepting a personal migration. Isolated generations do not overwrite legacy
 collections or authorize deleting them.

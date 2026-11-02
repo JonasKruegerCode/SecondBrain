@@ -96,8 +96,9 @@ for an update:** that can delete the persistent wiki.
 
 The shared server environment also passes configured graph/vector providers
 to both API and MCP; see [index configuration](managed-indexes.md#enable-and-operate).
-Existing provider variables alone do not yet recreate the legacy automatic
-index startup. The inspection recovery overlay explicitly disables Git sync,
+Explicit existing provider endpoints activate their managed indexes unless
+disabled; model dimensions can be inferred from actual output. The inspection
+recovery overlay explicitly disables Git sync,
 graph/vector indexing and model credentials so merely opening a restored
 archive cannot pull new remote content or start provider work.
 
