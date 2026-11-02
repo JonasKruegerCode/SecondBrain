@@ -321,7 +321,9 @@ class ManagedGitSync:
                             "--cacheinfo",
                             "100644",
                             oid,
-                            self.prefix + page_id + ".md",
+                            old_pages[page_id][0]
+                            if page_id in old_pages
+                            else self.prefix + page_id + ".md",
                             env=env,
                         )
                     tree = self._run("write-tree", env=env).decode().strip()
@@ -397,6 +399,149 @@ class ManagedGitSync:
         db.commit()
         return result
 
+    def integrate(
+        self,
+        base_revision: str,
+        expected_remote_revision: str,
+        observed_remote_revision: str,
+        request_id: str,
+    ) -> dict[str, Any]:
+        """Three-way merge an external descendant into one guarded local snapshot.
+
+        The previous remote is the common content baseline. Conflicts publish
+        nothing; immutable prepared objects and import receipts make replay safe.
+        This operation neither pushes nor enables an automatic runtime by itself.
+        """
+        fingerprint = self._fingerprint(
+            "integrate:" + observed_remote_revision,
+            base_revision,
+            expected_remote_revision,
+            request_id,
+        )
+        import_id = (
+            "remote-integrate:" + hashlib.sha256((fingerprint + request_id).encode()).hexdigest()
+        )
+        request_path = "requests/" + hashlib.sha256(import_id.encode()).hexdigest() + ".json"
+        with closing(sqlite3.connect(self.receipts, timeout=30)) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            receipt = db.execute(
+                "SELECT fingerprint,commit_id FROM requests WHERE id=?", (request_id,)
+            ).fetchone()
+            if receipt and receipt[0] != fingerprint:
+                raise WikiError("request_id_reused", "Request payload changed.")
+            recorded = self.store._blob(self.store._head(), request_path)
+            if recorded:
+                prior = json.loads(recorded)
+                return {
+                    **_published_result(self.store, request_path, prior["fingerprint"]),
+                    "request_id": request_id,
+                    "remote_sync": "integrated",
+                    "last_verified_remote_revision": observed_remote_revision,
+                    "remote_status": "cached_verification",
+                }
+            if self._fetch() != observed_remote_revision:
+                raise WikiError("remote_changed", "Remote branch changed during integration.")
+            if not self._is_ancestor(expected_remote_revision, observed_remote_revision):
+                raise WikiError("remote_conflict", "Remote branch was replaced or rewound.")
+            if self.store._head() != base_revision:
+                raise WikiError("revision_conflict", "Managed snapshot changed.")
+            if receipt:
+                commit = str(receipt[1])
+            else:
+                original = self._markdown(expected_remote_revision)
+                incoming = self._markdown(observed_remote_revision)
+                local = {
+                    name.removeprefix("pages/").removesuffix(".md"): content
+                    for name, content in self.store._snapshot_blobs(base_revision, "pages/").items()
+                }
+                merged: dict[str, bytes] = {}
+                for page_id in sorted(original.keys() | incoming.keys() | local.keys()):
+                    before = original.get(page_id, ("", None))[1]
+                    theirs = incoming.get(page_id, ("", None))[1]
+                    ours = local.get(page_id)
+                    if ours == before:
+                        content = theirs
+                    elif theirs == before or ours == theirs:
+                        content = ours
+                    elif before is not None and ours is not None and theirs is not None:
+                        content = self._merge_text(ours, before, theirs)
+                    else:
+                        raise WikiError("remote_conflict", "Concurrent page changes conflict.")
+                    if content is not None:
+                        merged[page_id] = content
+                if not merged and local:
+                    raise WikiError("remote_conflict", "Review removal of the complete wiki.")
+                with tempfile.TemporaryDirectory(prefix="wiki-integrate-") as tmp:
+                    env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+                    self._run("read-tree", observed_remote_revision, env=env)
+                    for name, _ in incoming.values():
+                        self._run(
+                            "update-index",
+                            "-z",
+                            "--index-info",
+                            data=b"0 " + b"0" * 40 + b"\t" + name.encode() + b"\0",
+                            env=env,
+                        )
+                    for page_id, content in merged.items():
+                        name = incoming.get(
+                            page_id, original.get(page_id, (self.prefix + page_id + ".md", b""))
+                        )[0]
+                        oid = (
+                            self._run("hash-object", "-w", "--stdin", data=content).decode().strip()
+                        )
+                        self._run(
+                            "update-index", "--add", "--cacheinfo", "100644", oid, name, env=env
+                        )
+                    tree = self._run("write-tree", env=env).decode().strip()
+                    commit = (
+                        self._run(
+                            "commit-tree",
+                            tree,
+                            "-p",
+                            observed_remote_revision,
+                            data=b"wiki: integrate local and remote Markdown\n",
+                        )
+                        .decode()
+                        .strip()
+                    )
+                self._run(
+                    "update-ref",
+                    "refs/prepared/" + hashlib.sha256(request_id.encode()).hexdigest(),
+                    commit,
+                )
+                db.execute(
+                    "INSERT INTO requests (id,fingerprint,commit_id) VALUES (?,?,?)",
+                    (request_id, fingerprint, commit),
+                )
+                db.commit()
+            result = self._import_frozen(commit, base_revision, import_id, request_id)
+        return {
+            **result,
+            "remote_sync": "integrated",
+            "last_verified_remote_revision": observed_remote_revision,
+        }
+
+    @staticmethod
+    def _merge_text(ours: bytes, base: bytes, theirs: bytes) -> bytes:
+        with tempfile.TemporaryDirectory(prefix="wiki-merge-text-") as tmp:
+            paths = [Path(tmp) / name for name in ("local", "base", "remote")]
+            for path, content in zip(paths, (ours, base, theirs), strict=True):
+                path.write_bytes(content)
+            try:
+                result = subprocess.run(
+                    ["git", "merge-file", "--stdout", *(str(p) for p in paths)],
+                    capture_output=True,
+                    timeout=GIT_TIMEOUT_SECONDS,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                raise WikiError("remote_unavailable", "Text integration timed out.") from None
+            if result.returncode:
+                raise WikiError("remote_conflict", "Concurrent page changes conflict.")
+            if len(result.stdout) > MAX_BYTES:
+                raise WikiError("content_too_large", "Integrated page exceeds one megabyte.")
+            return result.stdout
+
     def pull(
         self, base_revision: str | None, expected_remote_revision: str, request_id: str
     ) -> dict[str, Any]:
@@ -428,7 +573,12 @@ class ManagedGitSync:
             }
         if self._fetch() != expected_remote_revision:
             raise WikiError("remote_conflict", "Remote branch changed.")
-        pages = self._markdown(expected_remote_revision)
+        self._markdown(expected_remote_revision)
+        return self._import_frozen(expected_remote_revision, base_revision, import_id, request_id)
+
+    def _import_frozen(
+        self, source_revision: str, base_revision: str | None, import_id: str, request_id: str
+    ) -> dict[str, Any]:
         # Reconstruct a clean isolated repository from frozen objects. No checkout,
         # remote configuration, hooks, or arbitrary non-Markdown content is executed.
         with tempfile.TemporaryDirectory(prefix="wiki-pull-") as tmp:
@@ -441,14 +591,13 @@ class ManagedGitSync:
                 "--no-tags",
                 "--no-write-fetch-head",
                 str(self.repo),
-                expected_remote_revision,
+                source_revision,
                 bare=False,
             )
-            self._run("-C", str(source), "update-ref", "HEAD", expected_remote_revision, bare=False)
+            self._run("-C", str(source), "update-ref", "HEAD", source_revision, bare=False)
             # Importer reads committed blobs; populate the complete index/worktree
             # only through Git's safe tree handling, with hooks disabled.
-            self._run("-C", str(source), "reset", "--hard", expected_remote_revision, bare=False)
-            del pages
+            self._run("-C", str(source), "reset", "--hard", source_revision, bare=False)
             result = import_vault(
                 self.store,
                 source,
@@ -460,6 +609,6 @@ class ManagedGitSync:
             **result,
             "request_id": request_id,
             "remote_sync": "pulled",
-            "last_verified_remote_revision": expected_remote_revision,
+            "last_verified_remote_revision": source_revision,
             "remote_status": "cached_verification",
         }

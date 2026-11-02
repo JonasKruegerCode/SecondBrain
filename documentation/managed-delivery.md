@@ -38,7 +38,8 @@ The restart tests use fault injection, not SIGKILL or power-loss tests.
 
 ## Deliberately opt in to outbound Git
 
-No remote is discovered, pulled or merged at startup. First import/review an
+In the default `publish` mode, no remote is discovered, pulled or merged at
+startup. First import/review an
 existing wiki using the explicit [Git/import commands](managed-git-sync.md).
 Automatic Git delivery is **outbound snapshot publication**, not multiwriter
 synchronization. Configuring a reviewed existing remote commits to replacing its
@@ -135,3 +136,37 @@ transport worker lifecycle and cross-process write detection tests, separate
 REST/MCP save/status agreement, and running-browser article/editor regression.
 Hosted providers, production Git authentication, container deployment and forced
 process recovery are not established by these tests.
+
+
+## Synchronized runtime mode (integration stage)
+
+With an explicitly configured target/branch/prefix above, set
+`SECOND_BRAIN_WIKI_GIT_MODE=sync` to select inbound/outbound synchronization
+instead of the default `publish` mode. A new empty managed vault pulls the
+configured remote before the factory returns, then builds its configured
+indexes. An absent branch is allowed: the first local page creates it. On first
+connection a populated unbound vault must match remote contents exactly;
+unrelated local contents are refused rather than uploaded or overwritten.
+
+The worker checks incoming changes before normal index/push delivery, including
+when no local save occurred. Incoming descendants are three-way integrated
+against the last synchronized remote baseline. Conflicts remain visible and
+block outbound publication; local content and local search remain usable.
+After deliberately resolving/reviewing both sides, the existing reconciliation
+command acknowledges the chosen local and remote heads. It also clears the
+blocked inbound attempt. No force push is introduced.
+
+Both incoming and outgoing pending requests have durable frozen payloads.
+A lost incoming reply replays the completed import before acknowledging its
+remote baseline; newer local edits remain intact. A lost outgoing reply is
+resolved first, even if an external descendant has arrived, before receiving
+those external changes. Ordinary failures retry on the existing worker backoff.
+A stale/unaccepted prepared push can yield to a fresh incoming integration.
+
+This is an integration stage, not a declaration of complete legacy compatibility:
+the `VAULT_GIT_*` / `VAULT_GITHUB_*` environment aliases, existing private HTTP
+token and SSH-key configuration, remote-default branch discovery, and base
+Compose wiring are not connected to this new mode yet. An old ENV file alone
+does not enable it. These remain required work before claiming the original
+Git-URL startup contract restored. No private hosted Git or production migration
+has been verified by the synthetic local tests.

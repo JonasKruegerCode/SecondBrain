@@ -21,7 +21,8 @@ The `.wiki-remote.git` object database is separate from `.wiki.git`: managed
 parents, request receipts, page revision files, indexes, configurations and hooks
 are never exported. Remote non-Markdown files and everything outside the chosen
 prefix are preserved. Existing Markdown within the prefix is replaced as a full
-snapshot; nested Markdown is flattened into `ID.md`. Duplicate page IDs, unsafe
+snapshot. Existing page IDs keep their remote Markdown paths, including nested
+folders; new page IDs use `ID.md` beneath the selected prefix. Duplicate page IDs, unsafe
 paths, nonregular Markdown, invalid UTF-8 and oversized pages are refused.
 
 The expected remote revision is explicit; `None` means an absent branch. The
@@ -174,3 +175,25 @@ The explicit CLI remains available. Managed server factories can now publish
 after saves through [recoverable delivery](managed-delivery.md), only after an
 explicit target/baseline opt-in. No automatic pull or merge is added. Persistent conflicts block automatic writes until deliberate reviewed operator
 reconciliation; see its guarded CLI and remaining production limits.
+
+
+## Inbound integration for synchronized delivery
+
+`ManagedGitSync.integrate(local_revision, previous_remote_revision,
+observed_remote_revision, request_id)` merges a fetched remote descendant with
+a guarded local snapshot before publication. It compares each page against the
+previous remote baseline. Independent page changes and nonoverlapping text edits
+merge; overlapping edits, competing additions and edit/delete conflicts publish
+nothing. No local-wins conflict strategy or LLM merge is used. Branch deletion,
+rewind/replacement, ambiguous IDs and complete-wiki removal require explicit
+review. Files outside the Markdown prefix and non-Markdown files are preserved.
+
+Prepared integration objects and immutable import receipts survive restart.
+Retry the same arguments/request ID after a lost reply; an acknowledged replay
+does not fetch or replace newer local edits. A concurrent local write refuses the
+stale integration through the existing whole-snapshot revision guard. Returned
+remote metadata remains a cached observation.
+
+This API does not itself enable a scheduler. The explicit publication mode
+continues to work as before. See the synchronized runtime mode in
+[managed delivery](managed-delivery.md).

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import os
 import threading
 from typing import Any
@@ -9,7 +11,7 @@ from typing import Any
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.remote import ManagedGitSync
-from second_brain.wiki.store import WikiStore
+from second_brain.wiki.store import WikiError, WikiStore
 
 
 def configured_delivery(store: WikiStore, indexes: IndexCoordinator) -> DeliveryCoordinator:
@@ -27,6 +29,11 @@ def configured_delivery(store: WikiStore, indexes: IndexCoordinator) -> Delivery
         os.environ.get("SECOND_BRAIN_WIKI_GIT_PREFIX", ""),
         ssh_known_hosts=os.environ.get("SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS"),
     )
+    mode = os.environ.get("SECOND_BRAIN_WIKI_GIT_MODE", "publish")
+    if mode not in {"publish", "sync"}:
+        raise ValueError("Managed Git mode must be publish or sync.")
+    if mode == "sync":
+        return _synchronized_delivery(store, indexes, remote)
     baseline = os.environ.get("SECOND_BRAIN_WIKI_GIT_EXPECTED_REMOTE_REVISION")
     if baseline is None:
         return DeliveryCoordinator(store, indexes, remote)
@@ -37,6 +44,46 @@ def configured_delivery(store: WikiStore, indexes: IndexCoordinator) -> Delivery
     return DeliveryCoordinator(
         store, indexes, remote, expected_remote_revision=None if baseline == "empty" else baseline
     )
+
+
+def _synchronized_delivery(
+    store: WikiStore, indexes: IndexCoordinator, remote: ManagedGitSync
+) -> DeliveryCoordinator:
+    """Bootstrap an empty wiki before serving; never adopt unrelated local data."""
+    with (store.path / ".wiki-delivery-worker.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            delivery = DeliveryCoordinator(store, indexes, remote, synchronize=True)
+        except WikiError as exc:
+            if exc.code != "remote_bootstrap_required":
+                raise
+            observed = remote.inspect()["observed_remote_revision"]
+            local = store._head()
+            pages = store._snapshot_blobs(local, "pages/") if local else {}
+            if pages:
+                incoming = remote._markdown(observed) if observed else {}
+                same = {
+                    name.removeprefix("pages/").removesuffix(".md"): data
+                    for name, data in pages.items()
+                } == {page_id: data for page_id, (_, data) in incoming.items()}
+                if not same:
+                    raise WikiError(
+                        "remote_bootstrap_conflict",
+                        "Existing local content differs; review before connecting Git.",
+                    ) from None
+            elif observed:
+                request = (
+                    "sync-bootstrap:"
+                    + hashlib.sha256(
+                        (remote.remote + remote.branch + remote.prefix + observed + local).encode()
+                    ).hexdigest()
+                )
+                remote.pull(local or None, observed, request)
+            delivery = DeliveryCoordinator(
+                store, indexes, remote, expected_remote_revision=observed, synchronize=True
+            )
+        delivery.indexes.run_once()
+        return delivery
 
 
 class DeliveryWorker:

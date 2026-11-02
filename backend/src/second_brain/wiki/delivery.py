@@ -31,12 +31,14 @@ class DeliveryCoordinator:
         remote: ManagedGitSync | None = None,
         *,
         expected_remote_revision: str | None | object = _UNSET,
+        synchronize: bool = False,
     ) -> None:
         if indexes.store.path != store.path or (
             remote is not None and remote.store.path != store.path
         ):
             raise ValueError("Delivery indexes and remote must belong to the same managed vault.")
         self.store, self.indexes, self.remote = store, indexes, remote
+        self.synchronize = synchronize
         self.db_path = store.path / ".wiki-delivery.sqlite3"
         if self.db_path.is_symlink():
             raise WikiError("invalid_vault", "Delivery storage must not be a symlink.")
@@ -50,6 +52,10 @@ class DeliveryCoordinator:
             )
             if "epoch" not in {row[1] for row in db.execute("PRAGMA table_info(targets)")}:
                 db.execute("ALTER TABLE targets ADD COLUMN epoch INTEGER NOT NULL DEFAULT 0")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS inbound (target TEXT PRIMARY KEY, local TEXT, "
+                "expected TEXT, observed TEXT, epoch INTEGER)"
+            )
             if remote is not None:
                 self.target = hashlib.sha256(
                     json.dumps(
@@ -214,6 +220,7 @@ class DeliveryCoordinator:
                     "pending_content=NULL,pending_expected=NULL,epoch=epoch+1 WHERE target=?",
                     (observed, observed, self.target),
                 )
+                db.execute("DELETE FROM inbound WHERE target=?", (self.target,))
             return self.status()
 
     def run_once(self, *, rebuild: bool = False) -> dict[str, Any]:
@@ -222,6 +229,31 @@ class DeliveryCoordinator:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 return {**self.status(), "worker": "busy"}
+            if self.synchronize:
+                try:
+                    self._receive_remote()
+                except Exception as exc:
+                    code = exc.code if isinstance(exc, WikiError) else "remote_unavailable"
+                    state = (
+                        "conflict"
+                        if code == "remote_conflict"
+                        else "pending"
+                        if code == "remote_changed"
+                        else "error"
+                    )
+                    with self._db() as db:
+                        db.execute(
+                            "UPDATE targets SET state=? WHERE target=?", (state, self.target)
+                        )
+                        if code == "remote_changed":
+                            db.execute("DELETE FROM inbound WHERE target=?", (self.target,))
+                            db.execute(
+                                "UPDATE targets SET epoch=epoch+1 WHERE target=?", (self.target,)
+                            )
+                    # Failed inbound work must not suppress local index repair.
+                    with suppress(Exception):
+                        self.indexes.run_once(rebuild=rebuild)
+                    return {**self.status(), "worker": "completed"}
             # Provider failures are normally captured per index by its coordinator.
             # A coordinator failure must not suppress independent remote delivery.
             with suppress(Exception):
@@ -267,6 +299,13 @@ class DeliveryCoordinator:
                             "WHERE target=?",
                             (self.target,),
                         )
+                    elif self.synchronize and code == "remote_conflict":
+                        # A lost push acknowledgement has already been checked.
+                        db.execute(
+                            "UPDATE targets SET pending_content=NULL,pending_expected=NULL,"
+                            "state='pending',epoch=epoch+1 WHERE target=?",
+                            (self.target,),
+                        )
                     else:
                         db.execute(
                             "UPDATE targets SET state=? WHERE target=?", (state, self.target)
@@ -276,7 +315,11 @@ class DeliveryCoordinator:
                 # but never adopt that external revision as the next push baseline.
                 published = ack["published_revision"]
                 verified = ack["last_verified_remote_revision"]
-                state = "current" if published == verified else "conflict"
+                state = (
+                    "current"
+                    if published == verified
+                    else ("pending" if self.synchronize else "conflict")
+                )
                 with self._db() as db:
                     db.execute(
                         "UPDATE targets SET expected=?,published_content=?,verified=?,state=?,"
@@ -284,3 +327,55 @@ class DeliveryCoordinator:
                         (published, content, verified, state, self.target),
                     )
             return {**self.status(), "worker": "completed"}
+
+    def _receive_remote(self) -> None:
+        """Called only under the cross-process delivery lock, before indexing/push."""
+        row = self._remote_row()
+        if self.remote is None or row is None or row["pending_content"]:
+            return
+        if row["state"] == "conflict":
+            raise WikiError("remote_conflict", "Review concurrent wiki changes before syncing.")
+        with self._db() as db:
+            pending = db.execute(
+                "SELECT local,expected,observed,epoch FROM inbound WHERE target=?", (self.target,)
+            ).fetchone()
+        if pending:
+            local, expected, observed, epoch = pending
+        else:
+            observed = self.remote.inspect()["observed_remote_revision"]
+            expected = row["expected"]
+            if observed == expected:
+                return
+            if observed is None or expected is None:
+                raise WikiError(
+                    "remote_conflict", "Remote branch changed outside its known history."
+                )
+            local = self.store._head()
+            if not local:
+                raise WikiError("remote_conflict", "Review the missing managed baseline.")
+            epoch = row["epoch"]
+            with self._db() as db:
+                db.execute(
+                    "INSERT INTO inbound VALUES (?,?,?,?,?)",
+                    (self.target, local, expected, observed, epoch),
+                )
+        request = (
+            "delivery-integrate:"
+            + hashlib.sha256(
+                json.dumps([self.target, local, expected, observed, epoch]).encode()
+            ).hexdigest()
+        )
+        try:
+            self.remote.integrate(local, expected, observed, request)
+        except WikiError as exc:
+            if exc.code == "revision_conflict":
+                with self._db() as db:
+                    db.execute("DELETE FROM inbound WHERE target=?", (self.target,))
+            raise
+        with self._db() as db:
+            db.execute(
+                "UPDATE targets SET expected=?,verified=?,state='pending',epoch=epoch+1 "
+                "WHERE target=?",
+                (observed, observed, self.target),
+            )
+            db.execute("DELETE FROM inbound WHERE target=?", (self.target,))
