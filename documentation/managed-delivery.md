@@ -36,10 +36,11 @@ Neo4j provider timeout/connection limits and forced process termination remain
 operational work. A graceful shutdown may wait for an in-flight provider call.
 The restart tests use fault injection, not SIGKILL or power-loss tests.
 
-## Deliberately opt in to outbound Git
+## Explicit outbound publication mode
 
-In the default `publish` mode, no remote is discovered, pulled or merged at
-startup. First import/review an
+For an explicitly enabled managed target (`SECOND_BRAIN_WIKI_GIT_SYNC=1`
+with `SECOND_BRAIN_WIKI_GIT_REMOTE`), the compatibility default is `publish`.
+In that mode no remote is discovered, pulled or merged at startup. First import/review an
 existing wiki using the explicit [Git/import commands](managed-git-sync.md).
 Automatic Git delivery is **outbound snapshot publication**, not multiwriter
 synchronization. Configuring a reviewed existing remote commits to replacing its
@@ -138,7 +139,7 @@ Hosted providers, production Git authentication, container deployment and forced
 process recovery are not established by these tests.
 
 
-## Synchronized runtime mode (integration stage)
+## Automatic configured-Git synchronization
 
 With an explicitly configured target/branch/prefix above, set
 `SECOND_BRAIN_WIKI_GIT_MODE=sync` to select inbound/outbound synchronization
@@ -163,10 +164,37 @@ resolved first, even if an external descendant has arrived, before receiving
 those external changes. Ordinary failures retry on the existing worker backoff.
 A stale/unaccepted prepared push can yield to a fresh incoming integration.
 
-This is an integration stage, not a declaration of complete legacy compatibility:
-the `VAULT_GIT_*` / `VAULT_GITHUB_*` environment aliases, existing private HTTP
-token and SSH-key configuration, remote-default branch discovery, and base
-Compose wiring are not connected to this new mode yet. An old ENV file alone
-does not enable it. These remain required work before claiming the original
-Git-URL startup contract restored. No private hosted Git or production migration
-has been verified by the synthetic local tests.
+Existing `VAULT_GIT_URL` (or `VAULT_GITHUB_URL`) configuration now enables this
+synchronized mode automatically, without a manual import or new enable flag.
+The same Settings/dotenv loader as the legacy profile reads `.env` / `../.env`,
+with process environment precedence. `VAULT_GIT_BRANCH` is retained; an unset
+branch uses advertised remote HEAD. A completely unborn remote without an
+advertised HEAD starts on `main`; set the branch to choose another name.
+Legacy layout defaults to `1_knowledge/wiki`; native managed targets default
+to the remote root. `SECOND_BRAIN_WIKI_GIT_PREFIX` explicitly overrides either.
+An existing repository with no Markdown in the selected folder starts as an
+empty wiki and preserves unrelated files when its first article is published.
+
+`VAULT_GIT_PROVIDER`, `VAULT_GIT_AUTH_METHOD`, HTTP username/access-token/token
+aliases, legacy GitHub PAT, SSH key-file/inline-key and known-hosts settings use
+the prior precedence. HTTP credentials enter a short-lived askpass environment,
+never remote URLs or Git config. SSH keys can be mounted read-only or supplied
+inline; inline files are private and removed after each operation. Keep key
+files outside the content volume. Known-host verification stays strict; mount
+a configured trust file read-only at the configured container path. Ambient SSH
+config/identity files are not imported. Explicitly selected key files and the
+existing SSH agent are supported.
+
+The base managed Compose maps the legacy Git settings into both services, with
+only REST running the delivery worker. Host file paths must exist in containers
+through operator-owned read-only mounts; do not mount a complete home directory.
+The isolated developer demo forces `SECOND_BRAIN_WIKI_GIT_SYNC=0`, which always
+wins over inherited ENV/dotenv configuration. With no configured URL the wiki
+remains local.
+
+Synthetic verification covers legacy and provider-neutral aliases, real initial
+and empty-repository starts, default branch, dotenv, edit/push, external changes,
+restart, and real loopback HTTP Basic-auth Git clone/pull/push. SSH command and
+key cleanup tests do not prove authentication to a private hosted server.
+Private hosted permissions, production cutover and real devices remain separate
+acceptance work.

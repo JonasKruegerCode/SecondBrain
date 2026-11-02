@@ -12,11 +12,12 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-from contextlib import closing, suppress
+from contextlib import AbstractContextManager, closing, nullcontext, suppress
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
+from second_brain.wiki.git_config import GitCredentials
 from second_brain.wiki.importer import _published_result, import_vault
 from second_brain.wiki.store import MAX_BYTES, WikiError, WikiStore
 
@@ -55,8 +56,16 @@ class ManagedGitSync:
         prefix: str = "",
         *,
         ssh_known_hosts: str | None = None,
+        credentials: GitCredentials | None = None,
     ) -> None:
         self.store = store
+        self.credentials = credentials
+        if (
+            credentials
+            and credentials.ssh_key_path
+            and Path(credentials.ssh_key_path).resolve().is_relative_to(store.path.resolve())
+        ):
+            raise WikiError("invalid_git_auth", "Keep SSH credentials outside the wiki vault.")
         self.ssh_known_hosts = ssh_known_hosts
         if ssh_known_hosts is not None:
             trust = Path(ssh_known_hosts)
@@ -139,6 +148,30 @@ class ManagedGitSync:
         check: bool = True,
         hooks_path: Path | None = None,
     ) -> bytes:
+        context: AbstractContextManager[dict[str, str]] = (
+            self.credentials.environment() if self.credentials else nullcontext({})
+        )
+        with context as auth_env:
+            return self._execute(
+                *args,
+                data=data,
+                bare=bare,
+                env=env,
+                check=check,
+                hooks_path=hooks_path,
+                auth_env=auth_env,
+            )
+
+    def _execute(
+        self,
+        *args: str,
+        data: bytes | None = None,
+        bare: bool = True,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+        hooks_path: Path | None = None,
+        auth_env: dict[str, str] | None = None,
+    ) -> bytes:
         clean_env = {
             k: v
             for k, v in os.environ.items()
@@ -165,6 +198,7 @@ class ManagedGitSync:
                     + " -o KbdInteractiveAuthentication=no -o ForwardAgent=no"
                 ),
                 **(env or {}),
+                **(auth_env or {}),
             }
         )
         if self.ssh_known_hosts is not None:
@@ -180,6 +214,8 @@ class ManagedGitSync:
             "core.hooksPath=" + str(hooks_path or os.devnull),
             "-c",
             "protocol.ext.allow=never",
+            "-c",
+            "credential.helper=",
         ]
         if bare:
             command += ["--git-dir", str(self.repo)]
@@ -205,6 +241,17 @@ class ManagedGitSync:
                 "remote_unavailable", "Git target operation failed; no overwrite attempted."
             )
         return output
+
+    def discover_branch(self) -> str:
+        """Use the advertised remote HEAD; empty repositories start on main."""
+        output = self._run("ls-remote", "--symref", "--", self.remote, "HEAD").decode()
+        for line in output.splitlines():
+            match = re.fullmatch(r"ref: refs/heads/(\S+)\s+HEAD", line)
+            if match:
+                return match[1]
+        if not output.strip():
+            return "main"
+        raise WikiError("invalid_branch", "Configure a branch for a detached remote HEAD.")
 
     def _fetch(self) -> str | None:
         ref = "refs/heads/" + self.branch

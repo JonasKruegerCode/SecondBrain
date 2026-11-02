@@ -15,23 +15,42 @@ from second_brain.wiki.store import WikiError, WikiStore
 
 
 def configured_delivery(store: WikiStore, indexes: IndexCoordinator) -> DeliveryCoordinator:
-    """Never discover/adopt a remote baseline automatically, or persist a URL/key."""
-    if os.environ.get("SECOND_BRAIN_WIKI_GIT_SYNC") != "1":
+    """Honor configured legacy Git automatically; explicit disable always wins."""
+    enabled = os.environ.get("SECOND_BRAIN_WIKI_GIT_SYNC", "").strip()
+    if enabled == "0":
         return DeliveryCoordinator(store, indexes)
-    target = os.environ.get("SECOND_BRAIN_WIKI_GIT_REMOTE")
-    branch = os.environ.get("SECOND_BRAIN_WIKI_GIT_BRANCH")
-    if not target or not branch:
+    if enabled not in {"", "1"}:
+        raise ValueError("Managed Git enable flag must be 0, 1 or unset.")
+    from second_brain.wiki.git_config import legacy_git_settings  # noqa: PLC0415
+
+    explicit_target = os.environ.get("SECOND_BRAIN_WIKI_GIT_REMOTE", "").strip()
+    legacy_target, legacy_branch, credentials, legacy_trust = legacy_git_settings(explicit_target)
+    target = explicit_target or legacy_target
+    if not target and enabled != "1":
+        return DeliveryCoordinator(store, indexes)
+    mode = os.environ.get(
+        "SECOND_BRAIN_WIKI_GIT_MODE", "publish" if enabled == "1" and explicit_target else "sync"
+    )
+    if mode not in {"publish", "sync"}:
+        raise ValueError("Managed Git mode must be publish or sync.")
+    branch = os.environ.get("SECOND_BRAIN_WIKI_GIT_BRANCH", "").strip() or (
+        "" if explicit_target else legacy_branch
+    )
+    if not target or (mode == "publish" and not branch):
         raise ValueError("Explicit managed Git target and branch are required.")
+    prefix = os.environ.get(
+        "SECOND_BRAIN_WIKI_GIT_PREFIX", "" if explicit_target else "1_knowledge/wiki"
+    )
     remote = ManagedGitSync(
         store,
         target,
-        branch,
-        os.environ.get("SECOND_BRAIN_WIKI_GIT_PREFIX", ""),
-        ssh_known_hosts=os.environ.get("SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS"),
+        branch or "main",
+        prefix,
+        ssh_known_hosts=os.environ.get("SECOND_BRAIN_WIKI_GIT_SSH_KNOWN_HOSTS") or legacy_trust,
+        credentials=credentials,
     )
-    mode = os.environ.get("SECOND_BRAIN_WIKI_GIT_MODE", "publish")
-    if mode not in {"publish", "sync"}:
-        raise ValueError("Managed Git mode must be publish or sync.")
+    if not branch:
+        remote.branch = remote.discover_branch()
     if mode == "sync":
         return _synchronized_delivery(store, indexes, remote)
     baseline = os.environ.get("SECOND_BRAIN_WIKI_GIT_EXPECTED_REMOTE_REVISION")
@@ -71,7 +90,7 @@ def _synchronized_delivery(
                         "remote_bootstrap_conflict",
                         "Existing local content differs; review before connecting Git.",
                     ) from None
-            elif observed:
+            elif observed and remote._markdown(observed):
                 request = (
                     "sync-bootstrap:"
                     + hashlib.sha256(

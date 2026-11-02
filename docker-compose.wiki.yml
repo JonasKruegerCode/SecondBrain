@@ -1,9 +1,26 @@
 # Managed Wiki 2.0 preview. Legacy Compose and production volumes are unchanged.
+# Existing vault Git ENV is shared by REST and MCP; only REST runs delivery.
+x-vault-git: &vault-git
+  SECOND_BRAIN_WIKI_GIT_SYNC: ${SECOND_BRAIN_WIKI_GIT_SYNC:-}
+  VAULT_GIT_URL: ${VAULT_GIT_URL:-}
+  VAULT_GITHUB_URL: ${VAULT_GITHUB_URL:-}
+  VAULT_GIT_BRANCH: ${VAULT_GIT_BRANCH:-}
+  VAULT_GIT_PROVIDER: ${VAULT_GIT_PROVIDER:-github}
+  VAULT_GIT_AUTH_METHOD: ${VAULT_GIT_AUTH_METHOD:-auto}
+  VAULT_GIT_HTTP_USERNAME: ${VAULT_GIT_HTTP_USERNAME:-}
+  VAULT_GIT_HTTP_ACCESS_TOKEN: ${VAULT_GIT_HTTP_ACCESS_TOKEN:-}
+  VAULT_GIT_HTTP_TOKEN: ${VAULT_GIT_HTTP_TOKEN:-}
+  VAULT_GITHUB_PAT: ${VAULT_GITHUB_PAT:-}
+  VAULT_GIT_SSH_KEY_PATH: ${VAULT_GIT_SSH_KEY_PATH:-}
+  VAULT_GIT_SSH_KEY: ${VAULT_GIT_SSH_KEY:-}
+  VAULT_GIT_SSH_KNOWN_HOSTS_PATH: ${VAULT_GIT_SSH_KNOWN_HOSTS_PATH:-}
+
 services:
   backend:
     build: ./backend
     command: python -m uvicorn second_brain.wiki.api:app_factory --factory --host 0.0.0.0 --port 8000
     environment:
+      <<: *vault-git
       SECOND_BRAIN_WIKI_VAULT: /managed-vault
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek/deepseek-v4-flash}
@@ -25,6 +42,7 @@ services:
     build: ./backend
     command: python -m uvicorn second_brain.wiki.mcp:http_app_factory --factory --host 0.0.0.0 --port 3001
     environment:
+      <<: *vault-git
       SECOND_BRAIN_WIKI_VAULT: /managed-vault
       SECOND_BRAIN_WIKI_API_KEY: ${SECOND_BRAIN_WIKI_API_KEY:-}
       SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS: "${SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS:-localhost,localhost:*,127.0.0.1,127.0.0.1:*}"
@@ -47,3 +65,4 @@ services:
 
 volumes:
   managed_wiki:
+

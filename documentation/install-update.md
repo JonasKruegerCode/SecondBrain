@@ -45,8 +45,11 @@ Copy `.env.wiki.example` to the ignored `.env.wiki` only on initial setup. Set a
 real MCP secret and exact proxy authorities/origins. The browser API does not
 receive the MCP Bearer key; protect frontend, assets and `/api/wiki` with the
 existing proxy authentication. Configure OpenRouter only if paid chat is wanted.
-The base managed Compose profile does not enable optional index/remote-Git
-providers; configuring those is a separate reviewed operator step. `--env-file`
+The base managed Compose forwards the existing `VAULT_GIT_*` / `VAULT_GITHUB_*`
+settings. A configured Git URL pulls the existing wiki on a fresh start and
+enables ongoing synchronization; see [Git delivery](managed-delivery.md). Keep
+SSH key/trust-file mounts read-only and separate from content. Optional external
+index providers still require a separate reviewed operator step. `--env-file`
 supplies Compose interpolation, not every container's process environment. Merely
 adding provider variables to `.env.wiki` does not pass them to the services. A
 reviewed override must map the required variables into both API and MCP, with the
@@ -68,7 +71,7 @@ wiki_compose up -d --no-build --wait
 wiki_compose ps
 ```
 
-For a new installation that should contain a template or imported Git pages,
+For a new installation that should contain a template or an explicit local Git import,
 build first, then run one of the [container first-start commands](first-start.md#container-first-start)
 against this same project/volume **before** `up`. Native setup into a host
 directory does not populate the Compose named volume. The default empty start
@@ -78,7 +81,9 @@ The preview defaults to frontend `127.0.0.1:8080` and MCP `127.0.0.1:3001`.
 `WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` select different host ports while retaining
 loopback binding. Port `0` requests an available Docker-assigned port; discover it
 with `wiki_compose port frontend 80` or `wiki_compose port mcp 3001`.
-A new volume starts empty; services never auto-seed it. Backend health means the
+With no Git URL a new volume starts empty; services never auto-seed it.
+A configured URL instead pulls its committed Markdown before serving the fresh
+wiki. Preserve the original Git and old volumes while validating the result. Backend health means the
 local content authority is readable, not that model, index or remote delivery is
 accepted. `--wait` does not replace checking frontend/MCP through the actual proxy.
 Keep unrelated legacy/production services and volumes separate. Ordinary
@@ -368,5 +373,6 @@ same-app worker-file rehearsal is useful driver integration evidence and does
 not replace this Docker image pair or the operator's deployment-specific test.
 Inspect `pwa_baseline`, `pwa_forward`, `pwa_crossversion` and `pwa-browser.log`
 alongside the selected image IDs, content/history receipts and cleanup result.
+
 
 

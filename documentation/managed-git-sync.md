@@ -75,8 +75,8 @@ are accepted for controlled local use and tests; remote targets support HTTP(S),
 SSH URLs with no username or username `git`, and `git@host:path` syntax. HTTP
 userinfo, passwords, query strings, fragments, external transport helpers and
 option-like targets are refused. URLs/remotes are never written to Git config.
-Authentication supports an existing SSH agent through `SSH_AUTH_SOCK` and
-credential-free HTTP(S). SSH is explicitly noninteractive, checks host keys
+Without an explicit credential object, authentication supports an existing
+SSH agent through `SSH_AUTH_SOCK` and credential-free HTTP(S). SSH is explicitly noninteractive, checks host keys
 strictly, ignores user/system SSH configuration, disables default private
 identity files and never forwards the agent. `~/.ssh/config` aliases, ports,
 ProxyCommand and IdentityFile settings therefore do not apply: select the real
@@ -104,7 +104,10 @@ neither. Set outbound delivery variables explicitly as in the
 not inherit host SSH credentials or enable remote delivery. A mounted agent socket
 still grants signing capability to that container: restrict its key to the chosen
 repository and required branch permissions. The deploy key remains operator-owned;
-no key provisioning or private HTTPS credential helper is provided.
+no key provisioning is provided. Configured runtime credentials can also use
+existing HTTP tokens and SSH key-file/inline-key settings as described in
+[managed delivery](managed-delivery.md); the default explicit Python/CLI object
+still uses agent or credential-free transport unless credentials are supplied.
 
 ## Explicit command-line workflow
 
@@ -171,10 +174,12 @@ against a loopback server; it also does not establish private hosted permissions
 
 ## Runtime delivery
 
-The explicit CLI remains available. Managed server factories can now publish
+The explicit CLI remains available. Managed server factories can publish
 after saves through [recoverable delivery](managed-delivery.md), only after an
-explicit target/baseline opt-in. No automatic pull or merge is added. Persistent conflicts block automatic writes until deliberate reviewed operator
-reconciliation; see its guarded CLI and remaining production limits.
+explicit target/baseline opt-in. In explicit publication mode no automatic pull or merge is added. Configured
+legacy Git now selects synchronized delivery with inbound integration; see
+[its runtime contract](managed-delivery.md). Persistent conflicts block automatic
+publication until deliberate reviewed operator reconciliation.
 
 
 ## Inbound integration for synchronized delivery
