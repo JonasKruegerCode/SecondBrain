@@ -80,6 +80,25 @@ def test_explicit_new_key_wins_and_remains_bearer_only(monkeypatch: pytest.Monke
         )
 
 
+@pytest.mark.parametrize("root_path", ["", "/proxy-prefix"])
+def test_legacy_url_key_with_trailing_slash_does_not_redirect_or_lose_auth(
+    monkeypatch: pytest.MonkeyPatch, root_path: str
+) -> None:
+    monkeypatch.setenv("MCP_API_KEY", KEY)
+    with TestClient(
+        http_app_factory(), base_url="http://localhost", root_path=root_path
+    ) as client:
+        url = root_path + "/mcp/?keep=visible&api_key="
+        result = client.post(url + KEY, json=BODY, follow_redirects=False)
+        assert result.status_code == 200
+        assert "tools" in result.json()["result"]
+        assert "location" not in result.headers
+        assert KEY not in result.text
+        rejected = client.post(url + "wrong", json=BODY, follow_redirects=False)
+        assert rejected.status_code == 401
+        assert "location" not in rejected.headers
+
+
 @pytest.mark.parametrize(
     "headers,query",
     [

@@ -79,7 +79,11 @@ above is also intentional and remains usable without optional providers.
 
 The preview defaults to frontend `127.0.0.1:8080` and MCP `127.0.0.1:3001`.
 `WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` select different host ports while retaining
-loopback binding. Port `0` requests an available Docker-assigned port; discover it
+loopback binding. For MCP, a nonempty `WIKI_MCP_PORT` wins, then an existing
+`MCP_PORT`, then the preview default 3001. Preserve `MCP_PORT=3000` (the old
+default) or set `WIKI_MCP_PORT=3000` if the existing proxy/client expects that
+host endpoint; starting the preview does not change the proxy automatically.
+Port `0` requests an available Docker-assigned port; discover it
 with `wiki_compose port frontend 80` or `wiki_compose port mcp 3001`.
 With no Git URL a new volume starts empty; services never auto-seed it.
 A configured URL instead pulls its committed Markdown before serving the fresh

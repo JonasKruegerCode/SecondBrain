@@ -45,9 +45,12 @@ SECOND_BRAIN_WIKI_VAULT=/absolute/path/to/isolated-vault \
 ```
 
 Connect a Streamable HTTP MCP client to `http://127.0.0.1:3001/mcp`. Requests must
-use the protocol's normal JSON content type and Accept headers. `/mcp/` redirects
-with HTTP 307 to `/mcp`, preserving the method and body; configure clients with
-the canonical slash-free URL. Stdio startup remains
+use the protocol's normal JSON content type and Accept headers. `/mcp/` normally
+redirects with HTTP 307 to `/mcp`, preserving the method and body. Legacy URL-key
+requests instead route internally without a redirect, so query redaction does
+not discard authentication or put the key into a Location header. This also
+works under an ASGI root-path prefix. Prefer the canonical slash-free URL.
+Stdio startup remains
 `poetry run python -m second_brain.wiki.mcp` from `backend/` with the same
 explicit vault variable.
 
@@ -89,7 +92,11 @@ and missing/incorrect configured Bearer keys 401 without echoing the secret.
 Responses use `Cache-Control: no-store`.
 
 The preview Compose file starts managed HTTP MCP on loopback port 3001 beside
-the browser/API service:
+the browser/API service. An explicit `WIKI_MCP_PORT` takes precedence over an
+existing `MCP_PORT`; with neither configured, the preview default stays 3001.
+For a legacy endpoint on port 3000, preserve `MCP_PORT=3000` or explicitly set
+`WIKI_MCP_PORT=3000` before the deliberate cutover. The container still listens
+on 3001; the upstream proxy must use the published host port:
 
 ```sh
 cp .env.wiki.example .env.wiki

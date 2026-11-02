@@ -1269,6 +1269,24 @@ def main() -> int:
             raw = json.loads(
                 run.command([*original, "config", "--format", "json"], record_output=False)
             )
+            # Resolve the actual Compose interpolation before isolation replaces
+            # published ports. Neither case starts a listener or container.
+            for explicit, expected_port in [("", "31307"), ("31308", "31308")]:
+                port_env = {**run.env, "MCP_PORT": "31307", "WIKI_MCP_PORT": explicit}
+                resolved = json.loads(
+                    run.command(
+                        [*original, "config", "--format", "json"],
+                        record_output=False,
+                        environment=port_env,
+                    )
+                )
+                port = resolved["services"]["mcp"]["ports"][0]
+                run.check(
+                    "mcp-port-explicit-precedence" if explicit else "mcp-port-legacy-fallback",
+                    str(port["published"]) == expected_port
+                    and port["target"] == 3001
+                    and port["host_ip"] == "127.0.0.1",
+                )
             original_path = temp / "original.json"
             source_config = json.loads(json.dumps(raw))
             isolated = isolated_config(raw, project, run.key)

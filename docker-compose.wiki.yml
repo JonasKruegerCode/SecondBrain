@@ -52,7 +52,7 @@ services:
     volumes:
       - managed_wiki:/managed-vault
     ports:
-      - "127.0.0.1:${WIKI_MCP_PORT:-3001}:3001"
+      - "127.0.0.1:${WIKI_MCP_PORT:-${MCP_PORT:-3001}}:3001"
     restart: unless-stopped
 
   frontend:

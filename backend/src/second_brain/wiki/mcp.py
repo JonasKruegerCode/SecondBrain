@@ -276,6 +276,17 @@ class _HttpBoundary:
             )
             return
 
+        if self.legacy_auth and query_key and scope["path"] in {
+            "/mcp/",
+            f"{scope.get('root_path', '')}/mcp/",
+        }:
+            # A redirect after query redaction would discard URL credentials.
+            # Route this legacy spelling internally instead of leaking the key
+            # into a Location header or requiring a second unauthenticated call.
+            scope["path"] = scope["path"][:-1]
+            if scope.get("raw_path", b"").endswith(b"/"):
+                scope["raw_path"] = scope["raw_path"][:-1]
+
         async def private_send(message: Message) -> None:
             if message["type"] == "http.response.start":
                 message = {
