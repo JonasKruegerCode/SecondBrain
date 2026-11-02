@@ -8,7 +8,7 @@ import secrets
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -211,7 +211,7 @@ def _allowed(value: str, patterns: Sequence[str], *, origin: bool = False) -> bo
 
 
 class _HttpBoundary:
-    """Bearer-only boundary; no query secrets, OAuth registration or CORS bypass."""
+    """Protected transport; legacy credential forms are explicit, not global."""
 
     def __init__(
         self,
@@ -220,19 +220,46 @@ class _HttpBoundary:
         api_key: str,
         allowed_hosts: Sequence[str],
         allowed_origins: Sequence[str],
+        legacy_auth: bool = False,
     ) -> None:
         self.app, self.api_key = app, api_key
         self.allowed_hosts, self.allowed_origins = allowed_hosts, allowed_origins
+        self.legacy_auth = legacy_auth
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         headers = {k.lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        # Redact a supplied query credential before either downstream access or
+        # the server's response-time access log, including rejected requests.
+        query_key = ""
+        try:
+            pairs = parse_qsl(
+                scope.get("query_string", b"").decode("utf-8", errors="replace"),
+                keep_blank_values=True,
+                max_num_fields=128,
+            )
+        except ValueError:
+            pairs = []
+            scope["query_string"] = b""
+        if any(name == "api_key" for name, _ in pairs):
+            query_key = next((value for name, value in pairs if name == "api_key" and value), "")
+            scope["query_string"] = urlencode(
+                [(name, value) for name, value in pairs if name != "api_key"]
+            ).encode()
+        scheme, _, token = headers.get(b"authorization", "").partition(" ")
+        candidate = token if scheme.lower() == "bearer" else ""
+        if self.legacy_auth:
+            candidate = headers.get(b"x-api-key", "") or candidate or query_key
+            if "application/json" not in headers.get(b"accept", ""):
+                scope["headers"] = [
+                    (name, value)
+                    for name, value in scope.get("headers", [])
+                    if name.lower() != b"accept"
+                ] + [(b"accept", b"application/json, text/event-stream")]
         status, error = 0, ""
-        if self.api_key and not secrets.compare_digest(
-            headers.get(b"authorization", "").encode(), f"Bearer {self.api_key}".encode()
-        ):
+        if self.api_key and not secrets.compare_digest(candidate.encode(), self.api_key.encode()):
             status, error = 401, "unauthorized"
         elif not _allowed(headers.get(b"host", ""), self.allowed_hosts):
             status, error = 421, "host_rejected"
@@ -326,6 +353,7 @@ def create_http_app(
     close_indexes: bool = False,
     delivery: DeliveryCoordinator | None = None,
     automatic_delivery: bool = False,
+    legacy_auth: bool = False,
 ) -> Starlette:
     """Explicit /mcp Streamable HTTP app sharing the same store and editing guidance.
 
@@ -377,6 +405,7 @@ def create_http_app(
         api_key=api_key,
         allowed_hosts=tuple(allowed_hosts),
         allowed_origins=tuple(allowed_origins),
+        legacy_auth=legacy_auth,
     )
     app.state.wiki_store = store
     app.state.wiki_mcp = mcp
@@ -395,6 +424,7 @@ def http_app_factory() -> Starlette:
     from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
 
     store = WikiStore(path)
+    api_key, legacy_auth = _configured_http_key()
     indexes = configured_indexes(store)
     try:
         delivery = configured_delivery(store, indexes)
@@ -403,7 +433,8 @@ def http_app_factory() -> Starlette:
         raise
     return create_http_app(
         store,
-        os.environ.get("SECOND_BRAIN_WIKI_API_KEY", ""),
+        api_key,
+        legacy_auth=legacy_auth,
         allowed_hosts=tuple(v.strip() for v in hosts.split(",") if v.strip())
         if hosts is not None
         else LOCAL_HOSTS,
@@ -415,6 +446,17 @@ def http_app_factory() -> Starlette:
         automatic_delivery=os.environ.get("SECOND_BRAIN_WIKI_DELIVERY", "1") != "0",
         close_indexes=True,
     )
+
+
+def _configured_http_key() -> tuple[str, bool]:
+    """Retain old ENV/dotenv keys without applying them to the browser REST app."""
+    explicit = os.environ.get("SECOND_BRAIN_WIKI_API_KEY", "")
+    if explicit:
+        return explicit, False
+    from second_brain.core.config import Settings  # noqa: PLC0415
+
+    key = Settings().MCP_API_KEY
+    return key, bool(key)
 
 
 def main() -> None:

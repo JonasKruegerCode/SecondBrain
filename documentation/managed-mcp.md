@@ -4,17 +4,32 @@ The managed profile provides the same ten revision-aware content/retrieval/statu
 `wiki://guidance` resource over stdio or Streamable HTTP. HTTP uses `/mcp`,
 stateless requests, and JSON responses. It does not invoke model providers,
 remember/recall or the legacy editorial agent. Reads do not invoke remote Git;
-factory-owned background delivery only publishes to an explicitly configured
-target. See [recoverable delivery](managed-delivery.md).
+factory-owned background delivery synchronizes a configured Git target
+independently of read requests. See [recoverable delivery](managed-delivery.md).
 
 This is the primary MCP offering for the 2.0 managed wiki. Existing legacy MCP
 production routes, authentication, REST API, and configuration remain available
 only as a separate [optional compatibility profile](legacy-memory-profile.md).
-Legacy also uses `/mcp`, but its key inputs and OAuth-like registration endpoints
-are not part of this profile. Managed HTTP accepts only `Authorization: Bearer …`
-when a key is configured; it never accepts keys in a URL or `X-API-Key` and does
-not publish `/register`, `/token`, or OAuth discovery endpoints. It is a static
-Bearer deployment, not an OAuth authorization server.
+Legacy also uses `/mcp`. The managed factory preserves `MCP_API_KEY`
+from ENV/dotenv as a fallback when no nonempty `SECOND_BRAIN_WIKI_API_KEY`
+is selected. This legacy-key mode retains `X-API-Key`, case-insensitive Bearer
+and `?api_key=…` authentication, in that precedence. A wrong higher-priority
+credential is rejected rather than bypassed with a matching lower-priority one.
+The legacy missing/non-JSON Accept workaround is retained in this mode.
+
+An explicit new key continues to select Bearer-only authentication. The scheme
+is case-insensitive; credential values remain exact. URL credentials are removed
+from the shared ASGI query scope before response-time server access logging,
+including rejected requests; clients and upstream proxies must still avoid
+logging their own incoming credential URLs.
+
+Neither mode publishes `/register`, `/token`, or OAuth discovery endpoints.
+In particular the old registration behavior that returned the configured shared
+secret is not reproduced. Existing direct key/header URLs do not need those
+routes. Clients that relied on OAuth-like discovery must instead configure a
+static authenticated MCP URL/header or continue using the separate legacy
+profile while their migration is reviewed. This service is not an OAuth
+authorization server.
 
 ## Explicit local startup
 
@@ -39,7 +54,7 @@ explicit vault variable.
 HTTP POST bodies are capped at 1,100,000 actual bytes, including JSON overhead,
 independently of Content-Length. Oversized requests return HTTP 413; malformed
 JSON, invalid Unicode encoding and decoder-depth failures return HTTP 400 with
-a generic JSON-RPC parse error. Host, Origin and Bearer checks run before body
+a generic JSON-RPC parse error. Host, Origin and credential checks run before body
 reads. These transport failures do not call wiki tools or publish content.
 
 `SECOND_BRAIN_WIKI_API_KEY` optionally configures the server-side Bearer secret,
@@ -81,8 +96,8 @@ cp .env.wiki.example .env.wiki
 docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
 ```
 
-The MCP container receives `SECOND_BRAIN_WIKI_API_KEY`; the browser/API
-container deliberately does not. Both mount the same managed vault, while only
+The MCP container receives the new key and the legacy `MCP_API_KEY` fallback;
+the browser/API container deliberately receives neither MCP secret. Both mount the same managed vault, while only
 the API process owns the polling delivery worker. The worker reconstructs
 pending work written through either process. Container execution remains a
 deployment check until it has been run in an environment with Docker.
@@ -128,3 +143,4 @@ structured conflict/reused-ID errors, and save/delete receipt replay across fres
 server processes without duplicate history. The SDK owns child shutdown even on
 failure; the whole exchange has a bounded timeout. These are protocol and local
 persistence checks, not a hosted client or production-credential acceptance.
+
