@@ -121,6 +121,22 @@ is enabled. Provider/model quality remains a separate acceptance gate.
 Without opt-in, ordinary managed wiki startup needs neither backend nor an
 embedding provider. Keep the same configuration in API, MCP, and worker processes.
 
+The managed Compose file passes the table's flags, endpoints, credentials,
+dimension and provider/model routing to both API and MCP. Put them in the same
+operator ENV file supplied with `--env-file`; they are server-side only. An empty
+`NEO4J_DATABASE` uses the server's default database and an empty `QDRANT_API_KEY`
+means no API-key authentication. Database services are not started by this
+Compose file: supply reachable endpoints, not a host-only localhost address.
+
+Migration limit: old `QDRANT_URL` / `NEO4J_*` / embedding variables alone still
+do not enable managed indexes. Legacy inferred vector dimensions; managed
+snapshots require the model's actual dimension explicitly. This is a remaining
+configuration migration difference, not proof that a reused legacy ENV retains
+semantic retrieval automatically. Preserve the original databases and verify
+current graph/vector receipts plus semantic and graph_rag requests before
+accepting a personal migration. Isolated generations do not overwrite legacy
+collections or authorize deleting them.
+
 Run from the repository root with the locked backend dependencies and the
 explicit provider configuration above. Select Poetry's actual Python:
 

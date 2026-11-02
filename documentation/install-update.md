@@ -94,6 +94,13 @@ Keep unrelated legacy/production services and volumes separate. Ordinary
 `stop`/`start` retains this content. **Do not use `down --volumes` or volume prune
 for an update:** that can delete the persistent wiki.
 
+The shared server environment also passes configured graph/vector providers
+to both API and MCP; see [index configuration](managed-indexes.md#enable-and-operate).
+Existing provider variables alone do not yet recreate the legacy automatic
+index startup. The inspection recovery overlay explicitly disables Git sync,
+graph/vector indexing and model credentials so merely opening a restored
+archive cannot pull new remote content or start provider work.
+
 ## Prepare an update and archive current content
 
 Finish or preserve browser drafts and pending replies first; quiesce external

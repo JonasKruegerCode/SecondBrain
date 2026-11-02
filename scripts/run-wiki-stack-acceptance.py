@@ -108,6 +108,10 @@ def isolated_config(
                 if restored
                 else "/managed-vault",
                 "OPENROUTER_API_KEY": "",
+                "GCP_API_KEY": "",
+                "SECOND_BRAIN_WIKI_GRAPH_INDEX": "0",
+                "SECOND_BRAIN_WIKI_VECTOR_INDEX": "0",
+                "SECOND_BRAIN_WIKI_GIT_SYNC": "0",
                 "SECOND_BRAIN_WIKI_DELIVERY": "0",
                 **(
                     {
@@ -205,6 +209,10 @@ def validate_recovery_config(
             if (
                 env.get("SECOND_BRAIN_WIKI_VAULT") != "/managed-vault/restored"
                 or env.get("OPENROUTER_API_KEY") != ""
+                or env.get("GCP_API_KEY") != ""
+                or env.get("SECOND_BRAIN_WIKI_GRAPH_INDEX") != "0"
+                or env.get("SECOND_BRAIN_WIKI_VECTOR_INDEX") != "0"
+                or env.get("SECOND_BRAIN_WIKI_GIT_SYNC") != "0"
                 or env.get("SECOND_BRAIN_WIKI_DELIVERY") != "0"
             ):
                 raise RuntimeError("recovery must inspect the restored path without providers")
@@ -1272,7 +1280,26 @@ def main() -> int:
             # Resolve the actual Compose interpolation before isolation replaces
             # published ports. Neither case starts a listener or container.
             for explicit, expected_port in [("", "31307"), ("31308", "31308")]:
-                port_env = {**run.env, "MCP_PORT": "31307", "WIKI_MCP_PORT": explicit}
+                provider_env = {
+                    "SECOND_BRAIN_WIKI_GRAPH_INDEX": "1",
+                    "SECOND_BRAIN_WIKI_VECTOR_INDEX": "1",
+                    "SECOND_BRAIN_WIKI_VECTOR_DIMENSION": "2",
+                    "NEO4J_URI": "bolt://synthetic.invalid:7687",
+                    "NEO4J_USER": "synthetic-user",
+                    "NEO4J_PASSWORD": "synthetic-password",
+                    "NEO4J_DATABASE": "synthetic-db",
+                    "QDRANT_URL": "http://synthetic.invalid:6333",
+                    "QDRANT_API_KEY": "synthetic-qdrant-key",
+                    "LLM_PROVIDER": "gcp",
+                    "EMBEDDING_MODEL": "synthetic-embedding-model",
+                    "OPENROUTER_API_KEY": "synthetic-openrouter-key",
+                    "OPENROUTER_EMBEDDING_PROVIDER": "synthetic-routing",
+                    "GCP_API_KEY": "synthetic-gcp-key",
+                    "GCP_ENDPOINT_URL": "https://synthetic.invalid/v1",
+                }
+                port_env = {
+                    **run.env, **provider_env, "MCP_PORT": "31307", "WIKI_MCP_PORT": explicit
+                }
                 resolved = json.loads(
                     run.command(
                         [*original, "config", "--format", "json"],
@@ -1286,6 +1313,15 @@ def main() -> int:
                     str(port["published"]) == expected_port
                     and port["target"] == 3001
                     and port["host_ip"] == "127.0.0.1",
+                )
+                run.check(
+                    "index-provider-config-shared",
+                    all(
+                        resolved["services"][service]["environment"].get(name) == value
+                        for service in ("backend", "mcp")
+                        for name, value in provider_env.items()
+                    )
+                    and not resolved["services"]["frontend"].get("environment"),
                 )
             original_path = temp / "original.json"
             source_config = json.loads(json.dumps(raw))

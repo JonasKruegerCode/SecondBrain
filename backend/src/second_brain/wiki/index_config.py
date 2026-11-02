@@ -31,7 +31,7 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
 
             uri = os.environ["NEO4J_URI"]
             user = os.environ["NEO4J_USER"]
-            database = os.environ.get("NEO4J_DATABASE")
+            database = os.environ.get("NEO4J_DATABASE") or None
             driver = GraphDatabase.driver(uri, auth=(user, os.environ["NEO4J_PASSWORD"]))
             cleanup.callback(_close_after_failure, driver)
             adapters["graph"] = Neo4jSnapshotAdapter(driver, database=database)
@@ -45,7 +45,9 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
 
             url = os.environ["QDRANT_URL"]
             dimension = int(os.environ["SECOND_BRAIN_WIKI_VECTOR_DIMENSION"])
-            client = QdrantClient(url=url, api_key=os.environ.get("QDRANT_API_KEY"), timeout=60)
+            client = QdrantClient(
+                url=url, api_key=os.environ.get("QDRANT_API_KEY") or None, timeout=60
+            )
             cleanup.callback(_close_after_failure, client)
             adapters["vector"] = QdrantSnapshotAdapter(client, get_embedder(), dimension)
             identity["vector"] = [

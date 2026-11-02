@@ -107,3 +107,16 @@ def test_no_provider_startup_does_not_create_clients(
     providers.vector.QdrantClient.assert_not_called()
     providers.driver.close.assert_not_called()
     indexes.close()
+
+
+def test_empty_optional_compose_fields_keep_provider_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, providers: SimpleNamespace
+) -> None:
+    monkeypatch.setenv("NEO4J_DATABASE", "")
+    monkeypatch.setenv("QDRANT_API_KEY", "")
+    indexes = index_config.configured_indexes(WikiStore(tmp_path / "vault"))
+    try:
+        assert indexes.adapters["graph"].database is None
+        assert providers.vector.QdrantClient.call_args.kwargs["api_key"] is None
+    finally:
+        indexes.close()

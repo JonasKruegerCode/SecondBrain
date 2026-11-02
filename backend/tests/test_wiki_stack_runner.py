@@ -90,7 +90,8 @@ def recovery_config() -> dict[str, Any]:
 
 @pytest.mark.parametrize(
     "danger",
-    [None, "volume", "provider", "vault", "port", "proxy", "image", "mount", "pull"],
+    [None, "volume", "provider", "gcp", "graph", "vector", "git", "vault", "port", "proxy",
+     "image", "mount", "pull"],
 )
 def test_actual_recovery_merge_rejects_wrong_targets(danger: str | None) -> None:
     data = recovery_config()
@@ -98,6 +99,15 @@ def test_actual_recovery_merge_rejects_wrong_targets(danger: str | None) -> None
         data["volumes"]["managed_wiki"]["name"] = "original-live-volume"
     elif danger == "provider":
         data["services"]["backend"]["environment"]["OPENROUTER_API_KEY"] = "do-not-call"
+    elif danger == "gcp":
+        data["services"]["mcp"]["environment"]["GCP_API_KEY"] = "do-not-call"
+    elif danger in {"graph", "vector", "git"}:
+        name = {
+            "graph": "SECOND_BRAIN_WIKI_GRAPH_INDEX",
+            "vector": "SECOND_BRAIN_WIKI_VECTOR_INDEX",
+            "git": "SECOND_BRAIN_WIKI_GIT_SYNC",
+        }[danger]
+        data["services"]["backend"]["environment"][name] = "1"
     elif danger == "vault":
         data["services"]["mcp"]["environment"]["SECOND_BRAIN_WIKI_VAULT"] = "/managed-vault"
     elif danger == "port":

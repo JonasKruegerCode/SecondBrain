@@ -1,5 +1,5 @@
 # Managed Wiki 2.0 preview. Legacy Compose and production volumes are unchanged.
-# Existing vault Git ENV is shared by REST and MCP; only REST runs delivery.
+# Git and optional index providers are shared by REST and MCP; only REST runs delivery.
 x-vault-git: &vault-git
   SECOND_BRAIN_WIKI_GIT_SYNC: ${SECOND_BRAIN_WIKI_GIT_SYNC:-}
   VAULT_GIT_URL: ${VAULT_GIT_URL:-}
@@ -15,14 +15,30 @@ x-vault-git: &vault-git
   VAULT_GIT_SSH_KEY: ${VAULT_GIT_SSH_KEY:-}
   VAULT_GIT_SSH_KNOWN_HOSTS_PATH: ${VAULT_GIT_SSH_KNOWN_HOSTS_PATH:-}
 
+x-wiki-indexes: &wiki-indexes
+  SECOND_BRAIN_WIKI_GRAPH_INDEX: ${SECOND_BRAIN_WIKI_GRAPH_INDEX:-0}
+  SECOND_BRAIN_WIKI_VECTOR_INDEX: ${SECOND_BRAIN_WIKI_VECTOR_INDEX:-0}
+  SECOND_BRAIN_WIKI_VECTOR_DIMENSION: ${SECOND_BRAIN_WIKI_VECTOR_DIMENSION:-}
+  NEO4J_URI: ${NEO4J_URI:-}
+  NEO4J_USER: ${NEO4J_USER:-}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}
+  NEO4J_DATABASE: ${NEO4J_DATABASE:-}
+  QDRANT_URL: ${QDRANT_URL:-}
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_EMBEDDING_PROVIDER: ${OPENROUTER_EMBEDDING_PROVIDER:-}
+  GCP_API_KEY: ${GCP_API_KEY:-}
+  GCP_ENDPOINT_URL: ${GCP_ENDPOINT_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+
 services:
   backend:
     build: ./backend
     command: python -m uvicorn second_brain.wiki.api:app_factory --factory --host 0.0.0.0 --port 8000
     environment:
-      <<: *vault-git
+      <<: [*vault-git, *wiki-indexes]
       SECOND_BRAIN_WIKI_VAULT: /managed-vault
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek/deepseek-v4-flash}
     volumes:
       - managed_wiki:/managed-vault
@@ -42,7 +58,7 @@ services:
     build: ./backend
     command: python -m uvicorn second_brain.wiki.mcp:http_app_factory --factory --host 0.0.0.0 --port 3001
     environment:
-      <<: *vault-git
+      <<: [*vault-git, *wiki-indexes]
       SECOND_BRAIN_WIKI_VAULT: /managed-vault
       SECOND_BRAIN_WIKI_API_KEY: ${SECOND_BRAIN_WIKI_API_KEY:-}
       MCP_API_KEY: ${MCP_API_KEY:-}
