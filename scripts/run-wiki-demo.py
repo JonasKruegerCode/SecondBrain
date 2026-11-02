@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from second_brain.wiki.demo import FORMAT_VERSION, MARKER, DemoSeedError, seed_vault
@@ -103,7 +103,8 @@ def _has_openrouter_key(root: Path) -> bool:
     """Resolve only for explicit opt-in, using the API child's dotenv paths."""
     from second_brain.core.config import Settings  # noqa: PLC0415
 
-    return bool(Settings(_env_file=[root / ".env", root.parent / ".env"]).OPENROUTER_API_KEY)
+    factory: Callable[..., Settings] = Settings
+    return bool(factory(_env_file=[root / ".env", root.parent / ".env"]).OPENROUTER_API_KEY)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

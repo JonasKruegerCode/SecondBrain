@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import runpy
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -46,7 +47,10 @@ def test_dotenv_only_key_permits_opted_in_start_and_preserves_model(
     for call in calls:
         assert "OPENROUTER_API_KEY" not in call.kwargs["env"]
         assert "DEFAULT_MODEL" not in call.kwargs["env"]
-    resolved = Settings(_env_file=[root / ".env", root.parent / ".env"])
+    # BaseSettings supports runtime dotenv overrides; its generated model
+    # signature omits them under the full project's Pydantic type plugin.
+    factory: Callable[..., Settings] = Settings
+    resolved = factory(_env_file=[root / ".env", root.parent / ".env"])
     assert key == resolved.OPENROUTER_API_KEY
     assert resolved.DEFAULT_MODEL == "synthetic/model"
     output = capsys.readouterr()
