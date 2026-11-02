@@ -28,6 +28,7 @@ def _shim(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -> Managed
     sync = ManagedGitSync.__new__(ManagedGitSync)
     sync.repo = tmp_path / "isolated.git"
     sync.ssh_known_hosts = None
+    sync.credentials = None
     return sync
 
 
@@ -169,3 +170,4 @@ def test_git_interruption_kills_transport_and_descendant_before_propagating(
         if child_pid is not None and _running(child_pid):
             with suppress(ProcessLookupError):
                 os.kill(child_pid, signal.SIGKILL)
+
