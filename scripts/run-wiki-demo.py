@@ -99,6 +99,13 @@ def _require_completed_seed(vault: Path) -> None:
         raise SystemExit("Completed demo repository is missing or unsafe; inspect or restore it.")
 
 
+def _has_openrouter_key(root: Path) -> bool:
+    """Resolve only for explicit opt-in, using the API child's dotenv paths."""
+    from second_brain.core.config import Settings  # noqa: PLC0415
+
+    return bool(Settings(_env_file=[root / ".env", root.parent / ".env"]).OPENROUTER_API_KEY)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
@@ -121,7 +128,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.process_state and (args.process_state.exists() or
                               args.process_state.with_name(args.process_state.name + ".tmp").exists()):
         parser.error("process state must be a fresh runner-owned path")
-    if args.with_openrouter and not os.environ.get("OPENROUTER_API_KEY"):
+    if args.with_openrouter and not _has_openrouter_key(root):
         parser.error("--with-openrouter requires OPENROUTER_API_KEY")
     if args.scale_pages is not None and not 251 <= args.scale_pages <= 2_000:
         parser.error("--scale-pages must be between 251 and 2000")

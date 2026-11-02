@@ -133,11 +133,14 @@ The API uses an explicit factory and requires `SECOND_BRAIN_WIKI_VAULT`. Importi
 The Chat tab is present but the default demo deliberately clears an inherited
 provider key, so opening the fictional wiki never creates external model cost.
 To run the same demo with real server-side OpenRouter calls, stop the current
-launcher with Ctrl+C first, then explicitly provide the key and opt in when
-restarting on the same ports:
+launcher with Ctrl+C first, then opt in when restarting on the same ports.
+The launcher accepts an existing server-side key from the repository `.env`
+or its parent `.env`, using the same precedence as the API child; process ENV
+overrides those files. A configured dotenv model is preserved. No key needs to
+be pasted into a command or chat when that configuration already exists:
 
 ```bash
-SECOND_BRAIN_WIKI_API_KEY= OPENROUTER_API_KEY=... PYTHONPATH=backend/src \
+SECOND_BRAIN_WIKI_API_KEY= PYTHONPATH=backend/src \
   "$WIKI_PYTHON" scripts/run-wiki-demo.py --with-openrouter
 ```
 
