@@ -146,8 +146,10 @@ async def test_stdio_client_restart_conflicts_and_shared_content(tmp_path: Path)
             )
             assert _error(unconfigured)["error"] == "index_not_configured"
             unknown = await client.call_tool("search_wiki", {"query": "harbor", "mode": "other"})
-            assert unknown.isError
-            assert unknown.structuredContent is None
+            assert _error(unknown) == {
+                "error": "invalid_payload",
+                "message": "mode must be lexical, semantic or graph_rag.",
+            }
 
     assert external.get_page("harbor") is None
     assert len(external.history("harbor")) == 3
