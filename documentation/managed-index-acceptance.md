@@ -6,6 +6,11 @@ deterministic synthetic pages and an injected synthetic embedder. It does not
 load a production embedding model, call hosted model endpoints, or require
 external model credentials. Git snapshots remain the content authority.
 
+Each server scenario runs with both an explicit vector dimension and inference
+from the actual synthetic embedding output. The restart scenario retains that
+mode when reconnecting, so inferred query dimensions are read from the real
+Qdrant collection after restart, not only exercised by embedded-client tests.
+
 ## Run locally
 
 Use Python 3.12, Poetry 2.1.3, and a running Docker Engine. From the repository

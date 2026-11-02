@@ -60,7 +60,9 @@ class FixtureEmbedder:
         return [1.0, 0.0] if "harbor" in text.lower() else [0.0, 1.0]
 
 
-def adapters(neo4j_container: Any, qdrant_container: Any) -> dict[str, Any]:
+def adapters(
+    neo4j_container: Any, qdrant_container: Any, dimension: int | None = 2
+) -> dict[str, Any]:
     driver = GraphDatabase.driver(
         neo4j_container.get_connection_url(), auth=("neo4j", "password"), connection_timeout=3
     )
@@ -80,13 +82,14 @@ def adapters(neo4j_container: Any, qdrant_container: Any) -> dict[str, Any]:
         raise
     return {
         "graph": Neo4jSnapshotAdapter(driver),
-        "vector": QdrantSnapshotAdapter(client, FixtureEmbedder(), 2),
+        "vector": QdrantSnapshotAdapter(client, FixtureEmbedder(), dimension),
     }
 
 
-@pytest.fixture
+@pytest.fixture(params=[2, None], ids=["explicit-dimension", "inferred-dimension"])
 def indexed(
-    tmp_path: Path, neo4j_container: Any, qdrant_container: Any, record_testsuite_property: Any
+    tmp_path: Path, neo4j_container: Any, qdrant_container: Any, record_testsuite_property: Any,
+    request: pytest.FixtureRequest,
 ) -> Iterator[IndexCoordinator]:
     for name, container in (("neo4j", neo4j_container), ("qdrant", qdrant_container)):
         image = container.get_wrapped_container().image
@@ -96,7 +99,7 @@ def indexed(
     store.save_page("home", "# Home\n[[harbor]]", None, "home-create")
     store.save_page("harbor", "# Harbor\n[[garden]]", None, "harbor-create")
     store.save_page("garden", "# Garden\nA quiet garden.", None, "garden-create")
-    indexes = IndexCoordinator(store, adapters(neo4j_container, qdrant_container))
+    indexes = IndexCoordinator(store, adapters(neo4j_container, qdrant_container, request.param))
     try:
         yield indexes
     finally:
@@ -263,7 +266,9 @@ def test_real_server_restart_receipts_and_missing_vector_recovery(
     while True:
         try:
             restarted = IndexCoordinator(
-                WikiStore(indexed.store.path), adapters(neo4j_container, qdrant_container)
+                WikiStore(indexed.store.path), adapters(
+                    neo4j_container, qdrant_container, indexed.adapters["vector"].dimension
+                )
             )
             break
         except Exception:
