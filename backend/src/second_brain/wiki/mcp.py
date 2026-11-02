@@ -44,10 +44,15 @@ Use get_delivery_status for current publication/index progress and cached Git
 verification. Server factories own a recoverable worker unless explicitly disabled;
 optional providers and remote Git must be configured by the operator.
 A current Git acknowledgement is a past verification, never a live remote claim.
-Lexical search always works without optional providers. It returns at most 50
-results and sets truncated=true when a narrower query is needed.
-search_wiki mode semantic uses current vectors; mode graph_rag adds bounded graph
-context without generating an answer. get_neighbors expands explicit links.
+search_wiki with omitted mode uses configured vectors (15 hits by default), or
+lexical search otherwise (50 by default). Explicit mode lexical always works
+without optional providers; lexical results set truncated=true when a narrower
+query is needed. Optional limit is bounded to 1–50. Explicit mode semantic uses
+current vectors (10 hits by default); hpos 0–2 adds graph neighbors to each
+semantic hit at that hop depth. Nonzero hpos requires semantic search.
+Mode graph_rag adds bounded graph context without generating an answer.
+get_neighbors expands explicit links using ids, or the legacy single-page id
+alias; simultaneous id and ids must match.
 Graph reads derive explicit links and typed relations from one Markdown snapshot;
 ambiguous titles are reported rather than silently assigned to a page.
 
@@ -118,20 +123,49 @@ def create_mcp(
         return [{k: v for k, v in page.items() if k != "markdown"} for page in store.list_pages()]
 
     @mcp.tool()
-    def search_wiki(query: str, mode: str = "lexical") -> dict[str, Any]:
-        """Lexical by default; semantic requires a configured current vector index."""
-        if mode == "semantic":
-            return indexes.semantic_search(query)
-        if mode == "graph_rag":
-            return indexes.graph_search(query)
-        if mode != "lexical":
-            raise ValueError("mode must be lexical, semantic or graph_rag")
-        rows = store.search(query, limit=SEARCH_RESULT_LIMIT + 1)
+    def search_wiki(
+        query: str, mode: str | None = None, limit: int | None = None, hpos: int = 0
+    ) -> dict[str, Any]:
+        """Search configured vectors by default, otherwise lexical Markdown.
+
+        Explicit mode retains control. Legacy limit and hpos expand each semantic
+        hit independently; hpos is the number of graph hops (0–2).
+        """
+        implicit = mode is None
+        selected = mode if mode is not None else (
+            "semantic" if "vector" in indexes.adapters else "lexical"
+        )
+        if selected not in {"lexical", "semantic", "graph_rag"}:
+            raise WikiError("invalid_payload", "mode must be lexical, semantic or graph_rag.")
+        if limit is not None and not 1 <= limit <= SEARCH_RESULT_LIMIT:
+            raise WikiError("invalid_payload", "limit must be between 1 and 50.")
+        if not 0 <= hpos <= 2:
+            raise WikiError("invalid_payload", "hpos must be between 0 and 2.")
+        if hpos and selected != "semantic":
+            raise WikiError("invalid_payload", "hpos requires semantic search.")
+        if selected == "semantic":
+            result = indexes.semantic_search(query, limit or (15 if implicit else 10))
+            if hpos:
+                for hit in result["results"]:
+                    expanded = indexes.neighbors([hit["id"]], hpos)
+                    if expanded["revision"] != result["revision"]:
+                        raise WikiError("index_pending", "Content changed during search. Retry.")
+                    hit["neighbors"] = expanded["pages"]
+                if store._head() != result["revision"]:
+                    raise WikiError("index_pending", "Content changed during search. Retry.")
+            return result
+        if selected == "graph_rag":
+            result = indexes.graph_search(query)
+            if limit is not None:
+                result["results"] = result["results"][:limit]
+            return result
+        maximum = limit or SEARCH_RESULT_LIMIT
+        rows = store.search(query, limit=maximum + 1)
         return {
             "mode": "lexical",
-            "results": rows[:SEARCH_RESULT_LIMIT],
-            "limit": SEARCH_RESULT_LIMIT,
-            "truncated": len(rows) > SEARCH_RESULT_LIMIT,
+            "results": rows[:maximum],
+            "limit": maximum,
+            "truncated": len(rows) > maximum,
         }
 
     @mcp.tool()
@@ -145,8 +179,16 @@ def create_mcp(
         return worker.status() if worker else delivery.status()
 
     @mcp.tool()
-    def get_neighbors(ids: list[str], hops: int = 1, limit: int = 50) -> dict[str, Any]:
-        """Bounded graph expansion at the current content revision; 1–3 hops."""
+    def get_neighbors(
+        ids: list[str] | None = None, hops: int = 1, limit: int = 50, id: str | None = None
+    ) -> dict[str, Any]:
+        """Expand explicit links, accepting the legacy single-page id alias."""
+        if id is not None:
+            if ids is not None and ids != [id]:
+                raise WikiError("invalid_payload", "Provide matching id and ids, or only one.")
+            ids = [id]
+        if ids is None:
+            raise WikiError("invalid_payload", "Provide id or ids.")
         return indexes.neighbors(ids, hops, limit)
 
     @mcp.tool()

@@ -126,8 +126,8 @@ Managed domain failures retain MCP's `isError: true`. Both `structuredContent`
 and the text content contain the same JSON object with `error`, `message`, and
 any domain details, such as `current_revision` on `revision_conflict`. A reused
 request ID with a different payload returns `request_id_reused`; it must not be
-retried as though publication were unknown. Successful outputs and schemas are
-unchanged. Missing-page reads use the same domain-error result: `isError: true`
+retried as though publication were unknown. Missing-page reads use the same
+domain-error result: `isError: true`
 with `error: not_found`, a message, and the requested `id` in both JSON forms.
 SDK validation and unexpected tool errors retain the SDK's error handling.
 Publication succeeds independently from indexing; mutation receipts record pending
@@ -136,6 +136,18 @@ current separate index receipts; `get_delivery_status` also reports cached Git
 acknowledgements and worker progress. Factory-owned workers recover after saves
 unless explicitly disabled. Optional semantic and `graph_rag` search plus bounded
 `get_neighbors` use the shared services; see [managed indexes](managed-indexes.md).
+
+Read compatibility: `search_wiki(query, limit, hpos)` accepts the legacy optional
+arguments. With no explicit mode, configured vectors select semantic search
+(default 15 hits); without vectors it uses lexical search (default 50). Explicit
+`mode="lexical"` remains provider-independent and explicit semantic mode keeps
+its default 10 hits. A supplied limit must be 1–50. `hpos` is 0–2 and expands each
+semantic hit independently, preserving its neighbor association and snapshot
+revision. Nonzero hpos with an incompatible explicit mode returns an error,
+rather than silently ignoring it. Explicit `graph_rag` remains available; its
+limit caps the combined results. `get_neighbors(id="page")` aliases `ids=["page"]`;
+conflicting simultaneous inputs are refused. REST/chat retain their explicit
+search modes and use the same underlying retrieval services.
 
 `backend/tests/test_wiki_mcp_http.py` exercises the actual in-process FastMCP
 HTTP application and lifespan: initialization, tool discovery, guidance, save,
