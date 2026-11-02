@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from second_brain.wiki.demo import MARKER, DemoSeedError, seed_vault
+from second_brain.wiki.demo import DemoSeedError, check_demo_history, seed_vault
 from second_brain.wiki.importer import import_vault
 from second_brain.wiki.store import WikiError, WikiStore
 
@@ -43,17 +43,7 @@ def setup_vault(
     else:
         if mode == "import" and source is None:
             raise WikiError("invalid_setup", "Choose an explicit clean local Git source.")
-        marker = path / MARKER
-        repository = path / ".wiki.git"
-        if (marker.exists() or marker.is_symlink()) and (
-            not repository.is_dir() or repository.is_symlink()
-        ):
-            # A surviving demo marker identifies previously owned storage.
-            # First-start setup must not initialize a replacement authority.
-            raise WikiError(
-                "storage_unavailable",
-                "Demo history is missing or unsafe. Restore it before setup.",
-            )
+        check_demo_history(path)
         store = WikiStore(path)
         if mode == "empty":
             store.check_health()

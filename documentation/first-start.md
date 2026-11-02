@@ -23,12 +23,15 @@ refused. Valid packed-only refs remain supported. This check does not repair ref
 integrity check and backup/recovery procedure.
 
 If a demo marker is still present but `.wiki.git` is missing, a regular file,
-or a symbolic link, empty setup and first-start import refuse with
-`storage_unavailable` before initializing replacement history. Restore or inspect
+or a symbolic link, empty setup, first-start import and both managed API entry
+points (`create_app` and `app_factory`) refuse with `storage_unavailable` before
+initializing replacement history. An API startup refusal exits the service;
+it does not expose a healthy empty wiki. Restore or inspect
 the original storage; switching setup modes is not a recovery procedure. Template
 setup and the demo launcher have their own seed-state checks.
 
-This protection requires a surviving marker. If the entire vault directory or
+This startup preflight is not a concurrent-removal or mount-identity guard.
+It requires a surviving marker. If the entire vault directory or
 mount is absent, setup cannot distinguish that path from an intentional first
 start, and the normal demo may seed a new template there. Verify the expected
 volume and installation identity before restarting an existing installation.

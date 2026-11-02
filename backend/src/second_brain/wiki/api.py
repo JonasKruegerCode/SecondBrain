@@ -22,6 +22,7 @@ from starlette.routing import Route
 from second_brain.wiki.chat import WikiChat
 from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.delivery_runtime import DeliveryWorker
+from second_brain.wiki.demo import check_demo_history
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
 
@@ -59,6 +60,7 @@ def create_app(
     automatic_delivery: bool = False,
     chat: WikiChat | None = None,
 ) -> Starlette:
+    check_demo_history(vault_path)
     store = WikiStore(vault_path)
     indexes = indexes or IndexCoordinator(store)
     if indexes.store.path != store.path:
@@ -327,6 +329,7 @@ def app_factory() -> Starlette:
     from second_brain.wiki.delivery_runtime import configured_delivery  # noqa: PLC0415
     from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
 
+    check_demo_history(path)
     store = WikiStore(path)
     indexes = configured_indexes(store)
     try:

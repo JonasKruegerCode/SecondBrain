@@ -25,6 +25,24 @@ class DemoSeedError(ValueError):
     """The requested seed cannot be proven safe."""
 
 
+def check_demo_history(vault: Path | str) -> None:
+    """Refuse replacement history when a surviving marker identifies an old vault.
+
+    This is a startup preflight, not a mount identity or concurrent-removal guard.
+    A wholly absent vault still has the ordinary explicit first-start semantics.
+    """
+    path = Path(vault).absolute()
+    marker = path / MARKER
+    repository = path / ".wiki.git"
+    if (marker.exists() or marker.is_symlink()) and (
+        not repository.is_dir() or repository.is_symlink()
+    ):
+        raise WikiError(
+            "storage_unavailable",
+            "Demo history is missing or unsafe. Restore it before startup.",
+        )
+
+
 def default_template() -> Path:
     return Path(__file__).resolve().parents[4] / "examples" / "demo-vault"
 
