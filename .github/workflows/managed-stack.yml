@@ -1,0 +1,91 @@
+name: Managed stack acceptance
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare browser for the built HTTPS/auth fixture
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run disposable Docker stack acceptance
+        env:
+          SECOND_BRAIN_STACK_BROWSER: '1'
+        run: python3 scripts/run-wiki-stack-acceptance.py
+
+      # The runner uses only synthetic data and writes credential-free evidence.
+      # Never upload its generated Compose configuration or a vault snapshot.
+      - name: Upload structural results and synthetic service logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-stack-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .demo/stack-acceptance/*/result.json
+            .demo/stack-acceptance/*/browser-proxy.json
+            .demo/stack-acceptance/*/restart-diagnostics.jsonl
+            .demo/stack-acceptance/*/https-home-*.png
+            .demo/stack-acceptance/*/*.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  image-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare browser for the retained-image update
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Fixed reviewed baseline: runtime store and frontend differ from candidate.
+      - uses: actions/checkout@v4
+        with:
+          ref: dceee9fd63ccd36b5c6d5bd0ebd6cb11b5e25477
+          path: .demo/update-baseline
+          persist-credentials: false
+
+      - name: Exercise retained old/new/old/resumed images on one owned volume
+        run: python3 scripts/run-wiki-update-acceptance.py --baseline-source .demo/update-baseline --pwa
+
+      - name: Upload synthetic image compatibility results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-image-update-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .demo/update-acceptance/*/result.json
+            .demo/update-acceptance/*/*.log
+            .demo/update-acceptance/*/restart-diagnostics.jsonl
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-24",
+  "parent": "5151dcb6641387fe605baeadde82d6d47deb8482",
+  "method": "Simultaneously double computed HTML font sizes on visible nodes; SVG unchanged; CSS simulation, not native zoom.",
+  "runtime": {
+    "browser": "native Linux Chromium 153",
+    "playwright": "1.64.0",
+    "services": "actual synthetic API/Git/Vite",
+    "vite_build": "6.4.5",
+    "python": "3.12 minimal dependencies"
+  },
+  "parent_counterexamples": {
+    "corrected_tests_failed": 2,
+    "narrow_document_width": 342,
+    "narrow_viewport": 320,
+    "wide_input_client_height": 36,
+    "wide_input_font_plus_padding": 44,
+    "first_harness_issue": "line-height normal parsed as NaN; replaced with a lower bound based on computed font size and padding"
+  },
+  "fix": [
+    "Brand wraps and tagline flows below its name",
+    "Galaxy and search headings break overlong words",
+    "Map controls wrap within the workspace",
+    "Galaxy search input grows with text",
+    "Search form wraps before its input collapses"
+  ],
+  "diagnostic": {
+    "views_per_width": 8,
+    "widths": [
+      320,
+      1440
+    ],
+    "all_document_widths_within_viewport": true,
+    "page_errors": 0,
+    "chat_posts": 0,
+    "unsent_draft_preserved": true,
+    "operations_at_enlarged_size": "Versioned tests navigate to Search via keyboard, activate map List view and submit search. Other diagnostic views restore fonts before navigation."
+  },
+  "limitations": [
+    "No physical device, native browser zoom, screenreader, soft keyboard or full WCAG acceptance",
+    "SVG labels are not enlarged",
+    "Geometry cannot prove every text glyph or hit target is usable",
+    "Search results inserted after submission in the versioned test are not resized; separate diagnostic resizes rendered results",
+    "Normal and enlarged screenshots inspected locally, not archived"
+  ],
+  "review": "Independent static review found no blocker; independent default-browser launch failed before app tests because default executable absent. Root uses explicit installed browser.",
+  "validation": {
+    "final_browser_tests": 60,
+    "failed": 0,
+    "seconds": 57.1,
+    "typecheck": "both TS projects passed",
+    "build": "passed; nonfailing legacy chunk warning",
+    "cleanup": "final owned process groups absent; supervisor exit0",
+    "earlier_partial_run": "An overlapping diagnostic was started before the previous runner footer was secured; its partial log is not used for final60 proof. A new isolated final run completed."
+  }
+}
