@@ -44,9 +44,9 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
     config = _index_environment()
     with ExitStack() as cleanup:
         adapters: dict[str, Any] = {}
-        # One bounded quoted SCRIPT attribute now shares flat-island exclusion.
-        # Old ready receipts must rebuild even when Markdown is unchanged.
-        identity: dict[str, Any] = {"schema": "managed-snapshots-v37"}
+        # Restore bounded legacy page embeddings. Prior generations must rebuild
+        # even when the authoritative Markdown is unchanged.
+        identity: dict[str, Any] = {"schema": "managed-snapshots-v38"}
         if _enabled(config, "SECOND_BRAIN_WIKI_GRAPH_INDEX", "NEO4J_URI"):
             from neo4j import GraphDatabase  # noqa: PLC0415
 
