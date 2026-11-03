@@ -68,6 +68,36 @@ def test_real_embedded_qdrant_generations() -> None:
     client.close()
 
 
+@pytest.mark.parametrize("length", [1_999, 2_000, 2_001, 140_000])
+def test_long_pages_keep_legacy_embedding_bound_without_changing_markdown(length: int) -> None:
+    class BoundedProvider:
+        def __init__(self) -> None:
+            self.inputs: list[str] = []
+
+        def embed(self, text: str) -> list[float]:
+            if len(text) > 2_000:
+                raise ValueError("Provider input limit exceeded")
+            self.inputs.append(text)
+            return [1.0, 0.0]
+
+    markdown = "# Synthetic long article\n\n" + "🌊" * (length - 26)
+    assert len(markdown) == length
+    data = snapshot()
+    data["pages"] = [{"id": "a", "title": "A", "revision": "a1", "markdown": markdown}]
+    data["graph"] = {"nodes": [{"id": "a"}], "edges": []}
+    original = deepcopy(data)
+    provider = BoundedProvider()
+    client = QdrantClient(":memory:")
+    try:
+        adapter = QdrantSnapshotAdapter(client, provider, None)
+        adapter.build("bounded_attempt", data)
+        assert provider.inputs == [markdown[:2_000]]
+        assert adapter.search("bounded_attempt", "synthetic")[0]["id"] == "a"
+        assert data == original
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize("vector", [[1.0], [float("nan"), 0.0], [float("inf"), 0.0]])
 def test_invalid_vectors_do_not_create_collection(vector: list[float]) -> None:
     client = QdrantClient(":memory:")

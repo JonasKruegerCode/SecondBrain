@@ -9,6 +9,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient, models
 
+PAGE_EMBEDDING_MAX_CHARS = 2_000
+
 
 class Embedder(Protocol):
     def embed(self, text: str) -> list[float]: ...
@@ -168,7 +170,9 @@ class QdrantSnapshotAdapter:
         dimension = self.dimension
         points: list[models.PointStruct] = []
         for page in _pages(snapshot):
-            vector = self._vector(page["markdown"], dimension)
+            # Preserve the legacy indexing bound until long pages are chunked.
+            # The authoritative Markdown remains complete and unchanged.
+            vector = self._vector(page["markdown"][:PAGE_EMBEDDING_MAX_CHARS], dimension)
             if dimension is None:
                 dimension = len(vector)
             points.append(
