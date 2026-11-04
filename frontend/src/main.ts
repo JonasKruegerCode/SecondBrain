@@ -4,6 +4,7 @@ import { renderGalaxy, Graph, GalaxyViewState } from "./galaxy";
 import { chatReloadBlocker, renderChat } from "./chat";
 import { applyUpdate, installApp, observePwa, PwaState, startPwa } from "./pwa";
 import { readStartPage, saveStartPage } from "./start-preference";
+import "./theme.css";
 type HistoryEntry = { commit: string; date: string; message: string };
 type Backlinks = {
   revision: string;
