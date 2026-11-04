@@ -84,13 +84,34 @@ Git startup still acquires existing content before serving, but it no longer
 performs synchronous embedding work before API startup. The lifecycle-owned
 delivery worker builds indexes afterwards. Content reads and lexical search stay
 available while semantic retrieval reports pending until the complete generation
-is ready. Full generations are still rebuilt after content changes: vector reuse
-and incremental provider work remain separate follow-up work. Full chunk coverage
-can require more model calls and temporary disk space than the old prefix-only
-index. The current delivery worker still serializes index building and remote
-publication: a slow build can postpone its background Git push, even though
-content reads stay available. Incremental vector reuse and worker scheduling
-remain follow-up work before claiming a complete responsiveness improvement.
+is ready. The lifecycle supervisor owns separate Git and index loops with their
+existing independent cross-process locks and separate retry backoffs. Holding an
+embedding request no longer holds the delivery lock: local edits can push and
+external changes can pull while an older index snapshot is building. Both loops
+are joined before their provider clients close, including partial startup failure.
+The explicit one-shot delivery command still performs both jobs synchronously.
+
+New vector generations can reuse validated points from the last ready generation
+of the same configuration. Page ID, chunk position/source range and source hash
+must match; the reused vector must have a valid shape. The earlier chunk format
+without hashes can only be reused at an identical page revision. Changed chunks
+are embedded; every copied point receives fresh page/snapshot provenance. The
+old collection remains immutable. A small append can therefore embed only its
+changed final chunk, and an identical-text revision can reuse all its vectors.
+
+The last ready source is recorded separately in the existing SQLite index ledger
+and protected during pruning. A failed new attempt does not lose that source;
+restart/retry can still reuse it without publishing a partial generation. Config
+changes and explicit `--rebuild` deliberately embed everything. A missing source
+collection falls back to a full build; a source read failure aborts rather than
+silently spending model calls on an unavailable Qdrant backend.
+
+This is incremental **embedding work**, not in-place mutation of a live index:
+each new generation still scans a content snapshot, reads reusable provider
+vectors and uploads a complete isolated collection. Graph generations still
+rebuild. Idle current-index polling skips full snapshot derivation. Full chunk
+coverage can require more model calls and temporary disk space than the old
+prefix-only index; cold builds and forced rebuilds retain those costs.
 
 Auto-sized searches read the dimension from the persisted collection and validate
 the actual query vector against it, including after a process restart. Provider

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import re
@@ -188,25 +189,77 @@ class QdrantSnapshotAdapter:
         return vector
 
     def build(self, generation: str, snapshot: dict[str, Any]) -> None:
+        self.build_from(generation, snapshot, None)
+
+    def build_from(
+        self, generation: str, snapshot: dict[str, Any], previous_generation: str | None
+    ) -> None:
+        """Reuse only a coordinator-selected ready generation of the same config."""
         # Anonymous temporary storage bounds resident vector memory while
         # preserving validation-before-creation. No source text is spooled.
         with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as spool:
-            self._build_spooled(generation, snapshot, spool)
+            previous = self._collection(previous_generation) if previous_generation else None
+            if previous and not self.client.collection_exists(previous):
+                previous = None
+            self._build_spooled(generation, snapshot, spool, previous)
 
-    def _build_spooled(self, generation: str, snapshot: dict[str, Any], spool: TextIO) -> None:
+    def _build_spooled(
+        self, generation: str, snapshot: dict[str, Any], spool: TextIO, previous: str | None
+    ) -> None:
         collection = self._collection(generation)
         dimension = self.dimension
+        if dimension is None and previous:
+            vectors = self.client.get_collection(previous).config.params.vectors
+            if not isinstance(vectors, models.VectorParams):
+                raise ValueError("Managed collection must have one unnamed vector dimension")
+            dimension = vectors.size
         pages = _pages(snapshot)
         build_started = time.monotonic()
         for number, page in enumerate(pages, 1):
             chunks = page_chunks(page["markdown"])
+            reused: dict[str, Any] = {}
+            if previous:
+                ids = [str(uuid5(NAMESPACE_URL, f"{page['id']}:{i}")) for i in range(len(chunks))]
+                for offset in range(0, len(ids), POINT_BATCH_SIZE):
+                    records = self.client.retrieve(
+                        previous,
+                        ids[offset : offset + POINT_BATCH_SIZE],
+                        with_payload=True,
+                        with_vectors=True,
+                    )
+                    reused.update({str(record.id): record for record in records})
             embedding_seconds = 0.0
+            reused_count = 0
             for index, (start, end, text) in enumerate(chunks):
+                point_id = str(uuid5(NAMESPACE_URL, f"{page['id']}:{index}"))
+                input_text = text or page["title"][:PAGE_EMBEDDING_MAX_CHARS]
+                digest = hashlib.sha256(input_text.encode()).hexdigest()
+                old = reused.get(point_id)
+                payload = (old.payload or {}) if old is not None else {}
+                vector = old.vector if old is not None else None
+                reusable = (
+                    payload.get("id") == page["id"]
+                    and payload.get("chunk") == index
+                    and payload.get("start") == start
+                    and payload.get("end") == end
+                    and (
+                        payload.get("chunk_hash") == digest
+                        or (
+                            "chunk_hash" not in payload
+                            and payload.get("revision") == page["revision"]
+                        )
+                    )
+                    and isinstance(vector, list)
+                    and bool(vector)
+                    and (dimension is None or len(vector) == dimension)
+                    and all(isinstance(v, (int, float)) and math.isfinite(v) for v in vector)
+                )
                 started = time.monotonic()
                 try:
-                    vector = self._vector(
-                        text or page["title"][:PAGE_EMBEDDING_MAX_CHARS], dimension
-                    )
+                    if reusable:
+                        reused_count += 1
+                    else:
+                        vector = self._vector(input_text, dimension)
                 except Exception as exc:
                     # Never include source text, identifiers, credentials or raw
                     # provider messages. Class names distinguish failure kinds.
@@ -229,10 +282,11 @@ class QdrantSnapshotAdapter:
                     )
                     raise
                 embedding_seconds += time.monotonic() - started
+                assert isinstance(vector, list)
                 if dimension is None:
                     dimension = len(vector)
                 point = models.PointStruct(
-                    id=str(uuid5(NAMESPACE_URL, f"{page['id']}:{index}")),
+                    id=point_id,
                     vector=vector,
                     payload={
                         "id": page["id"],
@@ -241,15 +295,17 @@ class QdrantSnapshotAdapter:
                         "chunk": index,
                         "start": start,
                         "end": end,
+                        "chunk_hash": digest,
                     },
                 )
                 spool.write(point.model_dump_json() + "\n")
             logger.info(
-                "Managed vector embedding page=%d/%d chunks=%d embedding_seconds=%.3f "
+                "Managed vector embedding page=%d/%d chunks=%d reused=%d embedding_seconds=%.3f "
                 "elapsed_seconds=%.3f",
                 number,
                 len(pages),
                 len(chunks),
+                reused_count,
                 embedding_seconds,
                 time.monotonic() - build_started,
             )

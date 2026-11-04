@@ -163,6 +163,28 @@ def test_real_vector_chunks_find_tail_and_group_by_article(indexed: IndexCoordin
     assert archive["revision"] == saved["revision"]
 
 
+def test_real_vector_reuse_fetches_unchanged_points(indexed: IndexCoordinator) -> None:
+    current(indexed)
+    adapter = indexed.adapters["vector"]
+    provider = adapter.embedder
+    calls: list[str] = []
+
+    class Counted:
+        def embed(self, text: str) -> list[float]:
+            calls.append(text)
+            result: list[float] = provider.embed(text)
+            return result
+
+    adapter.embedder = Counted()
+    page = indexed.store.get_page("garden")
+    assert page is not None
+    markdown = page["markdown"] + "\nSynthetic additional observation."
+    indexed.store.save_page("garden", markdown, page["revision"], "incremental-edit")
+    current(indexed)
+    assert calls == [markdown]
+    assert len(adapter.search(indexed._reuse_source("vector"), "harbor")) == 3
+
+
 async def test_real_indexes_shared_rest_mcp_and_stale_revision(indexed: IndexCoordinator) -> None:
     current(indexed)
     before = indexed.store.snapshot()

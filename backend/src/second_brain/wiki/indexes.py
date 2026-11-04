@@ -59,6 +59,14 @@ class IndexCoordinator:
                 "SELECT kind,generation,revision,config,state,? FROM receipts",
                 (time.time(),),
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS reuse_sources "
+                "(kind TEXT PRIMARY KEY, config TEXT, generation TEXT)"
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO reuse_sources "
+                "SELECT kind,config,generation FROM receipts WHERE state='ready'"
+            )
 
     @contextmanager
     def _db(self) -> Iterator[sqlite3.Connection]:
@@ -117,6 +125,19 @@ class IndexCoordinator:
                 "INSERT OR REPLACE INTO receipts VALUES (?,?,?,?,?)",
                 (kind, revision, generation, self.config_id, state),
             )
+            if state == "ready":
+                db.execute(
+                    "INSERT OR REPLACE INTO reuse_sources VALUES (?,?,?)",
+                    (kind, self.config_id, generation),
+                )
+
+    def _reuse_source(self, kind: str) -> str | None:
+        with self._db() as db:
+            row = db.execute(
+                "SELECT generation FROM reuse_sources WHERE kind=? AND config=?",
+                (kind, self.config_id),
+            ).fetchone()
+        return str(row[0]) if row else None
 
     def status(self) -> dict[str, Any]:
         revision = self.store._head() or None
@@ -147,6 +168,16 @@ class IndexCoordinator:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 return {**self.status(), "worker": "busy"}
+            revision = self.store._head()
+            receipts = {kind: self._receipt(kind) for kind in self.adapters}
+            if not rebuild and all(
+                receipt
+                and receipt["revision"] == revision
+                and receipt["config"] == self.config_id
+                and receipt["state"] == "ready"
+                for receipt in receipts.values()
+            ):
+                return {**self.status(), "worker": "idle"}
             snapshot = self.store.snapshot()
             if not snapshot["revision"]:
                 return {**self.status(), "worker": "idle"}
@@ -166,7 +197,12 @@ class IndexCoordinator:
                 self._record_attempt(kind, generation, snapshot["revision"], time.time())
                 state = "ready"
                 try:
-                    adapter.build(generation, snapshot)
+                    incremental = getattr(adapter, "build_from", None)
+                    source = self._reuse_source(kind) if not rebuild else None
+                    if callable(incremental) and source:
+                        incremental(generation, snapshot, source)
+                    else:
+                        adapter.build(generation, snapshot)
                 except Exception:
                     # Provider exceptions may contain credentials or private text.
                     # Never put raw messages in public status/logs or receipts.
@@ -230,6 +266,12 @@ class IndexCoordinator:
                         if receipt and receipt["state"] == "ready"
                         else set()
                     )
+                    with self._db() as db:
+                        reusable = db.execute(
+                            "SELECT generation FROM reuse_sources WHERE kind=?", (kind,)
+                        ).fetchone()
+                    if reusable:
+                        protected.add(str(reusable[0]))
                     for generation in ready:
                         if len(protected.intersection(ready)) >= keep_ready:
                             break
