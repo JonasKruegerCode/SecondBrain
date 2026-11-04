@@ -1,0 +1,78 @@
+{
+  "scope": "Complete chunk coverage and nonblocking provider startup; not next-version acceptance",
+  "date_utc": "2026-11-04",
+  "base_commit": "10166467a05c5492a303b75c32caa4cf6cec27fe",
+  "backend": {
+    "locked_dependencies": true,
+    "command": "pytest -m 'not integration'",
+    "passed": 1759,
+    "deselected": 22,
+    "subtests_passed": 46,
+    "ruff": "src/ and tests/ passed",
+    "mypy": "158 source files passed"
+  },
+  "chunk_contract": {
+    "max_unicode_codepoints": 2000,
+    "overlap_codepoints": 200,
+    "full_source_coverage": true,
+    "offset_unit": "Python Unicode code points, not UTF-16 or UTF-8 bytes",
+    "payload_provenance": [
+      "page ID",
+      "page revision",
+      "snapshot revision",
+      "chunk index",
+      "start",
+      "end"
+    ],
+    "article_grouping": "Qdrant query_points_groups, group_by=id, group_size=1",
+    "result_fields_unchanged": [
+      "id",
+      "revision",
+      "score"
+    ],
+    "max_upsert_points": 64,
+    "all_vectors_validated_before_collection_creation": true,
+    "vector_spool": "Anonymous temporary file, no raw source text"
+  },
+  "tested_behaviors": [
+    "Unicode and overlap boundaries through 140000 code points",
+    "tail marker beyond old prefix retrieved via embedded Qdrant",
+    "identical current results through semantic REST and MCP",
+    "many chunks do not crowd out distinct article results",
+    "revision guard rejects search after a later edit",
+    "empty article embeds title without source modification",
+    "140000-character article uploads as 64+14 points",
+    "safe progress logs include page counts, durations, failure class and bounded HTTP 402 status",
+    "real synthetic Git bootstrap completes without calling held embedding provider",
+    "API health, exact page read and page listing remain available while background embedding is held"
+  ],
+  "provider_boundary": {
+    "embedding": "deterministic synthetic vectors, no paid provider calls",
+    "qdrant": "real embedded client in memory, not hosted server",
+    "remote_git": "real disposable local bare Git remote",
+    "held_provider_test": "event-controlled provider; real ASGI API and lifecycle worker",
+    "new_pinned_server_integration_case": "added but not run locally; included in 22 deselected integration cases"
+  },
+  "browser": {
+    "selected_cases_passed": 7,
+    "engine": "alternative local Chromium 153, not locked 156",
+    "real_api_and_frontend": true,
+    "viewport_widths": [
+      1440,
+      390
+    ],
+    "desktop_and_mobile_screenshots_inspected": true,
+    "external_model_calls": false,
+    "full_browser_acceptance": false,
+    "owned_service_cleanup_ok": true
+  },
+  "remaining_limits": [
+    "Real provider/model and hosted Qdrant grouping need separate acceptance",
+    "Changed content still rebuilds a full vector generation; no incremental vector reuse yet",
+    "Cold full-content snapshots still load the vault",
+    "Index build can still delay background Git publication in the shared worker",
+    "Chunking can increase model calls and temporary disk usage",
+    "Structured status remains pending/current/error; per-page progress is in logs",
+    "No production, physical-device or release-readiness claim"
+  ]
+}

@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      profile:
+        description: "Full acceptance or targeted PWA hotfix checks (not release signoff)"
+        type: choice
+        options: [full, hotfix-pwa]
+        default: full
       pwa_first_install_diagnostic:
         description: "Run bounded WebKit first-install diagnosis (20 cases; not full acceptance)"
         type: boolean
@@ -12,6 +17,11 @@ on:
 
 permissions:
   contents: read
+
+# Retain only the newest PR validation; never cancel main image publication.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,6 +37,9 @@ jobs:
       options: --user 1001
     env:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      # Pull requests always retain the complete gate. Only a deliberate manual
+      # run can select the narrow profile; labels cannot silently reduce it.
+      ACCEPTANCE_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'full' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,22 +77,32 @@ jobs:
           JS
 
       - name: Check native WebKit chat and preference transactions before full suites
+        if: env.ACCEPTANCE_PROFILE == 'full'
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --browser-grep "overlapping native tab|concurrent initial migration|failed first migration|transaction abort after put|a received answer|start-preference" --repeat-each 3'
 
       - name: Exercise the real disposable wiki and browser
+        if: env.ACCEPTANCE_PROFILE == 'full'
         run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-acceptance.py'
 
       - name: Exercise empty first start and real service restart
+        if: env.ACCEPTANCE_PROFILE == 'full'
         run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --first-start'
 
       - name: Exercise local Git import and preserved browser edits
+        if: env.ACCEPTANCE_PROFILE == 'full'
         run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-import-acceptance.py'
 
       - name: Exercise the real synthetic320 graph and browser history
+        if: env.ACCEPTANCE_PROFILE == 'full'
         run: 'PYTHONPATH=backend/src "$WIKI_PYTHON" scripts/run-wiki-acceptance.py --scale'
 
       - name: Exercise reading and navigation in WebKit
+        if: env.ACCEPTANCE_PROFILE == 'full'
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit'
+
+      - name: Exercise targeted PWA hotfix contracts in Chromium
+        if: env.ACCEPTANCE_PROFILE == 'hotfix-pwa'
+        run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-grep "PWA |password-protected app manifest"'
 
       - name: Exercise worker registration and protected updates in WebKit
         run: '"$WIKI_PYTHON" scripts/run-wiki-acceptance.py --browser-engine webkit --webkit-workers'
@@ -93,7 +116,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: managed-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          name: managed-browser-${{ env.ACCEPTANCE_PROFILE }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .demo/acceptance/*/result.json
             .demo/acceptance/*/browser.log

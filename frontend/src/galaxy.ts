@@ -3,6 +3,7 @@ import "./galaxy.css";
 export interface Graph {
   nodes: { id: string; title: string; galaxy?: { group: string; label?: string; anchor?: boolean } }[];
   edges: { source: string; target: string; type: string; rel?: string }[];
+  groups?: Cluster[];
   revision?: string | null;
   status?: string;
   missing_targets?: { source: string; target: string }[];
@@ -56,70 +57,77 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       adjacency.get(e.target)!.add(e.source);
     }
   });
-  const rank = (a: string, b: string) => adjacency.get(b)!.size - adjacency.get(a)!.size || compareId(a, b);
-  const seen = new Set<string>(), clusters: Cluster[] = [], membership = new Map<string, number>();
-  const curated = new Map<string, typeof nodes>();
-  for (const node of nodes) {
-    if (node.galaxy?.group) curated.set(node.galaxy.group, [...(curated.get(node.galaxy.group) || []), node]);
-  }
-  for (const [group, groupNodes] of [...curated].sort(([a], [b]) => compareId(a, b))) {
-    const members = groupNodes.map(node => node.id).sort(rank);
-    const anchors = groupNodes.filter(node => node.galaxy?.anchor).map(node => node.id).sort(rank);
-    const core = anchors[0] || members[0];
-    members.sort((a, b) => a === core ? -1 : b === core ? 1 : rank(a, b));
-    const label = byId.get(core)?.galaxy?.label || groupNodes.find(node => node.galaxy?.label)?.galaxy?.label || group;
-    const cluster = { id: clusters.length, core, members, isolated: false, curated: true, label };
-    clusters.push(cluster);
-    members.forEach(id => { membership.set(id, cluster.id); seen.add(id); });
-  }
-  const distance = (start: string) => {
-    const distances = new Map([[start, 0]]), queue = [start];
-    for (let i = 0; i < queue.length; i++) {
-      for (const next of adjacency.get(queue[i])!) {
-        if (!membership.has(next) && !distances.has(next)) {
-          distances.set(next, distances.get(queue[i])! + 1);
-          queue.push(next);
+  // Older graph servers can still render; current REST/MCP share server groups.
+  const legacyGroups = (): Cluster[] => {
+    const rank = (a: string, b: string) => adjacency.get(b)!.size - adjacency.get(a)!.size || compareId(a, b);
+    const seen = new Set<string>(), clusters: Cluster[] = [], membership = new Map<string, number>();
+    const curated = new Map<string, typeof nodes>();
+    for (const node of nodes) {
+      if (node.galaxy?.group) curated.set(node.galaxy.group, [...(curated.get(node.galaxy.group) || []), node]);
+    }
+    for (const [group, groupNodes] of [...curated].sort(([a], [b]) => compareId(a, b))) {
+      const members = groupNodes.map(node => node.id).sort(rank);
+      const anchors = groupNodes.filter(node => node.galaxy?.anchor).map(node => node.id).sort(rank);
+      const core = anchors[0] || members[0];
+      members.sort((a, b) => a === core ? -1 : b === core ? 1 : rank(a, b));
+      const label = byId.get(core)?.galaxy?.label || groupNodes.find(node => node.galaxy?.label)?.galaxy?.label || group;
+      const cluster = { id: clusters.length, core, members, isolated: false, curated: true, label };
+      clusters.push(cluster);
+      members.forEach(id => { membership.set(id, cluster.id); seen.add(id); });
+    }
+    const distance = (start: string) => {
+      const distances = new Map([[start, 0]]), queue = [start];
+      for (let i = 0; i < queue.length; i++) {
+        for (const next of adjacency.get(queue[i])!) {
+          if (!membership.has(next) && !distances.has(next)) {
+            distances.set(next, distances.get(queue[i])! + 1);
+            queue.push(next);
+          }
         }
       }
+      return distances;
+    };
+    for (const node of nodes) {
+      if (seen.has(node.id)) continue;
+      const component = [...distance(node.id).keys()].sort(rank);
+      component.forEach(id => seen.add(id));
+      if (!adjacency.get(node.id)!.size) {
+        const cluster = { id: clusters.length, core: node.id, members: [node.id], isolated: true, curated: false };
+        clusters.push(cluster); membership.set(node.id, cluster.id); continue;
+      }
+      // Prefer the most connected page as a visible core. Add distant cores only
+      // in larger components; nearest-core shortest paths form reproducible groups.
+      // Broad overview pages otherwise absorb every neighbor into one giant group.
+      // Prefer local link hubs; universal connectors stay visible as ordinary stars.
+      const localHubs = component.filter(id => adjacency.get(id)!.size < (component.length - 1) * .8);
+      const firstCore = localHubs[0] || component[0];
+      const seeds = [firstCore], seedDistances = [distance(firstCore)];
+      const limit = Math.min(8, Math.ceil(component.length / 7));
+      for (const candidate of component) {
+        if (seeds.length >= limit) break;
+        if (seedDistances.every(d => d.get(candidate)! >= 2)) {
+          seeds.push(candidate); seedDistances.push(distance(candidate));
+        }
+      }
+      const baseId = clusters.length;
+      const local = seeds.map((core, i) => ({ id: baseId + i, core, members: [] as string[], isolated: false, curated: false }));
+      for (const id of component) {
+        let owner = 0;
+        for (let i = 1; i < seeds.length; i++) {
+          if (seedDistances[i].get(id)! < seedDistances[owner].get(id)!) owner = i;
+        }
+        local[owner].members.push(id); membership.set(id, local[owner].id);
+      }
+      for (const cluster of local) {
+        cluster.members.sort((a, b) => a === cluster.core ? -1 : b === cluster.core ? 1 : rank(a, b));
+        clusters.push(cluster);
+      }
     }
-    return distances;
+    return clusters;
   };
-  for (const node of nodes) {
-    if (seen.has(node.id)) continue;
-    const component = [...distance(node.id).keys()].sort(rank);
-    component.forEach(id => seen.add(id));
-    if (!adjacency.get(node.id)!.size) {
-      const cluster = { id: clusters.length, core: node.id, members: [node.id], isolated: true, curated: false };
-      clusters.push(cluster); membership.set(node.id, cluster.id); continue;
-    }
-    // Prefer the most connected page as a visible core. Add distant cores only
-    // in larger components; nearest-core shortest paths form reproducible groups.
-    // Broad overview pages otherwise absorb every neighbor into one giant group.
-    // Prefer local link hubs; universal connectors stay visible as ordinary stars.
-    const localHubs = component.filter(id => adjacency.get(id)!.size < (component.length - 1) * .8);
-    const firstCore = localHubs[0] || component[0];
-    const seeds = [firstCore], seedDistances = [distance(firstCore)];
-    const limit = Math.min(8, Math.ceil(component.length / 7));
-    for (const candidate of component) {
-      if (seeds.length >= limit) break;
-      if (seedDistances.every(d => d.get(candidate)! >= 2)) {
-        seeds.push(candidate); seedDistances.push(distance(candidate));
-      }
-    }
-    const baseId = clusters.length;
-    const local = seeds.map((core, i) => ({ id: baseId + i, core, members: [] as string[], isolated: false, curated: false }));
-    for (const id of component) {
-      let owner = 0;
-      for (let i = 1; i < seeds.length; i++) {
-        if (seedDistances[i].get(id)! < seedDistances[owner].get(id)!) owner = i;
-      }
-      local[owner].members.push(id); membership.set(id, local[owner].id);
-    }
-    for (const cluster of local) {
-      cluster.members.sort((a, b) => a === cluster.core ? -1 : b === cluster.core ? 1 : rank(a, b));
-      clusters.push(cluster);
-    }
-  }
+  const clusters = graph.groups?.map(group => ({ ...group, members: [...group.members] })) || legacyGroups();
+  const membership = new Map<string, number>();
+  clusters.forEach(cluster => cluster.members.forEach(id => membership.set(id, cluster.id)));
   const linked = clusters.filter(c => !c.isolated), isolated = clusters.filter(c => c.isolated);
   const bridges = edges.filter(e => membership.get(e.source) !== membership.get(e.target));
   const largeGraph = nodes.length > 250 || edges.length > 800;

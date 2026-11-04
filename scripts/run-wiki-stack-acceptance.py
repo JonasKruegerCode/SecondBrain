@@ -34,6 +34,7 @@ TOOLS = {
     "save_page",
     "delete_page",
     "get_graph",
+    "get_groups",
     "get_neighbors",
     "get_history",
     "get_index_status",

@@ -101,6 +101,53 @@ explicit wikilinks and typed relations from one content snapshot, resolves uniqu
 titles, and reports missing/ambiguous targets without inferring dependencies.
 The browser uses the same target resolver for ID/title links, ambiguous choices and missing links. A first snapshot galaxy is available at `/galaxy`; its topology grouping is a navigation aid, not a semantic classification.
 
+### Article navigation work
+
+Link resolution keeps one in-memory ID/title catalog per store, keyed by the
+captured Git commit. Every request still checks the published ref. Repeated
+resolution at the same commit reads no article blobs; after a new commit only
+added or changed article blobs are read to refresh titles. Deletions leave the
+catalog on that refresh. The catalog retains metadata, not article bodies or
+historical snapshots, and concurrent readers share its construction. A restart
+rebuilds it from Git. ID precedence, case-insensitive title ambiguity and section
+fragments use the same rules as the content graph.
+
+A single-page read batches that page's Markdown and revision in one Git object
+read, both from the captured commit. Neither optimization changes the REST/MCP
+response format or requires an external index.
+
+Home listing, backlinks and the galaxy now share a separate navigation
+projection: page summaries, galaxy metadata and unresolved explicit links,
+without Markdown bodies. It retains only one content tree per store and is
+reconstructed from Git on restart. Warm navigation reads no article blobs or
+Markdown parser output again. On a new commit, only changed content/revision
+blobs are read and only changed Markdown is parsed. The graph re-resolves all
+stored links against the new title/ID set, so renaming a target can change links
+from otherwise unchanged source articles. Responses are independent copies;
+callers cannot alter cached metadata or graph state. A ready projection also
+supplies titles to the link resolver without another article read.
+
+REST/MCP page-list responses keep their existing fields. Full-content
+`list_pages()` and `snapshot()` remain available for indexing, lexical search,
+export and other consumers. These operations still load full content; external
+index rebuilding is not made incremental by this navigation change. Cold
+projection construction and first graph resolution after a changed commit
+still involve work proportional to the vault or its explicit links. There is
+no general production latency guarantee.
+
+`tests/test_wiki_navigation_cost.py` uses a real synthetic 818-page Git repository
+and counts object reads rather than asserting machine-dependent latency. It
+checks warm reads, an independent writer, deletion/recreation, restart, concurrent
+readers and a failed refresh with retry. Run it from `backend` with
+`poetry run pytest tests/test_wiki_navigation_cost.py`.
+
+`tests/test_wiki_navigation_projection.py` adds real-Git checks for shared warm
+Home/graph/backlink reads at 818 pages, revision-only updates, global title
+ambiguity after a local edit, external deletion/recreation, independent response
+copies, concurrent reads and failed-refresh recovery.
+The [local projection evidence](evidence/navigation-projection-local.json)
+records the tested contracts, synthetic browser checks and timing limits.
+
 ## REST and MCP
 
 Managed REST is `/api/wiki`: page listing, page read/create/save/delete, lexical

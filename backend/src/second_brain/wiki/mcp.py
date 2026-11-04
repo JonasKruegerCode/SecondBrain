@@ -23,7 +23,7 @@ from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
 
-GUIDANCE = """# Managed Wiki editing guide (v3)
+GUIDANCE = """# Managed Wiki editing guide (v4)
 
 Read a page before editing and keep its revision. Use stable IDs, a concise
 opening paragraph, meaningful headings and expected [[page-id|label]] links
@@ -55,6 +55,28 @@ get_neighbors expands explicit links using ids, or the legacy single-page id
 alias; simultaneous id and ids must match.
 Graph reads derive explicit links and typed relations from one Markdown snapshot;
 ambiguous titles are reported rather than silently assigned to a page.
+
+Galaxy curation: get_groups and get_graph share the same revision-bound grouping
+used by the web galaxy. Member IDs refer to real pages; read those pages before
+curating. source=frontmatter means explicit editorial membership; link_topology
+means nearest-core shortest paths, not semantic similarity or dependency.
+source=unlinked means no resolved links to other pages. Numeric group IDs are
+snapshot-local; use the group key/core and revision when comparing snapshots.
+
+Add these plain scalar fields to a page's existing YAML frontmatter:
+galaxy_group: archive-practice
+galaxy_label: Archive practice
+galaxy_anchor: true
+The group is a shared slug (ASCII letter/digit first, then Unicode word characters,
+dot or hyphen, at most80 characters). The optional label is at most80 characters;
+anchor true prefers this page as the group's core. Prefer one meaningful anchor
+and one consistent label per group. Multiple anchors choose highest link degree,
+then page ID; absent anchors use the same rule. Group membership does not create
+links: only add a link where its subject is relevant in the prose. Preserve other
+frontmatter and page bytes when editing. Review members, reconcile changes and
+save each page using its freshly read base_revision; there is no multi-page
+atomic update. Small coherent groups and bridges supported by actual article
+links are useful; do not manufacture graph edges or bulk group unrelated logs.
 
 This profile has no remember/recall, editorial agent, chat writer or repair job.
 Legacy MCP remains a separate deployment; do not point both writers at one vault.
@@ -120,7 +142,7 @@ def create_mcp(
     @mcp.tool()
     def list_pages() -> list[dict[str, Any]]:
         """List stable page IDs and titles from local published Markdown."""
-        return [{k: v for k, v in page.items() if k != "markdown"} for page in store.list_pages()]
+        return store.list_page_summaries()
 
     @mcp.tool()
     def search_wiki(
@@ -195,6 +217,12 @@ def create_mcp(
     def get_graph() -> dict[str, Any]:
         """Explicit wikilinks at one current content revision, with missing targets."""
         return store.graph()
+
+    @mcp.tool()
+    def get_groups() -> dict[str, Any]:
+        """Current galaxy groups, member IDs and provenance; read wiki://guidance to curate."""
+        graph = store.graph()
+        return {key: graph[key] for key in ("revision", "groups", "nodes")}
 
     @mcp.tool()
     def save_page(

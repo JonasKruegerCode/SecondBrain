@@ -5,7 +5,11 @@ from unittest.mock import MagicMock
 import pytest
 from qdrant_client import QdrantClient
 
-from second_brain.wiki.index_adapters import Neo4jSnapshotAdapter, QdrantSnapshotAdapter
+from second_brain.wiki.index_adapters import (
+    Neo4jSnapshotAdapter,
+    QdrantSnapshotAdapter,
+    page_chunks,
+)
 
 
 class SyntheticEmbedder:
@@ -68,8 +72,40 @@ def test_real_embedded_qdrant_generations() -> None:
     client.close()
 
 
+def test_qdrant_group_ties_have_stable_article_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = QdrantClient(":memory:")
+    try:
+        adapter = QdrantSnapshotAdapter(client, SyntheticEmbedder(), 2)
+        data = snapshot()
+        data["pages"].append(
+            {"id": "c", "title": "C", "revision": "c1", "markdown": "alpha"}
+        )
+        adapter.build("ties_attempt", data)
+        query = client.query_points_groups
+        reverse = False
+
+        def alternating_groups(**kwargs: Any) -> Any:
+            nonlocal reverse
+            result = query(**kwargs)
+            reverse = not reverse
+            if reverse:
+                result.groups.reverse()
+            return result
+
+        monkeypatch.setattr(client, "query_points_groups", alternating_groups)
+        expected = [
+            {"id": "a", "revision": "a1", "score": 1.0},
+            {"id": "c", "revision": "c1", "score": 1.0},
+            {"id": "b", "revision": "b1", "score": 0.0},
+        ]
+        assert adapter.search("ties_attempt", "alpha") == expected
+        assert adapter.search("ties_attempt", "alpha") == expected
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize("length", [1_999, 2_000, 2_001, 140_000])
-def test_long_pages_keep_legacy_embedding_bound_without_changing_markdown(length: int) -> None:
+def test_long_pages_cover_all_chunks_without_changing_markdown(length: int) -> None:
     class BoundedProvider:
         def __init__(self) -> None:
             self.inputs: list[str] = []
@@ -91,7 +127,8 @@ def test_long_pages_keep_legacy_embedding_bound_without_changing_markdown(length
     try:
         adapter = QdrantSnapshotAdapter(client, provider, None)
         adapter.build("bounded_attempt", data)
-        assert provider.inputs == [markdown[:2_000]]
+        assert provider.inputs == [text for _, _, text in page_chunks(markdown)]
+        assert provider.inputs[-1].endswith(markdown[-100:])
         assert adapter.search("bounded_attempt", "synthetic")[0]["id"] == "a"
         assert data == original
     finally:

@@ -73,7 +73,7 @@ def test_chat_iterates_over_real_search_and_page_services(tmp_path: Path) -> Non
     result = response.json()
     assert result["answer"] == "The harbor uses a solar beacon."
     assert result["sources"] == [{"id": "harbor", "title": "Harbor", "evidence": "read"}]
-    assert result["limits"] == {"tool_calls": 2, "max_tool_calls": 8}
+    assert result["limits"] == {"tool_calls": 2, "max_tool_calls": 24}
     assert [entry["role"] for entry in provider.requests[-1]][-4:] == [
         "assistant",
         "tool",
@@ -208,7 +208,7 @@ def test_chat_returns_clean_reasoning_limit_error(tmp_path: Path) -> None:
         [
             {
                 "content": None,
-                "tool_calls": [call("search_wiki", '{"query":"missing"}', f"s{step}")],
+                "tool_calls": [call("search_wiki", json.dumps({"query": str(step)}), f"s{step}")],
             }
             for step in range(MAX_ROUNDS)
         ]
@@ -334,3 +334,144 @@ async def test_openrouter_tool_chat_preserves_structured_calls(
         [{"role": "user", "content": "Find the harbor"}], WikiChat.tools()
     )
     assert result == expected
+
+
+def test_chat_can_research_ten_real_pages_before_answering(tmp_path: Path) -> None:
+    provider = ScriptedProvider(
+        [
+            {"tool_calls": [call("read_page", json.dumps({"page_id": f"note-{i}"}), f"r{i}")]}
+            for i in range(10)
+        ]
+        + [{"content": "Ten synthetic observations compared."}]
+    )
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        for i in range(10):
+            response = client.post(
+                f"/api/wiki/pages/note-{i}",
+                json={
+                    "markdown": f"# Note {i}\nSynthetic observation {i}.",
+                    "base_revision": None,
+                    "request_id": f"seed-{i}",
+                },
+            )
+            assert response.status_code == 200
+        response = client.post(
+            "/api/wiki/chat",
+            json={
+                "messages": [{"role": "user", "content": "Compare the ten observations."}],
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["limits"] == {"tool_calls": 10, "max_tool_calls": 24}
+    assert {source["id"] for source in response.json()["sources"]} == {
+        f"note-{i}" for i in range(10)
+    }
+    assert len(provider.requests) == 11
+
+
+def test_chat_stops_repeated_results_despite_new_ids_and_json_spacing(tmp_path: Path) -> None:
+    provider = ScriptedProvider(
+        [
+            {"tool_calls": [call("search_wiki", args, f"call-{i}")]}
+            for i, args in enumerate(
+                [
+                    '{"query":"missing","mode":"lexical"}',
+                    '{ "mode": "lexical", "query": "missing" }',
+                    '{"mode":"lexical","query":"missing"}',
+                ]
+            )
+        ]
+    )
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        response = client.post(
+            "/api/wiki/chat",
+            json={
+                "messages": [{"role": "user", "content": "Look forever."}],
+            },
+        )
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": "chat_limit",
+        "message": "The chat repeated the same wiki lookup without progress.",
+    }
+    assert len(provider.requests) == 3
+
+
+def test_chat_bounds_total_tool_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from second_brain.wiki.chat import MAX_TOOL_CONTEXT_CHARS
+
+    provider = ScriptedProvider(
+        [
+            {"tool_calls": [call("read_page", json.dumps({"page_id": f"note-{i}"}), f"r{i}")]}
+            for i in range(MAX_ROUNDS)
+        ]
+    )
+    monkeypatch.setattr(
+        WikiChat,
+        "_execute",
+        lambda *args: {
+            "markdown": "x" * 10_000,
+            "offset": 0,
+            "total_chars": 10_000,
+        },
+    )
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        response = client.post(
+            "/api/wiki/chat",
+            json={
+                "messages": [{"role": "user", "content": "Read everything."}],
+            },
+        )
+    assert response.status_code == 422
+    assert response.json()["message"] == "The chat reached its wiki context limit."
+    delivered = provider.requests[-1]
+    assert (
+        sum(len(item["content"]) for item in delivered if item["role"] == "tool")
+        <= MAX_TOOL_CONTEXT_CHARS
+    )
+
+
+def test_chat_tool_batch_cannot_exceed_navigation_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executed = []
+    provider = ScriptedProvider([{"tool_calls": [
+        call("read_page", json.dumps({"page_id": f"note-{i}"}), f"r{i}")
+        for i in range(25)
+    ]}])
+
+    def execute(self: Any, call: Any, sources: Any, activity: Any) -> dict[str, Any]:
+        executed.append(call["id"])
+        return {"error": "not_found"}
+
+    monkeypatch.setattr(WikiChat, "_execute", execute)
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        response = client.post("/api/wiki/chat", json={
+            "messages": [{"role": "user", "content": "Read too many pages at once."}],
+        })
+    assert response.status_code == 422
+    assert response.json()["message"] == "The chat reached its wiki navigation limit."
+    assert len(executed) == 24
+
+
+def test_chat_does_not_mistake_changed_evidence_for_a_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    count = 0
+    provider = ScriptedProvider([
+        {"tool_calls": [call("read_page", '{"page_id":"home"}', f"r{i}")]}
+        for i in range(4)
+    ] + [{"content": "The evidence changed during this request."}])
+
+    def execute(*args: Any) -> dict[str, Any]:
+        nonlocal count
+        count += 1
+        return {"observed_revision": count}
+
+    monkeypatch.setattr(WikiChat, "_execute", execute)
+    with TestClient(configured_app(tmp_path, provider)) as client:
+        response = client.post("/api/wiki/chat", json={
+            "messages": [{"role": "user", "content": "Check the changing page."}],
+        })
+    assert response.status_code == 200
+    assert response.json()["limits"]["tool_calls"] == 4
