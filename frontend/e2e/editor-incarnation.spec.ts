@@ -86,6 +86,15 @@ for (const width of [390, 1440]) {
       expect(await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual(selection);
       expect(await stored(await request.get(`/api/wiki/pages/${id}`))).toMatchObject({ markdown, revision: recreated.revision });
       expect((await stored(await request.get(`/api/wiki/pages/${id}/history`))).history).toEqual(historyBefore);
+      // Conflict feedback restores the caret and reveals the save footer.
+      // Let native focus/scroll anchoring settle before checking that image
+      // capture itself preserves the complete state. Keep the strict oracle.
+      await expect.poll(async () => {
+        const before = await captureState(page);
+        await page.evaluate(() => new Promise<void>(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        return JSON.stringify(await captureState(page)) === JSON.stringify(before);
+      }).toBe(true);
       const beforeViewport = await captureState(page);
       await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-before-${width}.png`) });
       const beforeFullpage = await captureState(page);

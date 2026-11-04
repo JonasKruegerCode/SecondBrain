@@ -341,6 +341,12 @@ class IndexCoordinator:
                             "score": hit.get("score"),
                         }
                     )
+            exact = query.strip().casefold()
+            # Preserve provider scores/order within each tier. An exact page
+            # identity is a stronger navigation signal than a similar mention.
+            results.sort(
+                key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
+            )
             if self.store._head() != snapshot["revision"]:
                 raise WikiError(
                     "index_pending", "Content changed during search. Retry after indexing."
