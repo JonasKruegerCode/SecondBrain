@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "scope": "Local review rehearsal and CI scheduling changes; not release signoff",
+  "executable_baseline": "107a6b51eaa73de4396abc911eb5f6a8bc04d8c0",
+  "completed_ci": {
+    "backend": 41785328385,
+    "frontend": 41785328409,
+    "browser": 41785328416,
+    "indexes": 41785328347,
+    "stack": 41785328354,
+    "ssh": 41785328346,
+    "conclusion": "success"
+  },
+  "local_checks": {
+    "workflow_yaml": "All six parsed with locked PyYAML; PR-only cancellation verified; six full browser phases plus shared worker phase remain; full is the default/PR profile",
+    "pwa_chromium": {
+      "selection": "PWA |password-protected app manifest",
+      "passed": 16,
+      "duration_seconds": 32.848,
+      "service_cleanup_ok": true
+    },
+    "walkthrough_chromium": {
+      "selection": "rehearse a connected atlas journey|galaxy article round trip restores its visit",
+      "viewports": [
+        390,
+        1440
+      ],
+      "status": "passed",
+      "duration_seconds": 14.059,
+      "service_cleanup_ok": true,
+      "screenshots_inspected": [
+        "desktop searched article",
+        "narrow galaxy return"
+      ]
+    }
+  },
+  "ci_changes": {
+    "obsolete_pr_runs": "cancelled within each workflow and PR",
+    "main_publication": "never cancelled by this policy",
+    "manual_pwa_profile": "Chromium PWA/manifest plus native WebKit worker/update; not full acceptance",
+    "new_workflow_or_automation": false
+  },
+  "boundaries": [
+    "Local Chromium 153 alternative; locked Chromium/WebKit evidence belongs to completed CI baseline",
+    "No physical Android install, production or private migration verification",
+    "No paid provider/model calls; unavailable-provider recovery only",
+    "No product UI/backend change in this increment",
+    "New workflow dispatch profile not executed in GitHub yet; requires default-branch workflow definition",
+    "Fresh CI for this commit remains separate from the completed executable baseline"
+  ]
+}
