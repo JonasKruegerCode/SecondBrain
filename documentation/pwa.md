@@ -189,3 +189,10 @@ workflow UI when the workflow definition is present on the default branch.
 All six workflows cancel obsolete executions for the same pull request. Main
 runs, including image publication, are not cancelled by this policy; the checks
 and publication triggers themselves remain unchanged.
+
+The protected-manifest regression also serves the actual product PNG icons and
+worker behind a synthetic cookie-auth boundary. Chromium decodes the 192/512
+icons, accepts the manifest and reports no CDP installability errors; anonymous
+requests remain 401. The fixture explicitly registers the worker, so it is
+separate from the real-app startup test. It does not reproduce Android WebAPK
+packaging or establish the cause of a physical installation failure.
