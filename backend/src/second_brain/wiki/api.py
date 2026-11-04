@@ -154,6 +154,10 @@ def create_app(
     async def graph(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(store.graph))
 
+    async def groups(request: Request) -> Response:
+        snapshot = await run_in_threadpool(store.graph)
+        return JSONResponse({key: snapshot[key] for key in ("revision", "groups", "nodes")})
+
     async def backlinks(request: Request) -> Response:
         try:
             limit = int(request.query_params.get("limit", "20"))
@@ -290,6 +294,7 @@ def create_app(
             Route("/api/wiki/pages", pages),
             Route("/api/wiki/search", search),
             Route("/api/wiki/graph", graph),
+            Route("/api/wiki/groups", groups),
             Route("/api/wiki/resolve-links", resolve_links),
             Route("/api/wiki/index-status", index_status),
             Route("/api/wiki/delivery-status", delivery_status),

@@ -97,18 +97,21 @@ for (const width of [390, 1440]) {
       }).toBe(true);
       const beforeViewport = await captureState(page);
       await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-before-${width}.png`) });
-      const beforeFullpage = await captureState(page);
-      await page.screenshot({ path: info.outputPath(`recreated-conflict-${width}.png`), fullPage: true });
-      const afterFullpage = await captureState(page);
+      const beforeFocusedCapture = await captureState(page);
+      // Full-page capture temporarily resizes the layout viewport, which can
+      // reveal a focused textarea's native caret after restoration. Capture the
+      // actual focused viewport instead; the strict state oracle stays intact.
+      await page.screenshot({ path: info.outputPath(`recreated-conflict-${width}.png`) });
+      const afterFocusedCapture = await captureState(page);
       await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-after-${width}.png`) });
       const afterViewport = await captureState(page);
       console.info("[editor-capture] " + JSON.stringify({ width, beforeViewport,
-        beforeFullpage, afterFullpage, afterViewport }));
-      for (const state of [beforeViewport, beforeFullpage, afterFullpage, afterViewport]) {
+        beforeFocusedCapture, afterFocusedCapture, afterViewport }));
+      for (const state of [beforeViewport, beforeFocusedCapture, afterFocusedCapture, afterViewport]) {
         expect(state.skip.focused).toBe(false);
         expect(state.skip.bottom).toBeLessThanOrEqual(0);
       }
-      expect(afterFullpage).toEqual(beforeFullpage);
+      expect(afterFocusedCapture).toEqual(beforeFocusedCapture);
       expect(afterViewport).toEqual(beforeViewport);
 
       await other.goto(`/wiki/${id}`);

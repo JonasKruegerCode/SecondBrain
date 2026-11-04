@@ -64,6 +64,7 @@ def test_http_initialize_tools_guidance_and_shared_rest_content(tmp_path: Path) 
             "list_pages",
             "search_wiki",
             "get_graph",
+            "get_groups",
             "save_page",
             "delete_page",
             "get_history",

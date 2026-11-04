@@ -378,10 +378,11 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
 @pytest.mark.parametrize("engine, profile, service_workers, suites", [
     ("chromium", "full", "allow", [
         "e2e/wiki.spec.ts", "e2e/curated-home.spec.ts", "e2e/pwa-existing-install.spec.ts",
+        "e2e/pwa-auth.spec.ts",
         "e2e/history.spec.ts", "e2e/delivery-recovery.spec.ts",
         "e2e/skip-link.spec.ts", "e2e/article-focus.spec.ts",
         "e2e/view-focus.spec.ts", "e2e/text-enlargement.spec.ts",
-        "e2e/theme.spec.ts", "e2e/chat-presentation.spec.ts",
+        "e2e/groups.spec.ts", "e2e/theme.spec.ts", "e2e/chat-presentation.spec.ts",
         "e2e/start-preference.spec.ts",
         "e2e/demo-rehearsal.spec.ts",
         "e2e/galaxy-density.spec.ts",
@@ -408,7 +409,7 @@ def test_scale_command_evidence_and_owned_cleanup_without_launching_a_browser(
         "e2e/history.spec.ts", "e2e/delivery-recovery.spec.ts",
         "e2e/article-focus.spec.ts", "e2e/view-focus.spec.ts",
         "e2e/text-enlargement.spec.ts",
-        "e2e/theme.spec.ts", "e2e/chat-presentation.spec.ts",
+        "e2e/groups.spec.ts", "e2e/theme.spec.ts", "e2e/chat-presentation.spec.ts",
         "e2e/start-preference.spec.ts",
         "e2e/demo-rehearsal.spec.ts", "e2e/galaxy-density.spec.ts",
         "e2e/article-galaxy.spec.ts", "e2e/galaxy-search.spec.ts", "e2e/editor-retry.spec.ts",

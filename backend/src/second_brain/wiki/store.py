@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from second_brain.wiki.bounded_script import project_flat_scripts
+from second_brain.wiki.galaxy_groups import galaxy_groups
 
 REF = "refs/heads/wiki"
 ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
@@ -1457,7 +1458,7 @@ class WikiStore:
                 for target, rel in outgoing
                 if rel is not None or target not in typed_targets
             )
-        return {
+        result: dict[str, Any] = {
             "nodes": [
                 {
                     "id": p["id"],
@@ -1479,6 +1480,8 @@ class WikiStore:
             "source": "markdown",
             "revision": head or None,
         }
+        result["groups"] = galaxy_groups(result["nodes"], result["edges"])
+        return result
 
     def save_page(
         self,
