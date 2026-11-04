@@ -16,6 +16,7 @@ import tempfile
 import threading
 import unicodedata
 from collections.abc import Iterator
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -1003,6 +1004,13 @@ class _LinkCatalog(NamedTuple):
     titles: dict[str, set[str]]
 
 
+class _NavigationProjection(NamedTuple):
+    head: str
+    blobs: dict[str, bytes]
+    pages: dict[str, dict[str, Any]]
+    links: dict[str, list[tuple[str, str | None]]]
+
+
 class WikiStore:
     """A single-ref content store; separate processes use Git's compare-and-swap."""
 
@@ -1014,6 +1022,9 @@ class WikiStore:
         # Readers can share the store with the index/delivery worker.
         self._catalog_lock = threading.Lock()
         self._catalog: _LinkCatalog | None = None
+        self._navigation_lock = threading.RLock()
+        self._navigation: _NavigationProjection | None = None
+        self._navigation_graph: tuple[str, dict[str, Any]] | None = None
         if self.repo.is_symlink():
             raise WikiError("invalid_vault", "The managed repository must not be a symlink.")
         if not self.repo.exists():
@@ -1208,6 +1219,17 @@ class WikiStore:
         with self._catalog_lock:
             if self._catalog is not None and self._catalog.head == head:
                 return self._catalog.pages, self._catalog.titles
+            navigation = self._navigation
+            if navigation is not None and navigation.head == head:
+                pages = {key: page["title"] for key, page in navigation.pages.items()}
+                titles: dict[str, set[str]] = {}
+                for key, title in pages.items():
+                    titles.setdefault(title.casefold(), set()).add(key)
+                entries = {
+                    path: sha for path, sha in navigation.blobs.items() if path.startswith("pages/")
+                }
+                self._catalog = _LinkCatalog(head, entries, pages, titles)
+                return pages, titles
             previous_blobs = self._catalog.blobs if self._catalog is not None else {}
             previous_titles = self._catalog.pages if self._catalog is not None else {}
             entries = {
@@ -1218,8 +1240,8 @@ class WikiStore:
             changed = self._read_blobs(
                 {path: sha for path, sha in entries.items() if previous_blobs.get(path) != sha}
             )
-            pages: dict[str, str] = {}
-            titles: dict[str, set[str]] = {}
+            pages = {}
+            titles = {}
             for path in entries:
                 page_id = path.removeprefix("pages/").removesuffix(".md")
                 title = (
@@ -1234,6 +1256,53 @@ class WikiStore:
 
     def list_pages(self) -> list[dict[str, Any]]:
         return self._pages(self._head())
+
+    def _navigation_pages(self, head: str) -> _NavigationProjection:
+        """One metadata/link projection, refreshed from changed Git blobs only."""
+        with self._navigation_lock:
+            previous = self._navigation
+            if previous is not None and previous.head == head:
+                return previous
+            entries = self._tree_blobs(head, "pages/", "revisions/")
+            previous_blobs = previous.blobs if previous is not None else {}
+            changed = self._read_blobs(
+                {path: sha for path, sha in entries.items() if previous_blobs.get(path) != sha}
+            )
+            pages: dict[str, dict[str, Any]] = {}
+            links: dict[str, list[tuple[str, str | None]]] = {}
+            for path in entries:
+                if not path.startswith("pages/") or not path.endswith(".md"):
+                    continue
+                page_id = path.removeprefix("pages/").removesuffix(".md")
+                revision_path = f"revisions/{page_id}"
+                old = previous.pages.get(page_id) if previous is not None else None
+                if revision_path not in entries:
+                    revision = ""
+                elif revision_path in changed:
+                    revision = changed[revision_path].decode()
+                else:
+                    revision = old["revision"] if old is not None else ""
+                if path in changed:
+                    page = self._page(page_id, changed[path], revision)
+                    links[page_id] = self._page_links(page.pop("markdown"))
+                else:
+                    assert old is not None and previous is not None
+                    page = {**old, "revision": revision}
+                    links[page_id] = previous.links[page_id]
+                pages[page_id] = page
+            projection = _NavigationProjection(head, entries, pages, links)
+            self._navigation = projection
+            return projection
+
+    @staticmethod
+    def _ordered_summaries(projection: _NavigationProjection) -> list[dict[str, Any]]:
+        return sorted(
+            projection.pages.values(), key=lambda page: (page["title"].casefold(), page["id"])
+        )
+
+    def list_page_summaries(self) -> list[dict[str, Any]]:
+        """Metadata for navigation; full-content list_pages remains available."""
+        return deepcopy(self._ordered_summaries(self._navigation_pages(self._head())))
 
     def search(self, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -> list[dict[str, Any]]:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
@@ -1254,14 +1323,26 @@ class WikiStore:
         )[:limit]
 
     def graph(self) -> dict[str, Any]:
-        result: dict[str, Any] = self.snapshot()["graph"]
+        result: dict[str, Any] = self._navigation_snapshot()["graph"]
         return result
+
+    def _navigation_snapshot(self) -> dict[str, Any]:
+        head = self._head()
+        with self._navigation_lock:
+            projection = self._navigation_pages(head)
+            pages = self._ordered_summaries(projection)
+            if self._navigation_graph is None or self._navigation_graph[0] != head:
+                graph = self._graph(pages, head, projection.links)
+                self._navigation_graph = (head, graph)
+            return deepcopy(
+                {"revision": head or None, "pages": pages, "graph": self._navigation_graph[1]}
+            )
 
     def backlinks(self, page_id: str, limit: int = 20) -> dict[str, Any]:
         """Read bounded incoming explicit links from one immutable content snapshot."""
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise WikiError("invalid_payload", "limit must be an integer between 1 and 100.")
-        snapshot = self.snapshot()
+        snapshot = self._navigation_snapshot()
         pages = {page["id"]: page for page in snapshot["pages"]}
         if page_id not in pages:
             raise WikiError("not_found", "The page does not exist.")
@@ -1327,7 +1408,23 @@ class WikiStore:
         return {"revision": head or None, "pages": pages, "graph": self._graph(pages, head)}
 
     @staticmethod
-    def _graph(pages: list[dict[str, Any]], head: str) -> dict[str, Any]:
+    def _page_links(markdown: str) -> list[tuple[str, str | None]]:
+        content, _ = split_frontmatter(markdown)
+        prose = prose_links(content)
+        links: list[tuple[str, str | None]] = [
+            (match.group(2), re.sub(r"[^\w]+", "_", match.group(1).strip().lower()).strip("_"))
+            for match in TYPED_LINK_RE.finditer(prose)
+            if not _markdown_escaped(prose, match.start(2) - 2)
+        ]
+        links.extend((match.group(1), None) for match in _wiki_link_matches(prose))
+        return links
+
+    @staticmethod
+    def _graph(
+        pages: list[dict[str, Any]],
+        head: str,
+        page_links: dict[str, list[tuple[str, str | None]]] | None = None,
+    ) -> dict[str, Any]:
         ids = {p["id"] for p in pages}
         titles: dict[str, set[str]] = {}
         for page in pages:
@@ -1336,14 +1433,11 @@ class WikiStore:
         missing: set[tuple[str, str]] = set()
         ambiguous: set[tuple[str, str, tuple[str, ...]]] = set()
         for page in pages:
-            content, _ = split_frontmatter(page["markdown"])
-            prose = prose_links(content)
-            links: list[tuple[str, str | None]] = [
-                (match.group(2), re.sub(r"[^\w]+", "_", match.group(1).strip().lower()).strip("_"))
-                for match in TYPED_LINK_RE.finditer(prose)
-                if not _markdown_escaped(prose, match.start(2) - 2)
-            ]
-            links.extend((match.group(1), None) for match in _wiki_link_matches(prose))
+            links = (
+                page_links[page["id"]]
+                if page_links is not None
+                else WikiStore._page_links(page["markdown"])
+            )
             outgoing: set[tuple[str, str | None]] = set()
             for raw_target, rel in links:
                 target, candidates = WikiStore._resolve_target(raw_target, page["id"], ids, titles)

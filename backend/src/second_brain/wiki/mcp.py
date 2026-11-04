@@ -120,7 +120,7 @@ def create_mcp(
     @mcp.tool()
     def list_pages() -> list[dict[str, Any]]:
         """List stable page IDs and titles from local published Markdown."""
-        return [{k: v for k, v in page.items() if k != "markdown"} for page in store.list_pages()]
+        return store.list_page_summaries()
 
     @mcp.tool()
     def search_wiki(

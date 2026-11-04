@@ -78,7 +78,7 @@ def create_app(
         return JSONResponse({"status": "ok", "profile": "managed-wiki"})
 
     async def pages(request: Request) -> Response:
-        rows = await run_in_threadpool(store.list_pages)
+        rows = await run_in_threadpool(store.list_page_summaries)
         return JSONResponse(
             {"pages": [{k: v for k, v in p.items() if k != "markdown"} for p in rows]}
         )
