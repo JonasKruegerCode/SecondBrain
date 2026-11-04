@@ -345,7 +345,7 @@ class QdrantSnapshotAdapter:
             group_size=1,
             with_payload=True,
         )
-        return [
+        hits = [
             {
                 "id": (point.payload or {})["id"],
                 "revision": (point.payload or {})["revision"],
@@ -354,6 +354,9 @@ class QdrantSnapshotAdapter:
             for group in result.groups
             for point in group.hits[:1]
         ]
+        # Qdrant does not promise a stable order for equally scored groups.
+        # Stabilize the returned set so REST/MCP callers do not flicker on ties.
+        return sorted(hits, key=lambda hit: (-hit["score"], hit["id"]))
 
     def list_generations(self, namespace: str) -> list[str]:
         prefix = self._collection(_generation(namespace) + "_")
