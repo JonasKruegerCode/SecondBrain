@@ -103,7 +103,8 @@ def _synchronized_delivery(
             delivery = DeliveryCoordinator(
                 store, indexes, remote, expected_remote_revision=observed, synchronize=True
             )
-        delivery.indexes.run_once()
+        # Content is ready after Git bootstrap. Provider work belongs to the
+        # lifecycle worker, so a slow embedding build cannot delay API startup.
         return delivery
 
 

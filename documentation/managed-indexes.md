@@ -45,19 +45,52 @@ verify that configuration separately.
 
 `QdrantSnapshotAdapter(client, embedder, dimension)` uses a separate
 `managed_wiki_<generation>` collection for each attempt, never `wiki_pages`.
-The preview embeds only the first 2,000 characters of each page's Markdown,
-matching the legacy indexing bound. The complete Markdown remains authoritative
-and available through page reads; content beyond that prefix does not contribute
-to the page vector. This compatibility hotfix prevents oversized articles from
-failing the entire index build. Full long-article retrieval needs a later chunking
-implementation. The injected embedder's `embed(text)` method receives that prefix; vectors must
+Long articles are covered completely by chunks of at most 2,000 Unicode code
+points with 200 code points of overlap. This replaces the preview's prefix-only
+compatibility hotfix. Markdown and page revisions remain unchanged. Each point
+records its page ID/revision, snapshot revision, chunk index and source start/end
+offsets. Offsets count Python Unicode code points, not UTF-8 bytes or browser
+UTF-16 units. An empty article embeds its title while retaining an empty source
+range. The per-call character bound is not a provider-specific token guarantee;
+real provider limits and model quality still require separate acceptance.
+
+The injected embedder's `embed(text)` method receives each bounded chunk; vectors must
 match the configured dimension and contain only finite values. Pass `None` to
 infer the dimension from the actual page embeddings instead of a model-name
 guess. An empty auto-sized snapshot makes one explicit embedding probe. All vectors are
-validated before collection creation. Writes request `wait=True`, and a build
+validated before collection creation. Validated points use an anonymous temporary
+spool instead of retaining all vectors in memory. Writes use batches of at most
+64 points with `wait=True`, and a build
 returns only after they complete. An empty snapshot creates an empty searchable
 collection. `search(generation, query, limit=10)` returns `id`, page `revision`, and
-`score`, with cosine similarity and a limit in 1–1000.
+`score`, with cosine similarity and a limit in 1–1000 **articles**. Qdrant's grouped
+query (`group_by=id`, best hit per group) prevents many chunks of one long article
+from crowding other articles out of a limited result set. Existing single-point
+generations retain the same page ID payload and remain group-readable, but the
+new configuration identity requires a rebuild before they can represent complete
+chunk coverage. The pinned-server integration suite includes tail retrieval and
+article grouping; local embedded-client results alone do not establish hosted
+server compatibility.
+
+Configured vector workers emit bounded progress logs with page X/Y, chunks,
+embedding duration and elapsed build time. Failures log exception type and an
+HTTP status when available; page IDs, source text and raw provider messages are
+excluded. The configured standalone server enables these INFO messages unless a
+module logging level was explicitly set; existing application handlers are
+preserved. An embedding-progress line is not proof of a completed upload or
+published index receipt.
+
+Git startup still acquires existing content before serving, but it no longer
+performs synchronous embedding work before API startup. The lifecycle-owned
+delivery worker builds indexes afterwards. Content reads and lexical search stay
+available while semantic retrieval reports pending until the complete generation
+is ready. Full generations are still rebuilt after content changes: vector reuse
+and incremental provider work remain separate follow-up work. Full chunk coverage
+can require more model calls and temporary disk space than the old prefix-only
+index. The current delivery worker still serializes index building and remote
+publication: a slow build can postpone its background Git push, even though
+content reads stay available. Incremental vector reuse and worker scheduling
+remain follow-up work before claiming a complete responsiveness improvement.
 
 Auto-sized searches read the dimension from the persisted collection and validate
 the actual query vector against it, including after a process restart. Provider

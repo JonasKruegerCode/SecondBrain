@@ -5,7 +5,11 @@ from unittest.mock import MagicMock
 import pytest
 from qdrant_client import QdrantClient
 
-from second_brain.wiki.index_adapters import Neo4jSnapshotAdapter, QdrantSnapshotAdapter
+from second_brain.wiki.index_adapters import (
+    Neo4jSnapshotAdapter,
+    QdrantSnapshotAdapter,
+    page_chunks,
+)
 
 
 class SyntheticEmbedder:
@@ -69,7 +73,7 @@ def test_real_embedded_qdrant_generations() -> None:
 
 
 @pytest.mark.parametrize("length", [1_999, 2_000, 2_001, 140_000])
-def test_long_pages_keep_legacy_embedding_bound_without_changing_markdown(length: int) -> None:
+def test_long_pages_cover_all_chunks_without_changing_markdown(length: int) -> None:
     class BoundedProvider:
         def __init__(self) -> None:
             self.inputs: list[str] = []
@@ -91,7 +95,8 @@ def test_long_pages_keep_legacy_embedding_bound_without_changing_markdown(length
     try:
         adapter = QdrantSnapshotAdapter(client, provider, None)
         adapter.build("bounded_attempt", data)
-        assert provider.inputs == [markdown[:2_000]]
+        assert provider.inputs == [text for _, _, text in page_chunks(markdown)]
+        assert provider.inputs[-1].endswith(markdown[-100:])
         assert adapter.search("bounded_attempt", "synthetic")[0]["id"] == "a"
         assert data == original
     finally:

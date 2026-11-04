@@ -149,6 +149,20 @@ def test_real_vector_generations_ranking_reuse_and_empty(indexed: IndexCoordinat
     assert vector.list_generations(indexed.namespace) == [generation]
 
 
+def test_real_vector_chunks_find_tail_and_group_by_article(indexed: IndexCoordinator) -> None:
+    saved = indexed.store.save_page(
+        "long-archive", "# Synthetic archive\n" + "garden " * 2000 + "harbor",
+        None, "seed-long-archive",
+    )
+    current(indexed)
+    result = indexed.semantic_search("harbor", limit=50)
+    assert len(result["results"]) == 4
+    assert len({page["id"] for page in result["results"]}) == 4
+    archive = next(page for page in result["results"] if page["id"] == "long-archive")
+    assert archive["score"] == pytest.approx(1.0)
+    assert archive["revision"] == saved["revision"]
+
+
 async def test_real_indexes_shared_rest_mcp_and_stale_revision(indexed: IndexCoordinator) -> None:
     current(indexed)
     before = indexed.store.snapshot()
