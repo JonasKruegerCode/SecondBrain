@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 import unicodedata
 from collections.abc import Iterator
 from pathlib import Path
@@ -995,6 +996,13 @@ class WikiError(Exception):
         super().__init__(message)
 
 
+class _LinkCatalog(NamedTuple):
+    head: str
+    blobs: dict[str, bytes]
+    pages: dict[str, str]
+    titles: dict[str, set[str]]
+
+
 class WikiStore:
     """A single-ref content store; separate processes use Git's compare-and-swap."""
 
@@ -1002,6 +1010,10 @@ class WikiStore:
         self.path = Path(path).resolve()
         self.path.mkdir(parents=True, exist_ok=True)
         self.repo = self.path / ".wiki.git"
+        # Keep only one immutable title catalog, never historical article bodies.
+        # Readers can share the store with the index/delivery worker.
+        self._catalog_lock = threading.Lock()
+        self._catalog: _LinkCatalog | None = None
         if self.repo.is_symlink():
             raise WikiError("invalid_vault", "The managed repository must not be a symlink.")
         if not self.repo.exists():
@@ -1101,10 +1113,8 @@ class WikiStore:
         return self._git("show", f"{head}:{path}")
 
     @staticmethod
-    def _page(page_id: str, data: bytes, revision: str) -> dict[str, Any]:
-        markdown = data.decode("utf-8")
-        content, galaxy = split_frontmatter(markdown)
-        title = next(
+    def _title(page_id: str, content: str) -> str:
+        return next(
             (
                 match.group(1).strip()
                 for match in re.finditer(
@@ -1116,7 +1126,13 @@ class WikiStore:
             ),
             page_id,
         )
-        page = {
+
+    @staticmethod
+    def _page(page_id: str, data: bytes, revision: str) -> dict[str, Any]:
+        markdown = data.decode("utf-8")
+        content, galaxy = split_frontmatter(markdown)
+        title = WikiStore._title(page_id, content)
+        page: dict[str, Any] = {
             "id": page_id,
             "title": title,
             "markdown": markdown,
@@ -1130,8 +1146,9 @@ class WikiStore:
     def get_page(self, page_id: str) -> dict[str, Any] | None:
         self._validate_id(page_id)
         head = self._head()
-        data = self._blob(head, f"pages/{page_id}.md")
-        revision = self._blob(head, f"revisions/{page_id}")
+        blobs = self._snapshot_blobs(head, f"pages/{page_id}.md", f"revisions/{page_id}")
+        data = blobs.get(f"pages/{page_id}.md")
+        revision = blobs.get(f"revisions/{page_id}")
         return (
             self._page(page_id, data, revision.decode() if revision else "")
             if data is not None
@@ -1150,26 +1167,70 @@ class WikiStore:
 
     def _snapshot_blobs(self, head: str, *prefixes: str) -> dict[str, bytes]:
         """Read one tree with two Git processes, rather than four per page."""
+        return self._read_blobs(self._tree_blobs(head, *prefixes))
+
+    def _tree_blobs(self, head: str, *prefixes: str) -> dict[str, bytes]:
         if not head:
             return {}
         rows = self._git("ls-tree", "-r", "-z", head, "--", *prefixes)
-        entries: list[tuple[str, bytes]] = []
+        entries: dict[str, bytes] = {}
         for row in rows.split(b"\0"):
             if row:
                 metadata, raw_path = row.split(b"\t", 1)
                 _, kind, sha = metadata.split()
                 if kind == b"blob":
-                    entries.append((raw_path.decode(), sha))
-        batch = self._git("cat-file", "--batch", data=b"".join(sha + b"\n" for _, sha in entries))
+                    entries[raw_path.decode()] = sha
+        return entries
+
+    def _read_blobs(self, entries: dict[str, bytes]) -> dict[str, bytes]:
+        if not entries:
+            return {}
+        batch = self._git(
+            "cat-file", "--batch", data=b"".join(sha + b"\n" for sha in entries.values())
+        )
         blobs: dict[str, bytes] = {}
         offset = 0
-        for path, _ in entries:
+        for path in entries:
             end = batch.index(b"\n", offset)
             size = int(batch[offset:end].split()[2])
             offset = end + 1
             blobs[path] = batch[offset : offset + size]
             offset += size + 1
         return blobs
+
+    def _link_catalog(self, head: str) -> tuple[dict[str, str], dict[str, set[str]]]:
+        """Resolve titles once per tree; only read changed blobs on the next tree.
+
+        A ref lookup still happens on every request, so other processes and
+        remote delivery cannot leave a warmed catalog stale. Publish the entire
+        catalog together and retain the caller's captured commit during races.
+        """
+        with self._catalog_lock:
+            if self._catalog is not None and self._catalog.head == head:
+                return self._catalog.pages, self._catalog.titles
+            previous_blobs = self._catalog.blobs if self._catalog is not None else {}
+            previous_titles = self._catalog.pages if self._catalog is not None else {}
+            entries = {
+                path: sha
+                for path, sha in self._tree_blobs(head, "pages/").items()
+                if path.endswith(".md")
+            }
+            changed = self._read_blobs(
+                {path: sha for path, sha in entries.items() if previous_blobs.get(path) != sha}
+            )
+            pages: dict[str, str] = {}
+            titles: dict[str, set[str]] = {}
+            for path in entries:
+                page_id = path.removeprefix("pages/").removesuffix(".md")
+                title = (
+                    self._title(page_id, split_frontmatter(changed[path].decode("utf-8"))[0])
+                    if path in changed
+                    else previous_titles[page_id]
+                )
+                pages[page_id] = title
+                titles.setdefault(title.casefold(), set()).add(page_id)
+            self._catalog = _LinkCatalog(head, entries, pages, titles)
+            return pages, titles
 
     def list_pages(self) -> list[dict[str, Any]]:
         return self._pages(self._head())
@@ -1242,10 +1303,7 @@ class WikiStore:
     def resolve_links(self, targets: list[str], source: str = "") -> dict[str, Any]:
         """Resolve a bounded article batch against one immutable content snapshot."""
         head = self._head()
-        pages = {p["id"]: p for p in self._pages(head)}
-        titles: dict[str, set[str]] = {}
-        for page in pages.values():
-            titles.setdefault(page["title"].casefold(), set()).add(page["id"])
+        pages, titles = self._link_catalog(head)
         ids = set(pages)
         resolutions = []
         for raw in targets:
@@ -1257,7 +1315,7 @@ class WikiStore:
                     if len(candidates) == 1
                     else ("ambiguous" if candidates else "missing"),
                     "fragment": raw.partition("#")[2],
-                    "candidates": [{"id": key, "title": pages[key]["title"]} for key in candidates],
+                    "candidates": [{"id": key, "title": pages[key]} for key in candidates],
                 }
             )
         return {"revision": head or None, "resolutions": resolutions}

@@ -101,6 +101,29 @@ explicit wikilinks and typed relations from one content snapshot, resolves uniqu
 titles, and reports missing/ambiguous targets without inferring dependencies.
 The browser uses the same target resolver for ID/title links, ambiguous choices and missing links. A first snapshot galaxy is available at `/galaxy`; its topology grouping is a navigation aid, not a semantic classification.
 
+### Article navigation work
+
+Link resolution keeps one in-memory ID/title catalog per store, keyed by the
+captured Git commit. Every request still checks the published ref. Repeated
+resolution at the same commit reads no article blobs; after a new commit only
+added or changed article blobs are read to refresh titles. Deletions leave the
+catalog on that refresh. The catalog retains metadata, not article bodies or
+historical snapshots, and concurrent readers share its construction. A restart
+rebuilds it from Git. ID precedence, case-insensitive title ambiguity and section
+fragments use the same rules as the content graph.
+
+A single-page read batches that page's Markdown and revision in one Git object
+read, both from the captured commit. Neither optimization changes the REST/MCP
+response format or requires an external index. Home listings, backlink graph
+construction and galaxy snapshots still process full content; this is not a
+claim that all large-vault navigation costs have been removed.
+
+`tests/test_wiki_navigation_cost.py` uses a real synthetic 818-page Git repository
+and counts object reads rather than asserting machine-dependent latency. It
+checks warm reads, an independent writer, deletion/recreation, restart, concurrent
+readers and a failed refresh with retry. Run it from `backend` with
+`poetry run pytest tests/test_wiki_navigation_cost.py`.
+
 ## REST and MCP
 
 Managed REST is `/api/wiki`: page listing, page read/create/save/delete, lexical
