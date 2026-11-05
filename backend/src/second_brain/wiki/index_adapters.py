@@ -2,37 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
-import logging
 import math
 import re
-import tempfile
-import time
-from typing import Any, Protocol, TextIO
+from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient, models
 
 PAGE_EMBEDDING_MAX_CHARS = 2_000
-CHUNK_OVERLAP_CHARS = 200
-POINT_BATCH_SIZE = 64
-logger = logging.getLogger(__name__)
-
-
-def page_chunks(markdown: str) -> list[tuple[int, int, str]]:
-    """Bound every provider input while covering the entire Unicode source.
-
-    Offsets are Python Unicode code points, not bytes or browser UTF-16 units.
-    Overlap keeps boundary context; even an empty page has one stable point.
-    """
-    chunks = []
-    start = 0
-    while True:
-        end = min(len(markdown), start + PAGE_EMBEDDING_MAX_CHARS)
-        chunks.append((start, end, markdown[start:end]))
-        if end == len(markdown):
-            return chunks
-        start = end - CHUNK_OVERLAP_CHARS
 
 
 class Embedder(Protocol):
@@ -189,125 +166,25 @@ class QdrantSnapshotAdapter:
         return vector
 
     def build(self, generation: str, snapshot: dict[str, Any]) -> None:
-        self.build_from(generation, snapshot, None)
-
-    def build_from(
-        self, generation: str, snapshot: dict[str, Any], previous_generation: str | None
-    ) -> None:
-        """Reuse only a coordinator-selected ready generation of the same config."""
-        # Anonymous temporary storage bounds resident vector memory while
-        # preserving validation-before-creation. No source text is spooled.
-        with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as spool:
-            previous = self._collection(previous_generation) if previous_generation else None
-            if previous and not self.client.collection_exists(previous):
-                previous = None
-            self._build_spooled(generation, snapshot, spool, previous)
-
-    def _build_spooled(
-        self, generation: str, snapshot: dict[str, Any], spool: TextIO, previous: str | None
-    ) -> None:
         collection = self._collection(generation)
         dimension = self.dimension
-        if dimension is None and previous:
-            vectors = self.client.get_collection(previous).config.params.vectors
-            if not isinstance(vectors, models.VectorParams):
-                raise ValueError("Managed collection must have one unnamed vector dimension")
-            dimension = vectors.size
-        pages = _pages(snapshot)
-        build_started = time.monotonic()
-        for number, page in enumerate(pages, 1):
-            chunks = page_chunks(page["markdown"])
-            reused: dict[str, Any] = {}
-            if previous:
-                ids = [str(uuid5(NAMESPACE_URL, f"{page['id']}:{i}")) for i in range(len(chunks))]
-                for offset in range(0, len(ids), POINT_BATCH_SIZE):
-                    records = self.client.retrieve(
-                        previous,
-                        ids[offset : offset + POINT_BATCH_SIZE],
-                        with_payload=True,
-                        with_vectors=True,
-                    )
-                    reused.update({str(record.id): record for record in records})
-            embedding_seconds = 0.0
-            reused_count = 0
-            for index, (start, end, text) in enumerate(chunks):
-                point_id = str(uuid5(NAMESPACE_URL, f"{page['id']}:{index}"))
-                input_text = text or page["title"][:PAGE_EMBEDDING_MAX_CHARS]
-                digest = hashlib.sha256(input_text.encode()).hexdigest()
-                old = reused.get(point_id)
-                payload = (old.payload or {}) if old is not None else {}
-                vector = old.vector if old is not None else None
-                reusable = (
-                    payload.get("id") == page["id"]
-                    and payload.get("chunk") == index
-                    and payload.get("start") == start
-                    and payload.get("end") == end
-                    and (
-                        payload.get("chunk_hash") == digest
-                        or (
-                            "chunk_hash" not in payload
-                            and payload.get("revision") == page["revision"]
-                        )
-                    )
-                    and isinstance(vector, list)
-                    and bool(vector)
-                    and (dimension is None or len(vector) == dimension)
-                    and all(isinstance(v, (int, float)) and math.isfinite(v) for v in vector)
-                )
-                started = time.monotonic()
-                try:
-                    if reusable:
-                        reused_count += 1
-                    else:
-                        vector = self._vector(input_text, dimension)
-                except Exception as exc:
-                    # Never include source text, identifiers, credentials or raw
-                    # provider messages. Class names distinguish failure kinds.
-                    status = getattr(getattr(exc, "response", None), "status_code", None)
-                    safe_status = (
-                        status if isinstance(status, int) and 100 <= status <= 599 else None
-                    )
-                    logger.warning(
-                        "Managed vector embedding failed page=%d/%d chunk=%d/%d "
-                        "error_type=%s provider_status=%s embedding_seconds=%.3f "
-                        "elapsed_seconds=%.3f",
-                        number,
-                        len(pages),
-                        index + 1,
-                        len(chunks),
-                        type(exc).__name__,
-                        safe_status,
-                        time.monotonic() - started,
-                        time.monotonic() - build_started,
-                    )
-                    raise
-                embedding_seconds += time.monotonic() - started
-                assert isinstance(vector, list)
-                if dimension is None:
-                    dimension = len(vector)
-                point = models.PointStruct(
-                    id=point_id,
+        points: list[models.PointStruct] = []
+        for page in _pages(snapshot):
+            # Preserve the legacy indexing bound until long pages are chunked.
+            # The authoritative Markdown remains complete and unchanged.
+            vector = self._vector(page["markdown"][:PAGE_EMBEDDING_MAX_CHARS], dimension)
+            if dimension is None:
+                dimension = len(vector)
+            points.append(
+                models.PointStruct(
+                    id=str(uuid5(NAMESPACE_URL, page["id"])),
                     vector=vector,
                     payload={
                         "id": page["id"],
                         "revision": page["revision"],
                         "snapshot_revision": snapshot["revision"],
-                        "chunk": index,
-                        "start": start,
-                        "end": end,
-                        "chunk_hash": digest,
                     },
                 )
-                spool.write(point.model_dump_json() + "\n")
-            logger.info(
-                "Managed vector embedding page=%d/%d chunks=%d reused=%d embedding_seconds=%.3f "
-                "elapsed_seconds=%.3f",
-                number,
-                len(pages),
-                len(chunks),
-                reused_count,
-                embedding_seconds,
-                time.monotonic() - build_started,
             )
         if dimension is None:
             # An empty generation still needs the provider's actual output shape.
@@ -317,15 +194,8 @@ class QdrantSnapshotAdapter:
             collection_name=collection,
             vectors_config=models.VectorParams(size=dimension, distance=models.Distance.COSINE),
         )
-        spool.seek(0)
-        batch: list[models.PointStruct] = []
-        for line in spool:
-            batch.append(models.PointStruct.model_validate_json(line))
-            if len(batch) == POINT_BATCH_SIZE:
-                self.client.upsert(collection_name=collection, points=batch, wait=True)
-                batch = []
-        if batch:
-            self.client.upsert(collection_name=collection, points=batch, wait=True)
+        if points:
+            self.client.upsert(collection_name=collection, points=points, wait=True)
 
     def search(self, generation: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
         if not 1 <= limit <= 1000:
@@ -337,26 +207,20 @@ class QdrantSnapshotAdapter:
             if not isinstance(vectors, models.VectorParams):
                 raise ValueError("Managed collection must have one unnamed vector dimension")
             dimension = vectors.size
-        result = self.client.query_points_groups(
+        result = self.client.query_points(
             collection_name=collection,
             query=self._vector(query, dimension),
             limit=limit,
-            group_by="id",
-            group_size=1,
             with_payload=True,
         )
-        hits = [
+        return [
             {
                 "id": (point.payload or {})["id"],
                 "revision": (point.payload or {})["revision"],
                 "score": point.score,
             }
-            for group in result.groups
-            for point in group.hits[:1]
+            for point in result.points
         ]
-        # Qdrant does not promise a stable order for equally scored groups.
-        # Stabilize the returned set so REST/MCP callers do not flicker on ties.
-        return sorted(hits, key=lambda hit: (-hit["score"], hit["id"]))
 
     def list_generations(self, namespace: str) -> list[str]:
         prefix = self._collection(_generation(namespace) + "_")

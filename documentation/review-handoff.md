@@ -1,24 +1,20 @@
 # SecondBrain 2.0 review handoff
 
-This is the review entry point for `secondbrain-2.0-next` and
-[Draft PR #20](https://github.com/JonasKruegerCode/SecondBrain/pull/20).
-The earlier preview (PR #18) and embedding hotfix (PR #19) were merged;
-this branch is a separate, undeployed follow-up. The current functional scope
-and the guided local review are in [2.0 walkthrough](review-20-walkthrough.md).
-Further visual redesign is deferred; the existing light interface is the 2.0 basis.
+This is the current review entry point for the `secondbrain-2.0` branch.
+[PR #18](https://github.com/JonasKruegerCode/SecondBrain/pull/18) remains **Draft**.
+The managed wiki, editor/history, galaxy, read-only chat, PWA and isolated
+operator paths are implemented. Real provider quality, private migration,
+production operation and physical-device acceptance remain open. It is not yet
+release- or merge-ready.
 
-The latest completed executable baseline is `107a6b51eaa73de4396abc911eb5f6a8bc04d8c0`.
-All six CI workflows passed, including the full Chromium/WebKit browser workflow
-[41785328416](https://github.com/JonasKruegerCode/SecondBrain/actions/runs/41785328416),
-real pinned graph/vector services, SSH Git and the disposable HTTPS/auth stack.
-Later documentation/CI edits do not themselves extend that completed baseline.
-Real model quality, the reported Android installation failure and private migration
-remain separate checks. This is not a merge or deployment authorization.
+Start with the [fictional demo](demo-start.md), then use the contracts and
+verification map below. Historical implementation and CI details remain in the
+[pinned preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/0ef7179f3073ec210f87792eb6bb91f1d8f3aff1/documentation/review-handoff.md).
+This entry point keeps current contracts, reproducible start paths and explicit
+release limits.
 
-Start with the [fictional demo](demo-start.md). Historical implementation and CI
-details remain in the [pinned preceding handoff](https://github.com/JonasKruegerCode/SecondBrain/blob/0ef7179f3073ec210f87792eb6bb91f1d8f3aff1/documentation/review-handoff.md).
-The older pinned-baseline section below records historical evidence, not the
-current branch or its current CI state.
+
+A stale chat tab also checks whether its previously saved conversation still exists, even after the bounded deletion ledger has evicted the old marker. Late replies and retries cannot recreate the removed transcript; a deliberate new message starts a fresh conversation. This includes ordinary history eviction. The same IndexedDB transaction performs the check and merge; never-saved work retains its existing recovery path. Three browser regressions cover late reply, retry and new-message paths after marker eviction.
 
 ## Architecture and data flow
 
@@ -65,16 +61,20 @@ generations cannot be served as current. A lost provider generation requires
 repair plus an explicit `--rebuild`; an unchanged local ready receipt alone does
 not prove that provider storage exists.
 
-The current derivation identity is `managed-snapshots-v39-chunks-2000-overlap200`,
-defined in [index_config.py](../backend/src/second_brain/wiki/index_config.py).
-Long articles are fully covered by 2000-codepoint chunks with 200 overlap,
-page/snapshot revisions and source ranges. Search groups chunks into unique
-articles. Valid matching vectors can be reused from a completed generation;
-forced rebuilds/configuration changes still embed everything. Immutable Qdrant
-generations are still scanned, copied and uploaded in full. See the synthetic
-[chunking](evidence/chunked-vectors-local.json) and
-[reuse](evidence/index-reuse-local.json) evidence. The earlier bounded SCRIPT
-projection rules remain; this is not general Markdown/rawtext parity.
+The current derivation identity is `managed-snapshots-v37`, defined in
+[index_config.py](../backend/src/second_brain/wiki/index_config.py).
+This revision excludes simple inline SCRIPT islands from links and excerpts in
+an explicitly bounded whole-document grammar. It accepts flat ASCII prose,
+simple headings and restricted wikilinks, with exact ASCII-case SCRIPT pairs
+optionally carrying one restricted double-quoted ASCII attribute. Their
+single-line bodies contain no angle opener, entity, backtick or escape.
+Multiple/unquoted attributes and unsupported syntax anywhere leave the entire
+input unchanged; ordered-list
+code, Unicode lookalike tags and complex HTML are explicit controls. This is
+not general rawtext parity. Markdown, history, lexical source search and browser
+rendering are unchanged. Both old provider receipts become pending at the same
+content HEAD; failed builds remain unreadable. See
+[bounded SCRIPT contract and local checks](flat-script-projection.md).
 
 The preceding bounded emphasized-URL punctuation correction remains included.
 A historical 336-case diagnostic reported 63 graph-target mismatches, but its
@@ -85,18 +85,16 @@ complete Markdown/sanitizer/graph parity is not established.
 An older identity invalidates both configured backend receipts. Rebuilding
 changes derived data, not Markdown or history; configured vector rebuilding can
 make paid embedding requests. Retention is explicit, dry-run first and scoped to
-ledger-owned generations. Full content snapshots remain materialized; vector uploads use a temporary
-anonymous spool and bounded batches. Synthetic scale checks are not a production
-capacity claim.
+ledger-owned generations. Full snapshots/embeddings are materialized in memory;
+the synthetic scale checks are not a production capacity claim.
 
-Separate lifecycle loops synchronize Git and build configured indexes. Git
-publication and incoming remote changes can proceed while embedding is slow.
-Configured initial Git content is adopted before asynchronous indexing; incoming
-content is integrated before publication. Divergence/conflicts remain explicit,
-with no force-push or silent loss. Remote acknowledgements are historical
-receipts, not assertions that a remote branch remains current. The explicit
-one-shot delivery API remains synchronous. See [delivery](managed-delivery.md),
-[Git sync](managed-git-sync.md) and [index operations](managed-indexes.md).
+The automatic delivery worker performs configured index work and outbound Git
+publication. It does not silently pull, merge, force-push or adopt a changed
+remote. Explicit import/pull APIs are separately guarded. Remote acknowledgements
+are cached historical receipts, not assertions that a remote branch is still
+current. Conflicts require reviewed local and remote heads. See
+[delivery](managed-delivery.md), [Git sync](managed-git-sync.md) and
+[index operations](managed-indexes.md).
 
 ### Browser experience
 
@@ -158,9 +156,7 @@ It corrects four WebKit-specific test expectations without changing the app.
 ### Read-only chat and PWA
 
 Chat uses server-side OpenRouter and bounded iterative search/page/neighbor tool
-calls: 24 calls and 16 rounds, a 64,000-character aggregate tool-result budget,
-repeat detection, explicit limits/errors and cancellation. The HTTP deadline
-remains 55 seconds; these maxima do not promise every research run can finish.
+calls: eight calls and five rounds, explicit limits/errors and cancellation.
 Only actually delivered page content counts as a read source. Long-page
 continuation uses offsets and the expected page revision; changed snapshots
 require reading again. Incomplete/truncated provider completion cannot become a

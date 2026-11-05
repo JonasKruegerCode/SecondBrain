@@ -27,19 +27,6 @@
 .chat-message.assistant { align-self: flex-start; background: #f1f5ef; border: 1px solid #e1e9df; color: #29473e; }
 .chat-role { text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; font-weight: 700; }
 .chat-message p { margin: 8px 0 0; white-space: pre-wrap; font-size: 14px; line-height: 1.7; }
-.chat-answer { font-size: 14px; line-height: 1.7; min-width: 0; }
-.chat-answer p { white-space: normal; }
-.chat-answer > :first-child { margin-top: 8px; }
-.chat-answer > :last-child { margin-bottom: 0; }
-.chat-answer :is(h1, h2, h3, h4, h5, h6) { font-size: 1.15em; line-height: 1.4; letter-spacing: normal; margin: 20px 0 8px; }
-.chat-answer :is(ul, ol) { padding-left: 22px; }
-.chat-answer a { color: #285790; text-decoration: underline; text-underline-offset: 3px; }
-.chat-answer pre { overflow: auto; max-width: 100%; padding: 12px; background: #e7eef8; border-radius: 8px; }
-.chat-answer code { font-size: .9em; }
-.chat-answer blockquote { margin-left: 0; padding-left: 14px; border-left: 2px solid #8badcf; }
-.chat-table { max-width: 100%; overflow: auto; }
-.chat-answer table { width: 100%; border-collapse: collapse; }
-.chat-answer :is(th, td) { min-width: 8rem; border: 1px solid #b9cce3; padding: 8px 10px; text-align: left; }
 .chat-message details { margin-top: 13px; color: var(--muted-text); font-size: 11px; }
 .chat-message summary { cursor: pointer; min-height: 44px; padding: 12px 0; box-sizing: border-box; }
 .chat-message ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }

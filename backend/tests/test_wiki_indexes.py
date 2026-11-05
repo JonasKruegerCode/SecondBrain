@@ -338,38 +338,3 @@ def test_vector_seeds_graph_context_and_stale_receipt(
         ("harbor", "graph"),
     ]
     assert "score" not in result["results"][1]
-
-
-@pytest.mark.parametrize("query", ["Mira Quill", "  MIRA QUILL  ", "mira-quill"])
-async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_scores(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, query: str
-) -> None:
-    store, _, indexes = setup(tmp_path)
-    store.save_page("mira-quill", "# Mira Quill\nA fictional archivist.", None, "seed-mira")
-    indexes.run_once()
-    revisions = {p["id"]: p["revision"] for p in store.list_pages()}
-    hits = [
-        {"id": "home", "revision": revisions["home"], "score": 0.9},
-        {"id": "harbor", "revision": revisions["harbor"], "score": 0.8},
-        {"id": "mira-quill", "revision": revisions["mira-quill"], "score": 0.1},
-    ]
-    monkeypatch.setattr(indexes.adapters["vector"], "search", lambda *args: hits)
-    result = indexes.semantic_search(query)
-    assert [p["id"] for p in result["results"]] == ["mira-quill", "home", "harbor"]
-    assert [p["score"] for p in result["results"]] == [0.1, 0.9, 0.8]
-    assert [p["id"] for p in hits] == ["home", "harbor", "mira-quill"]
-    with TestClient(create_app(tmp_path, indexes=indexes)) as client:
-        assert client.get("/api/wiki/search", params={
-            "q": query, "mode": "semantic",
-        }).json() == result
-    response = await create_mcp(store, indexes=indexes).call_tool(
-        "search_wiki", {"query": query, "mode": "semantic"}
-    )
-    assert isinstance(response, tuple)
-    assert response[1] == result
-    # Non-exact queries retain the provider's ranking and candidate boundaries.
-    assert [p["id"] for p in indexes.semantic_search("archivist")["results"]] == [
-        "home", "harbor", "mira-quill"
-    ]
-    hits.pop()
-    assert [p["id"] for p in indexes.semantic_search(query)["results"]] == ["home", "harbor"]

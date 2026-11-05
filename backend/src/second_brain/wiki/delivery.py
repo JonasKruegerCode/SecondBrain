@@ -223,7 +223,7 @@ class DeliveryCoordinator:
                 db.execute("DELETE FROM inbound WHERE target=?", (self.target,))
             return self.status()
 
-    def run_once(self, *, rebuild: bool = False, index_work: bool = True) -> dict[str, Any]:
+    def run_once(self, *, rebuild: bool = False) -> dict[str, Any]:
         with (self.store.path / ".wiki-delivery-worker.lock").open("a") as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -251,15 +251,13 @@ class DeliveryCoordinator:
                                 "UPDATE targets SET epoch=epoch+1 WHERE target=?", (self.target,)
                             )
                     # Failed inbound work must not suppress local index repair.
-                    if index_work:
-                        with suppress(Exception):
-                            self.indexes.run_once(rebuild=rebuild)
+                    with suppress(Exception):
+                        self.indexes.run_once(rebuild=rebuild)
                     return {**self.status(), "worker": "completed"}
             # Provider failures are normally captured per index by its coordinator.
             # A coordinator failure must not suppress independent remote delivery.
-            if index_work:
-                with suppress(Exception):
-                    self.indexes.run_once(rebuild=rebuild)
+            with suppress(Exception):
+                self.indexes.run_once(rebuild=rebuild)
             row = self._remote_row()
             revision = self.store._head() or None
             if self.remote is None or row is None or not revision:

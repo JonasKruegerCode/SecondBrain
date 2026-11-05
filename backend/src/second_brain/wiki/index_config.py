@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import os
 from contextlib import ExitStack, suppress
 from typing import Any
@@ -41,28 +40,13 @@ def _enabled(config: dict[str, str], flag: str, endpoint: str) -> bool:
     return value == "1" or (not value and bool(config.get(endpoint, "").strip()))
 
 
-def _progress_logging() -> None:
-    """Make bounded index progress visible in standalone managed server logs.
-
-    Respect an explicitly configured module level and existing application
-    handlers. Do not reconfigure root logging or duplicate handlers on restart.
-    """
-    logger = logging.getLogger("second_brain.wiki.index_adapters")
-    if logger.level == logging.NOTSET:
-        logger.setLevel(logging.INFO)
-    if not logger.hasHandlers():
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        logger.addHandler(handler)
-
-
 def configured_indexes(store: WikiStore) -> IndexCoordinator:
     config = _index_environment()
     with ExitStack() as cleanup:
         adapters: dict[str, Any] = {}
-        # Full chunk coverage replaces prefix-only vectors. Existing receipts
-        # must rebuild even when the authoritative Markdown is unchanged.
-        identity: dict[str, Any] = {"schema": "managed-snapshots-v39-chunks-2000-overlap200"}
+        # Restore bounded legacy page embeddings. Prior generations must rebuild
+        # even when the authoritative Markdown is unchanged.
+        identity: dict[str, Any] = {"schema": "managed-snapshots-v38"}
         if _enabled(config, "SECOND_BRAIN_WIKI_GRAPH_INDEX", "NEO4J_URI"):
             from neo4j import GraphDatabase  # noqa: PLC0415
 
@@ -78,7 +62,6 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
             adapters["graph"] = Neo4jSnapshotAdapter(driver, database=database)
             identity["graph"] = [uri, user, database]
         if _enabled(config, "SECOND_BRAIN_WIKI_VECTOR_INDEX", "QDRANT_URL"):
-            _progress_logging()
             from qdrant_client import QdrantClient  # noqa: PLC0415
 
             from second_brain.core.config import settings  # noqa: PLC0415
@@ -88,7 +71,9 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
             url = config["QDRANT_URL"]
             supplied_dimension = config.get("SECOND_BRAIN_WIKI_VECTOR_DIMENSION", "").strip()
             dimension = int(supplied_dimension) if supplied_dimension else None
-            client = QdrantClient(url=url, api_key=config.get("QDRANT_API_KEY") or None, timeout=60)
+            client = QdrantClient(
+                url=url, api_key=config.get("QDRANT_API_KEY") or None, timeout=60
+            )
             cleanup.callback(_close_after_failure, client)
             adapters["vector"] = QdrantSnapshotAdapter(client, get_embedder(), dimension)
             identity["vector"] = [

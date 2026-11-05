@@ -210,9 +210,6 @@ physical iOS lifecycle or production HTTPS/auth operation.
 
 ## Manual presentation rehearsal
 
-For the current follow-up branch, use the bounded [2.0 guided walkthrough](review-20-walkthrough.md)
-and its explicit model/device checks. The detailed tour below remains a reference.
-
 Start with [Run locally](#run-locally), then follow the steps below in an actual
 browser. Choose explicitly whether the [paid provider](#take-a-short-tour) is
 enabled before beginning; the normal demo has no model access.

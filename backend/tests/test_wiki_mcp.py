@@ -27,7 +27,6 @@ async def test_managed_mcp_shares_rest_store_and_guidance(tmp_path: Path) -> Non
         "list_pages",
         "search_wiki",
         "get_graph",
-        "get_groups",
         "save_page",
         "delete_page",
         "get_history",

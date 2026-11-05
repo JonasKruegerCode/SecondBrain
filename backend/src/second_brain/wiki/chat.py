@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 from typing import Any, Protocol
 
@@ -13,11 +12,9 @@ from second_brain.wiki.store import WikiError, WikiStore
 MAX_MESSAGES = 12
 MAX_MESSAGE_CHARS = 4_000
 MAX_CONTEXT_CHARS = 20_000
-MAX_TOOL_CALLS = 24
-MAX_ROUNDS = 16
+MAX_TOOL_CALLS = 8
+MAX_ROUNDS = 5
 MAX_TOOL_RESULT_CHARS = 8_000
-MAX_TOOL_CONTEXT_CHARS = 64_000
-MAX_IDENTICAL_RESULTS = 3
 
 
 def _bounded_tool_json(result: dict[str, Any]) -> str:
@@ -195,8 +192,6 @@ class WikiChat:
                     "remember anything. Answer normally and proportionately. Base factual "
                     "wiki claims on pages you searched or read; say "
                     "when evidence is missing. Do not expose hidden reasoning."
-                    " Follow useful links and page cursors, but do not repeat unchanged "
-                    "lookups. Stop researching once you have enough evidence to answer."
                 ),
             },
             *self.validate_messages(raw_messages),
@@ -204,8 +199,6 @@ class WikiChat:
         sources: dict[str, dict[str, str]] = {}
         activity: list[str] = []
         calls = 0
-        tool_context_chars = 0
-        repeated: dict[tuple[str, str], int] = {}
         for _ in range(MAX_ROUNDS):
             reply = await self.provider.tool_chat(messages, self.tools(), max_tokens=1200)
             # JSON can decode unpaired surrogate escapes. Reject malformed model
@@ -264,26 +257,6 @@ class WikiChat:
                     raise WikiError("chat_limit", "The chat reached its wiki navigation limit.")
                 result = await asyncio.to_thread(self._execute, call, sources, activity)
                 tool_content = _bounded_tool_json(result)
-                # Tool IDs and JSON whitespace are not new research. Allow a
-                # reread, but stop cycles that keep returning identical evidence.
-                function = call.get("function", {})
-                try:
-                    signature = json.dumps(
-                        [function.get("name"), json.loads(function.get("arguments", "{}"))],
-                        sort_keys=True,
-                        ensure_ascii=True,
-                    )
-                except (AttributeError, TypeError, ValueError):
-                    signature = json.dumps(function, sort_keys=True, ensure_ascii=True)
-                key = (signature, hashlib.sha256(tool_content.encode("utf-8")).hexdigest())
-                repeated[key] = repeated.get(key, 0) + 1
-                if repeated[key] >= MAX_IDENTICAL_RESULTS:
-                    raise WikiError(
-                        "chat_limit", "The chat repeated the same wiki lookup without progress."
-                    )
-                tool_context_chars += len(tool_content)
-                if tool_context_chars > MAX_TOOL_CONTEXT_CHARS:
-                    raise WikiError("chat_limit", "The chat reached its wiki context limit.")
                 delivered = json.loads(tool_content)
                 if isinstance(delivered.get("markdown"), str) and delivered["markdown"]:
                     self._source(delivered, sources, "read")

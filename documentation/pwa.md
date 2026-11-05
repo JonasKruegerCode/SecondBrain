@@ -170,29 +170,3 @@ not require the new tab's `register()` promise to resolve before installation
 finishes, fabricate worker events or change application update state. This is
 a local lifecycle regression, not a physical-device installation test or an
 explanation of the separate intermittent first-install notice.
-
-## Focused CI diagnosis
-
-The existing **Managed wiki browser acceptance** workflow has a manual
-`profile=hotfix-pwa` choice. It runs the Chromium PWA/manifest cases and the
-separate native WebKit worker/update profile, retaining clearly named artifacts.
-Select the branch explicitly. `profile=full` is the default; pull requests always
-run the complete browser acceptance, regardless of labels. The optional repeated
-first-install diagnostic remains a separate deliberate input.
-
-This narrow path shortens diagnosis, not release acceptance. Keep backend,
-frontend and relevant HTTPS/auth stack checks for a PWA change. Actual Android
-installation still requires the device and deployment path; a passing manual
-profile does not establish it. The manual input becomes available through the
-workflow UI when the workflow definition is present on the default branch.
-
-All six workflows cancel obsolete executions for the same pull request. Main
-runs, including image publication, are not cancelled by this policy; the checks
-and publication triggers themselves remain unchanged.
-
-The protected-manifest regression also serves the actual product PNG icons and
-worker behind a synthetic cookie-auth boundary. Chromium decodes the 192/512
-icons, accepts the manifest and reports no CDP installability errors; anonymous
-requests remain 401. The fixture explicitly registers the worker, so it is
-separate from the real-app startup test. It does not reproduce Android WebAPK
-packaging or establish the cause of a physical installation failure.

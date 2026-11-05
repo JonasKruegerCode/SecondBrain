@@ -263,7 +263,7 @@ def test_worker_contains_private_exception_and_recovers(
     failed = threading.Event()
     original = delivery.run_once
 
-    def fault(**kwargs: Any) -> dict[str, Any]:
+    def fault() -> dict[str, Any]:
         failed.set()
         raise RuntimeError("private text and secret-token")
 

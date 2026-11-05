@@ -86,32 +86,20 @@ for (const width of [390, 1440]) {
       expect(await editor.evaluate((node: HTMLTextAreaElement) => [node.selectionStart, node.selectionEnd])).toEqual(selection);
       expect(await stored(await request.get(`/api/wiki/pages/${id}`))).toMatchObject({ markdown, revision: recreated.revision });
       expect((await stored(await request.get(`/api/wiki/pages/${id}/history`))).history).toEqual(historyBefore);
-      // Conflict feedback restores the caret and reveals the save footer.
-      // Let native focus/scroll anchoring settle before checking that image
-      // capture itself preserves the complete state. Keep the strict oracle.
-      await expect.poll(async () => {
-        const before = await captureState(page);
-        await page.evaluate(() => new Promise<void>(resolve =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-        return JSON.stringify(await captureState(page)) === JSON.stringify(before);
-      }).toBe(true);
       const beforeViewport = await captureState(page);
       await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-before-${width}.png`) });
-      const beforeFocusedCapture = await captureState(page);
-      // Full-page capture temporarily resizes the layout viewport, which can
-      // reveal a focused textarea's native caret after restoration. Capture the
-      // actual focused viewport instead; the strict state oracle stays intact.
-      await page.screenshot({ path: info.outputPath(`recreated-conflict-${width}.png`) });
-      const afterFocusedCapture = await captureState(page);
+      const beforeFullpage = await captureState(page);
+      await page.screenshot({ path: info.outputPath(`recreated-conflict-${width}.png`), fullPage: true });
+      const afterFullpage = await captureState(page);
       await page.screenshot({ path: info.outputPath(`recreated-conflict-viewport-after-${width}.png`) });
       const afterViewport = await captureState(page);
       console.info("[editor-capture] " + JSON.stringify({ width, beforeViewport,
-        beforeFocusedCapture, afterFocusedCapture, afterViewport }));
-      for (const state of [beforeViewport, beforeFocusedCapture, afterFocusedCapture, afterViewport]) {
+        beforeFullpage, afterFullpage, afterViewport }));
+      for (const state of [beforeViewport, beforeFullpage, afterFullpage, afterViewport]) {
         expect(state.skip.focused).toBe(false);
         expect(state.skip.bottom).toBeLessThanOrEqual(0);
       }
-      expect(afterFocusedCapture).toEqual(beforeFocusedCapture);
+      expect(afterFullpage).toEqual(beforeFullpage);
       expect(afterViewport).toEqual(beforeViewport);
 
       await other.goto(`/wiki/${id}`);

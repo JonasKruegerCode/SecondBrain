@@ -88,14 +88,11 @@ def test_snapshot_keeps_pages_and_graph_on_captured_commit(
     assert writer.snapshot()["revision"] != captured
 
 
-def test_navigation_graph_matches_full_content_snapshot(tmp_path: Path) -> None:
+def test_graph_delegates_to_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = WikiStore(tmp_path)
-    store.save_page("home", "# Home\nUses:: [[Harbor]] [[absent]] `[[hidden]]`", None, "home")
-    store.save_page("port", "# Harbor", None, "port")
-    assert store.graph() == store.snapshot()["graph"]
-    assert store.graph()["edges"] == [
-        {"source": "home", "target": "port", "type": "wikilink", "rel": "uses"}
-    ]
+    graph = {"revision": "captured"}
+    monkeypatch.setattr(store, "snapshot", lambda: {"graph": graph})
+    assert store.graph() is graph
 
 
 def test_galaxy_frontmatter_is_structured_without_changing_markdown(tmp_path: Path) -> None:
