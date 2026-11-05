@@ -1,5 +1,6 @@
 
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -49,3 +50,23 @@ def test_neo4j_execute_query(mock_neo4j: None) -> None:
 
     assert len(results) == 1
     assert results[0]["result"] == "success"
+
+
+def test_direct_neighbors_include_relation_direction(mock_neo4j: None) -> None:
+    store = Neo4jStore("bolt://dummy", "user", "pass")
+    rows = [
+        {
+            "id": "graph",
+            "title": "Knowledge Graph",
+            "rel": "uses",
+            "direction": "outgoing",
+        }
+    ]
+
+    with patch.object(store, "execute_query", return_value=rows) as mock_query:
+        result = store.get_neighbors_with_titles("second-brain", hops=1)
+
+    assert result == rows
+    query = mock_query.call_args.args[0]
+    assert "r.rel AS rel" in query
+    assert "startNode(r) = s" in query

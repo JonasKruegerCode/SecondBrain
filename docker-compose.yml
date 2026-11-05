@@ -8,6 +8,8 @@ services:
     ports:
       - "80:80"
     restart: unless-stopped
+    # Keep the old UI/API pair together until the managed migration is complete.
+    command: /bin/sh -c "cp /usr/share/nginx/html/legacy.html /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"
 
   backend:
     image: ghcr.io/jonaskruegercode/secondbrain-backend:latest

@@ -176,7 +176,9 @@ class Neo4jStore:
             query = (
                 "MATCH (s:WikiPage {id: $seed})-[r:LINKS_TO]-(n:WikiPage) "
                 "WHERE n.id <> $seed "
-                "RETURN DISTINCT n.id AS id, n.title AS title, r.rel AS rel"
+                "RETURN DISTINCT n.id AS id, n.title AS title, r.rel AS rel, "
+                "CASE WHEN startNode(r) = s THEN 'outgoing' ELSE 'incoming' END "
+                "AS direction"
             )
         else:
             query = (
