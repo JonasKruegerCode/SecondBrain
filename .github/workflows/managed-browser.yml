@@ -2,7 +2,7 @@ name: Managed wiki browser acceptance
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
     inputs:
       profile:

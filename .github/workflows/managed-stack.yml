@@ -2,7 +2,7 @@ name: Managed stack acceptance
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
