@@ -2,12 +2,14 @@ name: Frontend
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend.yml"
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+
+# Cancel obsolete PR checks; serialize channel publications without cancelling them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   REGISTRY: ghcr.io
@@ -80,9 +82,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: latest=false
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
