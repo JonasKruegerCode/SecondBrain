@@ -34,11 +34,5 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist",
-    rollupOptions: {
-      input: {
-        wiki: new URL("./index.html", import.meta.url).pathname,
-        legacy: new URL("./legacy.html", import.meta.url).pathname,
-      },
-    },
   },
 }));

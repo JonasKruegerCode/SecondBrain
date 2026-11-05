@@ -1,3 +1,7 @@
+> Historical design proposal. The separate old application has since been removed.
+> Use the [current installation](install-update.md) and [MCP contract](managed-mcp.md).
+> Old source links and migration proposals below describe the former baseline.
+
 # SecondBrain 2.0: managed wiki proposal
 
 Status: **design proposal, not an implemented or approved replacement**. Source review:

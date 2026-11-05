@@ -166,7 +166,7 @@ A stale/unaccepted prepared push can yield to a fresh incoming integration.
 
 Existing `VAULT_GIT_URL` (or `VAULT_GITHUB_URL`) configuration now enables this
 synchronized mode automatically, without a manual import or new enable flag.
-The same Settings/dotenv loader as the legacy profile reads `.env` / `../.env`,
+The shared Settings/dotenv loader retains the original precedence and reads `.env` / `../.env`,
 with process environment precedence. `VAULT_GIT_BRANCH` is retained; an unset
 branch uses advertised remote HEAD. A completely unborn remote without an
 advertised HEAD starts on `main`; set the branch to choose another name.

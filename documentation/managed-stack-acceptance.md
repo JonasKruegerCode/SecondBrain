@@ -1,4 +1,17 @@
-# Disposable managed Docker stack acceptance
+# Standard installation and stack acceptance
+
+The existing stack gate now starts from the root `docker-compose.yml` plus the
+explicit source-build overlay. It also installs the actual candidate images from
+an empty directory containing only the root Compose and copied env template.
+That image-only phase exercises the backend Dockerfile's default command, fresh
+empty start, current frontend, REST/MCP/auth, edits/history/conflicts/search and
+persistence. Candidate artifacts make a real disposable local-registry roundtrip;
+this is distinct from public GHCR publication and production deployment.
+Automatic Git startup/push/pull is checked with a synthetic private-network Git
+remote. The existing HTTPS/proxy/current-browser/import/backup/recovery and old/
+new image gates remain. Inspect successful CI output, not just unit tests of the
+runner, before treating any new Docker phase as passed.
+
 
 From the repository root, with Python 3, Docker Engine and Docker Compose v2
 available, run:

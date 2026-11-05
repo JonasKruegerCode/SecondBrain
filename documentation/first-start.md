@@ -111,14 +111,14 @@ neither starts services nor configures production services, remotes, or secrets.
 
 ## Container first start
 
-Use the project identity, protected `.env.wiki` and `wiki_compose` function from
-the [install/update procedure](install-update.md#keep-one-installation-identity).
-Docker builds install their own locked dependencies; the native Python/Poetry/Node
-setup above is not required for this route. Build before invoking the setup CLI:
+Use the project identity, protected `.env` and `wiki_compose` function from
+the [install/update procedure](install-update.md#existing-installations-and-breaking-changes).
+Container images include runtime dependencies; the native Python/Poetry/Node
+setup above is not required for this route. Pull the selected images before invoking the setup CLI:
 
 ```sh
 wiki_compose config --quiet
-wiki_compose build backend mcp frontend
+wiki_compose pull backend mcp frontend
 ```
 
 For an existing installation, preserve/backup content first; setup is not an
