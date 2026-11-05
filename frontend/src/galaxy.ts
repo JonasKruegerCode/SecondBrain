@@ -158,6 +158,10 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     selectedNode = null; selectedCluster = null; query = "";
     scale = 1; panX = 0; panY = 0;
   }
+  // A single roving tab stop keeps a large graph out of the page's tab sequence.
+  // Arrow keys move spatially; the list remains the complete alternative.
+  let rovingNode = selectedNode || (selectedCluster === null
+    ? linked[0]?.core || isolated[0]?.core : clusters[selectedCluster]?.core) || null;
   const uid = `galaxy-${Math.random().toString(36).slice(2, 9)}`;
   const name = (id: string) => byId.get(id)?.title || id;
   const clusterName = (cluster: Cluster) => cluster.label || name(cluster.core);
@@ -167,7 +171,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     (selectedNode !== null && id !== selectedNode && !adjacency.get(selectedNode)!.has(id));
   const color = (c: Cluster) => c.isolated ? "#a6afc2" : colors[c.id % colors.length];
   const button = (id: string) => `<button type="button" class="galaxy-page${selectedNode === id ? " is-selected" : ""}" data-node="${escape(id)}" aria-pressed="${selectedNode === id}"><i style="--cluster-color:${color(clusters[membership.get(id)!])}"></i><span>${escape(name(id))}<small>${adjacency.get(id)!.size} neighbor${adjacency.get(id)!.size === 1 ? "" : "s"}</small></span><b>→</b></button>`;
-  main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: list view opens first. Map view shows one core per constellation and counts only real links between them; choose a constellation to expand its pages.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button><button type="button" data-action="list" aria-pressed="${listOnly}">${listOnly ? "Map view" : "List view"}</button></div></div><p class="galaxy-density-note" hidden aria-live="polite"></p><div class="galaxy-stage"></div><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag to pan · Focus a star and press + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
+  main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: list view opens first. Map view shows one core per constellation and counts only real links between them; choose a constellation to expand its pages.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button><button type="button" data-action="list" aria-pressed="${listOnly}">${listOnly ? "Map view" : "List view"}</button></div></div><p class="galaxy-density-note" hidden aria-live="polite"></p><div class="galaxy-stage"></div><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag or touch to pan · Arrow keys move between stars · Enter to inspect · + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
   const root = main.querySelector<HTMLElement>(".galaxy")!;
   const refresh = root.querySelector<HTMLAnchorElement>(".galaxy-refresh")!;
   refresh.href = options.initialPage ? `/galaxy?page=${encodeURIComponent(options.initialPage)}` : "/galaxy";
@@ -182,6 +186,15 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const stage = root.querySelector<HTMLElement>(".galaxy-stage")!;
   const sidebar = root.querySelector<HTMLElement>(".galaxy-sidebar-content")!;
   const status = root.querySelector<HTMLElement>(".galaxy-status")!;
+  const syncRovingTabStop = () => {
+    const stars = [...stage.querySelectorAll<SVGGElement>(".galaxy-star")];
+    if (!stars.length) return;
+    if (!stars.some(star => star.dataset.node === rovingNode)) {
+      rovingNode = selectedNode && stars.some(star => star.dataset.node === selectedNode)
+        ? selectedNode : stars[0].dataset.node || null;
+    }
+    stars.forEach(star => star.setAttribute("tabindex", star.dataset.node === rovingNode ? "0" : "-1"));
+  };
   const bridgeLegend = root.querySelector<HTMLElement>(".galaxy-legend-bridge")!.parentElement!;
   root.querySelector(".galaxy-method p")!.append(document.createTextNode(" In the overview, dashed lines combine all real page links between each pair of constellations, including reciprocal links. Their counts do not imply links between the core pages. Select a page to inspect exact source, target and direction."));
   root.querySelector(".galaxy-mapnote span:last-child")!.append(document.createTextNode(" · Use the page list for closely spaced stars."));
@@ -218,8 +231,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     svg.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${originY + panY} ${width} ${viewHeight}`);
     if (!active) root.querySelector(".galaxy-breadcrumb span")!.textContent = crowded ? "Overview window" : "Galaxy overview";
     root.querySelector(".galaxy-mapnote span:last-child")!.textContent = crowded
-      ? "This window shows part of the map. Drag to pan · Focus a star and press + / − to zoom · Use the list for every page."
-      : "Drag to pan · Focus a star and press + / − to zoom · Use the page list for closely spaced stars.";
+      ? "This window shows part of the map. Drag or touch to pan · Arrow keys move between stars · Enter to inspect · + / − to zoom · Use the list for every page."
+      : "Drag or touch to pan · Arrow keys move between stars · Enter to inspect · + / − to zoom · Use the page list for closely spaced stars.";
     svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text").forEach(label => {
       const count = label.classList.contains("galaxy-count");
       label.style.fontSize = `${(count ? 11 : 14) / unit}px`;
@@ -425,12 +438,13 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
       const titleLetters = displayUnits(name(id), 28);
       const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
-      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title>${core ? '<path class="galaxy-core-reticle" aria-hidden="true" d="M -24 -6 V -14 H -16 M 16 -14 H 24 V -6 M 24 6 V 14 H 16 M -16 14 H -24 V 6"/>' : ""}<circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
+      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="${rovingNode === id ? 0 : -1}" data-node="${escape(id)}" aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Enter Space + -" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title>${core ? '<path class="galaxy-core-reticle" aria-hidden="true" d="M -24 -6 V -14 H -16 M 16 -14 H 24 V -6 M 24 6 V 14 H 16 M -16 14 H -24 V 6"/>' : ""}<circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
-    stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${shelfY + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
+    stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; arrow keys move between page stars and Enter inspects a page" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${shelfY + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
     stage.hidden = listOnly;
     root.classList.toggle("is-list-view", listOnly);
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
+    syncRovingTabStop();
     setView();
   }
   let searchMarkup: string | null = null;
@@ -472,7 +486,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     if (!byId.has(id)) return;
     const next = membership.get(id)!;
     if (selectedCluster !== next) { scale = 1; panX = panY = 0; }
-    selectedCluster = next; selectedNode = id; query = "";
+    selectedCluster = next; selectedNode = id; rovingNode = id; query = "";
     root.querySelector<HTMLInputElement>("input")!.value = "";
     render();
   };
@@ -499,13 +513,15 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       }
     }
     else if (target.dataset.cluster !== undefined) {
-      selectedCluster = Number(target.dataset.cluster); selectedNode = null; scale = 1; panX = panY = 0; render();
+      selectedCluster = Number(target.dataset.cluster); selectedNode = null; rovingNode = clusters[selectedCluster].core; scale = 1; panX = panY = 0; render();
       if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus();
       else if (!listOnly) revealMobile(root.querySelector<HTMLElement>(".galaxy-map")!);
     } else switch (target.dataset.action) {
       case "overview": {
         const previous = selectedCluster;
-        selectedCluster = selectedNode = null; scale = 1; panX = panY = 0; render();
+        selectedCluster = selectedNode = null;
+        rovingNode = previous === null ? rovingNode : clusters[previous].core;
+        scale = 1; panX = panY = 0; render();
         if (event.detail === 0 && previous !== null) {
           const cluster = sidebar.querySelector<HTMLElement>(`[data-cluster="${previous}"]`);
           const unlinked = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === clusters[previous].core);
@@ -537,7 +553,37 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   };
   const keydown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement;
-    // Only a focused map star owns these shortcuts. Preserve literal search
+    // Arrow navigation follows the nearest star in the requested half-plane.
+    // The SVG positions are the real page layout; no inferred graph edge is added.
+    if (target.matches(".galaxy-star") && !event.ctrlKey && !event.metaKey && !event.altKey &&
+      ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      const origin = (target as unknown as SVGGraphicsElement).transform.baseVal.consolidate()?.matrix;
+      if (origin) {
+        const direction = event.key === "ArrowLeft" ? { x: -1, y: 0 }
+          : event.key === "ArrowRight" ? { x: 1, y: 0 }
+          : event.key === "ArrowUp" ? { x: 0, y: -1 } : { x: 0, y: 1 };
+        let next: SVGGElement | null = null, best = Infinity;
+        for (const candidate of stage.querySelectorAll<SVGGElement>(".galaxy-star")) {
+          if (candidate === target) continue;
+          const point = candidate.transform.baseVal.consolidate()?.matrix;
+          if (!point) continue;
+          const dx = point.e - origin.e, dy = point.f - origin.f;
+          const forward = dx * direction.x + dy * direction.y;
+          if (forward <= .5) continue;
+          const lateral = Math.abs(dx * direction.y - dy * direction.x);
+          const score = forward + lateral * 1.75;
+          if (score < best) { best = score; next = candidate; }
+        }
+        if (next) {
+          event.preventDefault();
+          rovingNode = next.dataset.node || null;
+          syncRovingTabStop();
+          next.focus();
+        }
+      }
+      return;
+    }
+    // Only a focused map star owns zoom shortcuts. Preserve literal search
     // text, browser zoom chords and every other document control.
     if (target.matches(".galaxy-star") && !event.ctrlKey && !event.metaKey && !event.altKey &&
       (event.key === "+" || event.key === "=" || event.key === "-")) {
@@ -578,7 +624,14 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     // preferable to leaving keyboard focus outside the map indefinitely.
     if (!visible()) { scale = 1; panX = panY = 0; setView(); }
   };
-  const focusin = (event: FocusEvent) => revealStar(event.target as SVGGraphicsElement);
+  const focusin = (event: FocusEvent) => {
+    const target = event.target as SVGElement;
+    if (target.matches?.(".galaxy-star")) {
+      rovingNode = target.dataset.node || rovingNode;
+      syncRovingTabStop();
+    }
+    revealStar(target as SVGGraphicsElement);
+  };
   const input = () => {
     query = root.querySelector<HTMLInputElement>("input")!.value.trim().toLowerCase();
     // Searching changes highlights, not the snapshot geometry. Preserve the
