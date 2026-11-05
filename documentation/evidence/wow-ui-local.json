@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "base_commit": "492c8fdb273c05d6a1ff22faff8d8c93a8a632e5",
+  "status": "coherent UI draft; full PR CI pending",
+  "changes": [
+    "Continuous document-height light atmosphere and layered glass with nearly opaque article reading surface",
+    "Responsive reading rail and native section links",
+    "Real cluster orbital materials and open-sky layout for one through six groups on wide stages; narrow/many-group layout retained",
+    "Reframed atlas with enlarged canvas, glass controls and light inspector",
+    "Bounded press/pointer effects with stable real hit boxes and motion/forced-color guards",
+    "Worker release bytes changed so an installed app can offer its existing controlled update flow"
+  ],
+  "checks": {
+    "frontend_typecheck": "passed",
+    "production_build": "passed; JS118.02kB CSS53.71kB",
+    "node_cases": 13,
+    "browser_runs": [
+      {
+        "fixture": "real API and Vite synthetic Atlas; renderer-only group fixture explicitly identified in test",
+        "cases": 10,
+        "selection": "reading shell320/390/1440, press lifecycle, materials, orbit guards, open-sky composition, reading spread"
+      },
+      {
+        "fixture": "real API and Vite synthetic Atlas",
+        "cases": 23,
+        "selection": "graph mutation, navigation, forced colors, contrast, pointer lifecycle and galaxy zoom"
+      }
+    ],
+    "screenshots_self_inspected": [
+      "Desktop article",
+      "Desktop galaxy",
+      "390px galaxy"
+    ],
+    "browser": "Chrome Headless Shell157.0.8103.38; explicit local alternative to unavailable pinned156",
+    "service_cleanup": "confirmed for completed runs",
+    "scale": "normal 320-page synthetic API/browser scale suite passed; cleanup confirmed"
+  },
+  "limits": [
+    "No model calls, physical Android installation or production change",
+    "Not full Chromium/WebKit/registry update acceptance; these remain PR CI gates",
+    "No additional pages, links, graph groups, server endpoints or data persistence changes",
+    "No merge or image publication from this feature branch"
+  ]
+}

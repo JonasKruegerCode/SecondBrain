@@ -140,3 +140,43 @@ header nav a:active::after, .primary:active:not(:disabled)::after,
   header nav a::after, .primary::after, .galaxy-controls button::after { display: none; }
   .primary:active:not(:disabled) { box-shadow: none; }
 }
+
+/* The atlas is an observatory inside the light workspace. Its framing and
+   inspector use the same material as the reading sheet, without adding stars. */
+header { background: linear-gradient(115deg, #ffffffeb, #eff6ffb8 65%, #e8f9f2c9); }
+main > article { background: linear-gradient(135deg, #fffffff7, #fffffff0); box-shadow: inset 0 1px 0 #fff, 0 28px 90px #31567b12; }
+main > article > .eyebrow { padding-bottom: 22px; border-bottom: 1px solid #d9e5f0; }
+main > article > h1 { margin-top: 30px; }
+.primary { background: linear-gradient(125deg, #3278ed, #194fb8 70%, #2147a4); box-shadow: inset 0 1px 0 #ffffff73, inset 0 -2px 0 #102e6b33, 0 8px 22px #245dc438; }
+.primary:hover { background: linear-gradient(125deg, #286bd7, #1848a2 70%, #203b8b); box-shadow: inset 0 1px 0 #ffffff80, 0 10px 30px #245dc44a, 0 0 0 4px #5e9aef14; }
+/* Bound the bright coating so white button labels retain a dark blue backing. */
+.primary::before { background: radial-gradient(150px circle at var(--light-x, 50%) var(--light-y, 0%), #83b9ff40, transparent 80%); }
+.primary::after { background: radial-gradient(ellipse at var(--light-x, 50%) var(--light-y, 50%), #8abfff55, transparent 75%); }
+.galaxy-workspace { border-radius: 30px; }
+.galaxy-mapbar { margin: 16px 16px 0; padding: 12px 16px; border: 1px solid #a7d6ef30; border-radius: 18px; min-height: 60px; background: linear-gradient(115deg, #a4e3ee12, #b1baff0d); box-shadow: inset 0 1px 0 #ffffff12, 0 8px 24px #00000014; }
+.galaxy-controls button { min-height: 36px; border-radius: 11px; padding: 7px 11px; }
+.galaxy-stage { height: clamp(560px, 64vh, 720px); }
+.galaxy-stage::before { inset: 0; background: radial-gradient(ellipse at 18% 34%, #29aa8e45, transparent 46%), radial-gradient(ellipse at 82% 44%, #7864d454, transparent 48%), radial-gradient(ellipse at 50% 95%, #328cc938, transparent 56%); }
+.galaxy-mapnote { padding: 16px 22px; border-color: #b7d6f51c; background: #ffffff03; }
+.galaxy-method { padding: 0 22px 18px; background: #ffffff03; }
+.galaxy-sidebar { padding: 28px 22px; }
+.galaxy .galaxy-cluster { background: linear-gradient(125deg, #fff, #f3f8ff); border: 1px solid #d6e3f0; box-shadow: inset 0 1px 0 #fff, 0 4px 12px #244f7b06; }
+.galaxy .galaxy-cluster > i { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cluster-color) 14%, transparent); }
+.galaxy-sidebar :is(.galaxy-cluster:hover, .galaxy-page:hover, .galaxy-page.is-selected) { background: #e9f2ff; border-color: #99b8df; }
+.galaxy-selected-heading { padding-bottom: 18px; border-bottom: 1px solid #d5e2ee; }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .brand > span { display: inline-block; transition: transform .65s cubic-bezier(.18,.85,.3,1.3); }
+  .brand:hover > span { transform: rotate(90deg); }
+}
+@media (max-width: 550px) {
+  .galaxy-workspace { border-radius: 22px; }
+  .galaxy-mapbar { margin: 10px 10px 0; padding: 10px; border-radius: 14px; }
+  .galaxy-stage { height: 500px; }
+  .galaxy-controls button { padding: 7px 9px; }
+  .galaxy-sidebar { padding: 24px 18px; }
+}
+@media (forced-colors: active) {
+  .galaxy-mapbar, .galaxy-mapnote, .galaxy-method, .galaxy .galaxy-cluster, .primary, main > article { background: Canvas; border-color: CanvasText; box-shadow: none; }
+  .galaxy .galaxy-cluster > i { box-shadow: none; }
+  main > article > .eyebrow, .galaxy-selected-heading { border-color: CanvasText; }
+}

@@ -208,3 +208,35 @@ test("reactive light releases replaced reading controls and yields to keyboard f
   await page.keyboard.press("Tab");
   expect(await edit.evaluate(node => node.style.getPropertyValue("--light-x"))).toBe("");
 });
+
+for (const width of [390, 1440]) {
+  test(`glass controls keep their hit boxes throughout a real press (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/wiki/home");
+    const edit = page.locator("#edit");
+    await expect(edit).toBeVisible();
+    await edit.scrollIntoViewIfNeeded();
+    const before = await edit.boundingBox();
+    await edit.hover();
+    await page.mouse.down();
+    try {
+      await expect.poll(() => edit.evaluate(node => getComputedStyle(node, "::after").opacity)).not.toBe("0");
+      const pressed = await edit.boundingBox();
+      expect(pressed).toEqual(before);
+    } finally { await page.mouse.up(); }
+    await expect(page.locator("#editor")).toBeVisible();
+    await expect(edit).toHaveText("Cancel");
+    await edit.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose")).toBeVisible();
+    await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-stage svg")).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`glass-atlas-${width}.png`), fullPage: true, animations: "disabled" });
+    await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+    const control = page.locator('.galaxy-controls button').first();
+    await control.focus();
+    expect(await control.evaluate(node => getComputedStyle(node, "::after").display)).toBe("none");
+    await expect(control).toBeFocused();
+  });
+}
