@@ -564,7 +564,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
           : event.key === "ArrowUp" ? { x: 0, y: -1 } : { x: 0, y: 1 };
         let next: SVGGElement | null = null, best = Infinity;
         for (const candidate of stage.querySelectorAll<SVGGElement>(".galaxy-star")) {
-          if (candidate === target) continue;
+          if (candidate.dataset.node === target.dataset.node) continue;
           const point = candidate.transform.baseVal.consolidate()?.matrix;
           if (!point) continue;
           const dx = point.e - origin.e, dy = point.f - origin.f;
