@@ -699,3 +699,20 @@ for (const operation of ["reply", "retry", "send"] as const) {
     await peer.close();
   });
 }
+
+
+// Capture native engine evidence for the two flaky multi-tab/navigation paths.
+// No force clicks, retries, input changes or relaxed assertions: successful
+// traces are discarded, and only a failing synthetic run leaves an archive.
+const traceNativeCase = (title: string) => /overlapping native tab|failed first migration/.test(title);
+test.beforeEach(async ({ context, browserName }, info) => {
+  if (browserName === "webkit" && traceNativeCase(info.title)) {
+    await context.tracing.start({ screenshots: true, snapshots: true });
+  }
+});
+test.afterEach(async ({ context, browserName }, info) => {
+  if (browserName === "webkit" && traceNativeCase(info.title)) {
+    await context.tracing.stop(info.status !== info.expectedStatus
+      ? { path: info.outputPath("native-actionability.zip") } : {});
+  }
+});

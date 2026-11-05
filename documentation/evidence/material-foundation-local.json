@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "base_commit": "cd7ac0517b2eaff2e869026a5d61528498d39f45",
+  "status": "prepared UI foundation; not a completed Wow redesign",
+  "changes": [
+    "continuous document-height atmosphere",
+    "layered glass shell and readable article surface",
+    "fine-pointer frame-bounded light with reduced-motion/forced-color guards",
+    "nebula material and emphasis on existing galaxy cores; no graph or layout data changes"
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "production_build": "passed",
+    "real_api_browser_runs": [
+      {
+        "cases": 6,
+        "scope": "Home, galaxy graph, contrast and real views at320/390/1440"
+      },
+      {
+        "cases": 7,
+        "scope": "full-height atmosphere, dynamic reduced-motion/light, shell views, contrast/editor/galaxy"
+      },
+      {
+        "cases": 6,
+        "scope": "final reactive-light, text-spacing, keyboard, map resize/zoom and actual graph mutation"
+      }
+    ],
+    "browser": "Chrome Headless Shell157.0.8103.38, explicit alternative to unavailable locked156",
+    "screenshots": "article/galaxy desktop and article390 inspected; synthetic vault only",
+    "service_cleanup": true
+  },
+  "limits": [
+    "Not full Chromium/WebKit/device/provider/production acceptance",
+    "Full Wow galaxy composition and richer interactions remain work",
+    "PR21 and its reviewed branch head are preserved; this preparation has no ref publication"
+  ]
+}

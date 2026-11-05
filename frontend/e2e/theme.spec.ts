@@ -42,3 +42,213 @@ for (const width of [320, 390, 1440]) {
     }
   });
 }
+
+test("material atmosphere covers the full article and reactive light respects motion preferences", async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/wiki/home");
+  await expect(page.locator(".prose")).toBeVisible();
+  const coverage = await page.locator(".ambient").evaluate(node => {
+    const rect = node.getBoundingClientRect();
+    return { top: rect.top + scrollY, bottom: rect.bottom + scrollY, height: document.documentElement.scrollHeight };
+  });
+  expect(coverage.top).toBe(0);
+  // scrollHeight is an integer CSS-pixel extent, while DOMRect retains
+  // subpixel layout precision (e.g. 1570.84375 versus 1571 in WebKit).
+  expect(Math.ceil(coverage.bottom)).toBeGreaterThanOrEqual(coverage.height);
+  const button = page.locator(".toolbar .primary");
+  await button.hover();
+  await expect.poll(() => button.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => button.evaluate(node => node.style.getPropertyValue("--light-x"))).toBe("");
+  expect(await button.evaluate(node => getComputedStyle(node, "::before").display)).toBe("none");
+  await page.screenshot({ path: info.outputPath("material-long-article.png"), fullPage: true });
+});
+
+for (const width of [390, 1440]) {
+  test(`orbital instruments keep page targets and motion bounded (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/galaxy");
+    const stars = page.locator(".galaxy-star");
+    await expect(stars.first()).toBeVisible();
+    const initialIds = await stars.evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort());
+    expect(new Set(initialIds).size).toBe(initialIds.length);
+    const rings = page.locator(".galaxy-orbits");
+    expect(await rings.count()).toBeGreaterThan(0);
+    for (const ring of await rings.all()) {
+      await expect(ring).toHaveAttribute("aria-hidden", "true");
+      expect(await ring.evaluate(node => getComputedStyle(node).pointerEvents)).toBe("none");
+    }
+    expect(await page.locator(".galaxy-orbit-inner").evaluateAll(nodes => nodes.every(node => getComputedStyle(node).animationName === "none"))).toBe(true);
+    await page.screenshot({ path: info.outputPath(`orbital-overview-${width}.png`), fullPage: true, animations: "disabled" });
+    await page.locator(".galaxy-cluster").first().click();
+    await expect(page.locator(".galaxy-orbit-inner")).toHaveCount(1);
+    expect(await page.locator(".galaxy-orbit-inner").evaluate(node => getComputedStyle(node).animationName)).toBe("orbit-instrument");
+    await stars.first().focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading")).toBeVisible();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(rings).toBeHidden();
+    await page.emulateMedia({ reducedMotion: "no-preference", forcedColors: "active" });
+    await expect(rings).toBeHidden();
+    expect(await page.locator(".galaxy-region").first().evaluate(node => getComputedStyle(node).fill)).toBe("none");
+    // Activation deliberately moves focus to the inspector. Re-enter a star
+    // before checking its native high-contrast keyboard indicator.
+    await stars.first().focus();
+    await expect(stars.first()).toBeFocused();
+    expect(await page.locator(".galaxy-star:focus-visible .galaxy-hit").count()).toBeGreaterThan(0);
+  });
+}
+
+test("small overview composition preserves fixture identities and readable labels through layout changes", async ({ page }, info) => {
+  // Explicit renderer fixture, separate from the real API/graph mutation cases.
+  let count = 1;
+  await page.route("**/api/wiki/graph", route => {
+    const groups = Array.from({ length: count }, (_, id) => ({ id, core: `fixture-${id}-core`, members: [`fixture-${id}-core`, `fixture-${id}-page`], isolated: false, curated: true, label: `Fictional neighborhood ${id + 1}` }));
+    const nodes = [...groups.flatMap(group => group.members.map(id => ({ id, title: id }))), { id: "fixture-unlinked", title: "Fictional unlinked notebook" }];
+    const edges = groups.flatMap(group => [
+      { source: group.core, target: group.members[1], type: "link" },
+      ...(count > 1 ? [{ source: group.core, target: groups[(group.id + 1) % count].core, type: "link" }] : []),
+    ]);
+    return route.fulfill({ json: { revision: "synthetic-renderer-fixture", nodes, edges, groups: [...groups, { id: count, core: "fixture-unlinked", members: ["fixture-unlinked"], isolated: true, curated: false }] } });
+  });
+  for (count = 1; count <= 7; count++) {
+    await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-star")).toHaveCount(count * 2 + 1);
+    const ids = await page.locator(".galaxy-star").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort());
+    for (const width of [1440, 1100, 390, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await expect.poll(async () => page.locator(".galaxy-stage svg").evaluate(svg => {
+        const bounds = svg.getBoundingClientRect();
+        const labels = [...svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text")].map(node => node.getBoundingClientRect());
+        return labels.every(r => r.left >= bounds.left && r.right <= bounds.right && r.top >= bounds.top && r.bottom <= bounds.bottom)
+          && labels.every((r, i) => labels.slice(i + 1).every(b => r.right <= b.left || b.right <= r.left || r.bottom <= b.top || b.bottom <= r.top));
+      })).toBe(true);
+      expect(await page.locator(".galaxy-star").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort())).toEqual(ids);
+    }
+    if (count === 4) await page.screenshot({ path: info.outputPath("open-sky-four-neighborhoods.png"), fullPage: true });
+    await page.locator('.galaxy-star[data-node="fixture-unlinked"]').focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", "fixture-unlinked");
+  }
+});
+
+test("overview layout switches preserve the keyboard's actual page identity", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/galaxy");
+  const core = page.locator(".galaxy-star.is-core").first();
+  await expect(core).toBeVisible();
+  const id = await core.getAttribute("data-node");
+  await core.focus();
+  for (const width of [1100, 390, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const restored = page.locator(".galaxy-star");
+    await expect.poll(() => restored.evaluateAll((nodes, wanted) => nodes.some(node => node.getAttribute("data-node") === wanted && node === document.activeElement), id)).toBe(true);
+  }
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id!);
+});
+
+test("desktop reading spread keeps contents reachable without changing mobile section navigation", async ({ page, request }, info) => {
+  const id = `reading-spread-${crypto.randomUUID()}`;
+  const endpoint = `/api/wiki/pages/${id}`;
+  const markdown = "# Fictional field compendium\n\n" + Array.from({ length: 24 }, (_, i) => `## Field section ${i + 1}\n\n${"Synthetic observations, retained exactly as written. ".repeat(35)}\n\n`).join("");
+  const created = await request.post(endpoint, { data: { markdown, base_revision: null, request_id: crypto.randomUUID() } });
+  expect(created.ok()).toBe(true);
+  try {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`/wiki/${id}`);
+    const toc = page.locator(".article-toc");
+    const summary = toc.locator("summary");
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(toc.locator("details")).toHaveAttribute("open", "");
+    await page.evaluate(() => scrollTo(0, 1500));
+    await expect.poll(() => toc.evaluate(node => Math.round(node.getBoundingClientRect().top))).toBe(24);
+    const section = toc.getByRole("link", { name: "Field section 8", exact: true });
+    await section.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose h2").nth(7)).toBeFocused();
+    await expect(page.locator(".prose h2").nth(7)).toBeInViewport();
+    await page.screenshot({ path: info.outputPath("desktop-reading-spread.png"), fullPage: false });
+    await page.setViewportSize({ width: 1440, height: 360 });
+    expect((await toc.boundingBox())!.height).toBeLessThanOrEqual(312);
+    await page.emulateMedia({ forcedColors: "active" });
+    // An explicit CanvasText border must match the engine's system palette,
+    // not body ink: WebKit can emulate the media query without forcing text.
+    const systemInk = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "color:CanvasText;forced-color-adjust:none";
+      document.body.append(probe);
+      const ink = getComputedStyle(probe).color;
+      probe.remove();
+      return ink;
+    });
+    expect(await toc.evaluate(node => getComputedStyle(node).borderLeftColor)).toBe(systemInk);
+    await toc.getByRole("link", { name: "Field section 20", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose h2").nth(19)).toBeFocused();
+    await expect(page.locator(".prose h2").nth(19)).toBeInViewport();
+    await page.emulateMedia({ forcedColors: "none" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await toc.evaluate(node => getComputedStyle(node).position)).toBe("static");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await toc.getByRole("link", { name: "Field section 2", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose h2").nth(1)).toBeFocused();
+    await expect(page.locator(".prose h2").nth(1)).toBeInViewport();
+    expect((await (await request.get(endpoint)).json()).markdown).toBe(markdown);
+  } finally {
+    const current = await (await request.get(endpoint)).json();
+    expect((await request.delete(endpoint, { data: { base_revision: current.revision, request_id: crypto.randomUUID() } })).ok()).toBe(true);
+  }
+});
+
+test("reactive light releases replaced reading controls and yields to keyboard focus", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/wiki/home");
+  const edit = page.locator("#edit");
+  await edit.hover();
+  await expect.poll(() => edit.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
+  const previous = await edit.elementHandle();
+  await edit.click();
+  await expect(page.locator("#editor")).toBeVisible();
+  expect(await previous!.evaluate(node => ({ connected: node.isConnected, light: node.style.getPropertyValue("--light-x") }))).toEqual({ connected: false, light: "" });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await edit.hover();
+  await expect.poll(() => edit.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
+  await page.keyboard.press("Tab");
+  expect(await edit.evaluate(node => node.style.getPropertyValue("--light-x"))).toBe("");
+});
+
+for (const width of [390, 1440]) {
+  test(`glass controls keep their hit boxes throughout a real press (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/wiki/home");
+    const edit = page.locator("#edit");
+    await expect(edit).toBeVisible();
+    await edit.scrollIntoViewIfNeeded();
+    const before = await edit.boundingBox();
+    await edit.hover();
+    await page.mouse.down();
+    try {
+      await expect.poll(() => edit.evaluate(node => getComputedStyle(node, "::after").opacity)).not.toBe("0");
+      const pressed = await edit.boundingBox();
+      expect(pressed).toEqual(before);
+    } finally { await page.mouse.up(); }
+    await expect(page.locator("#editor")).toBeVisible();
+    await expect(edit).toHaveText("Cancel");
+    await edit.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose")).toBeVisible();
+    await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-stage svg")).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`glass-atlas-${width}.png`), fullPage: true, animations: "disabled" });
+    await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+    const control = page.locator('.galaxy-controls button').first();
+    await control.focus();
+    expect(await control.evaluate(node => getComputedStyle(node, "::after").display)).toBe("none");
+    await expect(control).toBeFocused();
+  });
+}
