@@ -78,7 +78,7 @@ def create_app(
         return JSONResponse({"status": "ok", "profile": "managed-wiki"})
 
     async def pages(request: Request) -> Response:
-        rows = await run_in_threadpool(store.list_pages)
+        rows = await run_in_threadpool(store.list_page_summaries)
         return JSONResponse(
             {"pages": [{k: v for k, v in p.items() if k != "markdown"} for p in rows]}
         )
@@ -153,6 +153,10 @@ def create_app(
 
     async def graph(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(store.graph))
+
+    async def groups(request: Request) -> Response:
+        snapshot = await run_in_threadpool(store.graph)
+        return JSONResponse({key: snapshot[key] for key in ("revision", "groups", "nodes")})
 
     async def backlinks(request: Request) -> Response:
         try:
@@ -290,6 +294,7 @@ def create_app(
             Route("/api/wiki/pages", pages),
             Route("/api/wiki/search", search),
             Route("/api/wiki/graph", graph),
+            Route("/api/wiki/groups", groups),
             Route("/api/wiki/resolve-links", resolve_links),
             Route("/api/wiki/index-status", index_status),
             Route("/api/wiki/delivery-status", delivery_status),

@@ -45,19 +45,73 @@ verify that configuration separately.
 
 `QdrantSnapshotAdapter(client, embedder, dimension)` uses a separate
 `managed_wiki_<generation>` collection for each attempt, never `wiki_pages`.
-The preview embeds only the first 2,000 characters of each page's Markdown,
-matching the legacy indexing bound. The complete Markdown remains authoritative
-and available through page reads; content beyond that prefix does not contribute
-to the page vector. This compatibility hotfix prevents oversized articles from
-failing the entire index build. Full long-article retrieval needs a later chunking
-implementation. The injected embedder's `embed(text)` method receives that prefix; vectors must
+Long articles are covered completely by chunks of at most 2,000 Unicode code
+points with 200 code points of overlap. This replaces the preview's prefix-only
+compatibility hotfix. Markdown and page revisions remain unchanged. Each point
+records its page ID/revision, snapshot revision, chunk index and source start/end
+offsets. Offsets count Python Unicode code points, not UTF-8 bytes or browser
+UTF-16 units. An empty article embeds its title while retaining an empty source
+range. The per-call character bound is not a provider-specific token guarantee;
+real provider limits and model quality still require separate acceptance.
+
+The injected embedder's `embed(text)` method receives each bounded chunk; vectors must
 match the configured dimension and contain only finite values. Pass `None` to
 infer the dimension from the actual page embeddings instead of a model-name
 guess. An empty auto-sized snapshot makes one explicit embedding probe. All vectors are
-validated before collection creation. Writes request `wait=True`, and a build
+validated before collection creation. Validated points use an anonymous temporary
+spool instead of retaining all vectors in memory. Writes use batches of at most
+64 points with `wait=True`, and a build
 returns only after they complete. An empty snapshot creates an empty searchable
 collection. `search(generation, query, limit=10)` returns `id`, page `revision`, and
-`score`, with cosine similarity and a limit in 1–1000.
+`score`, with cosine similarity and a limit in 1–1000 **articles**. Qdrant's grouped
+query (`group_by=id`, best hit per group) prevents many chunks of one long article
+from crowding other articles out of a limited result set. Existing single-point
+generations retain the same page ID payload and remain group-readable, but the
+new configuration identity requires a rebuild before they can represent complete
+chunk coverage. The pinned-server integration suite includes tail retrieval and
+article grouping; local embedded-client results alone do not establish hosted
+server compatibility.
+
+Configured vector workers emit bounded progress logs with page X/Y, chunks,
+embedding duration and elapsed build time. Failures log exception type and an
+HTTP status when available; page IDs, source text and raw provider messages are
+excluded. The configured standalone server enables these INFO messages unless a
+module logging level was explicitly set; existing application handlers are
+preserved. An embedding-progress line is not proof of a completed upload or
+published index receipt.
+
+Git startup still acquires existing content before serving, but it no longer
+performs synchronous embedding work before API startup. The lifecycle-owned
+delivery worker builds indexes afterwards. Content reads and lexical search stay
+available while semantic retrieval reports pending until the complete generation
+is ready. The lifecycle supervisor owns separate Git and index loops with their
+existing independent cross-process locks and separate retry backoffs. Holding an
+embedding request no longer holds the delivery lock: local edits can push and
+external changes can pull while an older index snapshot is building. Both loops
+are joined before their provider clients close, including partial startup failure.
+The explicit one-shot delivery command still performs both jobs synchronously.
+
+New vector generations can reuse validated points from the last ready generation
+of the same configuration. Page ID, chunk position/source range and source hash
+must match; the reused vector must have a valid shape. The earlier chunk format
+without hashes can only be reused at an identical page revision. Changed chunks
+are embedded; every copied point receives fresh page/snapshot provenance. The
+old collection remains immutable. A small append can therefore embed only its
+changed final chunk, and an identical-text revision can reuse all its vectors.
+
+The last ready source is recorded separately in the existing SQLite index ledger
+and protected during pruning. A failed new attempt does not lose that source;
+restart/retry can still reuse it without publishing a partial generation. Config
+changes and explicit `--rebuild` deliberately embed everything. A missing source
+collection falls back to a full build; a source read failure aborts rather than
+silently spending model calls on an unavailable Qdrant backend.
+
+This is incremental **embedding work**, not in-place mutation of a live index:
+each new generation still scans a content snapshot, reads reusable provider
+vectors and uploads a complete isolated collection. Graph generations still
+rebuild. Idle current-index polling skips full snapshot derivation. Full chunk
+coverage can require more model calls and temporary disk space than the old
+prefix-only index; cold builds and forced rebuilds retain those costs.
 
 Auto-sized searches read the dimension from the persisted collection and validate
 the actual query vector against it, including after a process restart. Provider

@@ -1,0 +1,93 @@
+{
+  "schema": 1,
+  "date": "2026-11-04",
+  "base_commit": "abff78e901244a4c44c3bb65e2a1564783947116",
+  "changes": {
+    "chat": {
+      "tool_calls": 24,
+      "model_rounds": 16,
+      "tool_context_characters": 64000,
+      "per_tool_result_characters": 8000,
+      "identical_lookup_and_result_stop": 3,
+      "existing_http_timeout_seconds": 55,
+      "notes": "Read-only capabilities, source eligibility, conversation storage and provider secrecy unchanged."
+    },
+    "search": "Promote exact casefolded/trimmed page ID or title within returned semantic candidates; preserve scores, other ordering, revision checks and candidate limits. No unseen candidate is injected.",
+    "revision_explanation": "Page revision label and Git-history explanation distinguish saved content identity from Git commits."
+  },
+  "ci_findings_at_base": {
+    "backend_run": 41773273591,
+    "failure": "390px screenshot state comparison differed by 6px scroll after conflict feedback. Existing strict capture equality and revision/draft/history assertions retained; wait for native focus/scroll anchoring to settle before capture.",
+    "browser_run": 41773273666,
+    "passed": 496,
+    "failed": 1,
+    "other_workflows": "Frontend, pinned indexes, stack and SSH all passed. Native WebKit storage/preference slice passed before the Chromium full suite."
+  },
+  "browser_runs": [
+    {
+      "run": "20261104T051453Z",
+      "status": "passed",
+      "seconds": 16.484,
+      "selection": {
+        "grep": "a stale editor cannot overwrite",
+        "repeat_each": 3
+      },
+      "services_cleaned_up": true
+    },
+    {
+      "run": "20261104T051656Z",
+      "status": "passed",
+      "seconds": 24.144,
+      "selection": {
+        "grep": "a stale editor cannot overwrite|chat Enter submits|bounded chat history keeps one conversation|chat Markdown stays|chat has a longer bounded|concurrent revision conflict",
+        "repeat_each": 2
+      },
+      "services_cleaned_up": true
+    },
+    {
+      "run": "20261104T052000Z",
+      "status": "passed",
+      "seconds": 9.534,
+      "selection": {
+        "grep": "light shell keeps|search finds a unique real page|article contents links focus|history errors can be retried",
+        "repeat_each": 1
+      },
+      "services_cleaned_up": true
+    }
+  ],
+  "synthetic_backend_checks": [
+    "Ten distinct real wiki pages read in eleven model rounds with source attribution",
+    "Equivalent JSON argument ordering/whitespace and fresh tool IDs do not evade repeat protection",
+    "Changed evidence is not counted as an identical-result loop",
+    "25-call batch executes at most24 tools",
+    "Cumulative tool context is bounded",
+    "Exact identity ranking shared by REST/MCP with original provider scores and unchanged candidate boundaries"
+  ],
+  "validation": {
+    "backend_final": {
+      "status": "passed",
+      "selection": "not integration",
+      "junit_counts": {
+        "tests": 1826,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "notes": "Final source tree; JUnit counts include plugin-reported cases/subtests. Container/provider integration not run locally."
+    },
+    "frontend": "Typecheck and production build passed; existing legacy-bundle size warning remains",
+    "lint": "Ruff src/tests passed",
+    "typing": "Strict Mypy160 files passed",
+    "browser": "18 selected repeated cases and6 final reading/search/history/shell cases passed; initial unmodified editor case also passed6 local repetitions"
+  },
+  "visual_review": [
+    "Desktop article with Page revision label",
+    "Narrow preserved editor draft and conflict feedback; strict viewport state, not full-page image, establishes skip-link visibility"
+  ],
+  "limits": [
+    "Synthetic scripted model responses; no paid provider/model-quality validation",
+    "Alternative Chromium153; current CI confirmation and WebKit/device/production acceptance remain separate",
+    "Repeat protection stops repeated exact argument/result pairs, not arbitrary semantic paraphrases; other budgets still bound these",
+    "Remaining group curation/guidance, CI streamlining and coherent final guided acceptance are not complete"
+  ]
+}

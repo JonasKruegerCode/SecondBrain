@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 
-# Cancel obsolete PR checks; serialize channel publications without cancelling them.
+# Retain only the newest PR validation; never cancel main image publication.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

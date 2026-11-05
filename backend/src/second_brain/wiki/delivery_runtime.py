@@ -103,14 +103,16 @@ def _synchronized_delivery(
             delivery = DeliveryCoordinator(
                 store, indexes, remote, expected_remote_revision=observed, synchronize=True
             )
-        delivery.indexes.run_once()
+        # Content is ready after Git bootstrap. Provider work belongs to the
+        # lifecycle worker, so a slow embedding build cannot delay API startup.
         return delivery
 
 
 class DeliveryWorker:
     """Signals are hints: pending work is reconstructed from durable heads/receipts.
 
-    One worker per transport process is safe: coordinator locks serialize jobs.
+    Separate Git/index loops per transport are safe: independent coordinator
+    locks serialize each kind of work across processes, not with each other.
     Polling also discovers writes made through the other process. Shutdown waits
     for in-flight provider/Git work before closing clients; provider timeout
     configuration still determines how long a graceful stop can take.
@@ -121,8 +123,11 @@ class DeliveryWorker:
             raise ValueError("Delivery interval must be positive.")
         self.delivery, self.interval = delivery, interval
         self._wake = threading.Event()
+        self._index_wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._index_thread: threading.Thread | None = None
+        self._index_error: str | None = None
         self.last_error: str | None = None
 
     def start(self) -> None:
@@ -130,29 +135,49 @@ class DeliveryWorker:
             raise RuntimeError("Delivery worker already started.")
         self._stop.clear()
         self.last_error = None
+        self._index_error = None
         self._thread = threading.Thread(target=self._run, name="wiki-delivery", daemon=True)
+        self._index_thread = threading.Thread(
+            target=self._run_indexes, name="wiki-indexes", daemon=True
+        )
         try:
             self._thread.start()
+            self._index_thread.start()
         except Exception:
+            self._stop.set()
+            self.notify()
+            if self._thread.is_alive():
+                self._thread.join()
+            if self._index_thread.is_alive():
+                self._index_thread.join()
             self._thread = None
+            self._index_thread = None
             raise
 
     def notify(self) -> None:
         self._wake.set()
+        self._index_wake.set()
 
     def stop(self) -> None:
         self._stop.set()
-        self._wake.set()
+        self.notify()
         if self._thread is not None:
             self._thread.join()
             self._thread = None
+        if self._index_thread is not None:
+            self._index_thread.join()
+            self._index_thread = None
 
     def status(self) -> dict[str, Any]:
         return {
             **self.delivery.status(),
             "background_worker": {
-                "state": "error" if self.last_error else "running" if self._thread else "stopped",
-                "error": self.last_error,
+                "state": "error"
+                if self.last_error or self._index_error
+                else "running"
+                if self._thread
+                else "stopped",
+                "error": self.last_error or self._index_error,
             },
         }
 
@@ -161,10 +186,8 @@ class DeliveryWorker:
         while not self._stop.is_set():
             self._wake.clear()
             try:
-                result = self.delivery.run_once()
-                failed = result["remote"]["state"] == "error" or any(
-                    value["state"] == "error" for value in result["indexes"].values()
-                )
+                result = self.delivery.run_once(index_work=False)
+                failed = result["remote"]["state"] == "error"
                 failures = min(5, failures + 1) if failed else 0
                 self.last_error = None
             except Exception:
@@ -172,6 +195,20 @@ class DeliveryWorker:
                 self.last_error = "delivery_unavailable"
                 failures = min(5, failures + 1)
             self._wake.wait(min(60, self.interval * (2**failures)))
+
+    def _run_indexes(self) -> None:
+        failures = 0
+        while not self._stop.is_set():
+            self._index_wake.clear()
+            try:
+                result = self.delivery.indexes.run_once()
+                failed = any(value["state"] == "error" for value in result["indexes"].values())
+                failures = min(5, failures + 1) if failed else 0
+                self._index_error = None
+            except Exception:
+                self._index_error = "index_unavailable"
+                failures = min(5, failures + 1)
+            self._index_wake.wait(min(60, self.interval * (2**failures)))
 
 
 def main() -> None:
