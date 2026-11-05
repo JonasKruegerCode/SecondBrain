@@ -318,8 +318,12 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
           coreLabel.style.visibility = "hidden";
         }
       }
+      // clientWidth/clientHeight are integer-rounded; the SVG screen matrix
+      // retains fractional CSS pixels. Size the target from the rendered scale
+      // so rounding cannot turn a nominal 44px touch target into a sub-44px one.
+      const renderedUnit = svg.getScreenCTM()?.a || unit;
       svg.querySelectorAll<SVGCircleElement>(".galaxy-hit").forEach(hit => {
-        hit.setAttribute("r", String(Math.min(22 / unit, hitSpacing * .45)));
+        hit.setAttribute("r", String(Math.min(22 / renderedUnit, hitSpacing * .45)));
       });
     }
   };
