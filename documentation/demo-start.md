@@ -2,7 +2,7 @@
 
 The Lantern Bay field atlas is a standalone sample profile with twelve invented pages. It connects astronomy, coastal ecology, food traditions, and archival history through fictional projects and people. Every page identifies its content as fictional. It contains no user records, and does not require a remote Git repository, an LLM, or the legacy Neo4j/Qdrant services.
 
-Use this profile to try the core editable wiki before attempting a migration of an existing vault. The legacy memory service remains separate; this procedure does not migrate or import its data.
+Use this profile to try the core editable wiki before attempting a migration of an existing vault. The previous ingestion application has been removed; this procedure does not import existing data.
 
 The demo launcher disables Vite hot reload so restarting its services does not automatically reload an open tab and discard an unsaved draft. After changing frontend source, reload the demo deliberately; ordinary `cd frontend && npm run dev` retains hot reload. An intentional browser reload or tab loss can still discard unsaved editor text: save first. This is separate from saved article history and the persistent personal start-page preference.
 

@@ -197,13 +197,11 @@ apps, Safari, soft keyboards and screen readers.
 
 ### Authentication and compatibility
 
-Managed REST lives under `/api/wiki`; direct managed MCP exposes ten tools and
+Managed REST lives under `/api/wiki`; direct managed MCP exposes eleven tools and
 `wiki://guidance`. Read guidance before editing. Missing-page `get_page` calls
 return `isError:true` with matching structured/text JSON containing `not_found`,
-a message and the requested ID. Existing-page reads and REST 404 are unchanged. The primary managed profile
-excludes `remember/recall`; the optional
-[legacy profile](legacy-memory-profile.md) remains isolated. Never point legacy
-and managed writers at the same vault.
+a message and the requested ID. Existing-page reads and REST 404 are unchanged. The sole application excludes `remember/recall`; the old application is removed.
+See [current installation](install-update.md) before upgrading old defaults.
 
 Private responses use `no-store`. The browser uses same-origin proxy
 authentication; it does not receive the MCP Bearer key. MCP has a separate static
@@ -295,7 +293,7 @@ Run only checks relevant to the change; these commands are separate invocations:
 
 | Check | Command from repository root | Boundary |
 | --- | --- | --- |
-| Backend lint/types/local tests and frontend types/build | `make check` | Excludes integration tests and legacy Git-sync test |
+| Backend lint/types/local tests and frontend types/build | `make check` | Excludes opt-in integration tests |
 | Frontend proxy/access/PWA unit contracts | `(cd frontend && npm run test:proxy && npm run test:dev-security && npm run test:pwa)` | Additional to Make check |
 | Real API/Vite and full Chromium | `SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"` | New fictional vault, no model |
 | Empty start and actual service restart | `SECOND_BRAIN_WIKI_API_KEY= make acceptance-first-start PYTHON="$WIKI_PYTHON"` | Owned empty vault |

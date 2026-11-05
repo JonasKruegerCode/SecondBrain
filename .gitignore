@@ -2,6 +2,7 @@
 .env
 .env.wiki
 .env.wiki.inspect
+.env.inspect
 __pycache__
 .vscode
 

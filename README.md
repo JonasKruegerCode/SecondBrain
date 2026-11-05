@@ -1,305 +1,107 @@
 # SecondBrain
 
-SecondBrain 2.0 is a self-hosted, agent-maintained personal wiki. Markdown and
-Git are the source of truth; people read and edit the same revisioned pages
-through a bright web interface, while agents use direct MCP tools for exact
-reads, search, graph navigation and conflict-safe edits.
+A self-hosted, agent-maintained personal wiki. Markdown and Git are the source of
+truth. The web app and direct MCP tools read and edit the same revisioned pages.
 
-> The `secondbrain-2.0` branch is a tested development preview, not the final
-> 2.0 release. Production migration and deployment still require the checks
-> listed in [Current limits](#current-limits).
+## Install with Docker
 
-## What works now
+Requires **Docker Engine with Compose v2**. No host Python, Poetry, Node, source
+checkout, local build directory or external startup script is needed.
 
-- Wiki-first Home, safe Markdown articles, expected wikilinks and direct URLs
-- revision-aware editor, local Git history and durable retry receipts
-- lexical search plus optional Qdrant semantic search and Neo4j graph retrieval
-- curated knowledge galaxy with real links, clusters, bridges and large-vault fallback
-- bounded read-only OpenRouter chat with visible sources and browser-local conversations
-- direct stdio or HTTP MCP with ten deterministic wiki tools and editing guidance
-- empty, fictional-template or existing-Git first start
-- explicit Git delivery, content export, and verified portable backup/restore
-- installable online-first PWA without caching private wiki or chat data
+1. Download the Compose file and environment template into one directory:
 
-The managed MCP intentionally has **no `remember` or `recall` tool**. Agents
-read relevant pages, make an exact revision-guarded edit, and verify the result.
-The earlier LLM-ingestion memory service remains available only as a separate
-[legacy compatibility profile](documentation/legacy-memory-profile.md).
-Never point managed and legacy writers at the same vault.
+   ```sh
+   mkdir secondbrain && cd secondbrain
+   curl -fLO https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/docker-compose.yml
+   curl -fsSL https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/.env.example -o .env
+   ```
 
-## Try the fictional demo
+2. Edit `.env`: replace the MCP secret, select any optional Git repository and
+   model/index providers, and set the actual MCP proxy Host/Origin allowlists.
+   A new instance works without Git, databases or a model key; it starts empty.
+   A configured Git URL pulls the selected Markdown folder automatically. The
+   default folder is `1_knowledge/wiki`; set `SECOND_BRAIN_WIKI_GIT_PREFIX=` for
+   Markdown at the repository root.
 
-Prerequisites are Linux or WSL, Python 3.12, Poetry 2.1.3, Git, Make, Node 20+, and
-the locked backend/frontend dependencies. Run these commands from the repository
-root; the subshells keep the terminal there:
+3. Start the published images:
 
-```sh
-git clone https://github.com/JonasKruegerCode/SecondBrain.git
-cd SecondBrain
-git switch secondbrain-2.0
-(cd backend && poetry sync --no-interaction)
-(cd frontend && npm ci)
-WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-SECOND_BRAIN_WIKI_API_KEY= make demo PYTHON="$WIKI_PYTHON"
-```
+   ```sh
+   docker compose pull
+   docker compose up -d --wait
+   ```
 
-Open <http://127.0.0.1:5173>. The command creates or reopens an isolated
-12-page fictional Lantern Bay vault under ignored `.demo/` storage and starts
-the real API and frontend. It requires no remote Git, database, embedding model
-or LLM key and never seeds an existing nonempty vault.
+Open <http://127.0.0.1:8080>. HTTP MCP is at
+<http://127.0.0.1:3001/mcp>. `WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` change host
+ports; an existing `MCP_PORT` is the fallback. Both ports bind to loopback.
+Put the frontend and its same-origin `/api/` behind your authenticated HTTPS
+proxy for remote use. Configure the existing MCP proxy's upstream to its
+published host port and forward its separate key. See [install/update](documentation/install-update.md)
+for Docker-network proxy routing, retained-image recovery and existing volumes.
 
-The default demo disables external model calls. Stop the running demo with Ctrl+C
-before restarting it with deliberate paid OpenRouter access on the same ports:
+**Existing installations:** this version removes the old application and changes
+the backend image's default command. Before updating `latest`, read the
+[breaking-change notes](documentation/install-update.md#existing-installations-and-breaking-changes).
+An image update does not replace your Compose file. Preserve the actual volume,
+vault subdirectory, project identity, authentication and proxy routes.
 
-```sh
-SECOND_BRAIN_WIKI_API_KEY= OPENROUTER_API_KEY=... PYTHONPATH=backend/src "$WIKI_PYTHON" \
-  scripts/run-wiki-demo.py --with-openrouter
-```
+## One current application
 
-Use `"$WIKI_PYTHON" scripts/run-wiki-demo.py --help` for custom vault options. See the
-[demo tour](documentation/demo-start.md) and
-[development guide](documentation/managed-wiki-development.md) for the complete
-commands and verification boundary.
+The standard stack has three services:
 
-To rehearse the normal acceptance path in one command, use a fresh disposable
-vault and the real local API/frontend:
-
-```sh
-(cd frontend && npx playwright install --with-deps chromium)
-SECOND_BRAIN_WIKI_API_KEY= make acceptance PYTHON="$WIKI_PYTHON"
-```
-
-This waits for both services, runs the normal Chromium browser suites, stops them even
-on failure, and writes ignored logs plus a small JSON evidence record under
-`.demo/acceptance/`. It disables external model calls and never targets an
-existing or personal vault. Real OpenRouter, container, HTTPS and physical-device
-checks remain separate release gates.
-
-To check the empty first-start path and persistence across an actual API/frontend
-restart, run `SECOND_BRAIN_WIKI_API_KEY= make acceptance-first-start PYTHON="$WIKI_PYTHON"`.
-It starts with zero pages, creates only fictional test content, exercises the
-editor/navigation/graph, stops both services and starts them again on the same
-owned vault. The second browser phase checks the saved start page, exact content
-and revisions. Scripted transport delay/failure checks are separate from real
-outage evidence. Success removes the temporary vault and browser-state files;
-CI uploads only structural results, browser logs and synthetic screenshots.
-
-For explicit local Git import, run
-`SECOND_BRAIN_WIKI_API_KEY= make acceptance-import PYTHON="$WIKI_PYTHON"`. It prepares an empty
-repository and the public atlas with two original commits, imports both through
-the setup CLI, and checks real article links, search, history and galaxy views.
-A browser edit and saved start page must survive an identical import retry and
-an API/frontend restart. New first-start imports and template seeding must refuse
-the populated vault; the source repository must remain unchanged. All inputs are
-owned and disposable; this does not validate a private migration or remote clone.
-
-When a real key is available, the separate paid-provider gate checks two
-bounded turns, required page reads, visible sources, proportional answers and
-the read-only vault boundary against the fictional fixture. It records only
-structural evidence (never answers, prompts, credentials or page content):
-
-```sh
-OPENROUTER_API_KEY=... make acceptance-openrouter PYTHON="$WIKI_PYTHON"
-```
-
-This command deliberately requires both the key and an explicit paid-provider
-flag supplied by the Make target. It does not replace browser, device or hosted
-infrastructure acceptance.
-
-## Choose a persistent first start
-
-The managed wiki requires an explicit destination and supports empty, fictional
-template, or local Git import. Use the prepared backend environment from above:
-
-```sh
-export PYTHONPATH="$PWD/backend/src"
-
-"$WIKI_PYTHON" -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode empty
-# or:
-"$WIKI_PYTHON" -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode template
-# or:
-"$WIKI_PYTHON" -m second_brain.wiki.setup --vault /srv/secondbrain/vault --mode import \
-  --source /absolute/path/to/local-git-clone --prefix path/to/wiki \
-  --request-id first-import
-```
-
-No mode overwrites a populated wiki. Import validates and preserves the source
-history without copying credentials or remote configuration. Full rules:
-[first-start profiles](documentation/first-start.md) and
-[controlled Git import](documentation/wiki-import.md).
-
-## Run the managed services
-
-### Native
-
-From the repository root, select the same backend environment in each terminal.
-
-```sh
-WIKI_PYTHON="$(cd backend && poetry env info --executable)"
-export PYTHONPATH="$PWD/backend/src"
-export SECOND_BRAIN_WIKI_VAULT=/srv/secondbrain/vault
-
-# Wiki REST API for the web UI
-"$WIKI_PYTHON" -m uvicorn second_brain.wiki.api:app_factory --factory \
-  --host 127.0.0.1 --port 8000
-
-# In another terminal: local stdio MCP
-"$WIKI_PYTHON" -m second_brain.wiki.mcp
-```
-
-For Streamable HTTP MCP, use the explicit factory and a server-side Bearer key:
-
-```sh
-SECOND_BRAIN_WIKI_API_KEY=replace-with-a-secret \
-"$WIKI_PYTHON" -m uvicorn second_brain.wiki.mcp:http_app_factory --factory \
-  --host 127.0.0.1 --port 3001
-```
-
-The [managed MCP guide](documentation/managed-mcp.md) documents Host/Origin
-allowlists, reverse-proxy use, TLS and the editing contract.
-
-### Docker Compose preview
-
-Copy the synthetic configuration template, set a real MCP secret, then build:
-
-```sh
-cp .env.wiki.example .env.wiki
-docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
-```
-
-The web UI is bound to <http://127.0.0.1:8080> and HTTP MCP to
-<http://127.0.0.1:3001/mcp>. Both share only the independent
-`managed_wiki` volume. Put an authenticated HTTPS reverse proxy in front
-before remote exposure. The API deliberately does not receive the MCP Bearer
-key, so browser access remains same-origin and can retain the deployment's
-existing proxy authentication.
-
-This Compose start is empty by default. To choose fictional template or local Git
-content directly in that named volume, follow the explicit
-[container first-start commands](documentation/first-start.md#container-first-start)
-before starting services. Native setup into a host directory does not seed the
-container volume. Docker source builds need the complete reviewed checkout and
-Docker/Compose, without a native Python/Poetry/Node installation. PR builds do not
-publish branch images; use source builds unless exact reviewed image artifacts
-are actually available, as described in the install/update guide.
-
-The backend healthcheck is a read-only readiness probe of the local bare Git
-authority. An empty vault is healthy; after publication, an unavailable object
-store or unreadable current commit makes the backend unhealthy instead of
-allowing the frontend to start against a false-positive `ok` response.
-
-For a containerized reverse proxy on an existing `proxy-network`, attach only
-the public-facing services with a local override:
-
-```yaml
-services:
-  frontend:
-    networks:
-      default: {}
-      proxy-network:
-        aliases: [secondbrain-wiki-web]
-  mcp:
-    networks:
-      default: {}
-      proxy-network:
-        aliases: [secondbrain-wiki-mcp]
-
-networks:
-  proxy-network:
-    external: true
-    name: proxy-network
-```
-
-Route the wiki host to `secondbrain-wiki-web:80` and the MCP host to
-`secondbrain-wiki-mcp:3001`. Choose unique aliases for each installation on the
-shared proxy network; generic service names can collide with other projects.
-Keep the existing proxy password on the wiki host, configure HTTPS, and add the exact MCP
-host/origin to `.env.wiki`; do not expose either upstream directly.
-
-Disposable image build/start, HTTPS/auth, restart and independent-volume recovery
-have separate [CI acceptance](documentation/managed-stack-acceptance.md). Inspect
-the reviewed revision's actual run; this does not accept your production proxy,
-private credentials, migration or off-host recovery.
-Use [backup and restore](documentation/backup-restore.md) before migration.
-For a stable project/volume identity, container backup, reviewed image/source
-selection and controlled recovery, follow the [install/update procedure](documentation/install-update.md).
-
-## Managed MCP tools
-
-| Tool | Purpose |
-| --- | --- |
-| `get_page` | Read exact Markdown and its revision |
-| `list_pages` | List stable IDs, titles and metadata |
-| `search_wiki` | Lexical, semantic or bounded GraphRAG retrieval |
-| `get_graph` | Read explicit links from one content snapshot |
-| `get_neighbors` | Expand explicit graph neighbors with limits |
-| `save_page` | Save complete Markdown against the revision that was read |
-| `delete_page` | Delete one reviewed revision |
-| `get_history` | Read recent local Git history for a page |
-| `get_index_status` | Inspect graph/vector progress independently |
-| `get_delivery_status` | Inspect publication, index and cached Git delivery state |
-
-Read the `wiki://guidance` MCP resource before editing. Lost responses are
-retried with the same `request_id` and payload; revision conflicts require a
-fresh read and deliberate reconciliation.
-
-## Storage and optional services
-
-| Layer | Required | Role |
+| Service | Runtime | Access |
 | --- | --- | --- |
-| Managed vault | Yes | Bare local Git repository containing Markdown snapshots and receipts |
-| SQLite ledgers | Created locally | Durable index/delivery progress |
-| Neo4j | Optional | Published graph snapshot |
-| Qdrant + embedder | Optional | Semantic retrieval |
-| Remote Git | Optional | Guarded snapshot delivery |
-| OpenRouter | Optional | Read-only wiki chat |
+| `frontend` | Current Wiki-first app, Nginx and same-origin API proxy | loopback 8080 → container 80 |
+| `backend` | Managed REST API and independent Git/index delivery loops | internal 8000 |
+| `mcp` | Managed Streamable HTTP MCP, same store and retrieval services | loopback 3001 → container 3001 |
 
-Core page access, editing, history, lexical search and the Markdown graph work
-without external providers. Configuration and failure semantics are documented
-in [managed indexes](documentation/managed-indexes.md) and
-[recoverable delivery](documentation/managed-delivery.md).
+REST and MCP are separate processes of the same application. Only REST runs
+background delivery. Content persists in the named `managed_wiki` volume.
 
-## Operations
+- Revision-safe Markdown editor, direct URLs, Home preference, history and retries
+- Fast snapshot-based navigation, backlinks and a galaxy of actual links/groups
+- Lexical search and optional Neo4j/Qdrant retrieval with full-article chunking
+- Automatic configured Git clone/pull/commit/push with visible conflicts/retry
+- Read-only OpenRouter chat, sources, safe Markdown and locally deletable conversations
+- MCP page/search/graph/group/history/status tools and `wiki://guidance`
+- Online-first PWA without caching private content
 
-- [Portable backup and restore](documentation/backup-restore.md)
-- [Content-only Markdown export](documentation/wiki-export.md)
-- [Explicit managed Git sync](documentation/managed-git-sync.md)
-- [PWA privacy, installation and updates](documentation/pwa.md)
-- [Current review handoff and release gates](documentation/review-handoff.md)
+The old UI, `second_brain.mcp_server`, ingestion/repair agent, Celery/Redis and
+telemetry application have been removed. `remember`/`recall` and old non-wiki REST
+routes are intentionally gone. Existing Git configuration and MCP key
+compatibility remain in the current core; see [MCP/auth](documentation/managed-mcp.md).
+Graph and vector providers remain supported. Configure reachable existing
+endpoints, or use the optional [database services](documentation/install-update.md#optional-index-databases).
+Missing model access or an index build does not block local wiki reads.
 
-## Current limits
+## Build from source
 
-The branch has native backend, browser, large synthetic graph and recovery
-evidence. It does **not** yet claim:
-
-- a real OpenRouter multi-turn acceptance run
-- hosted Neo4j/Qdrant/embedding-provider acceptance
-- physical Android/iOS installation or production HTTPS/update verification
-- production Compose operation or off-host disaster recovery
-- completed production authentication, Git credential and legacy-vault migration
-
-Do not treat the preview as a completed production cutover.
-
-## Development
-
-Run the repository checks after relevant changes:
+Clone the repository and copy `.env.example` to `.env`. Then run:
 
 ```sh
-cd backend
-poetry run ruff check src/ tests/ benchmark/
-poetry run mypy src/ tests/
-poetry run pytest tests/ --ignore=tests/integration
-
-cd ../frontend
-npx tsc --noEmit
-npm run build
+docker compose -f docker-compose.yml -f docker-compose.source.yml up -d --build --wait
 ```
 
-Browser regression uses a disposable synthetic vault; see the
-[development guide](documentation/managed-wiki-development.md). Public tests,
-fixtures and screenshots must contain no private wiki content or credentials.
+This is the same application and store, built inside Docker. Local Python/Node
+are needed only for [native development and the fictional demo](documentation/managed-wiki-development.md),
+not for either Docker path. Do not mix mutable source tags with a controlled
+image-only update.
 
-## License
+## Verification and limits
 
-MIT — see [LICENSE](LICENSE).
+[Acceptance documentation](documentation/managed-stack-acceptance.md) describes
+real disposable image, restart, Git, HTTPS/auth, MCP and browser gates. The stack
+runner also tests the standard image-only Compose from an empty directory with
+candidate images and the env template. Inspect the reviewed commit's actual CI
+results; candidate builds do not publish registry images before merge.
 
+Synthetic fixtures and provider doubles are distinct from real model quality,
+private-vault migration, your proxy and physical Android/PWA installation.
+[Current rollout and compatibility notes](documentation/cleanup-installation.md)
+record the removal boundary and evidence. No final 2.0 release is implied.
+
+- [First start: empty, template, Git import](documentation/first-start.md)
+- [Git delivery and conflicts](documentation/managed-delivery.md)
+- [Indexes and semantic search](documentation/managed-indexes.md)
+- [Backup/restore](documentation/backup-restore.md)
+- [PWA privacy and updates](documentation/pwa.md)
+- [Deferred feature wishes](documentation/feature-wishlist.md)
