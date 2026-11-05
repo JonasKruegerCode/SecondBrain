@@ -187,6 +187,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   root.querySelector(".galaxy-mapnote span:last-child")!.append(document.createTextNode(" · Use the page list for closely spaced stars."));
   let hitSpacing = Infinity;
   let overviewColumns = 3;
+  let overviewOrbit = false;
+  const orbitForWidth = () => linked.length > 0 && linked.length <= 6 && stage.clientWidth >= 700;
   const columnsForWidth = () => linked.length <= 2 || (stage.clientWidth > 0 && stage.clientWidth < 520) ? 2 : 3;
   const setView = () => {
     const svg = stage.querySelector("svg");
@@ -224,7 +226,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       label.setAttribute("y", String(Number(label.dataset.top) - (count ? 6 : 24) / unit));
       const full = label.dataset.label!;
       label.textContent = count && !active && 1100 / overviewColumns * unit < 200 ? full.split(" · ")[0] : full;
-      const available = active ? stage.clientWidth - 24 : 1100 / overviewColumns * unit - 16;
+      const slot = Number(label.dataset.slotWidth) || 1100 / overviewColumns;
+      const available = active ? stage.clientWidth - 24 : slot * unit - 16;
       const letters = displayUnits(label.textContent);
       if (label.getComputedTextLength() * unit > available) {
         let low = 0, high = letters.length;
@@ -321,10 +324,22 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     const positions = new Map<string, Point>(), centers = new Map<number, Point>();
     const columns = overviewColumns = columnsForWidth();
     const rows = Math.ceil(linked.length / columns);
-    height = active ? 600 : Math.max(480, rows * 300 + (isolated.length ? 140 : 0));
+    const orbital = overviewOrbit = !active && orbitForWidth();
+    const shelfY = orbital ? 740 : Math.max(340, rows * 300);
+    height = active ? 600 : orbital ? 740 + (isolated.length ? 140 : 0)
+      : Math.max(480, rows * 300 + (isolated.length ? 140 : 0));
+    // A few actual neighborhoods form an open sky rather than a partial grid.
+    // There is deliberately no central node: position never implies a hub/link.
+    const overviewCenter = (index: number): Point => {
+      if (!orbital) return { x: (index % columns + .5) * 1100 / columns, y: Math.floor(index / columns) * 300 + 145 };
+      if (linked.length === 1) return { x: 550, y: 360 };
+      if (linked.length === 2) return { x: 320 + index * 460, y: 360 };
+      const angle = -Math.PI / 2 + index * Math.PI * 2 / linked.length;
+      return { x: 550 + Math.cos(angle) * 380, y: 360 + Math.sin(angle) * 220 };
+    };
     const shown = active ? [active] : linked;
     shown.forEach((c, i) => {
-      const center = active ? { x: 550, y: 300 } : { x: (i % columns + .5) * 1100 / columns, y: Math.floor(i / columns) * 300 + 145 };
+      const center = active ? { x: 550, y: 300 } : overviewCenter(i);
       centers.set(c.id, center); positions.set(c.core, center);
       if (compactOverview) return;
       const rest = c.members.filter(id => id !== c.core);
@@ -337,7 +352,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         positions.set(id, { x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius * .8 });
       });
     });
-    if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: Math.max(340, rows * 300) + 55 + Math.floor(i / 15) * 55 }));
+    if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: shelfY + 55 + Math.floor(i / 15) * 55 }));
     if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
     // Bound enlarged targets by actual spacing in smaller constellations.
     // Above 120 stars use a conservative bound from the elliptical ring layout:
@@ -402,8 +417,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
           <path class="galaxy-orbit-light" d="M ${-size} 0 a ${size} ${size * .8} 0 0 1 ${size * .5} ${-size * .69}"/>
           <path class="galaxy-orbit-inner" d="M ${-size * .7} 0 a ${size * .7} ${size * .56} 0 1 0 ${size * 1.4} 0 a ${size * .7} ${size * .56} 0 1 0 ${-size * 1.4} 0"/>
         </g>
-        <text x="${p.x}" y="${top - 15}" data-top="${top}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>
-        <text class="galaxy-count" x="${p.x}" y="${top + 3}" data-top="${top}" data-label="${escape(count)}" text-anchor="middle">${escape(count)}</text>
+        <text x="${p.x}" y="${top - 15}" data-top="${top}" data-slot-width="${orbital ? 280 : 0}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>
+        <text class="galaxy-count" x="${p.x}" y="${top + 3}" data-top="${top}" data-slot-width="${orbital ? 280 : 0}" data-label="${escape(count)}" text-anchor="middle">${escape(count)}</text>
       </g>`;
     }).join("");
     const stars = [...positions].map(([id, p]) => {
@@ -412,7 +427,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
       return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title>${core ? '<path class="galaxy-core-reticle" aria-hidden="true" d="M -24 -6 V -14 H -16 M 16 -14 H 24 V -6 M 24 6 V 14 H 16 M -16 14 H -24 V 6"/>' : ""}<circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
-    stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${Math.max(340, rows * 300) + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
+    stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${shelfY + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
     stage.hidden = listOnly;
     root.classList.toggle("is-list-view", listOnly);
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
@@ -600,7 +615,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   root.querySelector<HTMLInputElement>("input")!.value = query;
   sidebar.scrollTop = previous?.sidebarScroll || 0;
   const resize = new ResizeObserver(() => {
-    if (selectedCluster === null && !listOnly && columnsForWidth() !== overviewColumns) {
+    if (selectedCluster === null && !listOnly && (columnsForWidth() !== overviewColumns || orbitForWidth() !== overviewOrbit)) {
       const focused = document.activeElement?.closest<SVGElement>(".galaxy-star")?.dataset.node;
       renderMap();
       if (focused) [...stage.querySelectorAll<SVGElement>(".galaxy-star")].find(el => el.dataset.node === focused)?.focus({ preventScroll: true });

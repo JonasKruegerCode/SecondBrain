@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "base_commit": "bb9954ce6f99e551b9e146ec373951e75615e3a0",
+  "status": "prepared responsive composition; not complete Wow release",
+  "behavior": {
+    "open_sky": "one to six actual linked neighborhoods on stages at least700px wide",
+    "fallback": "narrow stages and larger group counts retain grid/window behavior",
+    "source_contracts": "same node/group/link IDs, membership and provenance; no central invented hub",
+    "navigation": "resize mode changes preserve native focused page identity; unlinked shelf retained"
+  },
+  "validation": {
+    "typecheck": "passed",
+    "production_build": "passed",
+    "api_browser_cases": 10,
+    "api_browser_scope": "labels/zoom/targets, real mutations and shell320/390/1440",
+    "renderer_fixture": "explicit synthetic1..7groups plus unlinked page, widths1440/1100/390/1440; not real backend group production evidence",
+    "tall_window_and_fixture_cases": 2,
+    "history_textspacing_material_cases": 4,
+    "synthetic320_scale_cases": 3,
+    "final_focus_fixture_cases": 2,
+    "screenshots": "real synthetic API galaxy1440/390 inspected",
+    "cleanup": true,
+    "browser": "explicit ChromeHeadlessShell157 alternative"
+  },
+  "boundaries": [
+    "No full Chromium/WebKit/provider/device/production acceptance",
+    "No branch ref/PR21 change, merge or deployment",
+    "Current cleanup candidate remains cd7ac05; UI is prepared separately"
+  ]
+}
