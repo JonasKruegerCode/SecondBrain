@@ -56,5 +56,14 @@
     "causality": "Rendering-load mitigation; not a locally reproduced WebKit root-cause diagnosis. Native CI still required.",
     "local_webkit": "Pinned WebKit downloaded, but required system libraries unavailable; dependency installation denied by environment privileges. No sandbox bypass.",
     "local_chromium": "Focused real API/browser run passed; official Headless Shell157 alternative; cleanup confirmed."
+  },
+  "native_followup_2": {
+    "base_head": "17b4aaadd5b3a08bc0d1f13c13108617d74f1bad",
+    "ci": "Five non-browser areas passed; WebKit preflight111passed/3failed. Two multi-tab page-load timeouts and one migration retry Home click timeout. Later browser phases skipped.",
+    "conclusion": "Static atmosphere alone did not resolve native failures. No verified root cause yet.",
+    "change": "Remove backdrop sampling from repeated cards and full-height workspaces; retain bounded header blur and existing glass gradients, pointer light and press feedback.",
+    "diagnostics": "WebKit-only trace recording for overlapping native tab and failed first migration cases; discard successful traces and upload failing archives. Assertions, clicks, timeouts, repeats and gate selection unchanged.",
+    "local_validation": "10 real API/Chromium browser cases passed, including both native multi-tab cases, both migration cases, shell and press. Typecheck/build passed. Desktop article/galaxy screenshots inspected. Cleanup confirmed.",
+    "limits": "Native WebKit unavailable locally because required system libraries cannot be installed under environment privileges. New native CI required; no permission bypass."
   }
 }

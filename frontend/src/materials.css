@@ -14,8 +14,11 @@ header, .card, .chat-history, .chat-workspace, .galaxy-workspace {
   border: 1px solid #fff;
   box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 #b9d2e64d,
     0 20px 60px #294b6b12, 0 2px 5px #294b6b08;
-  backdrop-filter: blur(28px) saturate(145%);
 }
+/* Limit real backdrop sampling to the bounded navigation surface. Repeated
+   overview cards and full-height workspaces use the same gradients/rims without
+   allocating a large blur surface for every item, including in background tabs. */
+header { backdrop-filter: blur(28px) saturate(145%); }
 /* Reading surfaces remain nearly opaque so light never competes with prose. */
 main > article { background: linear-gradient(135deg, #fffffff5, #ffffffe8); border: 1px solid #fff; }
 header nav { background: linear-gradient(145deg, #dceaf673, #ffffff8f); box-shadow: inset 0 1px 6px #294b6b0a; }
