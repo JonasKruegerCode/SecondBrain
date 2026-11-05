@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "base_commit": "046a171b614b6d6019e0f5871ef094b18ffdd07d",
+  "status": "prepared reading/interaction increment, not full Wow release",
+  "behavior": [
+    "wide-desktop200px sticky contents rail when at least3sections; same native links and DOM reading order",
+    "mobile and short articles preserve inline contents; editor/History/API contracts unchanged",
+    "long section list has bounded viewport scrolling; readable native forced-color border",
+    "decorative pointer light releases replaced controls before click and clears on keyboard input"
+  ],
+  "validation": {
+    "typecheck": "passed",
+    "production_build": "passed",
+    "real_api_browser_runs": [
+      {
+        "cases": 11,
+        "scope": "reading shell320/390/1440, long TOC/native keyboard, article arrival, mobile table and continuous background"
+      },
+      {
+        "cases": 4,
+        "scope": "real long article sticky rail/mobile navigation, editor save/conflict and galaxy return"
+      },
+      {
+        "cases": 6,
+        "scope": "long article keyboard plus pointer-light/editor replacement"
+      },
+      {
+        "cases": 2,
+        "scope": "final rail in360px-height desktop/ForcedColors/mobile and pointer lifecycle"
+      }
+    ],
+    "content_unchanged": "long synthetic article markdown readback exact; fixtures deleted and services cleaned",
+    "screenshots": "real synthetic article1440/390 and scrolled long-article rail inspected",
+    "browser": "explicit ChromeHeadlessShell157 alternative"
+  },
+  "limits": [
+    "No full Chromium/WebKit/device/provider/production acceptance",
+    "No branch ref or PR21 update, merge or deployment",
+    "Prepared UI chain must be integrated and fully checked separately from cleanup candidate"
+  ]
+}

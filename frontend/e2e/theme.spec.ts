@@ -146,3 +146,65 @@ test("overview layout switches preserve the keyboard's actual page identity", as
   await page.keyboard.press("Enter");
   await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id!);
 });
+
+test("desktop reading spread keeps contents reachable without changing mobile section navigation", async ({ page, request }, info) => {
+  const id = `reading-spread-${crypto.randomUUID()}`;
+  const endpoint = `/api/wiki/pages/${id}`;
+  const markdown = "# Fictional field compendium\n\n" + Array.from({ length: 24 }, (_, i) => `## Field section ${i + 1}\n\n${"Synthetic observations, retained exactly as written. ".repeat(35)}\n\n`).join("");
+  const created = await request.post(endpoint, { data: { markdown, base_revision: null, request_id: crypto.randomUUID() } });
+  expect(created.ok()).toBe(true);
+  try {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`/wiki/${id}`);
+    const toc = page.locator(".article-toc");
+    const summary = toc.locator("summary");
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(toc.locator("details")).toHaveAttribute("open", "");
+    await page.evaluate(() => scrollTo(0, 1500));
+    await expect.poll(() => toc.evaluate(node => Math.round(node.getBoundingClientRect().top))).toBe(24);
+    const section = toc.getByRole("link", { name: "Field section 8", exact: true });
+    await section.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose h2").nth(7)).toBeFocused();
+    await expect(page.locator(".prose h2").nth(7)).toBeInViewport();
+    await page.screenshot({ path: info.outputPath("desktop-reading-spread.png"), fullPage: false });
+    await page.setViewportSize({ width: 1440, height: 360 });
+    expect((await toc.boundingBox())!.height).toBeLessThanOrEqual(312);
+    await page.emulateMedia({ forcedColors: "active" });
+    expect(await toc.evaluate(node => getComputedStyle(node).borderLeftColor)).toBe(await page.evaluate(() => getComputedStyle(document.body).color));
+    await toc.getByRole("link", { name: "Field section 20", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose h2").nth(19)).toBeFocused();
+    await expect(page.locator(".prose h2").nth(19)).toBeInViewport();
+    await page.emulateMedia({ forcedColors: "none" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await toc.evaluate(node => getComputedStyle(node).position)).toBe("static");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await toc.getByRole("link", { name: "Field section 2", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".prose h2").nth(1)).toBeFocused();
+    await expect(page.locator(".prose h2").nth(1)).toBeInViewport();
+    expect((await (await request.get(endpoint)).json()).markdown).toBe(markdown);
+  } finally {
+    const current = await (await request.get(endpoint)).json();
+    expect((await request.delete(endpoint, { data: { base_revision: current.revision, request_id: crypto.randomUUID() } })).ok()).toBe(true);
+  }
+});
+
+test("reactive light releases replaced reading controls and yields to keyboard focus", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/wiki/home");
+  const edit = page.locator("#edit");
+  await edit.hover();
+  await expect.poll(() => edit.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
+  const previous = await edit.elementHandle();
+  await edit.click();
+  await expect(page.locator("#editor")).toBeVisible();
+  expect(await previous!.evaluate(node => ({ connected: node.isConnected, light: node.style.getPropertyValue("--light-x") }))).toEqual({ connected: false, light: "" });
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await edit.hover();
+  await expect.poll(() => edit.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
+  await page.keyboard.press("Tab");
+  expect(await edit.evaluate(node => node.style.getPropertyValue("--light-x"))).toBe("");
+});

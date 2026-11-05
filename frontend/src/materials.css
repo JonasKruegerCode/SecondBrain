@@ -82,3 +82,26 @@ body:has(main > article) .ambient::after { animation: none; }
   .galaxy-neighborhood .galaxy-region { fill: none !important; stroke: CanvasText; stroke-opacity: 1; }
   .galaxy-star .galaxy-glow { filter: none; }
 }
+
+/* A reading spread, rather than a full-width contents box before every article.
+   DOM order and the native section links remain identical on every viewport. */
+.article-reading { min-width: 0; }
+@media (min-width: 1280px) {
+  .article-reading:has(.article-toc ol li:nth-child(3)) {
+    display: grid; grid-template-columns: 200px minmax(0, 1fr);
+    align-items: start; gap: 32px; margin-top: 36px;
+  }
+  .article-reading:has(.article-toc ol li:nth-child(3)) > .article-toc {
+    position: sticky; top: 24px; max-height: calc(100dvh - 48px);
+    overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+    scrollbar-width: thin; margin: 0; padding: 8px 18px 16px;
+    border: 0; border-left: 1px solid #c4d8eb; border-radius: 0;
+    background: transparent;
+  }
+  .article-reading > .prose { min-width: 0; }
+  .article-reading:has(.article-toc ol li:nth-child(3)) .article-toc .eyebrow { line-height: 1.6; letter-spacing: 1.4px; }
+  .article-reading:has(.article-toc ol li:nth-child(3)) .article-toc a { text-decoration-color: #b5cbe4; }
+}
+@media (forced-colors: active) {
+  .article-reading > .article-toc { border-color: CanvasText !important; }
+}

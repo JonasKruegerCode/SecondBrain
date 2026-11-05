@@ -34,6 +34,10 @@ export function startMaterialLight(): void {
     });
   }, { passive: true });
   document.addEventListener("pointerleave", clear);
+  // A click may replace the entire route/editor DOM before another pointermove.
+  // Release the lit element first; keyboard input switches back to focus styling.
+  document.addEventListener("click", clear, { capture: true, passive: true });
+  document.addEventListener("keydown", clear, { passive: true });
   document.addEventListener("visibilitychange", () => { if (document.hidden) clear(); });
   motion.addEventListener("change", clear);
   fine.addEventListener("change", clear);
