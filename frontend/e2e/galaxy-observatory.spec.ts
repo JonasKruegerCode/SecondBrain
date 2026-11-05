@@ -69,14 +69,16 @@ test("observatory frame and selected page retain system colors", async ({ page, 
     document.body.append(probe);
     probe.style.color = "CanvasText";
     const ink = getComputedStyle(probe).color;
+    probe.style.backgroundColor = "Canvas";
+    const canvas = getComputedStyle(probe).backgroundColor;
     probe.remove();
-    return ink;
+    return { ink, canvas };
   });
   const frame = await page.locator(".galaxy-stage").evaluate(element => {
     const style = getComputedStyle(element, "::after");
     return { borderColor: style.borderTopColor, background: style.backgroundImage, pointerEvents: style.pointerEvents };
   });
-  expect(frame.borderColor).toBe(palette);
+  expect(frame.borderColor).toBe(palette.ink);
   expect(frame.background).toBe("none");
   expect(frame.pointerEvents).toBe("none");
 
@@ -87,7 +89,7 @@ test("observatory frame and selected page retain system colors", async ({ page, 
     const style = getComputedStyle(element);
     return { borderColor: style.borderTopColor, background: style.backgroundColor };
   });
-  expect(inspector.borderColor).toBe(palette);
-  expect(inspector.background).toBe(palette === "rgb(255, 255, 255)" ? "rgb(255, 255, 255)" : inspector.background);
+  expect(inspector.borderColor).toBe(palette.ink);
+  expect(inspector.background).toBe(palette.canvas);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
