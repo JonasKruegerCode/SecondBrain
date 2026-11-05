@@ -14,9 +14,11 @@ from typing import Any
 import httpx
 
 from second_brain.core.config import settings
+from second_brain.core.telemetry import get_tracer
 from second_brain.llm.base import LLMEmbedder
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 class GCPEmbedder(LLMEmbedder):
@@ -35,16 +37,19 @@ class GCPEmbedder(LLMEmbedder):
         return self.embed_batch([text])[0]
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        resp = httpx.post(
-            f"{self._base_url}/embeddings",
-            headers=self._headers,
-            json={"model": self._model, "input": texts},
-            timeout=30.0,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        raw: list[dict[str, Any]] = data["data"]
-        # Gemini's OpenAI-compat endpoint omits "index"; only sort when present
-        if raw and "index" in raw[0]:
-            raw = sorted(raw, key=lambda x: x["index"])
-        return [item["embedding"] for item in raw]
+        with tracer.start_as_current_span("embedder.embed_batch") as span:
+            span.set_attribute("embedder.model", self._model)
+            span.set_attribute("embedder.batch_size", len(texts))
+            resp = httpx.post(
+                f"{self._base_url}/embeddings",
+                headers=self._headers,
+                json={"model": self._model, "input": texts},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            raw: list[dict[str, Any]] = data["data"]
+            # Gemini's OpenAI-compat endpoint omits "index"; only sort when present
+            if raw and "index" in raw[0]:
+                raw = sorted(raw, key=lambda x: x["index"])
+            return [item["embedding"] for item in raw]

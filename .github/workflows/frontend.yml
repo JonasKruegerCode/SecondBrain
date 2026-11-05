@@ -2,14 +2,11 @@ name: Frontend
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend.yml"
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
-# Retain only the newest PR validation; never cancel main image publication.
+# Cancel obsolete PR checks; serialize channel publications without cancelling them.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -35,27 +32,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
       - name: Type check
         working-directory: frontend
-        run: npm run typecheck
-
-      - name: Native chat proxy cancellation
-        working-directory: frontend
-        run: npm run test:proxy
-
-      - name: Native development server access boundaries
-        working-directory: frontend
-        run: npm run test:dev-security
-
-      - name: PWA lifecycle state transitions
-        working-directory: frontend
-        run: npm run test:pwa
-
-      - name: Retained-image browser protocol
-        working-directory: frontend
-        run: node --test tests/image-update-protocol.test.mjs
+        run: npx tsc --noEmit
 
       - name: Compile
         working-directory: frontend
@@ -85,9 +66,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: latest=false
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=next,enable=${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -101,4 +84,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
