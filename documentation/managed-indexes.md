@@ -45,12 +45,7 @@ verify that configuration separately.
 
 `QdrantSnapshotAdapter(client, embedder, dimension)` uses a separate
 `managed_wiki_<generation>` collection for each attempt, never `wiki_pages`.
-The preview embeds only the first 2,000 characters of each page's Markdown,
-matching the legacy indexing bound. The complete Markdown remains authoritative
-and available through page reads; content beyond that prefix does not contribute
-to the page vector. This compatibility hotfix prevents oversized articles from
-failing the entire index build. Full long-article retrieval needs a later chunking
-implementation. The injected embedder's `embed(text)` method receives that prefix; vectors must
+The injected embedder's `embed(text)` method embeds full Markdown; vectors must
 match the configured dimension and contain only finite values. Pass `None` to
 infer the dimension from the actual page embeddings instead of a model-name
 guess. An empty auto-sized snapshot makes one explicit embedding probe. All vectors are
