@@ -75,9 +75,11 @@ header nav a::before, .primary::before, .card::before, .galaxy-controls button::
   .galaxy-orbits, .galaxy-core-reticle { display: none; }
 }
 
-/* Do not promote document-height animated layers while reading long articles. */
-body:has(main > article) .ambient::before,
-body:has(main > article) .ambient::after { animation: none; }
+/* The atmosphere spans the document, which can be much taller than the screen
+   in an overview as well as an article. Never animate that entire painted area
+   behind blurred navigation. Motion belongs to bounded controls and the single
+   active constellation, not a continuously composited document-size surface. */
+.ambient::before, .ambient::after { animation: none; }
 @media (forced-colors: active) {
   .galaxy-neighborhood .galaxy-region { fill: none !important; stroke: CanvasText; stroke-opacity: 1; }
   .galaxy-star .galaxy-glow { filter: none; }

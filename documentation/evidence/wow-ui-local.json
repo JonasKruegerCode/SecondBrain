@@ -41,5 +41,20 @@
     "Not full Chromium/WebKit/registry update acceptance; these remain PR CI gates",
     "No additional pages, links, graph groups, server endpoints or data persistence changes",
     "No merge or image publication from this feature branch"
-  ]
+  ],
+  "ci_followup": {
+    "base_head": "2841c525dcf31030b50f4da31a0d0a5f6b6b9aae",
+    "passed": [
+      "Backend41993460340",
+      "Frontend41993460416",
+      "Index41993460405",
+      "Stack41993460338",
+      "SSH41993460390"
+    ],
+    "browser_failure": "41993460397 native WebKit preflight:107 passed,7 failed; six Chat navigation actionability timeouts and one new-page load timeout. Later phases skipped.",
+    "change": "Static document-height atmosphere on overview as well as article; bounded pointer/press/orbit motion retained. No test assertions/inputs/timeouts changed.",
+    "causality": "Rendering-load mitigation; not a locally reproduced WebKit root-cause diagnosis. Native CI still required.",
+    "local_webkit": "Pinned WebKit downloaded, but required system libraries unavailable; dependency installation denied by environment privileges. No sandbox bypass.",
+    "local_chromium": "Focused real API/browser run passed; official Headless Shell157 alternative; cleanup confirmed."
+  }
 }
