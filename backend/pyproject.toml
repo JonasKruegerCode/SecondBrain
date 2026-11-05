@@ -1,7 +1,7 @@
 [project]
 name = "second-brain"
 version = "0.1.0"
-description = "Autonomous, self-improving AI agent memory server"
+description = "Git-backed managed personal wiki with REST and MCP services"
 authors = [
     {name = "Jonas Krüger", email = "jonas.krueger.senden@gmail.com"}
 ]
@@ -11,21 +11,11 @@ dependencies = [
     "starlette>=0.37.2",
     "pydantic>=2.7.4",
     "pydantic-settings>=2.3.4",
+    "python-dotenv>=1.0.1",
     "mcp>=1.0.0,<2.0.0",
     "neo4j>=5.21.0",
     "qdrant-client>=1.9.1",
-    "celery>=5.4.0",
-    "redis>=5.0.6",
     "httpx>=0.28.1",
-    "gitpython>=3.1.43",
-    "opentelemetry-api>=1.27.0",
-    "opentelemetry-sdk>=1.27.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
-    "opentelemetry-instrumentation-asgi>=0.48b0",
-    "opentelemetry-instrumentation-httpx>=0.48b0",
-    "opentelemetry-instrumentation-celery>=0.48b0",
-    "opentelemetry-instrumentation-redis>=0.48b0",
-    "langgraph (>=1.2.7,<2.0.0)",
 ]
 
 [tool.poetry.group.dev.dependencies]
@@ -34,7 +24,7 @@ pytest-asyncio = ">=0.23.7"
 mypy = ">=1.10.0"
 ruff = ">=0.4.10"
 httpx = ">=0.28.1"
-testcontainers = {extras = ["neo4j", "qdrant", "redis"], version = "^4.14.2"}
+testcontainers = {extras = ["neo4j", "qdrant"], version = "^4.14.2"}
 honcho = "^2.0.0"
 
 [build-system]

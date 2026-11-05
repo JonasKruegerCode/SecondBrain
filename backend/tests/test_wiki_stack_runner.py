@@ -11,8 +11,21 @@ from typing import Any
 
 import pytest
 
+from second_brain.wiki.remote import ManagedGitSync
+from second_brain.wiki.store import WikiStore
+
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run-wiki-stack-acceptance.py"
 runner = runpy.run_path(str(SCRIPT), run_name="wiki_stack_runner")
+
+
+def test_install_git_fixture_uses_an_accepted_actual_remote_protocol(tmp_path: Path) -> None:
+    # A Docker-only fixture must not introduce a URL the product rejects before
+    # it can clone. Keep the same smart HTTP protocol as real Git auth coverage.
+    target = runner["GIT_FIXTURE_URL"]
+    assert target.startswith("http://") and "git://" not in target
+    remote = ManagedGitSync(WikiStore(tmp_path / "managed"), target, "main", "1_knowledge/wiki")
+    assert remote.remote == target
+    compile(runner["GIT_HTTP_FIXTURE"], "<synthetic-smart-http>", "exec")
 
 
 def test_import_project_uses_only_retained_images_and_independent_storage() -> None:
@@ -75,6 +88,35 @@ def config() -> dict[str, Any]:
         "volumes": {"managed_wiki": {"name": "existing-private-volume"}},
         "networks": {"default": {"name": "existing-private-network"}},
     }
+
+
+@pytest.mark.parametrize("danger", [None, "build", "command", "entrypoint", "bind", "external",
+                                    "mutable", "foreign"])
+def test_copied_image_install_refuses_source_and_old_starters(danger: str | None) -> None:
+    data = config()
+    images = {name: "127.0.0.1:50001/" + name + "@sha256:" + "1" * 64
+              for name in data["services"]}
+    for name, service in data["services"].items():
+        service["image"] = images[name]
+    if danger == "build":
+        data["services"]["backend"]["build"] = {"context": "./backend"}
+    elif danger == "command":
+        data["services"]["backend"]["command"] = ["python", "/host/run-managed.py"]
+    elif danger == "entrypoint":
+        data["services"]["frontend"]["entrypoint"] = ["cp", "legacy.html", "index.html"]
+    elif danger == "bind":
+        data["services"]["backend"]["volumes"][0]["type"] = "bind"
+    elif danger == "external":
+        data["volumes"]["managed_wiki"]["external"] = True
+    elif danger == "mutable":
+        images["backend"] = data["services"]["backend"]["image"] = "mutable:latest"
+    elif danger == "foreign":
+        data["services"]["worker"] = {}
+    if danger is None:
+        runner["validate_image_install"](data, images)
+    else:
+        with pytest.raises(RuntimeError):
+            runner["validate_image_install"](data, images)
 
 
 def recovery_config() -> dict[str, Any]:

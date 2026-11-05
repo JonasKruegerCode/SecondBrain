@@ -1,4 +1,4 @@
-"""Legacy-compatible provider wiring; unconfigured wiki startup needs no provider."""
+"""Managed index/provider wiring; unconfigured startup needs no provider."""
 
 from __future__ import annotations
 

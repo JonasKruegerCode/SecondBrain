@@ -1,121 +1,87 @@
+# SecondBrain: current Wiki-first application, using published images only.
+# Copy this file and .env.example into an empty directory; no source checkout needed.
+# Git and optional index providers are shared by REST and MCP; only REST runs delivery.
+x-vault-git: &vault-git
+  SECOND_BRAIN_WIKI_GIT_SYNC: ${SECOND_BRAIN_WIKI_GIT_SYNC:-}
+  # Omit the value to retain existing vault layout; empty deliberately selects repo root.
+  SECOND_BRAIN_WIKI_GIT_PREFIX: ${SECOND_BRAIN_WIKI_GIT_PREFIX-1_knowledge/wiki}
+  VAULT_GIT_URL: ${VAULT_GIT_URL:-}
+  VAULT_GITHUB_URL: ${VAULT_GITHUB_URL:-}
+  VAULT_GIT_BRANCH: ${VAULT_GIT_BRANCH:-}
+  VAULT_GIT_PROVIDER: ${VAULT_GIT_PROVIDER:-github}
+  VAULT_GIT_AUTH_METHOD: ${VAULT_GIT_AUTH_METHOD:-auto}
+  VAULT_GIT_HTTP_USERNAME: ${VAULT_GIT_HTTP_USERNAME:-}
+  VAULT_GIT_HTTP_ACCESS_TOKEN: ${VAULT_GIT_HTTP_ACCESS_TOKEN:-}
+  VAULT_GIT_HTTP_TOKEN: ${VAULT_GIT_HTTP_TOKEN:-}
+  VAULT_GITHUB_PAT: ${VAULT_GITHUB_PAT:-}
+  VAULT_GIT_SSH_KEY_PATH: ${VAULT_GIT_SSH_KEY_PATH:-}
+  VAULT_GIT_SSH_KEY: ${VAULT_GIT_SSH_KEY:-}
+  VAULT_GIT_SSH_KNOWN_HOSTS_PATH: ${VAULT_GIT_SSH_KNOWN_HOSTS_PATH:-}
+
+x-wiki-indexes: &wiki-indexes
+  SECOND_BRAIN_WIKI_GRAPH_INDEX: ${SECOND_BRAIN_WIKI_GRAPH_INDEX:-}
+  SECOND_BRAIN_WIKI_VECTOR_INDEX: ${SECOND_BRAIN_WIKI_VECTOR_INDEX:-}
+  SECOND_BRAIN_WIKI_VECTOR_DIMENSION: ${SECOND_BRAIN_WIKI_VECTOR_DIMENSION:-}
+  NEO4J_URI: ${NEO4J_URI:-}
+  NEO4J_USER: ${NEO4J_USER:-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}
+  NEO4J_DATABASE: ${NEO4J_DATABASE:-}
+  QDRANT_URL: ${QDRANT_URL:-}
+  QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_CHAT_PROVIDER: ${OPENROUTER_CHAT_PROVIDER:-}
+  OPENROUTER_EMBEDDING_PROVIDER: ${OPENROUTER_EMBEDDING_PROVIDER:-}
+  GCP_API_KEY: ${GCP_API_KEY:-}
+  GCP_ENDPOINT_URL: ${GCP_ENDPOINT_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+
 services:
+  backend:
+    image: ${WIKI_BACKEND_IMAGE:-ghcr.io/jonaskruegercode/secondbrain-backend:latest}
+    environment:
+      <<: [*vault-git, *wiki-indexes]
+      SECOND_BRAIN_WIKI_VAULT: /managed-vault
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-deepseek/deepseek-v4-flash}
+    volumes:
+      - managed_wiki:/managed-vault
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/wiki/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  mcp:
+    image: ${WIKI_MCP_IMAGE:-${WIKI_BACKEND_IMAGE:-ghcr.io/jonaskruegercode/secondbrain-backend:latest}}
+    command: python -m uvicorn second_brain.wiki.mcp:http_app_factory --factory --host 0.0.0.0 --port 3001
+    environment:
+      <<: [*vault-git, *wiki-indexes]
+      SECOND_BRAIN_WIKI_VAULT: /managed-vault
+      SECOND_BRAIN_WIKI_API_KEY: ${SECOND_BRAIN_WIKI_API_KEY:-}
+      MCP_API_KEY: ${MCP_API_KEY:-}
+      SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS: "${SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS:-localhost,localhost:*,127.0.0.1,127.0.0.1:*}"
+      SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS: "${SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS:-http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*}"
+      SECOND_BRAIN_WIKI_DELIVERY: "0"
+    volumes:
+      - managed_wiki:/managed-vault
+    ports:
+      - "127.0.0.1:${WIKI_MCP_PORT:-${MCP_PORT:-3001}}:3001"
+    restart: unless-stopped
 
   frontend:
-    image: ghcr.io/jonaskruegercode/secondbrain-frontend:latest
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ${WIKI_FRONTEND_IMAGE:-ghcr.io/jonaskruegercode/secondbrain-frontend:latest}
     ports:
-      - "80:80"
-    restart: unless-stopped
-    # Keep the old UI/API pair together until the managed migration is complete.
-    command: /bin/sh -c "cp /usr/share/nginx/html/legacy.html /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"
-
-  backend:
-    image: ghcr.io/jonaskruegercode/secondbrain-backend:latest
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    environment:
-      - OTEL_ENABLED=${OTEL_ENABLED:-true}
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-    ports:
-      - "8000:8000"
-      - "3000:3000"
+      - "127.0.0.1:${WIKI_FRONTEND_PORT:-8080}:80"
     depends_on:
-      redis:
+      backend:
         condition: service_healthy
-      neo4j:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      jaeger:
-        condition: service_started
-    volumes:
-      - vault_data:/vault
-    restart: unless-stopped
-
-  worker:
-    image: ghcr.io/jonaskruegercode/secondbrain-backend:latest
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    environment:
-      - OTEL_ENABLED=${OTEL_ENABLED:-true}
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-    depends_on:
-      redis:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      jaeger:
-        condition: service_started
-    volumes:
-      - vault_data:/vault
-    command: celery -A second_brain.core.celery_app worker --beat --loglevel=info --concurrency=1
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  neo4j:
-    image: neo4j:5
-    environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    volumes:
-      - neo4j_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/7687' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    restart: unless-stopped
-
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.57
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    ports:
-      - "16686:16686"   # Jaeger UI
-      - "4317:4317"     # OTLP gRPC
-      - "4318:4318"     # OTLP HTTP
     restart: unless-stopped
 
 volumes:
-  vault_data:
-  redis_data:
-  neo4j_data:
-  qdrant_data:
+  managed_wiki:

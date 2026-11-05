@@ -19,7 +19,7 @@ env:
 jobs:
   acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,10 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Run disposable Docker stack acceptance
+      # Also copies only the public Compose/env files into an empty directory,
+      # distributes candidate images through a disposable local registry, and
+      # starts the unmodified default images (no source build or host starter).
+      - name: Test default image installation and disposable HTTPS/auth stack
         env:
           SECOND_BRAIN_STACK_BROWSER: '1'
         run: python3 scripts/run-wiki-stack-acceptance.py
