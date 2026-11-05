@@ -9,7 +9,9 @@ Both image workflows run for every push to either branch so frontend and backend
 are published from the same commit, including configuration-only changes. The two
 images publish independently: complete both builds before pulling a channel or
 changing an installation. Failed tests prevent the corresponding publication.
-Pull requests to either branch retain the existing full validation workflows.
+Pull requests to either branch retain the validation workflows appropriate to
+that application. The four Managed acceptance workflows return with the Next
+application on develop; the stable application retains its original two workflows.
 Automatic `latest` inference is disabled; only `main` may write `latest` and only
 `develop` may write `next`.
 
@@ -20,10 +22,10 @@ than rewriting history. Hotfixes applied to `main` should also be merged into
 
 ## Initial separation
 
-The stable restoration reverts PR21 first and PR20 second, retaining PR19. The
-application files match the pre-PR20 commit; workflow and channel documentation
+The stable restoration reverts PR21, PR20, PR19 and PR18 in that order. The
+application files match the pre-PR18 commit; workflow and channel documentation
 changes are deliberate additions. After this restoration is merged, create
-`develop` from that new `main` and revert the two revert commits in reverse order.
+`develop` from that new `main` and revert the four revert commits in reverse order.
 This restores the tested Next application while preserving the channel changes
 and records the restoration as new history. A future ordinary release merge can
 therefore include these changes without another revert workaround.
