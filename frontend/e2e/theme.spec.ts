@@ -61,3 +61,39 @@ test("material atmosphere covers the full article and reactive light respects mo
   expect(await button.evaluate(node => getComputedStyle(node, "::before").display)).toBe("none");
   await page.screenshot({ path: info.outputPath("material-long-article.png"), fullPage: true });
 });
+
+for (const width of [390, 1440]) {
+  test(`orbital instruments keep page targets and motion bounded (${width})`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/galaxy");
+    const stars = page.locator(".galaxy-star");
+    await expect(stars.first()).toBeVisible();
+    const initialIds = await stars.evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort());
+    expect(new Set(initialIds).size).toBe(initialIds.length);
+    const rings = page.locator(".galaxy-orbits");
+    expect(await rings.count()).toBeGreaterThan(0);
+    for (const ring of await rings.all()) {
+      await expect(ring).toHaveAttribute("aria-hidden", "true");
+      expect(await ring.evaluate(node => getComputedStyle(node).pointerEvents)).toBe("none");
+    }
+    expect(await page.locator(".galaxy-orbit-inner").evaluateAll(nodes => nodes.every(node => getComputedStyle(node).animationName === "none"))).toBe(true);
+    await page.screenshot({ path: info.outputPath(`orbital-overview-${width}.png`), fullPage: true, animations: "disabled" });
+    await page.locator(".galaxy-cluster").first().click();
+    await expect(page.locator(".galaxy-orbit-inner")).toHaveCount(1);
+    expect(await page.locator(".galaxy-orbit-inner").evaluate(node => getComputedStyle(node).animationName)).toBe("orbit-instrument");
+    await stars.first().focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".galaxy-selected-heading")).toBeVisible();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(rings).toBeHidden();
+    await page.emulateMedia({ reducedMotion: "no-preference", forcedColors: "active" });
+    await expect(rings).toBeHidden();
+    expect(await page.locator(".galaxy-region").first().evaluate(node => getComputedStyle(node).fill)).toBe("none");
+    // Activation deliberately moves focus to the inspector. Re-enter a star
+    // before checking its native high-contrast keyboard indicator.
+    await stars.first().focus();
+    await expect(stars.first()).toBeFocused();
+    expect(await page.locator(".galaxy-star:focus-visible .galaxy-hit").count()).toBeGreaterThan(0);
+  });
+}

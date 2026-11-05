@@ -311,6 +311,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     const densityNote = root.querySelector<HTMLElement>(".galaxy-density-note")!;
     densityNote.hidden = true;
     const active = selectedCluster === null ? null : clusters[selectedCluster];
+    root.classList.toggle("has-active-constellation", Boolean(active));
     const compactOverview = largeGraph && !active;
     bridgeLegend.lastChild!.textContent = active ? "Link across constellations" : "Combined links between constellations";
     stage.hidden = listOnly;
@@ -393,13 +394,23 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const label = clusterName(c);
       const count = `${c.members.length} pages · ${c.curated ? "curated" : c.isolated ? "unlinked" : "link topology"}`;
       const top = p.y - size * .8;
-      return `<g class="galaxy-neighborhood" style="--cluster-color:${color(c)}"><title>${escape(label)} · ${escape(count)}</title><ellipse cx="${p.x}" cy="${p.y}" rx="${size}" ry="${size * .8}"/><text x="${p.x}" y="${top - 15}" data-top="${top}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text><text class="galaxy-count" x="${p.x}" y="${top + 3}" data-top="${top}" data-label="${escape(count)}" text-anchor="middle">${escape(count)}</text></g>`;
+      return `<g class="galaxy-neighborhood" style="--cluster-color:${color(c)}"><title>${escape(label)} · ${escape(count)}</title>
+        <defs><radialGradient id="cluster-light-${c.id}"><stop offset="0" stop-color="${color(c)}" stop-opacity=".28"/><stop offset=".6" stop-color="${color(c)}" stop-opacity=".07"/><stop offset="1" stop-color="${color(c)}" stop-opacity="0"/></radialGradient></defs>
+        <ellipse class="galaxy-region" style="fill:url(#cluster-light-${c.id})" cx="${p.x}" cy="${p.y}" rx="${size}" ry="${size * .8}"/>
+        <g class="galaxy-orbits" aria-hidden="true" transform="translate(${p.x} ${p.y})">
+          <path class="galaxy-orbit-track" d="M ${-size} 0 a ${size} ${size * .8} 0 1 0 ${size * 2} 0 a ${size} ${size * .8} 0 1 0 ${-size * 2} 0"/>
+          <path class="galaxy-orbit-light" d="M ${-size} 0 a ${size} ${size * .8} 0 0 1 ${size * .5} ${-size * .69}"/>
+          <path class="galaxy-orbit-inner" d="M ${-size * .7} 0 a ${size * .7} ${size * .56} 0 1 0 ${size * 1.4} 0 a ${size * .7} ${size * .56} 0 1 0 ${-size * 1.4} 0"/>
+        </g>
+        <text x="${p.x}" y="${top - 15}" data-top="${top}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>
+        <text class="galaxy-count" x="${p.x}" y="${top + 3}" data-top="${top}" data-label="${escape(count)}" text-anchor="middle">${escape(count)}</text>
+      </g>`;
     }).join("");
     const stars = [...positions].map(([id, p]) => {
       const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
       const titleLetters = displayUnits(name(id), 28);
       const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
-      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title><circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
+      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title>${core ? '<path class="galaxy-core-reticle" aria-hidden="true" d="M -24 -6 V -14 H -16 M 16 -14 H 24 V -6 M 24 6 V 14 H 16 M -16 14 H -24 V 6"/>' : ""}<circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
     }).join("");
     stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${Math.max(340, rows * 300) + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
     stage.hidden = listOnly;

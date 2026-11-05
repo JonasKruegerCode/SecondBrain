@@ -56,3 +56,29 @@ header nav a::before, .primary::before, .card::before, .galaxy-controls button::
   .galaxy-mapbar { background: Canvas; }
   .galaxy-stage::before, header nav a::before, .primary::before, .card::before, .galaxy-controls button::before { display: none; }
 }
+
+/* Orbital instruments distinguish real neighborhoods; rings are decoration,
+   never additional graph relations or interactive targets. */
+.galaxy-neighborhood .galaxy-region { fill-opacity: 1; stroke-opacity: 0; }
+.galaxy-orbits { pointer-events: none; color: var(--cluster-color); }
+.galaxy-orbit-track { fill: none; stroke: currentColor; stroke-opacity: .2; stroke-width: 1; }
+.galaxy-orbit-inner { fill: none; stroke: currentColor; stroke-opacity: .1; stroke-width: .6; stroke-dasharray: 2 10; }
+.galaxy-orbit-light { fill: none; stroke: currentColor; stroke-opacity: .8; stroke-width: 1.5; stroke-linecap: round; }
+.galaxy-core-reticle { fill: none; stroke: var(--cluster-color); stroke-opacity: .6; stroke-width: .8; pointer-events: none; }
+.galaxy-star.is-selected .galaxy-core-reticle { stroke: #fff; stroke-opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  /* Only a single focused constellation animates, never every overview group. */
+  .has-active-constellation .galaxy-orbit-inner { animation: orbit-instrument 60s linear infinite; transform-box: fill-box; transform-origin: center; }
+}
+@keyframes orbit-instrument { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .galaxy-orbits, .galaxy-core-reticle { display: none; }
+}
+
+/* Do not promote document-height animated layers while reading long articles. */
+body:has(main > article) .ambient::before,
+body:has(main > article) .ambient::after { animation: none; }
+@media (forced-colors: active) {
+  .galaxy-neighborhood .galaxy-region { fill: none !important; stroke: CanvasText; stroke-opacity: 1; }
+  .galaxy-star .galaxy-glow { filter: none; }
+}
