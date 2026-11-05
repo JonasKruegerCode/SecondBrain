@@ -52,7 +52,9 @@ test("material atmosphere covers the full article and reactive light respects mo
     return { top: rect.top + scrollY, bottom: rect.bottom + scrollY, height: document.documentElement.scrollHeight };
   });
   expect(coverage.top).toBe(0);
-  expect(coverage.bottom).toBeGreaterThanOrEqual(coverage.height);
+  // scrollHeight is an integer CSS-pixel extent, while DOMRect retains
+  // subpixel layout precision (e.g. 1570.84375 versus 1571 in WebKit).
+  expect(Math.ceil(coverage.bottom)).toBeGreaterThanOrEqual(coverage.height);
   const button = page.locator(".toolbar .primary");
   await button.hover();
   await expect.poll(() => button.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
@@ -172,7 +174,17 @@ test("desktop reading spread keeps contents reachable without changing mobile se
     await page.setViewportSize({ width: 1440, height: 360 });
     expect((await toc.boundingBox())!.height).toBeLessThanOrEqual(312);
     await page.emulateMedia({ forcedColors: "active" });
-    expect(await toc.evaluate(node => getComputedStyle(node).borderLeftColor)).toBe(await page.evaluate(() => getComputedStyle(document.body).color));
+    // An explicit CanvasText border must match the engine's system palette,
+    // not body ink: WebKit can emulate the media query without forcing text.
+    const systemInk = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "color:CanvasText;forced-color-adjust:none";
+      document.body.append(probe);
+      const ink = getComputedStyle(probe).color;
+      probe.remove();
+      return ink;
+    });
+    expect(await toc.evaluate(node => getComputedStyle(node).borderLeftColor)).toBe(systemInk);
     await toc.getByRole("link", { name: "Field section 20", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".prose h2").nth(19)).toBeFocused();

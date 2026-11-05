@@ -65,5 +65,24 @@
     "diagnostics": "WebKit-only trace recording for overlapping native tab and failed first migration cases; discard successful traces and upload failing archives. Assertions, clicks, timeouts, repeats and gate selection unchanged.",
     "local_validation": "10 real API/Chromium browser cases passed, including both native multi-tab cases, both migration cases, shell and press. Typecheck/build passed. Desktop article/galaxy screenshots inspected. Cleanup confirmed.",
     "limits": "Native WebKit unavailable locally because required system libraries cannot be installed under environment privileges. New native CI required; no permission bypass."
+  },
+  "native_reading_followup": {
+    "head": "5d2360ea3e161701bff8476a31707114b07a1490",
+    "ci": "Five non-browser areas passed. Native WebKit preflight114passed; full Chromium508passed; empty first start/restart, Git import and320-page scale passed. WebKit reading383passed/6skipped/2failed; subsequent worker phase skipped. All extracted runner receipts confirm cleanup.",
+    "artifact": "13408073128 downloaded; original browser logs and runner result.json files read.",
+    "failures": [
+      {
+        "check": "atmosphere coverage",
+        "observed": "DOMRect.bottom1570.84375 versus integer scrollHeight1571",
+        "correction": "Compare bottom at the integer CSS-pixel extent used by scrollHeight, with Math.ceil; no arbitrary timeout/geometry allowance."
+      },
+      {
+        "check": "forced-color contents border",
+        "observed": "CanvasText resolved black, body ink remained authored blue in WebKit",
+        "correction": "Resolve the actual CanvasText system color in a temporary probe; do not infer it from body text. Keep border/focus/navigation checks."
+      }
+    ],
+    "product_change": "none in this follow-up; native gate remains intact",
+    "local_validation": "Frontend typecheck and focused real API/Chromium browser checks passed; cleanup confirmed. Native WebKit remains CI-only locally."
   }
 }
