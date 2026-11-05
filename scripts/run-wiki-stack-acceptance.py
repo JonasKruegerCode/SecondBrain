@@ -9,9 +9,7 @@ import ipaddress
 import itertools
 import json
 import os
-import re
 import secrets
-import shlex
 import signal
 import socket
 import ssl
@@ -19,7 +17,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,47 +27,6 @@ from urllib.request import HTTPSHandler, ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
-GIT_FIXTURE_URL = "http://git-fixture:8081/wiki.git"
-# Same smart-HTTP CGI boundary as the real Git credential tests. This fixture
-# runs only inside its owned test container/network, never on an operator host.
-GIT_HTTP_FIXTURE = r'''
-import os
-import subprocess
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
-
-    def do_GET(self):
-        self.respond()
-
-    def do_POST(self):
-        self.respond()
-
-    def respond(self):
-        url = urlsplit(self.path)
-        env = dict(os.environ, GIT_PROJECT_ROOT="/tmp/remotes", GIT_HTTP_EXPORT_ALL="1",
-                   PATH_INFO=url.path, QUERY_STRING=url.query, REQUEST_METHOD=self.command,
-                   REMOTE_USER="synthetic", CONTENT_TYPE=self.headers.get("Content-Type", ""),
-                   CONTENT_LENGTH=self.headers.get("Content-Length", "0"))
-        result = subprocess.run(["git", "http-backend"], env=env,
-            input=self.rfile.read(int(env["CONTENT_LENGTH"])), capture_output=True,
-            check=True, timeout=15)
-        headers, payload = result.stdout.split(b"\r\n\r\n", 1)
-        fields = [line.decode().split(":", 1) for line in headers.split(b"\r\n")]
-        status = next((int(v.strip().split()[0]) for k, v in fields if k == "Status"), 200)
-        self.send_response(status)
-        for name, value in fields:
-            if name != "Status":
-                self.send_header(name, value.strip())
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-ThreadingHTTPServer(("0.0.0.0", 8081), Handler).serve_forever()
-'''
 TOOLS = {
     "get_page",
     "list_pages",
@@ -226,28 +182,6 @@ def import_config(
         service["image"] = images[name]
         service["pull_policy"] = "never"
     return data
-
-
-def validate_image_install(config: dict[str, Any], images: dict[str, str]) -> None:
-    """The copied public install must need images and named storage, never source."""
-    services = config["services"]
-    if set(services) != {"backend", "mcp", "frontend"} or set(images) != set(services):
-        raise RuntimeError("unexpected image-install services")
-    for name, service in services.items():
-        if not re.fullmatch(
-            r"(?:sha256:[0-9a-f]{64}|127\.0\.0\.1:\d+/[a-z-]+@sha256:[0-9a-f]{64})", images[name]
-        ):
-            raise RuntimeError("image-install requires immutable candidate images")
-        if service.get("image") != images[name] or service.get("build"):
-            raise RuntimeError("image-install must not build source")
-        if service.get("entrypoint") or (name == "backend" and service.get("command")):
-            raise RuntimeError("image-install must exercise the backend image default")
-        if any(m.get("type") != "volume" or m.get("source") != "managed_wiki"
-               for m in service.get("volumes", [])):
-            raise RuntimeError("image-install cannot require host files")
-    for resource in ("volumes", "networks"):
-        if any(value.get("external") for value in config.get(resource, {}).values()):
-            raise RuntimeError("image-install cannot attach to existing resources")
 
 
 def validate_recovery_config(
@@ -1022,322 +956,6 @@ class Run:
             raise RuntimeError(f"gate failed: {name}")
         self.steps.append(name)
 
-    @contextlib.contextmanager
-    def registry_candidates(self, images: dict[str, str]) -> Iterator[dict[str, str]]:
-        """Publish/pull reviewed candidates through a disposable local registry.
-
-        This checks the registry distribution path without publishing an
-        unmerged preview to the application's real GHCR latest tags.
-        """
-        name = "sb-install-registry-" + uuid4().hex[:12]
-        owner = uuid4().hex
-        references: list[str] = []
-        try:
-            self.command([*DOCKER, "run", "-d", "--name", name,
-                          "--label", f"secondbrain.acceptance.registry-owner={owner}",
-                          "-p", "127.0.0.1::5000", "registry:2"], timeout=120)
-            address = self.command([*DOCKER, "port", name, "5000/tcp"]).strip()
-            if not re.fullmatch(r"127\.0\.0\.1:\d+", address):
-                raise RuntimeError("registry must have an isolated loopback endpoint")
-            self.wait("http://" + address + "/v2/")
-            selections = {}
-            for service in ("backend", "frontend"):
-                tag = address + "/" + service + ":candidate"
-                self.command([*DOCKER, "tag", images[service], tag])
-                references.append(tag)
-                self.command([*DOCKER, "push", tag], timeout=180)
-                digests = json.loads(self.command(
-                    [*DOCKER, "image", "inspect", "--format", "{{json .RepoDigests}}", tag],
-                    record_output=False,
-                ))
-                selected = [d for d in digests if d.startswith(address + "/" + service + "@")]
-                if len(selected) != 1:
-                    raise RuntimeError("candidate registry digest is unavailable")
-                selections[service] = selected[0]
-                references.append(selected[0])
-                # Remove both references before compose pull. Other reviewed
-                # build tags/containers retain the original candidate ID.
-                self.command([*DOCKER, "image", "rm", tag])
-                # Some engine versions remove the matching RepoDigest with its
-                # last repository tag, others retain it. In either case require
-                # its absence before accepting compose's registry pull.
-                with contextlib.suppress(RuntimeError):
-                    self.command([*DOCKER, "image", "rm", selected[0]])
-                self.command([*DOCKER, "image", "inspect", selected[0]],
-                             expected=1, record_output=False)
-                references.remove(tag)
-                references.remove(selected[0])
-            selections["mcp"] = selections["backend"]
-            references.extend(set(selections.values()))
-            yield selections
-        finally:
-            for reference in references:
-                with contextlib.suppress(RuntimeError, subprocess.TimeoutExpired):
-                    self.command([*DOCKER, "image", "rm", reference], timeout=30)
-            found = self.command([*DOCKER, "ps", "-a", "--filter", f"name=^{name}$",
-                                  "--format", "{{.ID}}"], record_output=False).strip()
-            if found:
-                actual = json.loads(self.command([*DOCKER, "inspect", "--format",
-                    '{{json (index .Config.Labels "secondbrain.acceptance.registry-owner")}}',
-                    found],
-                    record_output=False))
-                if actual != owner:
-                    raise RuntimeError("synthetic registry ownership mismatch")
-                self.command([*DOCKER, "rm", "--force", "--volumes", found])
-
-    def exercise_image_install(
-        self, temp: Path, project: str, images: dict[str, str]
-    ) -> dict[str, Any]:
-        with self.registry_candidates(images) as selections:
-            return self._exercise_image_install(temp, project, images, selections)
-
-    def _exercise_image_install(
-        self, temp: Path, project: str, images: dict[str, str], selections: dict[str, str]
-    ) -> dict[str, Any]:
-        """Use the documented default files without a checkout or build context.
-
-        Candidate images were built above; this is the image-consumption path,
-        not a claim that unmerged images have already been published to GHCR.
-        """
-        install = temp / "image-only-install"
-        install.mkdir()
-        compose_path = install / "docker-compose.yml"
-        compose_path.write_bytes((ROOT / "docker-compose.yml").read_bytes())
-        template = (ROOT / ".env.example").read_text()
-        values = {
-            "WIKI_BACKEND_IMAGE": selections["backend"],
-            "WIKI_MCP_IMAGE": selections["mcp"],
-            "WIKI_FRONTEND_IMAGE": selections["frontend"],
-            "WIKI_FRONTEND_PORT": "0",
-            "WIKI_MCP_PORT": "0",
-            "SECOND_BRAIN_WIKI_API_KEY": self.key,
-            "MCP_API_KEY": "",
-            "OPENROUTER_API_KEY": "",
-            "GCP_API_KEY": "",
-            "SECOND_BRAIN_WIKI_GRAPH_INDEX": "0",
-            "SECOND_BRAIN_WIKI_VECTOR_INDEX": "0",
-            "SECOND_BRAIN_WIKI_GIT_SYNC": "0",
-            "VAULT_GIT_URL": "",
-            "VAULT_GITHUB_URL": "",
-            "SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS": "localhost,localhost:*,127.0.0.1,127.0.0.1:*",
-            "SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS": "http://localhost,http://localhost:*,http://127.0.0.1,http://127.0.0.1:*",
-        }
-        # Preserve the actual template's defaults and comments. Only these
-        # explicit synthetic selections differ from an operator's copied env.
-        lines = [line for line in template.splitlines()
-                 if line.split("=", 1)[0] not in values]
-        (install / ".env").write_text(
-            "\n".join([*lines, *(f"{key}={value}" for key, value in values.items())]) + "\n"
-        )
-        self.check("image-install-only-compose-and-env", {
-            path.name for path in install.iterdir()
-        } == {"docker-compose.yml", ".env"})
-        compose = [*DOCKER, "compose", "--project-directory", str(install),
-                   "--env-file", str(install / ".env"), "-p", project,
-                   "-f", str(compose_path)]
-        # Compose gives ambient variables precedence over --env-file. Supply
-        # exactly the synthetic selections too; never inherit a real provider.
-        environment = {**self.env, **values}
-        resolved = json.loads(self.command(
-            [*compose, "config", "--format", "json"],
-            environment=environment, record_output=False,
-        ))
-        validate_image_install(resolved, selections)
-        # Freeze the same synthetic interpolation for helper calls and cleanup.
-        # These keys are selected candidate images/ports only, not credentials
-        # obtained from an installation.
-        saved_environment = self.env
-        self.env = environment
-        self.projects.append(compose)
-        try:
-            self.command([*compose, "pull"], timeout=180)
-            for name, reference in selections.items():
-                actual_image = json.loads(self.command(
-                    [*DOCKER, "image", "inspect", "--format", "{{json .Id}}", reference],
-                    record_output=False,
-                ))
-                self.check("image-install-registry-bytes-" + name, actual_image == images[name])
-            self.command([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"],
-                         timeout=150)
-            base = self.port(compose, "frontend", 80)
-            self.wait(base + "/api/wiki/health")
-            self.check("image-install-managed-default", self.data(
-                base + "/api/wiki/health"
-            )["profile"] == "managed-wiki")
-            self.check("image-install-fresh-empty", self.data(
-                base + "/api/wiki/pages"
-            )["pages"] == [])
-            html = self.http(base + "/")[0]
-            self.check("image-install-current-ui", b"Your knowledge, connected" in html
-                       and b"legacy" not in html.lower())
-            manifest = self.data(base + "/manifest.webmanifest")
-            self.check("image-install-manifest", manifest["display"] == "standalone")
-            url = base + "/api/wiki/pages/image-install-notebook"
-            create = {"markdown": "# Image install notebook\nOnly synthetic observations.",
-                      "base_revision": None, "request_id": "image-install-create"}
-            created = self.data(url, body=create)
-            self.check("image-install-idempotent-save", self.data(url, body=create) == created)
-            self.data(url, body={**create, "request_id": "image-install-stale"}, expected=409)
-            mcp = self.port(compose, "mcp", 3001) + "/mcp"
-            self.data(mcp, body={}, expected=401)
-            self.initialize(mcp)
-            edit = {**create, "id": "image-install-notebook", "base_revision": created["revision"],
-                    "request_id": "image-install-edit",
-                    "markdown": create["markdown"] + "\nEdited through MCP."}
-            updated = self.rpc(mcp, "tools/call", {"name": "save_page", "arguments": edit})
-            page = self.data(url)
-            self.check("image-install-rest-mcp", page["revision"]
-                       == updated["structuredContent"]["revision"]
-                       and page["markdown"] == edit["markdown"])
-            history = self.data(url + "/history")
-            self.check("image-install-history", len(history["history"]) == 2)
-            found = self.data(base + "/api/wiki/search?q=Image%20install&mode=lexical")
-            self.check("image-install-search", any(
-                hit["id"] == edit["id"] for hit in found["results"]
-            ))
-            self.command([*compose, "down"])
-            self.command([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"],
-                         timeout=150)
-            base = self.port(compose, "frontend", 80)
-            self.wait(base + "/api/wiki/health")
-            self.check("image-install-recreate-persistence", self.data(
-                base + "/api/wiki/pages/" + edit["id"]
-            ) == page and self.data(base + "/api/wiki/pages/" + edit["id"] + "/history") == history)
-            mcp = self.port(compose, "mcp", 3001) + "/mcp"
-            self.initialize(mcp)
-            retry = self.rpc(mcp, "tools/call", {"name": "save_page", "arguments": edit})
-            self.check("image-install-recreate-receipt", retry["structuredContent"]["revision"]
-                       == page["revision"])
-            # Complete cleanup while the exact interpolation remains selected.
-            self.command([*compose, "down", "--volumes", "--remove-orphans"], timeout=90)
-            git = self.exercise_git_image_install(install, compose, project, images)
-            self.projects.remove(compose)
-            return {"status": "passed", "files": ["docker-compose.yml", ".env"],
-                    "images": images, "build_contexts": False, "host_scripts": False,
-                    "backend_command_override": False,
-                    "distribution": "disposable-loopback-registry",
-                    "registry_pull": True, "public_ghcr_published": False,
-                    "registry_digests": selections,
-                    "pages": 1, "history_entries": 2, "recreated_with_persistence": True,
-                    "automatic_git": git}
-        finally:
-            # A failed subcase keeps its project in the outer cleanup list. The
-            # env file carries the same values after restoring this environment.
-            self.env = saved_environment
-
-    def exercise_git_image_install(
-        self, install: Path, compose: list[str], project: str, images: dict[str, str]
-    ) -> dict[str, Any]:
-        """Real private-network smart HTTP Git exercises env-driven startup and sync.
-
-        The fixture is another candidate-image container, with no published
-        ports or host mounts. It is a synthetic Git server, not an application
-        service or an installation requirement.
-        """
-        git_values = {"VAULT_GIT_URL": GIT_FIXTURE_URL,
-                      "VAULT_GIT_BRANCH": "main", "VAULT_GIT_AUTH_METHOD": "none",
-                      "VAULT_GIT_PROVIDER": "other", "SECOND_BRAIN_WIKI_GIT_SYNC": "1"}
-        self.env.update(git_values)
-        path = install / ".env"
-        path.write_text(path.read_text() + "\n".join(
-            f"{key}={value}" for key, value in git_values.items()
-        ) + "\n")
-        # Create only: the default backend starts after its remote is ready.
-        self.command([*compose, "create", "--no-build", "--pull", "never"], timeout=90)
-        fixture = project + "-git"
-        owner = uuid4().hex
-        script = (
-            "set -eu\n"
-            "mkdir -p /tmp/remotes /tmp/source/1_knowledge/wiki\n"
-            "git init --bare /tmp/remotes/wiki.git\n"
-            "git -C /tmp/remotes/wiki.git symbolic-ref HEAD refs/heads/main\n"
-            "git -C /tmp/remotes/wiki.git config http.receivepack true\n"
-            "git -C /tmp/source init -b main\n"
-            "git -C /tmp/source config user.name 'Synthetic Fixture'\n"
-            "git -C /tmp/source config user.email fixture@example.invalid\n"
-            "printf '# Git image notebook\\nSynthetic remote start.\\n' "
-            "> /tmp/source/1_knowledge/wiki/git-home.md\n"
-            "git -C /tmp/source add .\n"
-            "git -C /tmp/source commit -m 'Synthetic remote seed'\n"
-            "git -C /tmp/source push /tmp/remotes/wiki.git main\n"
-            "exec python -u -c " + shlex.quote(GIT_HTTP_FIXTURE)
-        )
-        try:
-            self.command([*DOCKER, "run", "-d", "--name", fixture,
-                          "--label", f"secondbrain.acceptance.git-owner={owner}",
-                          "--network", project + "_default", "--network-alias", "git-fixture",
-                          "--pull", "never", images["backend"], "sh", "-c", script], timeout=90)
-            deadline = time.monotonic() + 60
-            while True:
-                try:
-                    self.command([*DOCKER, "exec", fixture, "git", "ls-remote",
-                                  "http://127.0.0.1:8081/wiki.git"], timeout=10)
-                    break
-                except RuntimeError:
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("synthetic smart HTTP Git readiness timed out") from None
-                    time.sleep(0.5)
-            self.command([*compose, "up", "-d", "--no-build", "--pull", "never", "--wait"],
-                         timeout=150)
-            base = self.port(compose, "frontend", 80)
-            self.wait(base + "/api/wiki/health")
-            url = base + "/api/wiki/pages/git-home"
-            page = self.data(url)
-            self.check("image-install-git-auto-start",
-                       "Synthetic remote start." in page["markdown"])
-            edit = {"markdown": page["markdown"] + "\nSaved in the installed app.",
-                    "base_revision": page["revision"], "request_id": "image-git-edit"}
-            saved = self.data(url, body=edit)
-            deadline = time.monotonic() + 60
-            while True:
-                remote = self.command([*DOCKER, "exec", fixture, "git", "--git-dir",
-                                       "/tmp/remotes/wiki.git", "show",
-                                       "HEAD:1_knowledge/wiki/git-home.md"])
-                if remote == edit["markdown"]:
-                    break
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("installed image did not automatically push")
-                time.sleep(0.5)
-            self.steps.append("image-install-git-auto-push")
-            self.command([*DOCKER, "exec", fixture, "sh", "-c",
-                          "set -eu; git -C /tmp/source pull --ff-only /tmp/remotes/wiki.git main; "
-                          "printf '\\nExternal synthetic change.\\n' >> "
-                          "/tmp/source/1_knowledge/wiki/git-home.md; "
-                          "git -C /tmp/source add .; "
-                          "git -C /tmp/source commit -m 'External synthetic edit'; "
-                          "git -C /tmp/source push /tmp/remotes/wiki.git main"])
-            deadline = time.monotonic() + 60
-            while True:
-                incoming = self.data(url)
-                if "External synthetic change." in incoming["markdown"]:
-                    break
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("installed image did not automatically pull")
-                time.sleep(0.5)
-            self.check("image-install-git-auto-pull", incoming["revision"] != saved["revision"])
-            search = self.data(base + "/api/wiki/search?q=External%20synthetic&mode=lexical")
-            self.check("image-install-git-read-projection", any(
-                item["id"] == "git-home" for item in search["results"]
-            ))
-            self.command([*compose, "restart", "backend", "mcp"], timeout=90)
-            self.wait(base + "/api/wiki/health")
-            self.check("image-install-git-restart", self.data(url) == incoming)
-            return {"status": "passed", "remote": "isolated-network-smart-http",
-                    "automatic_start": True, "automatic_push": True, "automatic_pull": True,
-                    "restart_persistence": True, "provider_calls": False}
-        finally:
-            found = self.command([*DOCKER, "ps", "-a", "--filter", f"name=^{fixture}$",
-                                  "--format", "{{.ID}}"], record_output=False).strip()
-            if found:
-                actual = json.loads(self.command([*DOCKER, "inspect", "--format",
-                    '{{json (index .Config.Labels "secondbrain.acceptance.git-owner")}}', found],
-                    record_output=False))
-                if actual != owner:
-                    raise RuntimeError("synthetic Git fixture ownership mismatch")
-                self.command([*DOCKER, "rm", "--force", found])
-            # Only this owned temporary install has these generated resources.
-            self.command([*compose, "down", "--volumes", "--remove-orphans"], timeout=90)
-
     def exercise_import(
         self, temp: Path, source_config: dict[str, Any], project: str, images: dict[str, str]
     ) -> dict[str, Any]:
@@ -1655,8 +1273,7 @@ def main() -> int:
                 "--env-file",
                 str(env_file),
                 "-f",
-                str(ROOT / "docker-compose.yml"),
-                "-f", str(ROOT / "docker-compose.source.yml"),
+                str(ROOT / "docker-compose.wiki.yml"),
             ]
             raw = json.loads(
                 run.command([*original, "config", "--format", "json"], record_output=False)
@@ -1717,9 +1334,6 @@ def main() -> int:
             try:
                 run.command([*compose, "build"], timeout=600)
                 run.steps.append("compose-build")
-                for service in isolated["services"].values():
-                    service["pull_policy"] = "never"
-                original_path.write_text(json.dumps(isolated))
                 run.configure_churn_network(isolated, project)
                 original_path.write_text(json.dumps(isolated))
                 seed = [
@@ -1823,7 +1437,7 @@ def main() -> int:
                 )
                 restored = [
                     *docker, "compose", "-p", restore_project, "--env-file", str(env_file),
-                    "-f", str(ROOT / "docker-compose.yml"),
+                    "-f", str(ROOT / "docker-compose.wiki.yml"),
                     "-f", str(ROOT / "docker-compose.wiki.recovery.yml"),
                 ]
                 actual = json.loads(
@@ -1888,9 +1502,6 @@ def main() -> int:
                     "original-preserved-after-recovery",
                     run.data(base + "/api/wiki/pages/stack-fixture") == page
                     and run.data(base + "/api/wiki/pages/stack-fixture/history") == history,
-                )
-                result["image_only_install"] = run.exercise_image_install(
-                    temp, project + "-images", images
                 )
                 result["container_import"] = run.exercise_import(
                     temp, source_config, project + "-import", images

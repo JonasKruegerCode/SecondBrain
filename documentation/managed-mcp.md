@@ -1,14 +1,16 @@
 # Managed Wiki MCP over HTTP
 
-The managed profile provides the same eleven revision-aware content/retrieval/status tools and
+The managed profile provides the same ten revision-aware content/retrieval/status tools and
 `wiki://guidance` resource over stdio or Streamable HTTP. HTTP uses `/mcp`,
 stateless requests, and JSON responses. It does not invoke model providers,
 remember/recall or the legacy editorial agent. Reads do not invoke remote Git;
 factory-owned background delivery synchronizes a configured Git target
 independently of read requests. See [recoverable delivery](managed-delivery.md).
 
-This is the sole MCP application. The old combined server and ingestion tools
-have been removed. The current factory preserves `MCP_API_KEY`
+This is the primary MCP offering for the 2.0 managed wiki. Existing legacy MCP
+production routes, authentication, REST API, and configuration remain available
+only as a separate [optional compatibility profile](legacy-memory-profile.md).
+Legacy also uses `/mcp`. The managed factory preserves `MCP_API_KEY`
 from ENV/dotenv as a fallback when no nonempty `SECOND_BRAIN_WIKI_API_KEY`
 is selected. This legacy-key mode retains `X-API-Key`, case-insensitive Bearer
 and `?api_key=…` authentication, in that precedence. A wrong higher-priority
@@ -25,7 +27,8 @@ Neither mode publishes `/register`, `/token`, or OAuth discovery endpoints.
 In particular the old registration behavior that returned the configured shared
 secret is not reproduced. Existing direct key/header URLs do not need those
 routes. Clients that relied on OAuth-like discovery must instead configure a
-static authenticated MCP URL/header. This service is not an OAuth
+static authenticated MCP URL/header or continue using the separate legacy
+profile while their migration is reviewed. This service is not an OAuth
 authorization server.
 
 ## Explicit local startup
@@ -96,10 +99,8 @@ For a legacy endpoint on port 3000, preserve `MCP_PORT=3000` or explicitly set
 on 3001; the upstream proxy must use the published host port:
 
 ```sh
-cp .env.example .env
-# Edit the secret and allowlists before starting.
-docker compose pull
-docker compose up -d --wait
+cp .env.wiki.example .env.wiki
+docker compose --env-file .env.wiki -f docker-compose.wiki.yml up -d --build
 ```
 
 The MCP container receives the new key and the legacy `MCP_API_KEY` fallback;

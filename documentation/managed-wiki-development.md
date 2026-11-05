@@ -1,8 +1,11 @@
-# Current wiki development
+# Managed wiki: first runnable development milestone
 
-The repository contains one Wiki-first application. The root Compose installs
-published images; the source overlay builds that same app. Native commands below
-are developer tools only. See [installation](install-update.md).
+This is an **opt-in development profile**, not the completed 2.0 release. It uses
+real local Markdown content and Git history, without Redis, Neo4j, Qdrant, remote
+Git, an embedding provider, or a chat model. Legacy APIs and workers remain an
+optional compatibility profile; the default legacy Compose stack serves
+`legacy.html`. Do not attach the legacy worker or a direct file writer to a
+managed vault.
 
 ## Start and stop
 
@@ -44,7 +47,7 @@ and explicit opt-in remote bootstrap.
 durable local ledgers and demo metadata, then restores only into a new vault.
 External index providers, secrets and proxy configuration remain separate.
 
-The standard `docker-compose.yml` describes an empty managed installation
+The separate `docker-compose.wiki.yml` describes an empty managed installation
 on `127.0.0.1:8080` plus managed HTTP MCP on `127.0.0.1:3001`. Its container
 build/start, HTTPS/auth, restart and independent-volume restore have separate
 [disposable CI acceptance](managed-stack-acceptance.md); inspect the actual run
@@ -189,7 +192,8 @@ PYTHONPATH=backend/src "$WIKI_PYTHON" -m second_brain.wiki.mcp
 This is a local stdio transport. The `wiki://guidance` resource documents concise
 article openings, headings, links at the point of use, stable IDs, source
 discipline, revision conflicts and exact retries. Managed tools are get/list/
-search/save/delete/graph/history. Old remember/recall and the separate ingestion application have been removed.
+search/save/delete/graph/history. Legacy remember/recall remain in the separate
+[optional compatibility profile](legacy-memory-profile.md), and are absent here.
 No automatic editorial repair runs.
 
 Streamable HTTP provides those same tools at `/mcp`, with an optional Bearer
@@ -225,13 +229,14 @@ have not been tested by these cases.
 The frontend provides a bright responsive Home, safe rendered Markdown,
 aliased wikilinks, direct URLs, browser navigation, persisted start page,
 lexical search, article contents, on-demand local Git history, and a revision-aware
-editor with conflict drafts and separate delivery progress. The old frontend entry has been removed; only the current app is built. Screenshot
+editor with conflict drafts and separate delivery progress. The original
+frontend is retained as a separate build entry for legacy deployment. Screenshot
 inspection and running-browser tests are required after UI changes; build/type
 checks alone do not establish visual quality.
 
 Not complete: production Git credential provisioning, live provider/deployment integration,
 provider-scale index retention validation, large-vault galaxy acceptance beyond the 320-page fixture,
-physical-device PWA installation and
+physical-device PWA installation, deployment packaging and
 full migration acceptance. Device installation and real-model chat quality are
 not claimed. Do not use this milestone as the final production migration.
 

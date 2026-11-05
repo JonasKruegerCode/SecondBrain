@@ -245,12 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                             "-p",
                             project,
                             "-f",
-                            *(
-                                [str(source / "docker-compose.wiki.yml")]
-                                if version == "old"
-                                else [str(source / "docker-compose.yml"),
-                                      "-f", str(source / "docker-compose.source.yml")]
-                            ),
+                            str(source / "docker-compose.wiki.yml"),
                             "config",
                             "--format",
                             "json",
@@ -259,15 +254,6 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
                 config = stack["isolated_config"](raw, project, run.key)
-                # The retained baseline predates the current image default.
-                # Its old Docker CMD starts the removed application; use the
-                # native Managed command for this compatibility pair only.
-                # The separate copied-root image-install gate exercises the
-                # candidate's unmodified Dockerfile default.
-                config["services"]["backend"]["command"] = [
-                    "python", "-m", "uvicorn", "second_brain.wiki.api:app_factory",
-                    "--factory", "--host", "0.0.0.0", "--port", "8000",
-                ]
                 for name in SERVICES:
                     config["services"][name]["image"] = f"{project}:{version}-{name}"
                 path = temp / (version + ".json")

@@ -1,143 +1,106 @@
-# Install, update and recover SecondBrain
+# Install, update and recover the managed Compose preview
 
-The [README](../README.md#install-with-docker) is the short installation path:
-copy `docker-compose.yml` and `.env.example`, configure `.env`, then pull/start.
-Only Docker Engine with Compose v2 is needed on the host. The base Compose has
-**no build context, host startup script, worker/Redis/Jaeger service or old UI**.
-The backend image's normal command is the current REST factory; the MCP service
-uses its own native factory from that same image. Do not add `run-managed.py`.
+Use a reviewed source revision and the managed Compose file. This guide prepares
+an operator procedure; it does not authorize a production deployment or migrate
+an existing legacy vault. Docker Engine and Compose v2 are required for runtime
+commands. Start with the [first-start choices](first-start.md), keep the existing
+authenticated HTTPS proxy, and use the [MCP guide](managed-mcp.md) for its separate
+Bearer/Host/Origin boundary.
 
-## Network and authentication
+The source-build route below needs Git, Docker Engine with Compose v2, and network
+access to the Docker bases and package registries used by the Dockerfiles. Python,
+Poetry and Node run inside the build containers; their native host installations
+are needed only for the separate development/demo route. Use the complete reviewed
+checkout, including `backend/`, `frontend/`, their lockfiles and the Compose files.
+Do not run the legacy `docker-compose.yml` in place of the managed file.
 
-| Route | Default destination | Authentication |
-| --- | --- | --- |
-| Browser, assets, manifest, worker and `/api/wiki/*` | `127.0.0.1:8080` → frontend:80 | Existing authenticated HTTPS proxy |
-| REST upstream | backend:8000, Docker network only | Same-origin browser proxy; not exposed directly |
-| Streamable MCP `/mcp` | `127.0.0.1:3001` → mcp:3001 | MCP secret plus Host/Origin allowlists |
+## Keep one installation identity
 
-`WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` configure host ports. A nonempty
-`WIKI_MCP_PORT` wins over `MCP_PORT`, then 3001. An existing `MCP_PORT=3000`
-therefore preserves that host port; the MCP container listens on 3001.
-The browser/API does not receive the MCP key. Preserve the public Host header
-through the frontend proxy: changing it can make writes fail `origin_rejected`.
-Forward MCP authorization and configure its actual incoming Host and allowed
-HTTPS Origins. The service is not an OAuth authorization server.
+Run from the root of a clean checkout of the reviewed `secondbrain-2.0` revision.
+Record its full commit with `git rev-parse HEAD`. Check `git status --short` before
+changing revisions; preserve local work rather than overwriting it.
 
-For a reverse proxy in Docker, loopback host ports are not its own loopback.
-Attach `frontend` and `mcp` to the existing proxy network via an operator-owned
-Compose override, using distinct aliases per installation, or route through a
-reachable host gateway. Keep the internal default network too. Route the web
-host to frontend:80 and the MCP host to mcp:3001, with existing authentication
-and TLS. A changed upstream requires updating the existing route; this does not
-mean another reverse-proxy installation is needed. Never publish an unauthenticated
-browser/API on a public interface.
-
-## Content, Git and providers
-
-A new instance uses `managed_wiki:/managed-vault`. Without a Git URL it starts
-empty. It never automatically seeds an existing nonempty vault. Optional template
-and explicit import commands are in [first start](first-start.md).
-`VAULT_GIT_URL` / existing `VAULT_GITHUB_URL` enables automatic startup import and
-subsequent pull/integration/commit/push. Existing auth aliases remain supported.
-Choose the content folder deliberately: `SECOND_BRAIN_WIKI_GIT_PREFIX` defaults
-to `1_knowledge/wiki`; an empty value selects repository root. See
-[Git delivery](managed-delivery.md) for conflicts, credentials and retry.
-Mount explicitly selected SSH key/trust files read-only; no host script is needed.
-
-Without model/index settings, article/editor/history, explicit links, local graph
-and lexical search work. Configure OpenRouter for paid chat, and reachable
-Neo4j/Qdrant endpoints for the optional indexes. The same settings reach REST
-and MCP; only REST owns the background Git/index loops. Health checks verify
-local storage, not completed indexing or provider quality. Use the index/delivery
-status tools independently. Never paste secrets into logs or print resolved
-Compose configuration; `docker compose config --quiet` checks it silently.
-
-## Optional index databases
-
-Use existing reachable database endpoints, or copy `docker-compose.indexes.yml`
-alongside the base file. Set `NEO4J_PASSWORD` and the chosen embedding provider key
-in `.env`, then run:
+For a **new** installation choose one project name:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.indexes.yml up -d --wait
+export WIKI_PROJECT=secondbrain-wiki
+wiki_compose() {
+  docker compose -p "$WIKI_PROJECT" --env-file .env.wiki \
+    -f docker-compose.wiki.yml "$@"
+}
 ```
 
-This adds only Neo4j and Qdrant, with private persistent volumes and no public
-ports. It sets internal endpoints in both app processes. Set
-`SECOND_BRAIN_WIKI_VECTOR_INDEX=0` to defer paid embeddings. The graph/vector
-adapters and GraphRAG tools remain part of the app; removing Celery does not
-remove these features. Consult [index operation](managed-indexes.md).
+For an **existing** installation, use its actual project name instead. Inspect
+the `com.docker.compose.project` container/volume labels if necessary. Do not
+adopt this example name over an existing installation: the named `managed_wiki`
+volume is project-prefixed, so a different project can appear to be an empty wiki.
+Keep this project name, Compose files, environment file and volume mapping for
+every start, backup and update. An explicit volume `name:` override also matters.
+If using the [proxy-network override](../README.md#docker-compose-preview), add
+its `-f` argument to this function and retain it throughout the procedure.
+Use distinct proxy-network aliases for each installation; route to those aliases
+rather than a generic `frontend` or `mcp` name shared by several projects.
 
-## Source builds and native development
+Copy `.env.wiki.example` to the ignored `.env.wiki` only on initial setup. Set a
+real MCP secret and exact proxy authorities/origins. The browser API does not
+receive the MCP Bearer key; protect frontend, assets and `/api/wiki` with the
+existing proxy authentication. Configure OpenRouter only if paid chat is wanted.
+The base managed Compose forwards the existing `VAULT_GIT_*` / `VAULT_GITHUB_*`
+settings. A configured Git URL pulls the existing wiki on a fresh start and
+enables ongoing synchronization; see [Git delivery](managed-delivery.md). Keep
+SSH key/trust-file mounts read-only and separate from content. Optional external
+index providers still require a separate reviewed operator step. `--env-file`
+supplies Compose interpolation, not every container's process environment. Merely
+adding provider variables to `.env.wiki` does not pass them to the services. A
+reviewed override must map the required variables into both API and MCP, with the
+same index configuration and only one delivery worker. Follow the
+[index](managed-indexes.md) and [delivery](managed-delivery.md) contracts.
 
-From a complete checkout with `.env` configured:
+Preserve the browser's public `Host` authority through the proxy to the frontend;
+its Nginx forwards that authority to the API, which checks it against a present
+`Origin` on writes/chat. Rewriting it to an internal service name can leave reads
+working while saves fail with `403 origin_rejected`. For MCP, forward the Bearer
+header and configure its actual incoming Host and optional Origin independently.
+
+Check interpolation without printing secrets, then build and start:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.source.yml up -d --build --wait
+wiki_compose config --quiet
+wiki_compose build backend mcp frontend
+wiki_compose up -d --no-build --wait
+wiki_compose ps
 ```
 
-Both Docker paths run Python/Poetry/Node inside build/runtime images. Native
-host dependencies are needed only for the [development/demo](managed-wiki-development.md)
-path. The source overlay chooses local `:dev` image tags and build contexts;
-never copy it into an image-only installation. `restart` alone does not update
-images, environment or Compose configuration.
+For a new installation that should contain a template or an explicit local Git import,
+build first, then run one of the [container first-start commands](first-start.md#container-first-start)
+against this same project/volume **before** `up`. Native setup into a host
+directory does not populate the Compose named volume. The default empty start
+above is also intentional and remains usable without optional providers.
 
-## Existing installations and breaking changes
+The preview defaults to frontend `127.0.0.1:8080` and MCP `127.0.0.1:3001`.
+`WIKI_FRONTEND_PORT` and `WIKI_MCP_PORT` select different host ports while retaining
+loopback binding. For MCP, a nonempty `WIKI_MCP_PORT` wins, then an existing
+`MCP_PORT`, then the preview default 3001. Preserve `MCP_PORT=3000` (the old
+default) or set `WIKI_MCP_PORT=3000` if the existing proxy/client expects that
+host endpoint; starting the preview does not change the proxy automatically.
+Port `0` requests an available Docker-assigned port; discover it
+with `wiki_compose port frontend 80` or `wiki_compose port mcp 3001`.
+With no Git URL a new volume starts empty; services never auto-seed it.
+A configured URL instead pulls its committed Markdown before serving the fresh
+wiki. Preserve the original Git and old volumes while validating the result. Backend health means the
+local content authority is readable, not that model, index or remote delivery is
+accepted. `--wait` does not replace checking frontend/MCP through the actual proxy.
+Keep unrelated legacy/production services and volumes separate. Ordinary
+`stop`/`start` retains this content. **Do not use `down --volumes` or volume prune
+for an update:** that can delete the persistent wiki.
 
-This is a deliberate removal of the old application entry, old UI, ingestion/
-repair, `remember`/`recall`, old REST routes and Celery/Redis/telemetry runtime.
-New backend images default to the Managed REST API, not the old combined MCP
-server. Clients must use `/api/wiki/*` and current MCP tools; current key/Git
-configuration compatibility is retained. The obsolete root Compose command that
-copied `legacy.html` over `index.html` must be removed by adopting this reviewed
-Compose, not preserved as a custom override.
-
-**Before merging/updating shared `latest` consumers:** identify old installations,
-retain their exact running image IDs/digests and Compose/env files, and arrange
-their deliberate switch. A worker still launching Celery or a frontend still
-copying removed `legacy.html` cannot run against the new images. Pin an unconverted
-installation to its retained old images; do not automatically replace its config.
-Changing image tags is not a data migration. No other instance is changed by
-preparing this PR.
-
-Preserve the actual Compose project, volume and vault subdirectory. The new
-base uses a project-prefixed `managed_wiki` volume. If your existing Managed data
-is elsewhere, map that exact volume and path in a local override **for both**
-backend and MCP before starting. For example, an existing volume `existing_vault`
-with a managed store at `/vault/.managed-wiki` can be selected explicitly:
-
-```yaml
-services:
-  backend:
-    environment:
-      SECOND_BRAIN_WIKI_VAULT: /managed-vault/.managed-wiki
-  mcp:
-    environment:
-      SECOND_BRAIN_WIKI_VAULT: /managed-vault/.managed-wiki
-volumes:
-  managed_wiki:
-    external: true
-    name: existing_vault
-```
-
-Use the real name and subdirectory, not these example values. Keep only one
-writer deployment on a vault; stop the prior app's writers for a deliberate
-cutover. Do not delete volumes, user directories, `.env`, or unrelated services.
-The old raw-Markdown layout is not interchangeable with the Managed store;
-import it deliberately with the existing Git/import tools when needed.
-The current browser/MCP proxy routes and auth are retained or explicitly
-retargeted; no deployment is performed by the cleanup PR.
-
-For the remaining examples, use one fixed installation identity:
-
-```sh
-wiki_compose() { docker compose --env-file .env -f docker-compose.yml "$@"; }
-```
-
-Add your actual `-p` project name and every required local override to this
-function and keep them throughout the operation. Do not introduce a new project
-name over existing data. Normal `stop`/`start` and `up` retain volumes;
-`down --volumes` deletes nonexternal persistent data and is not an update.
+The shared server environment also passes configured graph/vector providers
+to both API and MCP; see [index configuration](managed-indexes.md#enable-and-operate).
+Explicit existing provider endpoints activate their managed indexes unless
+disabled; model dimensions can be inferred from actual output. The inspection
+recovery overlay explicitly disables Git sync,
+graph/vector indexing and model credentials so merely opening a restored
+archive cannot pull new remote content or start provider work.
 
 ## Prepare an update and archive current content
 
@@ -187,9 +150,9 @@ started again with `wiki_compose up -d --no-build --wait`.
 
 ## Apply a reviewed application version
 
-Select the matching reviewed images, retaining the existing protected environment,
-overrides and project identity. Pull the backend/MCP/frontend pair before replacing
-services. For source builds, add docker-compose.source.yml explicitly. Backend and MCP share one authority and must be compatible;
+Select the reviewed source commit in the clean checkout, retaining the existing
+ignored environment, overrides and project identity. Build all three services
+from that version. Backend and MCP share one authority and must be compatible;
 avoid a prolonged mixed-version writer deployment.
 
 For a frontend update requiring an in-app notice, ensure the reviewed version
@@ -199,7 +162,7 @@ manual release requirement, not an automatic build stamp. Then:
 
 ```sh
 wiki_compose config --quiet
-wiki_compose pull backend mcp frontend
+wiki_compose build backend mcp frontend
 wiki_compose up -d --no-build --wait
 wiki_compose ps
 ```
@@ -210,13 +173,31 @@ reviewed Git commit pins application source, not every build input: Docker base
 tags and apt repositories remain mutable. Record the resulting image IDs; an
 older-source rebuild is not proof of the identical former image.
 
-The standard file already selects registry images. To pin an accepted version,
-set `WIKI_BACKEND_IMAGE`, `WIKI_MCP_IMAGE` (defaults to the backend selection) and
-`WIKI_FRONTEND_IMAGE` to matching reviewed tags or immutable registry digests.
-Main builds publish `latest` and `sha-<short-commit>`; PR validation does not
-publish these tags. Before a controlled update, verify both artifacts exist.
-For retained local image IDs, do not pull: use `wiki_compose up -d --no-build
---pull never --wait`. Never assume that `latest` has already reached the host.
+Published application images are an alternative **only when those exact artifacts
+exist and their provenance is reviewed**. PR image builds do not publish this
+branch; both application workflows publish only on their configured `main` push
+path. A green PR build is not a downloadable preview image. Do not substitute
+`latest` from the default branch. Keep the matching Compose/env/override files
+even for image-only operation; no host Poetry or Node installation is required.
+Use a local override
+with concrete reviewed digests/retained image IDs for all services:
+
+```yaml
+services:
+  backend:
+    image: ${WIKI_BACKEND_IMAGE:?Select the reviewed backend image}
+  mcp:
+    image: ${WIKI_MCP_IMAGE:?Select the matching reviewed MCP image}
+  frontend:
+    image: ${WIKI_FRONTEND_IMAGE:?Select the reviewed frontend image}
+```
+
+Add this override's `-f` argument to `wiki_compose`, set the three selections in
+the protected environment, and check `config --quiet`. For registry digests,
+explicitly `wiki_compose pull backend mcp frontend` first. For retained local
+images, do not pull. In either case use
+`wiki_compose up -d --no-build --pull never --wait`; the inherited build entries
+are not used. Do not mix this image-selected route with the source build command.
 
 ## Check service and browser recovery
 
@@ -280,7 +261,7 @@ inspect the recovered wiki through Compose, use the checked-in
 subdirectory and external volume, disables paid chat and remote delivery, and
 uses only the three explicitly selected local images. It inherits local HTTP
 access, not the installation's public proxy. Create an ignored inspection env
-file (for example `.env.inspect`) with these values:
+file (for example `.env.wiki.inspect`) with these values:
 
 ```dotenv
 WIKI_RECOVERY_VOLUME=the-new-volume-you-just-restored
@@ -299,8 +280,8 @@ inspection project, and only these two Compose files (no public proxy override):
 
 ```sh
 wiki_inspect() {
-  docker compose -p secondbrain-recovery-inspect --env-file .env.inspect \
-    -f docker-compose.yml -f docker-compose.wiki.recovery.yml "$@"
+  docker compose -p secondbrain-recovery-inspect --env-file .env.wiki.inspect \
+    -f docker-compose.wiki.yml -f docker-compose.wiki.recovery.yml "$@"
 }
 wiki_inspect config --quiet
 wiki_inspect up -d --no-build --pull never --wait

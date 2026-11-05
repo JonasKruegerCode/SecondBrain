@@ -9,6 +9,11 @@ from typing import Any
 
 import httpx
 import pytest
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
 from second_brain.core.config import settings
 from second_brain.llm.providers.openrouter import client as module
@@ -25,13 +30,17 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> OpenRouterClient:
 
 
 def install_transport(
-    monkeypatch: pytest.MonkeyPatch, handler: Any
+    monkeypatch: pytest.MonkeyPatch, handler: Any, tracing: TracerProvider | None = None
 ) -> list[httpx.AsyncClient]:
     real_client = httpx.AsyncClient
     clients: list[httpx.AsyncClient] = []
 
     def local_client(**kwargs: Any) -> httpx.AsyncClient:
         client = real_client(transport=httpx.MockTransport(handler), **kwargs)
+        if tracing is not None:
+            # Global instrumentation wraps the default transport only. Wrap the
+            # synthetic transport explicitly through the same public API.
+            HTTPXClientInstrumentor.instrument_client(client, tracer_provider=tracing)
         clients.append(client)
         return client
 
@@ -41,7 +50,7 @@ def install_transport(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["http", "transport", "json"])
-async def test_failures_redact_logs_and_exception_chain(
+async def test_failures_redact_logs_traces_and_exception_chain(
     provider: OpenRouterClient,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -60,17 +69,42 @@ async def test_failures_redact_logs_and_exception_chain(
             503, text=PRIVATE, extensions={"reason_phrase": PRIVATE.encode()}
         )
 
-    install_transport(monkeypatch, response)
-    with caplog.at_level(logging.INFO), pytest.raises(OpenRouterError) as caught:
-        await provider.tool_chat([{"role": "user", "content": PRIVATE}], [])
-    rendered = "".join(traceback.format_exception(caught.value))
-    assert PRIVATE not in caplog.text + rendered
-    assert attempts == 4
-    assert "All 4 attempts failed" in str(caught.value)
-    expected_type = {
-        "http": "HTTPStatusError", "transport": "ReadError", "json": "JSONDecodeError"
-    }[failure]
-    assert expected_type in caplog.text
+    exporter = InMemorySpanExporter()
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "false")
+    tracing = TracerProvider(sampler=ALWAYS_ON)
+    tracing.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(module, "tracer", tracing.get_tracer("provider-test"))
+    # Production can enable global HTTPX instrumentation. It must not add raw
+    # transport exceptions alongside the client's deliberately bounded spans.
+    instrumentation = HTTPXClientInstrumentor()
+    instrumentation.instrument(tracer_provider=tracing)
+    try:
+        install_transport(monkeypatch, response, tracing)
+        # A positive control proves HTTPX tracing is active for this transport;
+        # an empty export must not accidentally satisfy the privacy check.
+        async with httpx.AsyncClient() as control:
+            with suppress(httpx.ReadError):
+                await control.post("https://provider.invalid/chat")
+        assert any(span.name == "POST" for span in exporter.get_finished_spans())
+        exporter.clear()
+        attempts = 0
+        with caplog.at_level(logging.INFO), pytest.raises(OpenRouterError) as caught:
+            await provider.tool_chat([{"role": "user", "content": PRIVATE}], [])
+        rendered = "".join(traceback.format_exception(caught.value))
+        spans = exporter.get_finished_spans()
+        diagnostics = "".join(span.to_json() for span in spans)
+        assert PRIVATE not in caplog.text + rendered + diagnostics
+        assert attempts == 4
+        assert "All 4 attempts failed" in str(caught.value)
+        expected_type = {
+            "http": "HTTPStatusError", "transport": "ReadError", "json": "JSONDecodeError"
+        }[failure]
+        assert expected_type in caplog.text
+        assert len([span for span in spans if span.name == "openrouter.attempt"]) == 4
+        assert not any(span.name == "POST" for span in spans)
+    finally:
+        instrumentation.uninstrument()
+        tracing.shutdown()
 
 
 @pytest.mark.asyncio

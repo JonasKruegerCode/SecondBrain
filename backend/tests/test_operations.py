@@ -1,0 +1,451 @@
+"""Unit tests for the typed vault operations (agent action space)."""
+from pathlib import Path
+
+from second_brain.agent.operations import (
+    AddClaim,
+    CreatePage,
+    DeleteClaim,
+    DeletePage,
+    EditClaim,
+    EditSection,
+    Link,
+    MarkOutdated,
+    Merge,
+    Unlink,
+    apply_operations,
+    parse_operations,
+)
+
+PAGE_A = """\
+# Second Brain
+
+last_updated: 2026-01-01
+
+A personal memory system.
+
+## Architecture
+
+Wiki is the source of truth.
+
+## Open Bugs
+
+Neo4j get_neighbors is flaky.
+"""
+
+PAGE_B = """\
+# SecondBrain Project
+
+last_updated: 2026-01-01
+
+Duplicate page about the same [[second-brain|memory system]] project.
+"""
+
+PAGE_C = """\
+# Watchtower
+
+last_updated: 2026-01-01
+
+Deployment tool, see [[secondbrain-project]] and [[secondbrain-project|the project]].
+"""
+
+
+def _make_vault(tmp_path: Path) -> Path:
+    wiki = tmp_path / "wiki"
+    wiki.mkdir()
+    (wiki / "second-brain.md").write_text(PAGE_A, encoding="utf-8")
+    (wiki / "secondbrain-project.md").write_text(PAGE_B, encoding="utf-8")
+    (wiki / "watchtower.md").write_text(PAGE_C, encoding="utf-8")
+    return wiki
+
+
+# ---------------------------------------------------------------------------
+# parse_operations
+# ---------------------------------------------------------------------------
+
+def test_parse_valid_and_invalid_ops() -> None:
+    ops, rejected = parse_operations([
+        {"op": "add_claim", "page": "second-brain", "text": "New fact."},
+        {"op": "edit_section", "page": "second-brain", "section": "Architecture",
+         "text": "Updated."},
+        {"op": "create_page", "title": "New Page", "content": "Body."},
+        {"op": "link", "page": "second-brain", "to": "watchtower"},
+        {"op": "unlink", "page": "second-brain", "to": "watchtower"},
+        {"op": "merge", "source": "a", "target": "b"},
+        {"op": "mark_outdated", "page": "second-brain", "reason": "superseded"},
+        {"op": "rewrite_everything", "page": "second-brain"},   # unknown op
+        {"op": "add_claim", "page": "second-brain"},            # missing text
+        "not an object",
+    ])
+    assert len(ops) == 7
+    assert len(rejected) == 3
+    assert isinstance(ops[0], AddClaim)
+    assert isinstance(ops[1], EditSection)
+    assert isinstance(ops[2], CreatePage)
+    assert isinstance(ops[3], Link)
+    assert isinstance(ops[4], Unlink)
+    assert isinstance(ops[5], Merge)
+    assert isinstance(ops[6], MarkOutdated)
+
+
+def test_parse_rejects_non_list() -> None:
+    ops, rejected = parse_operations({"op": "add_claim"})
+    assert ops == []
+    assert rejected
+
+
+# ---------------------------------------------------------------------------
+# apply_operations
+# ---------------------------------------------------------------------------
+
+def test_add_claim_into_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [AddClaim(page="second-brain", section="Open Bugs", text="Watchtower restarts.")],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "Watchtower restarts." in content
+    # inserted inside the section, i.e. before nothing else follows — still after old bug
+    assert content.index("Neo4j get_neighbors") < content.index("Watchtower restarts.")
+    assert "second-brain" in result.changed
+    assert "+ Watchtower restarts." in result.changed["second-brain"]
+
+
+def test_add_claim_creates_missing_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [AddClaim(page="second-brain", section="Decisions", text="LangGraph chosen.")],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "## Decisions" in content
+    assert "LangGraph chosen." in content
+
+
+def test_add_claim_unknown_page_is_skipped(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations([AddClaim(page="nope", text="x")], wiki)
+    assert not result.changed
+    assert result.skipped
+
+
+def test_edit_section_replaces_only_that_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [EditSection(page="second-brain", section="Architecture",
+                     text="Wiki is the source of truth. Graph and vectors are derived.")],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "Graph and vectors are derived." in content
+    assert "## Open Bugs" in content
+    assert "Neo4j get_neighbors is flaky." in content
+
+
+def test_edit_section_updates_last_updated(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [EditSection(page="second-brain", section="Architecture", text="New body.")],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "last_updated: 2026-01-01" not in content
+    assert content.count("last_updated:") == 1
+
+
+def test_create_page(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [CreatePage(title="LangGraph Agent", content="Shared edit_vault core.")],
+        wiki,
+    )
+    page = wiki / "langgraph-agent.md"
+    assert page.exists()
+    content = page.read_text(encoding="utf-8")
+    assert content.startswith("# LangGraph Agent")
+    assert "last_updated:" in content
+    assert "langgraph-agent" in result.created
+
+
+def test_create_page_refuses_existing(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [CreatePage(title="Second Brain", content="Would overwrite.")],
+        wiki,
+    )
+    assert not result.created
+    assert result.skipped
+    assert "Would overwrite." not in (wiki / "second-brain.md").read_text(encoding="utf-8")
+
+
+def test_link_injects_at_mention(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations([Link(page="second-brain", to="watchtower")], wiki)
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "[[watchtower|" in content.lower() or "Related: [[watchtower]]" in content
+
+
+def test_typed_link_writes_relations_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [Link(page="second-brain", to="watchtower", type="deployed_with")], wiki
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "## Relations" in content
+    assert "- deployed_with:: [[watchtower]]" in content
+    assert "second-brain" in result.changed
+
+    # Same typed relation again → skipped, appears only once
+    again = apply_operations(
+        [Link(page="second-brain", to="watchtower", type="deployed_with")], wiki
+    )
+    assert again.skipped
+    assert (wiki / "second-brain.md").read_text(encoding="utf-8").count(
+        "- deployed_with:: [[watchtower]]"
+    ) == 1
+
+
+def test_typed_link_appends_to_existing_relations_section(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [
+            Link(page="second-brain", to="watchtower", type="deployed_with"),
+            Link(page="second-brain", to="secondbrain-project", type="part_of"),
+        ],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert content.count("## Relations") == 1
+    assert "- deployed_with:: [[watchtower]]" in content
+    assert "- part_of:: [[secondbrain-project]]" in content
+
+
+def test_parse_link_normalizes_type() -> None:
+    ops, rejected = parse_operations(
+        [{"op": "link", "page": "a", "to": "b", "type": "Part Of"}]
+    )
+    assert not rejected
+    assert isinstance(ops[0], Link)
+    assert ops[0].type == "part_of"
+
+
+def test_link_appends_when_no_mention(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    (wiki / "unrelated.md").write_text("# Unrelated\n\nNothing here.\n", encoding="utf-8")
+    apply_operations([Link(page="unrelated", to="watchtower")], wiki)
+    content = (wiki / "unrelated.md").read_text(encoding="utf-8")
+    assert "Related: [[watchtower]]" in content
+
+
+def test_unlink_removes_managed_related_line(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    (wiki / "unrelated.md").write_text("# Unrelated\n\nNothing here.\n", encoding="utf-8")
+    apply_operations([Link(page="unrelated", to="watchtower")], wiki)
+
+    result = apply_operations([Unlink(page="unrelated", to="watchtower")], wiki)
+    content = (wiki / "unrelated.md").read_text(encoding="utf-8")
+    assert "Related: [[watchtower]]" not in content
+    assert "unrelated" in result.changed
+
+
+def test_unlink_preserves_visible_inline_text(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations([Unlink(page="watchtower", to="secondbrain-project")], wiki)
+    content = (wiki / "watchtower.md").read_text(encoding="utf-8")
+    assert "[[secondbrain-project" not in content
+    assert "SecondBrain Project" in content
+    assert "the project" in content
+
+
+def test_unlink_removes_only_requested_typed_relation(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [
+            Link(page="second-brain", to="watchtower", type="uses"),
+            Link(page="second-brain", to="watchtower", type="deployed_with"),
+        ],
+        wiki,
+    )
+
+    result = apply_operations(
+        [Unlink(page="second-brain", to="watchtower", type="uses")], wiki
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "- uses:: [[watchtower]]" not in content
+    assert "- deployed_with:: [[watchtower]]" in content
+    assert "second-brain" in result.changed
+
+
+def test_untyped_unlink_preserves_typed_relation(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    page = wiki / "second-brain.md"
+    page.write_text(
+        page.read_text(encoding="utf-8")
+        + "\nSee [[watchtower|the deployment service]]."
+        + "\n\n## Relations\n\n- uses:: [[watchtower]]\n",
+        encoding="utf-8",
+    )
+
+    result = apply_operations([Unlink(page="second-brain", to="watchtower")], wiki)
+    content = page.read_text(encoding="utf-8")
+
+    assert "See the deployment service." in content
+    assert "- uses:: [[watchtower]]" in content
+    assert "second-brain" in result.changed
+
+
+def test_untyped_unlink_skips_when_only_typed_relation_exists(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [Link(page="second-brain", to="watchtower", type="uses")],
+        wiki,
+    )
+
+    result = apply_operations([Unlink(page="second-brain", to="watchtower")], wiki)
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+
+    assert "- uses:: [[watchtower]]" in content
+    assert not result.changed
+    assert result.skipped
+
+
+def test_unlink_missing_link_is_skipped(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [Unlink(page="second-brain", to="secondbrain-project")], wiki
+    )
+    assert not result.changed
+    assert result.skipped
+
+
+def test_merge_is_lossless_and_rewires_backlinks(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [Merge(source="secondbrain-project", target="second-brain")], wiki
+    )
+    target = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "## Merged from: SecondBrain Project" in target
+    assert "Duplicate page about the same" in target
+
+    # Source file is hard-deleted (Git is the audit trail, no redirect stub)
+    assert not (wiki / "secondbrain-project.md").exists()
+    assert "secondbrain-project" in result.deleted
+
+    # Backlinks in third pages were rewired, display text preserved
+    watchtower = (wiki / "watchtower.md").read_text(encoding="utf-8")
+    assert "[[secondbrain-project]]" not in watchtower
+    assert "[[second-brain]]" in watchtower
+    assert "[[second-brain|the project]]" in watchtower
+
+    assert result.merged
+    assert {"second-brain", "secondbrain-project", "watchtower"} <= set(result.changed)
+
+
+def test_mark_outdated(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [MarkOutdated(page="watchtower", reason="replaced by manual deploys")], wiki
+    )
+    content = (wiki / "watchtower.md").read_text(encoding="utf-8")
+    assert "> **Outdated:** replaced by manual deploys" in content
+    # marker sits right below the H1
+    assert content.splitlines()[2].startswith("> **Outdated:**")
+
+
+# ---------------------------------------------------------------------------
+# New op types: DeleteClaim, DeletePage, EditClaim
+# ---------------------------------------------------------------------------
+
+def test_delete_claim(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [DeleteClaim(page="second-brain", text="A personal memory system.")], wiki
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "A personal memory system." not in content
+
+
+def test_delete_claim_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [DeleteClaim(page="second-brain", text="This text does not exist.")], wiki
+    )
+    assert any("not found" in s for s in result.skipped)
+
+
+def test_delete_claim_page_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [DeleteClaim(page="nonexistent", text="some text")], wiki
+    )
+    assert any("page not found" in s for s in result.skipped)
+
+
+def test_delete_page_removes_file(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    assert (wiki / "second-brain.md").exists()
+    result = apply_operations(
+        [DeletePage(slug="second-brain", reason="no longer relevant")], wiki
+    )
+    # File must be gone (Git is the audit trail, no tombstone)
+    assert not (wiki / "second-brain.md").exists()
+    assert "second-brain" in result.deleted
+    assert "second-brain" in result.changed
+
+
+def test_delete_page_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [DeletePage(slug="does-not-exist", reason="test")], wiki
+    )
+    assert any("page not found" in s for s in result.skipped)
+
+
+def test_edit_claim(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    apply_operations(
+        [EditClaim(
+            page="second-brain",
+            old_text="A personal memory system.",
+            new_text="A personal and team memory system.",
+        )],
+        wiki,
+    )
+    content = (wiki / "second-brain.md").read_text(encoding="utf-8")
+    assert "A personal and team memory system." in content
+    assert "A personal memory system." not in content
+
+
+def test_edit_claim_old_not_found(tmp_path: Path) -> None:
+    wiki = _make_vault(tmp_path)
+    result = apply_operations(
+        [EditClaim(page="second-brain", old_text="DOES NOT EXIST", new_text="new")], wiki
+    )
+    assert any("not found" in s for s in result.skipped)
+
+
+def test_parse_delete_claim() -> None:
+    ops, rejected = parse_operations([
+        {"op": "delete_claim", "page": "test", "text": "some claim"}
+    ])
+    assert len(ops) == 1
+    assert isinstance(ops[0], DeleteClaim)
+    assert rejected == []
+
+
+def test_parse_delete_page() -> None:
+    ops, rejected = parse_operations([
+        {"op": "delete_page", "slug": "test", "reason": "stale page"}
+    ])
+    assert len(ops) == 1
+    assert isinstance(ops[0], DeletePage)
+    assert rejected == []
+
+
+def test_parse_edit_claim() -> None:
+    ops, rejected = parse_operations([
+        {"op": "edit_claim", "page": "test", "old_text": "old sentence", "new_text": "new sentence"}
+    ])
+    assert len(ops) == 1
+    assert isinstance(ops[0], EditClaim)
+    assert rejected == []
