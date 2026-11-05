@@ -1,0 +1,58 @@
+/* The document, including long articles, owns the atmosphere rather than a
+   viewport-sized painted layer. All light layers are decorative. */
+body { position: relative; display: flow-root; min-height: 100vh; }
+.ambient { position: absolute; min-height: 100%; background: #f2f7fc; }
+.ambient::before {
+  inset: 0;
+  background: radial-gradient(ellipse at 0 0, #75d8ea66, transparent 38%),
+    radial-gradient(ellipse at 100% 45%, #bdc2ff57, transparent 44%),
+    radial-gradient(ellipse at 12% 100%, #8ee6cd4a, transparent 40%);
+}
+.ambient::after { inset: 0; background: radial-gradient(ellipse at 58% 30%, #b4f1e14d, transparent 45%); }
+header, .card, .chat-history, .chat-workspace, .galaxy-workspace {
+  background: linear-gradient(135deg, #fffffff0, #ffffffb8);
+  border: 1px solid #fff;
+  box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 #b9d2e64d,
+    0 20px 60px #294b6b12, 0 2px 5px #294b6b08;
+  backdrop-filter: blur(28px) saturate(145%);
+}
+/* Reading surfaces remain nearly opaque so light never competes with prose. */
+main > article { background: linear-gradient(135deg, #fffffff5, #ffffffe8); border: 1px solid #fff; }
+header nav { background: linear-gradient(145deg, #dceaf673, #ffffff8f); box-shadow: inset 0 1px 6px #294b6b0a; }
+header nav a, .primary, .card, .galaxy-controls button { position: relative; isolation: isolate; }
+header nav a::before, .primary::before, .card::before, .galaxy-controls button::before {
+  content: ""; pointer-events: none; position: absolute; inset: 0;
+  border-radius: inherit; opacity: 0; z-index: -1;
+  background: radial-gradient(160px circle at var(--light-x, 50%) var(--light-y, 0%), #ffffff65, transparent 80%);
+}
+.primary { background: linear-gradient(135deg, #326ee2, #174ba9); border: 1px solid #174ba9; box-shadow: inset 0 1px 0 #ffffff66, 0 8px 22px #245dc42b; }
+.primary:hover { background: linear-gradient(135deg, #265ec9, #123f92); }
+/* Keep existing semantic geometry, labels, counts and hit targets untouched. */
+.galaxy-map { position: relative; background: #081426; }
+.galaxy-stage { position: relative; isolation: isolate; }
+.galaxy-stage::before {
+  content: ""; pointer-events: none; position: absolute; inset: -8%; z-index: -1;
+  background: radial-gradient(ellipse at 18% 40%, #1c907b46, transparent 42%),
+    radial-gradient(ellipse at 80% 55%, #534ab85c, transparent 46%),
+    radial-gradient(ellipse at 50% 100%, #236ea43d, transparent 48%);
+}
+.galaxy-mapbar { background: linear-gradient(100deg, #90c8e012, #adadff09); }
+.galaxy-controls button { border-radius: 12px; padding: 8px 12px; background: #ffffff09; box-shadow: inset 0 1px 0 #ffffff12; }
+.galaxy-neighborhood ellipse { fill-opacity: .07; stroke-opacity: .3; stroke-dasharray: none; }
+.galaxy-star.is-core .galaxy-glow { fill-opacity: .24; filter: drop-shadow(0 0 7px var(--cluster-color)); }
+.galaxy-star:is(:hover, :focus-visible) .galaxy-glow { fill-opacity: .4; }
+.galaxy-sidebar { background: linear-gradient(155deg, #ffffffed, #eff7fce8); }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  header nav a, .primary, .card, .galaxy-controls button { transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, background .25s; }
+  header nav a:hover, .primary:hover, .galaxy-controls button:hover { transform: translateY(-2px); }
+  .primary:active, header nav a:active { transform: translateY(0) scale(.98); }
+  header nav a:hover::before, .primary:hover::before, .card:hover::before, .galaxy-controls button:hover::before { opacity: 1; transition: opacity .25s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  header nav a::before, .primary::before, .card::before, .galaxy-controls button::before { display: none; }
+}
+@media (forced-colors: active) {
+  header, .card, main > article, .chat-history, .chat-workspace, .galaxy-workspace, .galaxy-sidebar, .primary { background: Canvas; color: CanvasText; border: 1px solid CanvasText; box-shadow: none; backdrop-filter: none; }
+  .galaxy-mapbar { background: Canvas; }
+  .galaxy-stage::before, header nav a::before, .primary::before, .card::before, .galaxy-controls button::before { display: none; }
+}

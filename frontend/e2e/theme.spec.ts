@@ -42,3 +42,22 @@ for (const width of [320, 390, 1440]) {
     }
   });
 }
+
+test("material atmosphere covers the full article and reactive light respects motion preferences", async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/wiki/home");
+  await expect(page.locator(".prose")).toBeVisible();
+  const coverage = await page.locator(".ambient").evaluate(node => {
+    const rect = node.getBoundingClientRect();
+    return { top: rect.top + scrollY, bottom: rect.bottom + scrollY, height: document.documentElement.scrollHeight };
+  });
+  expect(coverage.top).toBe(0);
+  expect(coverage.bottom).toBeGreaterThanOrEqual(coverage.height);
+  const button = page.locator(".toolbar .primary");
+  await button.hover();
+  await expect.poll(() => button.evaluate(node => node.style.getPropertyValue("--light-x"))).not.toBe("");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect.poll(() => button.evaluate(node => node.style.getPropertyValue("--light-x"))).toBe("");
+  expect(await button.evaluate(node => getComputedStyle(node, "::before").display)).toBe("none");
+  await page.screenshot({ path: info.outputPath("material-long-article.png"), fullPage: true });
+});
