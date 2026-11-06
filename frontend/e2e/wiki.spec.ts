@@ -37,8 +37,9 @@ test.describe("galaxy touch navigation", () => {
     const cluster = page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" });
     await cluster.tap();
     await expect(page.locator(".galaxy-breadcrumb")).toContainText("Sky & navigation");
-    await page.screenshot({ path: testInfo.outputPath("touch-constellation.png") });
+    await expect(page.locator(".galaxy-stage .galaxy-star.is-core[tabindex='0']")).toBeFocused();
     await expect(page.locator(".galaxy-stage")).toBeInViewport({ ratio: .8 });
+    await page.screenshot({ path: testInfo.outputPath("touch-constellation.png") });
   });
 
   test("tapping a star brings its article and evidence into view", async ({ page }, testInfo) => {

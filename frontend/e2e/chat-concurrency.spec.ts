@@ -282,9 +282,13 @@ for (const finish of ["send", "retry", "new", "select"] as const) {
 for (const operation of ["new", "delete"] as const) {
   test(`overlapping native tab ${operation} and new retain exact committed IDs`, async ({ page, context }) => {
     const peer = await context.newPage();
+    // Keep one independent reader alive across trials. chatRoot opens and closes
+    // a fresh native IndexedDB transaction each time, so recreating its document
+    // 20 times adds navigation cost without testing additional persistence.
+    const fresh = await context.newPage();
     let requests = 0;
     context.on("request", request => { if (new URL(request.url()).pathname === "/api/wiki/chat") requests++; });
-    await Promise.all([page.goto("/chat"), peer.goto("/chat")]);
+    await Promise.all([page.goto("/chat"), peer.goto("/chat"), fresh.goto("/?overview=1")]);
     for (let trial = 0; trial < 20; trial++) {
       await seedChats(page, operation === "new" ? [] : [{ id: "shared", title: question, updated: 1,
         messages: [{ role: "user", content: question }] }]);
@@ -304,16 +308,13 @@ for (const operation of ["new", "delete"] as const) {
         expect(actual, `trial ${trial}`).toContain(ids[1]);
         expect(committed.tombstones.map(item => item.id), `trial ${trial}`).toContain("shared");
       }
-      const fresh = await context.newPage();
-      await fresh.goto("/?overview=1");
       expect(await chatRoot(fresh), `fresh reader ${trial}`).toEqual(committed);
       await Promise.all([page.reload(), peer.reload()]);
       expect(await chatRoot(page), `writer reload ${trial}`).toEqual(committed);
       expect(await chatRoot(peer), `peer reload ${trial}`).toEqual(committed);
-      await fresh.close();
     }
     expect(requests).toBe(0);
-    await peer.close();
+    await Promise.all([peer.close(), fresh.close()]);
   });
 }
 
