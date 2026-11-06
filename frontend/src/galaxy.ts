@@ -528,9 +528,16 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     }
     else if (target.dataset.cluster !== undefined) {
       selectedCluster = Number(target.dataset.cluster); selectedNode = null; rovingNode = clusters[selectedCluster].core; scale = 1; panX = panY = 0; render();
-      // The selected cluster button is replaced by its page list.
-      sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus({ preventScroll: true });
-      if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
+      const touchNavigation = event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches;
+      if (touchNavigation) {
+        // On a stacked mobile layout, reveal the map itself rather than the
+        // taller map-plus-sidebar workspace. Keep focus on its real core star.
+        stage.querySelector<SVGGElement>('.galaxy-star[tabindex="0"]')?.focus({ preventScroll: true });
+        revealMobile(root.querySelector<HTMLElement>(".galaxy-map")!);
+      } else {
+        // Keyboard users can continue directly into the complete page list.
+        sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus({ preventScroll: true });
+      }
     } else switch (target.dataset.action) {
       case "overview": {
         const previous = selectedCluster;
