@@ -511,37 +511,46 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       return;
     }
     if (target.dataset.node !== undefined) {
-      select(target.dataset.node);
-      if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
-      else if (window.matchMedia("(max-width: 680px)").matches) {
-        // Reveal article and evidence without stealing keyboard focus.
-        revealMobile(sidebar.parentElement!);
+      const id = target.dataset.node;
+      const fromStar = target.classList.contains("galaxy-star");
+      const fromPage = target.classList.contains("galaxy-page");
+      const mobile = window.matchMedia("(max-width: 680px)").matches;
+      select(id);
+      // Selection replaces the clicked SVG group or list button. Restore focus
+      // to the equivalent live control instead of leaving it on document.body.
+      if (event.detail === 0 || fromPage || (fromStar && mobile)) {
+        sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus({ preventScroll: true });
+      } else if (fromStar) {
+        [...stage.querySelectorAll<SVGGElement>(".galaxy-star")]
+          .find(star => star.dataset.node === id)?.focus({ preventScroll: true });
       }
+      if (event.detail !== 0 && mobile && (fromStar || fromPage)) revealMobile(sidebar.parentElement!);
     }
     else if (target.dataset.cluster !== undefined) {
       selectedCluster = Number(target.dataset.cluster); selectedNode = null; rovingNode = clusters[selectedCluster].core; scale = 1; panX = panY = 0; render();
-      if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus();
-      else if (!listOnly) revealMobile(root.querySelector<HTMLElement>(".galaxy-map")!);
+      // The selected cluster button is replaced by its page list.
+      sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus({ preventScroll: true });
+      if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
     } else switch (target.dataset.action) {
       case "overview": {
         const previous = selectedCluster;
         selectedCluster = selectedNode = null;
         rovingNode = previous === null ? rovingNode : clusters[previous].core;
         scale = 1; panX = panY = 0; render();
-        if (event.detail === 0 && previous !== null) {
+        if (previous !== null) {
           const cluster = sidebar.querySelector<HTMLElement>(`[data-cluster="${previous}"]`);
           const unlinked = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === clusters[previous].core);
-          (cluster || unlinked || root.querySelector<HTMLInputElement>("input"))?.focus();
+          (cluster || unlinked || root.querySelector<HTMLInputElement>("input"))?.focus({ preventScroll: true });
+          if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
         }
         break;
       }
       case "cluster": {
         const previous = selectedNode;
         selectedNode = null; render();
-        if (event.detail === 0) {
-          const page = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === previous);
-          (page || root.querySelector<HTMLInputElement>("input"))?.focus();
-        }
+        const page = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === previous);
+        (page || root.querySelector<HTMLInputElement>("input"))?.focus({ preventScroll: true });
+        if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
         break;
       }
       case "zoom-in": scale = Math.min(selectedCluster === null ? 2.5 : 4, scale + .25); setView(); break;
