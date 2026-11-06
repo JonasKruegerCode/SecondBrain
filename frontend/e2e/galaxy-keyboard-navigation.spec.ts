@@ -79,6 +79,12 @@ test("pointer selection keeps focus on the replacement map and inspector control
   await expect(pageButton).toBeFocused();
   await pageButton.click();
   await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeFocused();
+
+  // Evidence-panel neighbor buttons also disappear when the selected page changes.
+  const neighbor = page.locator(".galaxy-evidence button[data-node]").first();
+  await expect(neighbor).toBeVisible();
+  await neighbor.click();
+  await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeFocused();
 });
 
 test("mobile pointer selection reveals the focused page inspector", async ({ page }) => {

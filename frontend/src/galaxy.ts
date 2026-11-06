@@ -514,11 +514,12 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const id = target.dataset.node;
       const fromStar = target.classList.contains("galaxy-star");
       const fromPage = target.classList.contains("galaxy-page");
+      const fromButton = target.tagName === "BUTTON";
       const mobile = window.matchMedia("(max-width: 680px)").matches;
       select(id);
-      // Selection replaces the clicked SVG group or list button. Restore focus
+      // Selection replaces the clicked SVG group or button. Restore focus
       // to the equivalent live control instead of leaving it on document.body.
-      if (event.detail === 0 || fromPage || (fromStar && mobile)) {
+      if (event.detail === 0 || fromPage || fromButton || (fromStar && mobile)) {
         sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus({ preventScroll: true });
       } else if (fromStar) {
         [...stage.querySelectorAll<SVGGElement>(".galaxy-star")]
