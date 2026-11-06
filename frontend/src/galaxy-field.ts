@@ -701,9 +701,9 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     reveal(id) {
       const point = shots.get(id);
       if (!point || !host.clientWidth) return;
-      const margin = 36;
-      cam.panX += Math.min(0, point.x - margin) + Math.max(0, point.x - (host.clientWidth - margin));
-      cam.panY += Math.min(0, point.y - margin) + Math.max(0, point.y - (host.clientHeight - margin));
+      const margin = 48;
+      cam.panX += Math.max(0, margin - point.x) - Math.max(0, point.x - (host.clientWidth - margin));
+      cam.panY += Math.max(0, margin - point.y) - Math.max(0, point.y - (host.clientHeight - margin));
       paint();
     },
     destroy() {

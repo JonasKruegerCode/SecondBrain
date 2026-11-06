@@ -187,13 +187,20 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   }) : null;
   if (!field && !nodes.length) stage.innerHTML = `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
   const setView = () => { field?.setCamera({ scale, panX, panY }); };
+  let cameraReady = false;
   function renderMap() {
     const active = selectedCluster === null ? null : clusters[selectedCluster];
     stage.hidden = false;
     root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy</span>`;
     if (!field) return;
+    if (!cameraReady) {
+      field.setCamera({ scale, panX, panY });
+      cameraReady = true;
+    } else {
+      const live = field.getCamera();
+      scale = live.scale; panX = live.panX; panY = live.panY;
+    }
     field.resize();
-    field.setCamera({ scale, panX, panY });
     field.setView({ selected: selectedNode, query, focusGroup: selectedCluster });
     const pairs = new Map<string, { a: string; b: string; n: number }>();
     bridges.forEach(edge => {

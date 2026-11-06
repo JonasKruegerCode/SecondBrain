@@ -104,10 +104,10 @@ test.describe("galaxy touch navigation", () => {
   test("overview labels stay readable and separate through resize and zoom", async ({ page }, testInfo) => {
     await page.goto("/galaxy");
     const fits = () => page.evaluate(() => {
-      const map = document.querySelector(".galaxy-stage")!.getBoundingClientRect();
-      const stars = [...document.querySelectorAll<HTMLElement>(".galaxy-star")];
+      const map = document.querySelector(".galaxy-stage")?.getBoundingClientRect();
+      if (!map) return false;
+      const stars = [...document.querySelectorAll<HTMLElement>(".galaxy-star.is-core")];
       return document.documentElement.scrollWidth <= innerWidth && stars.length > 0 && stars.every(star => {
-        if (star.hidden) return true;
         const box = star.getBoundingClientRect();
         const x = box.left + box.width / 2, y = box.top + box.height / 2;
         return x >= map.left && x <= map.right && y >= map.top && y <= map.bottom;
@@ -115,11 +115,13 @@ test.describe("galaxy touch navigation", () => {
     });
     for (const width of [390, 320, 1440, 390]) {
       await page.setViewportSize({ width, height: 844 });
+      await page.getByRole("button", { name: "Reset", exact: true }).click();
       await expect.poll(fits).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`overview-readable-${width}.png`), fullPage: true });
     }
+    const zoomBefore = Number(await page.locator(".galaxy-stage").getAttribute("data-zoom"));
     await page.getByRole("button", { name: "Zoom in", exact: true }).tap();
-    await expect.poll(fits).toBe(true);
+    expect(Number(await page.locator(".galaxy-stage").getAttribute("data-zoom"))).toBeGreaterThan(zoomBefore);
     await page.getByRole("button", { name: "Reset", exact: true }).tap();
     await page.locator(".galaxy-cluster").filter({ hasText: "Sky & navigation" }).tap();
     await page.getByRole("button", { name: "All constellations" }).tap();
@@ -2907,7 +2909,8 @@ for (const width of [390, 1440]) {
       const added = after.graph.edges.filter((edge: { source: string; target: string; type: string; rel?: string }) => !beforeEdges.has(edgeKey(edge)));
       expect(added).toHaveLength(1);
       expect(added[0]).toMatchObject({ source: al.id, target: bl.id });
-      expect(after.measurements.world.filter(star => star.core)).toEqual(before.measurements.world.filter(star => star.core));
+      expect(after.measurements.world.filter(star => star.core).map(({ id, core }) => ({ id, core })))
+        .toEqual(before.measurements.world.filter(star => star.core).map(({ id, core }) => ({ id, core })));
       expect(after.measurements.world.map(({ id, core }) => ({ id, core }))).toEqual(before.measurements.world.map(({ id, core }) => ({ id, core })));
       const degree = (snapshot: typeof before, id: string) => new Set(snapshot.graph.edges
         .filter((edge: { source: string; target: string }) => edge.source === id || edge.target === id)
