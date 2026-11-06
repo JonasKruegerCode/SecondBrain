@@ -142,7 +142,7 @@ footer { max-width: 1504px; padding: 26px 48px; font-size: 12px; border-color: v
 .galaxy-heading .galaxy-eyebrow { color: #456383; }
 .galaxy .galaxy-return, .galaxy .galaxy-refresh { color: #285790; border-color: #b3c9e4; }
 .galaxy-workspace { border-radius: var(--radius); border-color: #fff; background: var(--glass); box-shadow: var(--glass-shadow); }
-.galaxy-map { --g-border: #ffffff26; background: radial-gradient(ellipse at 10% 0%, #17455750, transparent 65%), radial-gradient(ellipse at 95% 95%, #344d8860, transparent 60%), #101b30; }
+.galaxy-map { --g-border: #d5e2ef; background: linear-gradient(180deg, #ffffffd0, #f3f7fce8); }
 .galaxy-mapbar { background: #ffffff04; }
 .galaxy-sidebar { --g-ink: #24456c; background: #f8fbffe6; color: #24456c; padding: 24px 20px; }
 .galaxy-sidebar :is(.galaxy-muted, .galaxy-problems, .galaxy-bridge-list, .galaxy-search span) { color: #52647a; }
