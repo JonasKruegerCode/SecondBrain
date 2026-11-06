@@ -31,7 +31,7 @@ header nav a::before, .primary::before, .card::before, .galaxy-controls button::
 .primary { background: linear-gradient(135deg, #326ee2, #174ba9); border: 1px solid #174ba9; box-shadow: inset 0 1px 0 #ffffff66, 0 8px 22px #245dc42b; }
 .primary:hover { background: linear-gradient(135deg, #265ec9, #123f92); }
 /* Keep existing semantic geometry, labels, counts and hit targets untouched. */
-.galaxy-map { position: relative; background: #081426; }
+.galaxy-map { position: relative; background: linear-gradient(180deg, #ffffffc7, #eef4fa); }
 .galaxy-stage { position: relative; isolation: isolate; }
 .galaxy-stage::before {
   content: ""; pointer-events: none; position: absolute; inset: -8%; z-index: -1;
@@ -40,7 +40,9 @@ header nav a::before, .primary::before, .card::before, .galaxy-controls button::
     radial-gradient(ellipse at 50% 100%, #236ea43d, transparent 48%);
 }
 .galaxy-mapbar { background: linear-gradient(100deg, #90c8e012, #adadff09); }
-.galaxy-controls button { border-radius: 12px; padding: 8px 12px; background: #ffffff09; box-shadow: inset 0 1px 0 #ffffff12; }
+.galaxy-mapbar, .galaxy-mapnote, .galaxy-method, .galaxy-method summary, .galaxy-breadcrumb, .galaxy-breadcrumb button { color: #1d3b5c; }
+.galaxy-controls button { border-radius: 12px; padding: 8px 12px; background: #fff; color: #17324f; border: 1px solid #c5d7ea; box-shadow: inset 0 1px 0 #fff, 0 1px 2px #294b6b12; }
+.galaxy-controls button:hover, .galaxy-controls button[aria-pressed=true] { background: #e7f0fb; }
 .galaxy-neighborhood ellipse { fill-opacity: .07; stroke-opacity: .3; stroke-dasharray: none; }
 .galaxy-star.is-core .galaxy-glow { fill-opacity: .24; filter: drop-shadow(0 0 7px var(--cluster-color)); }
 .galaxy-star:is(:hover, :focus-visible) .galaxy-glow { fill-opacity: .4; }

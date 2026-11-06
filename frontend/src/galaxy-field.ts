@@ -1,0 +1,618 @@
+/**
+ * Nebula field for the live Galaxy. Layout uses the snapshot's real groups
+ * and explicit links. Brightness is undirected degree, not importance.
+ */
+
+export interface FieldCluster {
+  id: number;
+  core: string;
+  members: string[];
+  isolated: boolean;
+  curated: boolean;
+  label?: string;
+}
+
+export interface FieldModel {
+  stars: FieldStar[];
+  edges: { a: number; b: number; bridge: boolean }[];
+  maxDegree: number;
+}
+
+export interface FieldStar {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+  z: number;
+  degree: number;
+  hue: number;
+  isolated: boolean;
+  core: boolean;
+  curated: boolean;
+  groupLabel: string;
+  groupId: number;
+}
+
+interface Point { x: number; y: number; z: number }
+
+const PALETTE: [number, number, number][] = [
+  [72, 210, 214],
+  [176, 146, 255],
+  [242, 186, 96],
+  [255, 128, 168],
+  [126, 170, 255],
+  [138, 214, 156],
+  [255, 150, 102],
+  [196, 150, 236],
+  [104, 206, 186],
+];
+
+function localPositions(ids: string[], degree: Map<string, number>, links: [string, string][]) {
+  const maxDegree = Math.max(1, ...ids.map(id => degree.get(id) || 0));
+  const spread = 16 + Math.sqrt(ids.length) * 4.4;
+  const pos = new Map<string, Point>();
+  const ordered = [...ids].sort((a, b) => (degree.get(b) || 0) - (degree.get(a) || 0) || (a < b ? -1 : a > b ? 1 : 0));
+  ordered.forEach((id, index) => {
+    const weight = (degree.get(id) || 0) / maxDegree;
+    const angle = index * 2.399963229728653;
+    const radius = index === 0 ? 0 : spread * (0.16 + 0.86 * (1 - weight));
+    pos.set(id, {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
+      z: Math.sin(index * 1.7) * spread * 0.22 * (1.05 - 0.7 * weight),
+    });
+  });
+  if (ids.length > 180) return pos;
+  const linked = new Set(links.map(([a, b]) => (a < b ? `${a}|${b}` : `${b}|${a}`)));
+  const iterations = ids.length > 80 ? 28 : 42;
+  for (let iter = 0; iter < iterations; iter++) {
+    const force = new Map(ids.map(id => [id, { x: 0, y: 0 }]));
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i];
+        const b = ids[j];
+        const pa = pos.get(a)!;
+        const pb = pos.get(b)!;
+        let dx = pa.x - pb.x;
+        let dy = pa.y - pb.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < 0.4) { dx = 0.4; dy = (i - j) * 0.01; dist = Math.hypot(dx, dy); }
+        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+        const mag = 28 / (dist * dist) - (linked.has(key) ? 0.07 * dist : 0);
+        const ux = dx / dist;
+        const uy = dy / dist;
+        force.get(a)!.x += ux * mag;
+        force.get(a)!.y += uy * mag;
+        force.get(b)!.x -= ux * mag;
+        force.get(b)!.y -= uy * mag;
+      }
+    }
+    ids.forEach(id => {
+      const p = pos.get(id)!;
+      const pull = 0.02 + 0.18 * ((degree.get(id) || 0) / maxDegree);
+      let dx = (force.get(id)!.x - p.x * pull * 36) * 0.04;
+      let dy = (force.get(id)!.y - p.y * pull * 36) * 0.04;
+      const step = Math.hypot(dx, dy);
+      if (step > 2.8) { dx = dx / step * 2.8; dy = dy / step * 2.8; }
+      p.x += dx;
+      p.y += dy;
+    });
+  }
+  return pos;
+}
+
+export function layoutGalaxyField(
+  nodes: { id: string; title: string }[],
+  edges: { source: string; target: string }[],
+  clusters: FieldCluster[],
+  adjacency: Map<string, Set<string>>,
+): FieldModel {
+  const degree = new Map(nodes.map(node => [node.id, adjacency.get(node.id)?.size || 0]));
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const locals = new Map<number, Map<string, Point>>();
+  const radii = new Map<number, number>();
+  clusters.forEach(cluster => {
+    if (cluster.isolated) return;
+    const pairs = edges
+      .filter(edge => cluster.members.includes(edge.source) && cluster.members.includes(edge.target) && edge.source !== edge.target)
+      .map(edge => [edge.source, edge.target] as [string, string]);
+    const pos = localPositions(cluster.members, degree, pairs);
+    locals.set(cluster.id, pos);
+    const values = [...pos.values()];
+    const rms = Math.sqrt(values.reduce((sum, point) => sum + point.x * point.x + point.y * point.y, 0) / Math.max(1, values.length));
+    radii.set(cluster.id, Math.max(10, rms));
+  });
+  const clouds = clusters.filter(cluster => !cluster.isolated);
+  const center = new Map<number, Point>();
+  clouds.forEach((cluster, index) => {
+    const angle = index * 2.399963229728653;
+    const ring = 64 + index * 4;
+    center.set(cluster.id, { x: Math.cos(angle) * ring, y: Math.sin(angle) * ring * 0.84, z: 0 });
+  });
+  const bridgeCount = new Map<string, number>();
+  const owner = new Map<string, number>();
+  clusters.forEach(cluster => cluster.members.forEach(id => owner.set(id, cluster.id)));
+  edges.forEach(edge => {
+    const a = owner.get(edge.source);
+    const b = owner.get(edge.target);
+    if (a === undefined || b === undefined || a === b) return;
+    const left = clusters.find(cluster => cluster.id === a);
+    const right = clusters.find(cluster => cluster.id === b);
+    if (!left || !right || left.isolated || right.isolated) return;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    bridgeCount.set(key, (bridgeCount.get(key) || 0) + 1);
+  });
+  const ids = clouds.map(cluster => cluster.id);
+  for (let iter = 0; iter < 80; iter++) {
+    const force = new Map(ids.map(id => [id, { x: 0, y: 0 }]));
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i];
+        const b = ids[j];
+        const pa = center.get(a)!;
+        const pb = center.get(b)!;
+        let dx = pa.x - pb.x;
+        let dy = pa.y - pb.y;
+        const dist = Math.hypot(dx, dy) || 0.01;
+        const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+        const weight = bridgeCount.get(key) || 0;
+        const desired = ((radii.get(a) || 12) + (radii.get(b) || 12)) * (weight ? 1.62 : 2.7);
+        const mag = (dist - desired) * (weight ? 0.04 : 0.022);
+        const ux = dx / dist;
+        const uy = dy / dist;
+        force.get(a)!.x -= ux * mag;
+        force.get(a)!.y -= uy * mag;
+        force.get(b)!.x += ux * mag;
+        force.get(b)!.y += uy * mag;
+      }
+    }
+    ids.forEach(id => {
+      const point = center.get(id)!;
+      const pull = force.get(id)!;
+      point.x = (point.x + pull.x) * 0.992;
+      point.y = (point.y + pull.y) * 0.992;
+    });
+  }
+  const stars: FieldStar[] = [];
+  const indexOf = new Map<string, number>();
+  nodes.forEach(node => {
+    const cluster = clusters.find(item => item.members.includes(node.id));
+    if (!cluster) return;
+    const local = locals.get(cluster.id)?.get(node.id);
+    const origin = center.get(cluster.id);
+    indexOf.set(node.id, stars.length);
+    stars.push({
+      id: node.id,
+      title: byId.get(node.id)?.title || node.id,
+      x: origin && local ? origin.x + local.x : 0,
+      y: origin && local ? origin.y + local.y : 0,
+      z: local?.z || 0,
+      degree: degree.get(node.id) || 0,
+      hue: cluster.isolated ? 9 : cluster.id % PALETTE.length,
+      isolated: cluster.isolated,
+      core: !cluster.isolated && node.id === cluster.core,
+      curated: cluster.curated,
+      groupLabel: cluster.label || byId.get(cluster.core)?.title || cluster.core,
+      groupId: cluster.id,
+    });
+  });
+  let cx = 0;
+  let cy = 0;
+  let linked = 0;
+  stars.forEach(star => {
+    if (star.isolated) return;
+    cx += star.x; cy += star.y; linked += 1;
+  });
+  if (linked) { cx /= linked; cy /= linked; }
+  let radius = 1;
+  stars.forEach(star => {
+    if (star.isolated) return;
+    star.x -= cx; star.y -= cy;
+    radius = Math.max(radius, Math.hypot(star.x, star.y));
+  });
+  const scale = 100 / radius;
+  stars.forEach(star => {
+    if (star.isolated) return;
+    star.x *= scale; star.y *= scale; star.z *= scale;
+  });
+  const loose = stars.filter(star => star.isolated);
+  loose.forEach((star, index) => {
+    const angle = index * 2.399963229728653 + 0.35;
+    const dist = 122 + (index % 5) * 7;
+    star.x = Math.cos(angle) * dist;
+    star.y = Math.sin(angle) * dist * 0.8;
+    star.z = ((index % 7) - 3) * 3.5;
+  });
+  const drawn = edges.flatMap(edge => {
+    const a = indexOf.get(edge.source);
+    const b = indexOf.get(edge.target);
+    if (a === undefined || b === undefined || a === b) return [];
+    return [{ a, b, bridge: stars[a].groupId !== stars[b].groupId }];
+  });
+  return { stars, edges: drawn, maxDegree: stars.reduce((max, star) => Math.max(max, star.degree), 1) };
+}
+
+interface Camera { yaw: number; pitch: number; distance: number; panX: number; panY: number; focal: number }
+interface Shot { x: number; y: number; depth: number; s: number }
+
+export interface GalaxyField {
+  paint(): void;
+  resize(): void;
+  setCamera(camera: { scale: number; panX: number; panY: number }): void;
+  getCamera(): { scale: number; panX: number; panY: number };
+  setView(view: { selected: string | null; query: string; focusGroup: number | null }): void;
+  zoomBy(factor: number, clientX?: number, clientY?: number): void;
+  reset(): void;
+  nearest(id: string, direction: { x: number; y: number }): string | null;
+  reveal(id: string): void;
+  destroy(): void;
+}
+
+export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: { reducedMotion: boolean; onSelect: (id: string) => void }): GalaxyField {
+  host.replaceChildren();
+  const canvas = document.createElement("canvas");
+  canvas.setAttribute("aria-hidden", "true");
+  const stars = document.createElement("div");
+  stars.className = "galaxy-stars";
+  host.append(canvas, stars);
+  host.dataset.reducedMotion = options.reducedMotion ? "1" : "0";
+  const ctx = canvas.getContext("2d", { alpha: false })!;
+  const sprites = [...PALETTE, [168, 176, 196] as [number, number, number]].map(tint);
+  const home: Camera = { yaw: 0.38, pitch: 0.5, distance: 260, panX: 0, panY: 0, focal: 480 };
+  const cam: Camera = { ...home };
+  let homeDistance = 260;
+  let fitted = false;
+  let pendingScale = 1;
+  let pendingPanX = 0;
+  let pendingPanY = 0;
+  let selected: string | null = null;
+  let query = "";
+  let focusGroup: number | null = null;
+  const shots = new Map<string, Shot>();
+  const buttons = new Map<string, HTMLButtonElement>();
+  model.stars.forEach(star => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `galaxy-star${star.core ? " is-core" : ""}`;
+    button.dataset.node = star.id;
+    button.setAttribute("aria-label", `${star.title}, ${star.core ? "core, " : ""}${star.degree} explicit link${star.degree === 1 ? "" : "s"}`);
+    button.tabIndex = -1;
+    stars.append(button);
+    buttons.set(star.id, button);
+  });
+
+  const project = (star: FieldStar, shot = cam): Shot => {
+    const cy = Math.cos(shot.yaw);
+    const sy = Math.sin(shot.yaw);
+    const x1 = star.x * cy - star.z * sy;
+    const z1 = star.x * sy + star.z * cy;
+    const cp = Math.cos(shot.pitch);
+    const sp = Math.sin(shot.pitch);
+    const y1 = star.y * cp - z1 * sp;
+    const z2 = star.y * sp + z1 * cp;
+    const depth = Math.max(32, shot.distance - z2);
+    const s = shot.focal / depth;
+    return { x: host.clientWidth / 2 + x1 * s + shot.panX, y: host.clientHeight / 2 + y1 * s + shot.panY, depth, s };
+  };
+
+  const fit = () => {
+    if (!host.clientWidth || !host.clientHeight) return;
+    const probe = { ...cam, panX: 0, panY: 0, distance: 100 };
+    let reach = 1;
+    model.stars.forEach(star => {
+      if (star.isolated) return;
+      const point = project(star, probe);
+      reach = Math.max(reach, Math.hypot(point.x - host.clientWidth / 2, point.y - host.clientHeight / 2));
+    });
+    const want = Math.min(host.clientWidth, host.clientHeight) * (host.clientWidth < 700 ? 0.42 : 0.46);
+    homeDistance = 100 * (reach / Math.max(40, want));
+    if (!fitted) {
+      fitted = true;
+      cam.distance = homeDistance / Math.max(0.75, Math.min(4, pendingScale));
+      cam.panX = pendingPanX;
+      cam.panY = pendingPanY;
+    }
+    home.distance = homeDistance;
+  };
+  const groups = new Map<number, FieldStar[]>();
+  model.stars.forEach(star => {
+    if (star.isolated) return;
+    const list = groups.get(star.groupId);
+    if (list) list.push(star);
+    else groups.set(star.groupId, [star]);
+  });
+
+  const paint = () => {
+    fit();
+    const width = host.clientWidth;
+    const height = host.clientHeight;
+    if (!width || !height) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const backdrop = ctx.createRadialGradient(width * 0.5, height * 0.42, 10, width * 0.5, height * 0.55, Math.max(width, height) * 0.75);
+    backdrop.addColorStop(0, "#1a2144");
+    backdrop.addColorStop(0.5, "#101426");
+    backdrop.addColorStop(1, "#070a14");
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = backdrop;
+    ctx.fillRect(0, 0, width, height);
+    model.stars.forEach(star => shots.set(star.id, project(star)));
+    const closeness = homeDistance / cam.distance;
+    ctx.globalCompositeOperation = "lighter";
+    groups.forEach(members => {
+      let sx = 0;
+      let sy = 0;
+      members.forEach(star => { const p = shots.get(star.id)!; sx += p.x; sy += p.y; });
+      sx /= members.length; sy /= members.length;
+      let radius = 36;
+      members.forEach(star => { radius = Math.max(radius, Math.hypot(shots.get(star.id)!.x - sx, shots.get(star.id)!.y - sy)); });
+      radius *= 1.38;
+      const rgb = PALETTE[members[0].hue] || PALETTE[0];
+      const focused = focusGroup === null || members[0].groupId === focusGroup;
+      ctx.save();
+      ctx.globalAlpha = focused ? 1 : 0.78;
+      ctx.translate(sx, sy);
+      if (!members[0].curated) ctx.scale(1.22, 0.78);
+      blob(ctx, 0, 0, radius, rgb, 0.32);
+      blob(ctx, radius * 0.18, -radius * 0.1, radius * 0.58, rgb, 0.36);
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    const internal = Math.max(0.06, Math.min(0.5, 0.075 * closeness));
+    const bridge = Math.max(0.2, Math.min(0.8, 0.22 + closeness * 0.05));
+    ctx.lineWidth = Math.max(0.6, Math.min(1.5, 0.65 * Math.sqrt(closeness)));
+    for (const kind of [false, true]) {
+      ctx.beginPath();
+      ctx.strokeStyle = kind ? `rgba(255, 214, 176, ${bridge})` : `rgba(186, 206, 230, ${internal})`;
+      model.edges.forEach(edge => {
+        if (edge.bridge !== kind) return;
+        const a = shots.get(model.stars[edge.a].id)!;
+        const b = shots.get(model.stars[edge.b].id)!;
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      });
+      ctx.stroke();
+    }
+    if (selected) {
+      ctx.strokeStyle = "rgba(255, 248, 236, 0.92)";
+      ctx.lineWidth = 1.45;
+      ctx.beginPath();
+      const from = shots.get(selected)!;
+      model.edges.forEach(edge => {
+        const left = model.stars[edge.a].id;
+        const right = model.stars[edge.b].id;
+        if (left !== selected && right !== selected) return;
+        const other = shots.get(left === selected ? right : left)!;
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(other.x, other.y);
+      });
+      ctx.stroke();
+    }
+    const homeScale = cam.focal / homeDistance;
+    const order = [...model.stars].sort((a, b) => shots.get(b.id)!.depth - shots.get(a.id)!.depth);
+    ctx.globalCompositeOperation = "lighter";
+    order.forEach(star => {
+      const point = shots.get(star.id)!;
+      const match = !query || `${star.title} ${star.id}`.toLowerCase().includes(query);
+      const related = !selected || star.id === selected || model.edges.some(edge => {
+        const left = model.stars[edge.a].id;
+        const right = model.stars[edge.b].id;
+        return (left === selected && right === star.id) || (right === selected && left === star.id);
+      });
+      const prominence = Math.pow(star.degree / model.maxDegree, 0.62);
+      const relative = Math.max(0.45, Math.min(point.s / homeScale, 5));
+      const glow = (star.isolated ? 2.4 : 3.2 + prominence * 28) * relative;
+      ctx.globalAlpha = (match ? 1 : 0.07) * (related ? 1 : 0.3) * (star.isolated ? 0.5 : 1);
+      const sprite = sprites[star.hue] || sprites[sprites.length - 1];
+      ctx.drawImage(sprite, point.x - glow, point.y - glow, glow * 2, glow * 2);
+      const button = buttons.get(star.id)!;
+      const size = Math.max(28, Math.min(46, glow * 0.7));
+      button.style.left = `${point.x}px`;
+      button.style.top = `${point.y}px`;
+      button.style.width = `${size}px`;
+      button.style.height = `${size}px`;
+      button.classList.toggle("is-selected", star.id === selected);
+      button.classList.toggle("is-dimmed", !match || (!!selected && !related));
+      button.hidden = point.x < -40 || point.y < -40 || point.x > width + 40 || point.y > height + 40;
+    });
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.font = "600 12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    ctx.textBaseline = "middle";
+    const ranked = [...model.stars].sort((a, b) => b.degree - a.degree);
+    const floor = closeness > 1.65 ? 5 : 8;
+    const limit = closeness > 1.65 ? 28 : 8;
+    const taken: { x: number; y: number; w: number }[] = [];
+    let labeled = 0;
+    ranked.forEach(star => {
+      if (labeled >= limit || star.isolated) return;
+      if (star.degree < floor && star.id !== selected) return;
+      const point = shots.get(star.id)!;
+      if (point.x < 12 || point.y < 28 || point.x > width - 12 || point.y > height - 16) return;
+      const text = star.title.length > 28 ? `${star.title.slice(0, 26)}…` : star.title;
+      const textWidth = ctx.measureText(text).width;
+      if (taken.some(spot => Math.abs(spot.x - point.x) < (spot.w + textWidth) / 2 + 14 && Math.abs(spot.y - point.y) < 18)) return;
+      if (query && !`${star.title} ${star.id}`.toLowerCase().includes(query)) return;
+      taken.push({ x: point.x, y: point.y, w: textWidth });
+      labeled += 1;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(6, 10, 20, 0.9)";
+      ctx.strokeText(text, point.x + 10, point.y - 12);
+      ctx.fillStyle = "#f4f7ff";
+      ctx.fillText(text, point.x + 10, point.y - 12);
+    });
+    const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.35, width / 2, height / 2, Math.max(width, height) * 0.72);
+    vignette.addColorStop(0, "rgba(0,0,0,0)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, width, height);
+  };
+
+  const zoomAt = (factor: number, clientX?: number, clientY?: number) => {
+    const rect = host.getBoundingClientRect();
+    const sx = clientX ?? rect.left + rect.width / 2;
+    const sy = clientY ?? rect.top + rect.height / 2;
+    const next = Math.max(homeDistance * 0.18, Math.min(homeDistance * 2.6, cam.distance / factor));
+    const applied = cam.distance / next;
+    const cx = sx - rect.left - host.clientWidth / 2;
+    const cy = sy - rect.top - host.clientHeight / 2;
+    cam.panX = cx - (cx - cam.panX) * applied;
+    cam.panY = cy - (cy - cam.panY) * applied;
+    cam.distance = next;
+    paint();
+  };
+
+  let pointers = new Map<number, { x: number; y: number }>();
+  let drag: { x: number; y: number; panX: number; panY: number; moved: boolean } | null = null;
+  let pinch = 0;
+  let suppressClick = false;
+  const pointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    drag = { x: event.clientX, y: event.clientY, panX: cam.panX, panY: cam.panY, moved: pointers.size > 1 };
+  };
+  const pointerMove = (event: PointerEvent) => {
+    const point = pointers.get(event.pointerId);
+    if (!point) return;
+    point.x = event.clientX;
+    point.y = event.clientY;
+    if (pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const previous = pinch || dist;
+      zoomAt(dist / previous, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch = dist;
+      if (drag) drag.moved = true;
+      return;
+    }
+    pinch = 0;
+    if (!drag) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 6) {
+      drag.moved = true;
+      try { host.setPointerCapture(event.pointerId); } catch { /* already released */ }
+    }
+    cam.panX = drag.panX + dx;
+    cam.panY = drag.panY + dy;
+    paint();
+  };
+  const pointerUp = (event: PointerEvent) => {
+    pointers.delete(event.pointerId);
+    if (pointers.size < 2) pinch = 0;
+    const moved = drag?.moved;
+    drag = null;
+    if (moved) suppressClick = true;
+  };
+  const onClick = (event: MouseEvent) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  const onWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    zoomAt(Math.exp(-event.deltaY * 0.0011), event.clientX, event.clientY);
+  };
+  host.addEventListener("pointerdown", pointerDown);
+  host.addEventListener("pointermove", pointerMove);
+  host.addEventListener("pointerup", pointerUp);
+  host.addEventListener("pointercancel", pointerUp);
+  host.addEventListener("click", onClick, true);
+  host.addEventListener("wheel", onWheel, { passive: false });
+  return {
+    paint,
+    resize: paint,
+    setCamera(camera) {
+      pendingScale = Math.max(0.75, Math.min(4, camera.scale || 1));
+      pendingPanX = camera.panX;
+      pendingPanY = camera.panY;
+      if (fitted) {
+        cam.distance = homeDistance / pendingScale;
+        cam.panX = pendingPanX;
+        cam.panY = pendingPanY;
+      }
+      paint();
+    },
+    getCamera: () => ({ scale: homeDistance / cam.distance, panX: cam.panX, panY: cam.panY }),
+    setView(view) {
+      selected = view.selected;
+      query = view.query;
+      focusGroup = view.focusGroup;
+      paint();
+    },
+    zoomBy: (factor, x, y) => zoomAt(factor, x, y),
+    reset() {
+      cam.distance = homeDistance;
+      cam.panX = 0;
+      cam.panY = 0;
+      cam.yaw = home.yaw;
+      paint();
+    },
+    nearest(id, direction) {
+      const origin = shots.get(id);
+      if (!origin) return null;
+      let best: string | null = null;
+      let score = Infinity;
+      shots.forEach((point, key) => {
+        if (key === id) return;
+        const dx = point.x - origin.x;
+        const dy = point.y - origin.y;
+        const forward = dx * direction.x + dy * direction.y;
+        if (forward <= 4) return;
+        const lateral = Math.abs(dx * direction.y - dy * direction.x);
+        const next = forward + lateral * 1.6;
+        if (next < score) { score = next; best = key; }
+      });
+      return best;
+    },
+    reveal(id) {
+      const point = shots.get(id);
+      if (!point || !host.clientWidth) return;
+      const margin = 36;
+      cam.panX += Math.min(0, point.x - margin) + Math.max(0, point.x - (host.clientWidth - margin));
+      cam.panY += Math.min(0, point.y - margin) + Math.max(0, point.y - (host.clientHeight - margin));
+      paint();
+    },
+    destroy() {
+      host.removeEventListener("pointerdown", pointerDown);
+      host.removeEventListener("pointermove", pointerMove);
+      host.removeEventListener("pointerup", pointerUp);
+      host.removeEventListener("pointercancel", pointerUp);
+      host.removeEventListener("click", onClick, true);
+      host.removeEventListener("wheel", onWheel);
+    },
+  };
+}
+
+function blob(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, rgb: [number, number, number], alpha: number) {
+  const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  gradient.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`);
+  gradient.addColorStop(0.5, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha * 0.28})`);
+  gradient.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function tint(rgb: [number, number, number]) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 96;
+  canvas.height = 96;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createRadialGradient(48, 48, 0, 48, 48, 48);
+  gradient.addColorStop(0, "rgba(255,255,255,0.95)");
+  gradient.addColorStop(0.1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.8)`);
+  gradient.addColorStop(0.28, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.22)`);
+  gradient.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 96, 96);
+  return canvas;
+}
