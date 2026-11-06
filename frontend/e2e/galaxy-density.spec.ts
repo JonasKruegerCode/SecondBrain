@@ -20,7 +20,7 @@ for (const width of [390, 1440]) {
       await page.goto(`/galaxy?page=${ids[0]}`);
       const stars = page.locator(ids.map(id => `.galaxy-star[data-node="${id}"]`).join(", "));
       await expect(stars).toHaveCount(2);
-      const positions = await stars.evaluateAll(elements => elements.map(el => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]));
+      const positions = await stars.evaluateAll(elements => elements.map(el => [el.getAttribute("data-x"), el.getAttribute("data-y")]));
       for (const [index, id] of ids.entries()) {
         const star = page.locator(`.galaxy-star[data-node="${id}"]`);
         await star.focus(); await page.keyboard.press("Enter");
@@ -37,7 +37,7 @@ for (const width of [390, 1440]) {
         });
         expect(inside).toBe(true);
       }
-      expect(await stars.evaluateAll(elements => elements.map(el => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]))).toEqual(positions);
+      expect(await stars.evaluateAll(elements => elements.map(el => [el.getAttribute("data-x"), el.getAttribute("data-y")]))).toEqual(positions);
       const graph = await (await request.get("/api/wiki/graph")).json();
       expect(graph.edges.filter((edge: any) => ids.includes(edge.source))).toHaveLength(2);
       await page.screenshot({ path: info.outputPath(`unicode-star-label-${width}.png`), fullPage: true });
@@ -95,7 +95,7 @@ for (const width of [390, 1440]) {
       await page.goto(`/galaxy?page=${ids[0]}`);
       const stars = page.locator(ids.map(id => `.galaxy-star[data-node="${id}"]`).join(", "));
       await expect(stars).toHaveCount(3);
-      const positions = () => stars.evaluateAll(elements => elements.map(element => [(element as HTMLElement).style.left, (element as HTMLElement).style.top]));
+      const positions = () => stars.evaluateAll(elements => elements.map(element => [element.getAttribute("data-x"), element.getAttribute("data-y")]));
       const originalPositions = await positions();
       await expect(page.locator(".galaxy-breadcrumb")).toContainText(haloTitle);
       for (const [index, id] of ids.entries()) {
@@ -356,7 +356,14 @@ for (const width of [390, 1440]) {
       // At a wide viewport the zoomed names have room without edge clamping.
       // Restore the existing core label without changing selection or SVG.
       await page.setViewportSize({ width: 1440, height: 844 });
-      await expect(page.locator(`.galaxy-painted-label[data-node="${ids[0]}"]`)).toBeVisible();
+      await expect(page.locator(`.galaxy-star[data-node="${ids[0]}"]`)).toHaveAttribute("title", title(0));
+      const coreInView = await page.locator(`.galaxy-star[data-node="${ids[0]}"]`).evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const map = element.closest(".galaxy-stage")!.getBoundingClientRect();
+        const x = box.left + box.width / 2, y = box.top + box.height / 2;
+        return x >= map.left && x <= map.right && y >= map.top && y <= map.bottom;
+      });
+      if (coreInView) await expect(page.locator(`.galaxy-painted-label[data-node="${ids[0]}"]`)).toBeVisible();
       await expect.poll(separate).toBe(true);
       await expect(selected).toHaveAttribute("aria-label", new RegExp(title(ids.indexOf(neighbor))));
       await expect(selected).toHaveAttribute("title", title(ids.indexOf(neighbor)));

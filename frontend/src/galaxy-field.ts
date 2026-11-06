@@ -357,7 +357,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
   };
 
   const fit = () => {
-    if (!host.clientWidth || !host.clientHeight) return;
+    if (!host.clientWidth || !host.clientHeight || fitted) return;
     const probe = { ...cam, panX: 0, panY: 0, distance: 100 };
     let reach = 1;
     model.stars.forEach(star => {
