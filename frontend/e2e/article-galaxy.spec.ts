@@ -269,7 +269,7 @@ async function selectedNotebook(page: Page) {
   await expect(page.locator(".galaxy-evidence a[data-open='archive-method']").first()).toBeVisible();
 }
 async function overview(page: Page) {
-  await expect(page.locator(".galaxy-breadcrumb")).toHaveText("Galaxy overview");
+  await expect(page.locator(".galaxy-breadcrumb")).toHaveText("Galaxy");
   await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Choose a constellation" })).toBeVisible();
 }

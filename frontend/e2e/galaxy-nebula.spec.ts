@@ -74,7 +74,7 @@ test("nebula galaxy sits in the light app and keeps real links", async ({ page }
   await page.goto("/");
   await expect(page.locator("header")).toBeVisible();
   await expect(page.getByRole("heading", { name: "A growing collection" })).toBeVisible();
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/home-desktop.png", fullPage: false });
+  await page.screenshot({ path: info.outputPath("home-desktop.png"), fullPage: false });
   await page.getByRole("link", { name: "Galaxy", exact: true }).click();
   await expect(page.locator(".galaxy h1")).toHaveText("Follow a connection.");
   const header = (await page.locator("header").boundingBox())!;
@@ -95,18 +95,18 @@ test("nebula galaxy sits in the light app and keeps real links", async ({ page }
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   const after = await tide.evaluate(element => element.getBoundingClientRect().top);
   expect(after).not.toBe(before);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-zoom-desktop.png" });
+  await page.screenshot({ path: info.outputPath("galaxy-zoom-desktop.png") });
   await page.getByRole("link", { name: "Open article" }).click();
   await expect(page).toHaveURL(/\/wiki\/tide-clock$/);
   await expect(page.locator("article h1")).toHaveText("Tide clock");
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/article-desktop.png" });
+  await page.screenshot({ path: info.outputPath("article-desktop.png") });
   await page.getByRole("link", { name: "Galaxy", exact: true }).click();
   await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-overview-desktop.png" });
+  await page.screenshot({ path: info.outputPath("galaxy-overview-desktop.png") });
   void info;
 });
 
-test("nebula galaxy stays usable on a narrow screen", async ({ page }) => {
+test("nebula galaxy stays usable on a narrow screen", async ({ page }, info) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installApi(page);
   await page.goto("/galaxy?page=field-notebook");
@@ -114,7 +114,7 @@ test("nebula galaxy stays usable on a narrow screen", async ({ page }) => {
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
   await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-mobile.png", fullPage: true });
+  await page.screenshot({ path: info.outputPath("galaxy-mobile.png"), fullPage: true });
   const stage = page.locator(".galaxy-stage");
   const box = (await stage.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -258,7 +258,7 @@ async function gestureCost(page: import("@playwright/test").Page) {
   });
 }
 
-test("synthetic contract graph stays a filled galaxy at realistic density", async ({ page }) => {
+test("synthetic contract graph stays a filled galaxy at realistic density", async ({ page }, info) => {
   test.setTimeout(90_000);
   const graph = syntheticGalaxy();
   expect(graph.nodes).toHaveLength(816);
@@ -290,7 +290,7 @@ test("synthetic contract graph stays a filled galaxy at realistic density", asyn
   });
   console.info(`[nebula-fixture] harbor radial bins ${JSON.stringify(radial)}`);
   await markFixture(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-fixture-overview-desktop.png" });
+  await page.screenshot({ path: info.outputPath("galaxy-fixture-overview-desktop.png") });
   expect(radial.bins[0], "the large group must keep stars in the middle").toBeGreaterThan(5);
   expect(radial.bins[4], "the large group must not fall back to a surrounding ring").toBeLessThan(radial.bins[1] + radial.bins[2]);
   expect(radial.hub).toBeLessThan(radial.max * 0.35);
@@ -304,10 +304,10 @@ test("synthetic contract graph stays a filled galaxy at realistic density", asyn
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Harbor archive hub");
   await expect(page.locator(".galaxy-evidence")).toContainText("see-also");
   await markFixture(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-fixture-zoom-hub-desktop.png" });
+  await page.screenshot({ path: info.outputPath("galaxy-fixture-zoom-hub-desktop.png") });
   await page.getByRole("button", { name: "Neighborhood pages" }).click();
   await markFixture(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-fixture-dense-desktop.png" });
+  await page.screenshot({ path: info.outputPath("galaxy-fixture-dense-desktop.png") });
   const desktop = await gestureCost(page);
   expect(desktop.panSamples).toBe(160);
   expect(desktop.zoomSamples).toBe(40);
@@ -318,12 +318,12 @@ test("synthetic contract graph stays a filled galaxy at realistic density", asyn
   await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await markFixture(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-fixture-mobile-overview.png", fullPage: true });
+  await page.screenshot({ path: info.outputPath("galaxy-fixture-mobile-overview.png"), fullPage: true });
   await page.locator('.galaxy-star[data-node="harbor-hub"]').focus();
   await page.keyboard.press("Enter");
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Harbor archive hub");
   await markFixture(page);
-  await page.screenshot({ path: "/opt/cursor/artifacts/galaxy-integration/galaxy-fixture-mobile-details.png", fullPage: true });
+  await page.screenshot({ path: info.outputPath("galaxy-fixture-mobile-details.png"), fullPage: true });
   const narrow = await gestureCost(page);
   expect(narrow.panP95Ms).toBeLessThan(120);
   expect(narrow.zoomP95Ms).toBeLessThan(120);

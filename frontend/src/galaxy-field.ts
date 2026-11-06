@@ -154,6 +154,7 @@ export function layoutGalaxyField(
   clusters: FieldCluster[],
   adjacency: Map<string, Set<string>>,
 ): FieldModel {
+  edges = [...edges].sort((a, b) => a.source < b.source ? -1 : a.source > b.source ? 1 : a.target < b.target ? -1 : a.target > b.target ? 1 : 0);
   const degree = new Map(nodes.map(node => [node.id, adjacency.get(node.id)?.size || 0]));
   const byId = new Map(nodes.map(node => [node.id, node]));
   const locals = new Map<number, Map<string, Point>>();
@@ -367,25 +368,39 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     homeDistance = 100 * (reach / Math.max(40, want));
     if (!fitted) {
       fitted = true;
-      cam.distance = homeDistance / Math.max(0.75, Math.min(4, pendingScale));
-      cam.panX = pendingPanX;
-      cam.panY = pendingPanY;
+      let distance = homeDistance / Math.max(0.75, Math.min(4, pendingScale));
+      let panX = pendingPanX;
+      let panY = pendingPanY;
       if (!pendingPanX && !pendingPanY) {
-        let sx = 0;
-        let sy = 0;
-        let count = 0;
-        model.stars.forEach(star => {
-          if (star.isolated) return;
-          const point = project(star);
-          sx += point.x; sy += point.y; count += 1;
-        });
-        if (count) {
-          cam.panX += host.clientWidth / 2 - sx / count;
-          cam.panY += host.clientHeight / 2 - sy / count;
+        const margin = 36;
+        for (let attempt = 0; attempt < 8; attempt++) {
+          const shot = { ...cam, distance, panX: 0, panY: 0 };
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          model.stars.forEach(star => {
+            if (star.isolated) return;
+            const point = project(star, shot);
+            minX = Math.min(minX, point.x); minY = Math.min(minY, point.y);
+            maxX = Math.max(maxX, point.x); maxY = Math.max(maxY, point.y);
+          });
+          const spanX = Math.max(1, maxX - minX);
+          const spanY = Math.max(1, maxY - minY);
+          const roomX = Math.max(80, host.clientWidth - margin * 2);
+          const roomY = Math.max(80, host.clientHeight - margin * 2);
+          if (spanX > roomX || spanY > roomY) {
+            distance *= Math.max(spanX / roomX, spanY / roomY) * 1.05;
+            continue;
+          }
+          panX = (host.clientWidth - minX - maxX) / 2;
+          panY = (host.clientHeight - minY - maxY) / 2;
+          break;
         }
-        homePanX = cam.panX;
-        homePanY = cam.panY;
+        homeDistance = distance * Math.max(0.75, Math.min(4, pendingScale));
       }
+      cam.distance = distance;
+      cam.panX = panX;
+      cam.panY = panY;
+      homePanX = panX;
+      homePanY = panY;
     }
     home.distance = homeDistance;
   };
@@ -521,16 +536,14 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       button.style.height = `${size}px`;
       button.classList.toggle("is-selected", star.id === selected);
       button.classList.toggle("is-dimmed", !match || (!!selected && !related));
-      button.hidden = point.x < -40 || point.y < -40 || point.x > width + 40 || point.y > height + 40;
     });
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
     ctx.font = "600 12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
     ctx.textBaseline = "middle";
     const ranked = [...model.stars].sort((a, b) => {
-      if (a.id === selected) return -1;
-      if (b.id === selected) return 1;
-      return b.degree - a.degree;
+      const priority = (star: FieldStar) => star.id === selected ? 0 : star.core ? 1 : 2;
+      return priority(a) - priority(b) || b.degree - a.degree;
     });
     const floor = closeness > 1.65 ? 5 : 8;
     const limit = closeness > 1.65 ? 28 : 8;
@@ -539,10 +552,10 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     buttons.forEach(button => { delete button.dataset.label; });
     labels.replaceChildren();
     ranked.forEach(star => {
-      if (labeled >= limit || star.isolated) return;
-      if (star.degree < floor && star.id !== selected) return;
+      if (star.isolated) return;
+      if (!star.core && star.id !== selected && (labeled >= limit || star.degree < floor)) return;
       const point = shots.get(star.id)!;
-      if (point.x < 12 || point.y < 28 || point.x > width - 12 || point.y > height - 16) return;
+      if (point.x < 8 || point.y < 16 || point.x > width - 8 || point.y > height - 8) return;
       const text = paintedTitle(star.title);
       const textWidth = ctx.measureText(text).width;
       if (taken.some(spot => Math.abs(spot.x - point.x) < (spot.w + textWidth) / 2 + 14 && Math.abs(spot.y - point.y) < 18)) return;
@@ -557,11 +570,6 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       name.style.left = `${point.x + 10}px`;
       name.style.top = `${point.y - 12}px`;
       labels.append(name);
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "rgba(6, 10, 20, 0.9)";
-      ctx.strokeText(text, point.x + 10, point.y - 12);
-      ctx.fillStyle = "#f4f7ff";
-      ctx.fillText(text, point.x + 10, point.y - 12);
     });
     const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.35, width / 2, height / 2, Math.max(width, height) * 0.72);
     vignette.addColorStop(0, "rgba(0,0,0,0)");

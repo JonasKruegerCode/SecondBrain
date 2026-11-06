@@ -283,12 +283,12 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       const id = target.dataset.node;
       const fromStar = target.classList.contains("galaxy-star");
       const fromPage = target.classList.contains("galaxy-page");
-      const fromButton = target.tagName === "BUTTON";
+      const fromSidebarButton = target.tagName === "BUTTON" && !fromStar;
       const mobile = window.matchMedia("(max-width: 680px)").matches;
       select(id);
-      // Selection replaces the clicked SVG group or button. Restore focus
-      // to the equivalent live control instead of leaving it on document.body.
-      if (event.detail === 0 || fromPage || fromButton || (fromStar && mobile)) {
+      // A desktop star click keeps focus on that star. Sidebar controls and
+      // a narrow-screen star click move focus to the evidence.
+      if (event.detail === 0 || fromPage || fromSidebarButton || (fromStar && mobile)) {
         sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus({ preventScroll: true });
       } else if (fromStar) {
         [...stage.querySelectorAll<HTMLElement>(".galaxy-star")]

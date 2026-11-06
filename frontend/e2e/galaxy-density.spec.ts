@@ -230,7 +230,9 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
     await expect(page.locator(".galaxy-evidence > li")).toHaveCount(102);
     await expect(page.locator(".galaxy-evidence")).toContainText(outsideTitle);
-    await expect(page.locator(".galaxy-evidence li").filter({ hasText: outsideTitle })).toContainText("across neighborhoods");
+    const crossing = page.locator(".galaxy-evidence li").filter({ hasText: outsideTitle });
+    await expect(crossing).toHaveCount(2);
+    expect((await crossing.allInnerTexts()).every(text => text.includes("across neighborhoods"))).toBe(true);
     const edgeId = await page.locator(`.galaxy-star[data-node^="${prefix}-"]`).evaluateAll(elements =>
       elements.map(element => {
         const box = element.getBoundingClientRect();

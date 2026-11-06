@@ -95,8 +95,8 @@ test.describe("galaxy touch navigation", () => {
     await expect.poll(metrics).toBe(true);
     await page.getByRole("button", { name: "Reset", exact: true }).tap();
     expect(await metrics()).toBe(true);
-    const id = await page.locator(".galaxy-star.is-core").getAttribute("data-node");
-    await page.locator(".galaxy-star.is-core").tap();
+    const id = await page.locator(".galaxy-sidebar-content .galaxy-page").first().getAttribute("data-node");
+    await page.locator(`.galaxy-star[data-node="${id}"]`).tap();
     await page.locator(".galaxy-selected-heading .galaxy-article").tap();
     await expect(page).toHaveURL(new RegExp(`/wiki/${id}$`));
   });
