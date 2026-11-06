@@ -1,4 +1,5 @@
 import { renderGalaxy, type Graph } from "../galaxy";
+import { renderNebula } from "./nebula";
 import "./pitch.css";
 import {
   buildFixture, checkFixture, clusterTitle, crossEdges, directed, internalEdges, kindLabel, relationLabel,
@@ -32,6 +33,11 @@ interface PitchState {
 }
 
 export function renderGalaxyPitch(main: HTMLElement): () => void {
+  if (new URLSearchParams(location.search).get("drafts") !== "1") return renderNebula(main);
+  return renderEarlierStudies(main);
+}
+
+function renderEarlierStudies(main: HTMLElement): () => void {
   const state: PitchState = {
     view: "current",
     theme: "light",

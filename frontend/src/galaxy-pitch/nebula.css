@@ -1,0 +1,136 @@
+.nebula {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #05060d;
+  color: #e7eefc;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  touch-action: none;
+  overflow: hidden;
+}
+.nebula canvas { width: 100%; height: 100%; display: block; }
+.nebula-top, .nebula-search, .nebula-tools, .nebula-sheet, .nebula-link { pointer-events: auto; }
+.nebula-top {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 88px;
+  max-width: 460px;
+  text-shadow: 0 1px 8px #000;
+}
+.nebula-flag {
+  margin: 0 0 4px;
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #d5e2f8;
+}
+.nebula h1 { margin: 0; font-size: 18px; font-weight: 620; letter-spacing: -.03em; }
+.nebula-quiet { margin: 5px 0 0; max-width: 46ch; color: #c5d0e6; font-size: 12.5px; line-height: 1.45; }
+.nebula form.nebula-search {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: block !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  gap: 0 !important;
+  border-radius: 0 !important;
+}
+.nebula-search input {
+  width: 180px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid #ffffff33 !important;
+  background: #070b16 !important;
+  color: #eef3ff !important;
+  box-shadow: none !important;
+  appearance: none;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+}
+.nebula-search input::placeholder { color: #93a0bd; }
+.nebula-tools {
+  position: absolute;
+  right: 14px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nebula button { background: #070b16 !important; color: #eef3ff !important; box-shadow: none !important; }
+.nebula-tools button, .nebula-sheet button, .nebula-link {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid #ffffff2a;
+  background: #0c1224d0;
+  color: #eef3ff;
+  font: inherit;
+  font-size: 18px;
+}
+.nebula-sheet {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  max-width: 460px;
+  max-height: min(46vh, 420px);
+  overflow: auto;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  border: 1px solid #ffffff24;
+  background: #0b1020e6;
+  box-shadow: 0 18px 50px #000a;
+  transform: translateY(16px);
+  opacity: 0;
+  pointer-events: none;
+}
+.nebula-sheet.open { transform: none; opacity: 1; pointer-events: auto; }
+.nebula.sheet-open .nebula-tools { bottom: min(50vh, 448px); }
+.nebula-kicker { margin: 0; color: #9eb0d4; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.nebula-sheet h2 { margin: 4px 0; font-size: 22px; letter-spacing: -.03em; }
+.nebula-sheet p { margin: 0 0 8px; color: #d5def2; font-size: 13.5px; line-height: 1.45; }
+.nebula-sheet h3 { margin: 10px 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #9eb0d4; }
+.nebula-sheet ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nebula-sheet li button {
+  width: 100%;
+  text-align: left;
+  min-height: 40px;
+  font-size: 13.5px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.nebula-sheet small { color: #a9b6d0; font-size: 11px; }
+.nebula-close { position: absolute; top: 8px; right: 8px; }
+.nebula-link {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  text-decoration: none;
+  color: #c5d2ee;
+}
+.nebula.sheet-open .nebula-link { bottom: min(50vh, 448px); }
+.nebula-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (max-width: 700px) {
+  .nebula-top { right: 16px; }
+  .nebula form.nebula-search { top: 86px; left: 16px; right: 16px; }
+  .nebula-search input { width: 100%; }
+  .nebula.sheet-open .nebula-search { top: 86px; }
+  .nebula h1 { font-size: 16px; }
+  .nebula-quiet { display: none; }
+  .nebula-link { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nebula-sheet { transition: none; }
+}
