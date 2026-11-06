@@ -323,7 +323,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       // so rounding cannot turn a nominal 44px touch target into a sub-44px one.
       const renderedUnit = svg.getScreenCTM()?.a || unit;
       svg.querySelectorAll<SVGCircleElement>(".galaxy-hit").forEach(hit => {
-        hit.setAttribute("r", String(Math.min(22 / renderedUnit, hitSpacing * .45)));
+        hit.setAttribute("r", String(Math.min(22 / renderedUnit, hitSpacing * .48)));
       });
     }
   };
@@ -372,6 +372,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: shelfY + 55 + Math.floor(i / 15) * 55 }));
     if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
     // Bound enlarged targets by actual spacing in smaller constellations.
+    // Keep a 4% gap between neighboring hit circles; the page list remains
+    // the comfortable touch path when a genuinely dense graph cannot fit 44px.
     // Above 120 stars use a conservative bound from the elliptical ring layout:
     // different rings are at least .8 times their radial step apart; same-ring
     // chords and the core gap are wider. Keep targets disjoint without a
