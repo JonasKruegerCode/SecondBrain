@@ -63,3 +63,32 @@ test("galaxy exposes one tab stop and arrows move to the nearest star in that di
   await expect(page.locator('.galaxy-star[tabindex="0"]')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("pointer selection keeps focus on the replacement map and inspector controls", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/galaxy?page=archive-method");
+
+  const star = page.locator('.galaxy-star[tabindex="0"]');
+  const id = await star.getAttribute("data-node");
+  expect(id).toBeTruthy();
+  await star.click();
+  await expect(page.locator(`.galaxy-star[data-node="${id}"]`)).toBeFocused();
+
+  await page.locator(".galaxy-back").click();
+  const pageButton = page.locator(".galaxy-page").first();
+  await expect(pageButton).toBeFocused();
+  await pageButton.click();
+  await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toBeFocused();
+});
+
+test("mobile pointer selection reveals the focused page inspector", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/galaxy?page=archive-method");
+
+  await page.locator('.galaxy-star[tabindex="0"]').click();
+  const article = page.locator(".galaxy-selected-heading .galaxy-article");
+  await expect(article).toBeFocused();
+  const top = await article.evaluate(element => element.getBoundingClientRect().top);
+  expect(top).toBeGreaterThanOrEqual(0);
+  expect(top).toBeLessThan(844);
+});
