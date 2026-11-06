@@ -40,23 +40,23 @@ test("galaxy return rereads the graph after its selected page is deleted", async
 for (const width of [390, 1440]) {
   test(`galaxy article round trip restores its visit (${width})`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
-    for (const list of [false, true]) {
+    {
       await page.goto("/galaxy");
       await page.locator(".galaxy-cluster").filter({ hasText: "Archive practice" }).click();
       await page.locator('.galaxy-page[data-node="field-notebook"]').click();
       await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
       await page.getByRole("button", { name: "Zoom in", exact: true }).click();
-      const map = page.locator(".galaxy-stage svg");
-      await page.locator(".galaxy-stage").scrollIntoViewIfNeeded();
-      const stage = (await page.locator(".galaxy-stage").boundingBox())!;
-      const unpanned = await map.getAttribute("viewBox");
+      const map = page.locator(".galaxy-stage");
+      const camera = () => map.evaluate(element => `${element.getAttribute("data-zoom")}|${element.getAttribute("data-pan")}`);
+      await map.scrollIntoViewIfNeeded();
+      const stage = (await map.boundingBox())!;
+      const unpanned = await camera();
       await page.mouse.move(stage.x + 12, stage.y + stage.height / 2);
       await page.mouse.down();
       await page.mouse.move(stage.x + 62, stage.y + stage.height / 2 + 25, { steps: 5 });
       await page.mouse.up();
-      await expect(map).not.toHaveAttribute("viewBox", unpanned!);
-      const viewBox = await map.getAttribute("viewBox");
-      if (list) await page.getByRole("button", { name: "List view", exact: true }).click();
+      await expect.poll(camera).not.toBe(unpanned);
+      const viewBox = await camera();
       await page.locator(".galaxy-selected-heading").getByRole("link", { name: "Open article" }).click();
       await expect(page).toHaveURL(/\/wiki\/field-notebook$/);
       await expect(page.locator("article h1")).toHaveText("Field notebook");
@@ -64,10 +64,9 @@ for (const width of [390, 1440]) {
       await expect(page).toHaveURL(/\/galaxy$/);
       await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
       await expect(page.locator(".galaxy-breadcrumb")).toContainText("Archive practice");
-      if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
-      else await expect(map).toHaveAttribute("viewBox", viewBox!);
-      await page.screenshot({ path: testInfo.outputPath(`galaxy-return-${width}-${list ? "list" : "map"}.png`), fullPage: true });
-      if (!list) {
+      await expect.poll(camera).toBe(viewBox);
+      await page.screenshot({ path: testInfo.outputPath(`galaxy-return-${width}-map.png`), fullPage: true });
+      {
         const sidebar = page.locator(".galaxy-sidebar-content");
         await sidebar.evaluate(element => { element.scrollTop = 180; });
         const offset = await sidebar.evaluate(element => element.scrollTop);
@@ -77,7 +76,7 @@ for (const width of [390, 1440]) {
         await page.goBack();
         await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
         await expect.poll(() => sidebar.evaluate(element => element.scrollTop)).toBe(offset);
-        await expect(map).toHaveAttribute("viewBox", viewBox!);
+        await expect.poll(camera).toBe(viewBox);
         await page.screenshot({ path: testInfo.outputPath(`galaxy-offset-return-${width}-viewport.png`) });
       }
       const find = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
@@ -89,8 +88,7 @@ for (const width of [390, 1440]) {
       await page.goBack();
       await expect(find).toHaveValue("tide");
       await expect(page.locator(".galaxy-page")).toHaveCount(matches);
-      if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
-      else await expect(map).toHaveAttribute("viewBox", viewBox!);
+      await expect.poll(camera).toBe(viewBox);
       await find.fill("");
       await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
       // Refresh creates an adjacent visit with the same URL. Back/Forward must
@@ -99,8 +97,7 @@ for (const width of [390, 1440]) {
       await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
       await page.goBack();
       await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Field notebook");
-      if (list) await expect(page.locator(".galaxy-stage")).toBeHidden();
-      else await expect(map).toHaveAttribute("viewBox", viewBox!);
+      await expect.poll(camera).toBe(viewBox);
       await page.goForward();
       await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
       // A fresh explicit visit still opens the overview instead of reusing the

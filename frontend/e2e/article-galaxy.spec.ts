@@ -23,27 +23,20 @@ for (const width of [390, 1440]) {
       await page.goto(`/galaxy?page=${ids[0]}`);
       const sidebar = page.locator(".galaxy-sidebar-content");
       const problems = sidebar.locator(".galaxy-problems");
-      const toggle = page.locator('[data-action="list"]');
       await problems.locator("summary").click();
       await expect(problems).toHaveJSProperty("open", true);
       // Both directed fixture links must expose their meaning in the accessibility tree.
       await expect(sidebar.getByRole("img", { name: "links to", exact: true })).toHaveCount(2);
       const evidence = await sidebar.locator(".galaxy-evidence").innerText();
-      for (const listOnly of [true, false]) {
-        await toggle.focus(); await page.keyboard.press("Enter");
-        await expect(toggle).toBeFocused();
-        await expect(toggle).toHaveAttribute("aria-pressed", String(listOnly));
-        await expect(page.locator(".galaxy-stage")).toBeVisible({ visible: !listOnly });
-        await expect(problems).toHaveJSProperty("open", true);
-        await expect(problems).toContainText(`missing-${group}`);
-        await expect(page.locator(".galaxy-selected-heading code")).toHaveText(ids[0]);
-        expect(await sidebar.locator(".galaxy-evidence").innerText()).toBe(evidence);
-        await expect(sidebar.getByRole("img", { name: "links to", exact: true })).toHaveCount(2);
-        // Reveal the diagnostic only after its state/focus assertions. A
-        // mobile mode button can otherwise leave it below the screenshot.
-        await problems.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: info.outputPath(`galaxy-diagnostics-${listOnly ? "list" : "map"}-${width}.png`) });
-      }
+      await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+      await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
+      await expect(problems).toHaveJSProperty("open", true);
+      await expect(problems).toContainText(`missing-${group}`);
+      await expect(page.locator(".galaxy-selected-heading code")).toHaveText(ids[0]);
+      expect(await sidebar.locator(".galaxy-evidence").innerText()).toBe(evidence);
+      await expect(sidebar.getByRole("img", { name: "links to", exact: true })).toHaveCount(2);
+      await problems.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath(`galaxy-diagnostics-map-${width}.png`) });
       // A real selection still starts a fresh detail view; only display mode
       // changes preserve the open diagnostic for the same selected page.
       await sidebar.locator(".galaxy-evidence button[data-node]").first().click();
@@ -55,9 +48,10 @@ for (const width of [390, 1440]) {
       const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
       await search.fill(group);
       await expect(sidebar.locator(".galaxy-page")).toHaveCount(2);
-      await toggle.focus(); await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Reset", exact: true }).click();
       await expect(search).toHaveValue(group);
       await expect(sidebar.locator(".galaxy-page")).toHaveCount(2);
+      await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
     } finally {
       for (const id of owned.reverse()) {
         const current = await request.get(`/api/wiki/pages/${id}`); expect(current.ok()).toBe(true);
@@ -275,7 +269,7 @@ async function selectedNotebook(page: Page) {
   await expect(page.locator(".galaxy-evidence a[data-open='archive-method']").first()).toBeVisible();
 }
 async function overview(page: Page) {
-  await expect(page.locator(".galaxy-breadcrumb")).toHaveText("Galaxy overview");
+  await expect(page.locator(".galaxy-breadcrumb")).toHaveText("Galaxy");
   await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Choose a constellation" })).toBeVisible();
 }
