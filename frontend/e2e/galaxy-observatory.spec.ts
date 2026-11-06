@@ -189,6 +189,7 @@ test("desktop overview arranges one to six curated constellations as an open sky
     visibleCount = 6;
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/galaxy");
+    await expect(page.locator(".galaxy-cluster")).toHaveCount(6);
     const mobileCenters = await page.locator(".galaxy-region").evaluateAll(elements => elements.map(element => ({
       x: Number(element.getAttribute("cx")),
       y: Number(element.getAttribute("cy")),
