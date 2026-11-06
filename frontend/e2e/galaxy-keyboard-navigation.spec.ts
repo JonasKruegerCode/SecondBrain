@@ -9,6 +9,7 @@ test("galaxy exposes one tab stop and arrows move to the nearest star in that di
 
   const tabStop = page.locator('.galaxy-star[tabindex="0"]');
   await expect(tabStop).toHaveCount(1);
+  await expect(tabStop).toHaveAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight ArrowUp ArrowDown Enter Space plus = -");
   await expect(page.locator('.galaxy-star[tabindex="-1"]')).toHaveCount(3);
 
   const destination = await tabStop.evaluate(element => {
