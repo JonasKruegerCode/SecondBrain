@@ -448,7 +448,7 @@ app.addEventListener("click", (e) => {
 });
 function shell() {
   const active = (path: string) => location.pathname === path ? ' class="active" aria-current="page"' : "";
-  const homeActive = !["/search", "/galaxy", "/chat"].includes(location.pathname)
+  const homeActive = !["/search", "/galaxy", "/galaxy-pitch", "/chat"].includes(location.pathname)
     ? ` class="active"${location.pathname === "/" ? ' aria-current="page"' : ""}`
     : "";
   app.innerHTML = `<a class="skip-link" href="#main-content">Skip to content</a><div class="ambient"></div><header><a class="brand" href="/" aria-label="Secondbrain Your knowledge, connected — Home"><span aria-hidden="true">✳</span> secondbrain <small aria-hidden="true">YOUR KNOWLEDGE, CONNECTED</small></a><nav aria-label="Primary"><a href="/"${homeActive}>Home</a><a href="/search"${active("/search")}>Search</a><a href="/galaxy"${active("/galaxy")}>Galaxy</a><a href="/chat"${active("/chat")}>Chat</a></nav><div class="workspace"><i></i>Personal workspace</div></header><div class="pwa-notice" role="status" hidden><span></span><button type="button"></button></div><p class="route-status sr-only" role="status" aria-live="polite"></p><main id="main-content" tabindex="-1"></main><footer>A little clarity, every day.<span>Markdown is the source of truth.</span></footer>`;
@@ -602,6 +602,14 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
     viewReady(title);
   };
   try {
+    if (location.pathname === "/galaxy-pitch") {
+      // Isolated design pitch. Example fixture only; the live /galaxy route is unchanged.
+      const { renderGalaxyPitch } = await import("./galaxy-pitch/render");
+      if (run !== generation) return;
+      cleanupView = renderGalaxyPitch(main);
+      complete("Galaxy prototypes");
+      return;
+    }
     if (location.pathname === "/chat") {
       cleanupView = renderChat(main, api, renderPwaState, () => complete("Chat"));
       return;
