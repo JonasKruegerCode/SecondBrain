@@ -31,15 +31,17 @@ for (const width of [390, 1440]) {
     expect(frame.height).toBeGreaterThan(350);
     expect(frame.clientWidth).toBeGreaterThan(250);
 
-    const star = page.locator(".galaxy-star").first();
+    const star = page.locator('.galaxy-star[tabindex="0"]');
     const id = await star.getAttribute("data-node");
     expect(id).toBeTruthy();
     await star.focus();
+    await expect(star).toBeFocused();
     await page.keyboard.press("Enter");
     const inspector = page.locator(".galaxy-selected-heading");
     await expect(inspector).toBeVisible();
     const article = inspector.locator(".galaxy-article");
     await expect(article).toHaveAttribute("data-open", id!);
+    await expect(article).toBeFocused();
     const card = await inspector.evaluate(element => {
       const style = getComputedStyle(element);
       return {
@@ -54,6 +56,8 @@ for (const width of [390, 1440]) {
     expect(card.borderStyle).toBe("solid");
     expect(card.radius).not.toBe("0px");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    // Keep the full-page review image free of fixed focus overlays; focus was asserted above.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.screenshot({ path: info.outputPath(`galaxy-observatory-${width}.png`), fullPage: true });
   });
 }
