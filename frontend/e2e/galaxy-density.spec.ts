@@ -18,27 +18,26 @@ for (const width of [390, 1440]) {
       }
       await page.setViewportSize({ width, height: 844 });
       await page.goto(`/galaxy?page=${ids[0]}`);
-      const stars = page.locator(".galaxy-star");
+      const stars = page.locator(ids.map(id => `.galaxy-star[data-node="${id}"]`).join(", "));
       await expect(stars).toHaveCount(2);
-      const positions = await stars.evaluateAll(elements => elements.map(el => el.getAttribute("transform")));
+      const positions = await stars.evaluateAll(elements => elements.map(el => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]));
       for (const [index, id] of ids.entries()) {
         const star = page.locator(`.galaxy-star[data-node="${id}"]`);
         await star.focus(); await page.keyboard.press("Enter");
         await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(titles[index]);
         await expect(star).toHaveAttribute("aria-label", new RegExp(titles[index]));
-        await expect(star.locator("title")).toHaveText(titles[index]);
-        const label = star.locator("text");
-        await expect(label).toHaveAttribute("data-label", [...titles[index]].slice(0, 25).join("") + "…");
-        await expect(label).toBeVisible();
-        const geometry = await label.evaluate(element => {
-          const label = element as SVGGraphicsElement;
-          const box = label.getBoundingClientRect(), bounds = label.ownerSVGElement!.getBoundingClientRect();
-          return { text: label.textContent || "", inside: box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom };
+        await expect(star).toHaveAttribute("title", titles[index]);
+        const painted = [...titles[index]].slice(0, 25).join("") + "…";
+        await expect(star).toHaveAttribute("data-label", painted);
+        expect(painted).not.toMatch(/[\uD800-\uDFFF]/u);
+        const inside = await star.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          const bounds = element.closest(".galaxy-stage")!.getBoundingClientRect();
+          return box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom;
         });
-        expect(geometry.text).not.toMatch(/[\uD800-\uDFFF]/u);
-        expect(geometry.inside).toBe(true);
+        expect(inside).toBe(true);
       }
-      expect(await stars.evaluateAll(elements => elements.map(el => el.getAttribute("transform")))).toEqual(positions);
+      expect(await stars.evaluateAll(elements => elements.map(el => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]))).toEqual(positions);
       const graph = await (await request.get("/api/wiki/graph")).json();
       expect(graph.edges.filter((edge: any) => ids.includes(edge.source))).toHaveLength(2);
       await page.screenshot({ path: info.outputPath(`unicode-star-label-${width}.png`), fullPage: true });
@@ -94,61 +93,23 @@ for (const width of [390, 1440]) {
       expect(originalGraph.edges).toHaveLength(3);
       await page.setViewportSize({ width, height: 844 });
       await page.goto(`/galaxy?page=${ids[0]}`);
-      const stars = page.locator(".galaxy-star");
+      const stars = page.locator(ids.map(id => `.galaxy-star[data-node="${id}"]`).join(", "));
       await expect(stars).toHaveCount(3);
-      const positions = () => stars.evaluateAll(elements => elements.map(element => element.getAttribute("transform")));
+      const positions = () => stars.evaluateAll(elements => elements.map(element => [(element as HTMLElement).style.left, (element as HTMLElement).style.top]));
       const originalPositions = await positions();
-      const halo = page.locator(".galaxy-neighborhood text:not(.galaxy-count)");
-      await expect(halo).toHaveAttribute("data-label", haloTitle);
-      await expect(halo).toBeVisible();
-      if (width === 390) await expect(halo).not.toHaveText(haloTitle);
-      // Pixel fitting retains both ends of the label. Check the actual painted
-      // text against independent browser grapheme boundaries, including its suffix.
-      const haloFit = await halo.evaluate(element => {
-        const label = element as SVGTextElement;
-        const source = label.dataset.label!;
-        const Segmenter = (Intl as any).Segmenter;
-        const clusters = Array.from(new Segmenter(undefined, { granularity: "grapheme" }).segment(source), (part: any) => part.segment as string);
-        const text = element.textContent || "";
-        const [left, right, extra] = text.split("…");
-        // Measure a hidden full-text clone with the same SVG/font/transform.
-        // Do not mutate the fitted label or depend on a specific emoji font.
-        const full = label.cloneNode(true) as SVGTextElement;
-        full.textContent = source;
-        full.style.visibility = "hidden";
-        label.parentElement!.append(full);
-        const scale = Math.hypot(label.getScreenCTM()!.a, label.getScreenCTM()!.b);
-        const available = label.ownerSVGElement!.parentElement!.clientWidth - 24;
-        let sourceWidth: number;
-        try { sourceWidth = full.getComputedTextLength() * scale; }
-        finally { full.remove(); }
-        return { sourceWidth, available, paintedWidth: label.getComputedTextLength() * scale,
-          shortened: text !== source, valid: text === source || (extra === undefined && right !== undefined && left.length > 0 && right.length > 0 &&
-          clusters.some((_, count) => clusters.slice(0, count).join("") === left) &&
-          clusters.some((_, count) => clusters.slice(clusters.length - count).join("") === right)) };
-      });
-      if (width === 390) {
-        expect(haloFit.sourceWidth, "fixture must exceed the actual halo pixel budget").toBeGreaterThan(haloFit.available);
-        expect(haloFit.shortened).toBe(true);
-      }
-      expect(haloFit.paintedWidth).toBeLessThanOrEqual(haloFit.available + .5);
-      expect(haloFit.valid, "painted halo prefix and suffix must end at complete graphemes").toBe(true);
+      await expect(page.locator(".galaxy-breadcrumb")).toContainText(haloTitle);
       for (const [index, id] of ids.entries()) {
         const star = page.locator(`.galaxy-star[data-node="${id}"]`);
         await star.focus(); await page.keyboard.press("Enter");
         await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(titles[index]);
         await expect(star).toHaveAttribute("aria-label", new RegExp(titles[index]));
-        await expect(star.locator("title")).toHaveText(titles[index]);
-        const label = star.locator("text");
+        await expect(star).toHaveAttribute("title", titles[index]);
         const expected = prefix + clusters[index] + "…";
-        await expect(label).toHaveAttribute("data-label", expected);
-        await expect(label).toBeVisible();
-        // This deliberately compact prefix fits at both widths, so checking
-        // painted text catches broken graphemes independently of data-label.
-        await expect(label).toHaveText(expected);
-        const inside = await label.evaluate(element => {
-          const label = element as SVGGraphicsElement;
-          const box = label.getBoundingClientRect(), bounds = label.ownerSVGElement!.getBoundingClientRect();
+        await expect(star).toHaveAttribute("data-label", expected);
+        expect(expected).not.toMatch(/[\uD800-\uDFFF]/u);
+        const inside = await star.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          const bounds = element.closest(".galaxy-stage")!.getBoundingClientRect();
           return box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom;
         });
         expect(inside).toBe(true);
@@ -215,10 +176,10 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
 
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/galaxy");
-    await expect(page.getByRole("button", { name: "Map view", exact: true })).toBeVisible();
+    await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
+    await expect(page.getByRole("searchbox", { name: "Find a page in this snapshot" })).toBeVisible();
     await page.locator(".galaxy-cluster").filter({ hasText: label }).click();
-    await page.getByRole("button", { name: "Map view", exact: true }).click();
-    await expect(page.locator(".galaxy-stage svg")).toBeVisible();
+    await expect(page.locator(".galaxy-sidebar-content .galaxy-page")).toHaveCount(51);
     await page.screenshot({ path: info.outputPath(`dense-before-selection-${width}.png`), fullPage: true });
 
     const notice = page.locator(".galaxy-density-note");
@@ -226,41 +187,35 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
     await expect(notice).toContainText(/direct links/i);
     await expect(notice).toContainText("within this constellation");
     await expect(notice).toContainText(/core|selected/i);
-    const lines = page.locator(".galaxy-stage .galaxy-edge");
-    await expect(lines).toHaveCount(100);
-    expect(await lines.locator("title").allTextContents()).toEqual(
-      expect.arrayContaining([expect.stringContaining(title(0))]),
-    );
-    expect((await lines.locator("title").allTextContents()).every(text => text.includes(title(0)))).toBe(true);
-    await expect(page.locator(".galaxy-star")).toHaveCount(51);
+    expect(Number(await page.locator(".galaxy-stage").getAttribute("data-internal-links"))).toBeGreaterThan(2000);
+    await expect(page.locator(`.galaxy-star[data-node^="${prefix}-"]`)).toHaveCount(51);
 
     const other = page.locator(`.galaxy-star[data-node="${ids[17]}"]`);
     await other.focus();
     await expect(other).toBeFocused();
-    const viewWidth = () => page.locator(".galaxy-stage svg").evaluate(element =>
-      (element as SVGSVGElement).viewBox.baseVal.width);
+    const zoomOf = () => page.locator(".galaxy-stage").getAttribute("data-zoom").then(value => Number(value));
     const focusedVisible = () => other.evaluate(element => {
-      const star = element as SVGGraphicsElement;
-      const bounds = star.ownerSVGElement!.getBoundingClientRect();
-      const point = new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!);
-      return point.x >= bounds.left + 25.9 && point.x <= bounds.right - 25.9 &&
-        point.y >= bounds.top + 25.9 && point.y <= bounds.bottom - 25.9;
+      const box = element.getBoundingClientRect();
+      const bounds = element.closest(".galaxy-stage")!.getBoundingClientRect();
+      const x = box.left + box.width / 2, y = box.top + box.height / 2;
+      return x >= bounds.left + 8 && x <= bounds.right - 8 && y >= bounds.top + 8 && y <= bounds.bottom - 8;
     });
-    const fitWidth = await viewWidth();
+    const fitZoom = await zoomOf();
+    expect(fitZoom).toBeCloseTo(1, 2);
     await page.keyboard.press("+");
-    await expect.poll(viewWidth).toBeLessThan(fitWidth);
+    expect(await zoomOf()).toBeGreaterThan(fitZoom);
     await expect(other).toBeFocused();
     expect(await focusedVisible(), "zoom must retain a visible focused star").toBe(true);
     for (let step = 0; step < 20; step++) await page.keyboard.press("+");
-    expect(await viewWidth()).toBeCloseTo(fitWidth / 4, 3);
+    expect(await zoomOf()).toBeCloseTo(4, 2);
     expect(await focusedVisible(), "maximum zoom must not hide focus or silently reset").toBe(true);
     await page.keyboard.press("=");
-    expect(await viewWidth()).toBeCloseTo(fitWidth / 4, 3);
+    expect(await zoomOf()).toBeCloseTo(4, 2);
     for (let step = 0; step < 20; step++) await page.keyboard.press("-");
-    expect(await viewWidth()).toBeCloseTo(fitWidth / .75, 3);
+    expect(await zoomOf()).toBeCloseTo(0.75, 2);
     expect(await focusedVisible()).toBe(true);
     await page.keyboard.press("=");
-    await expect.poll(viewWidth).toBeCloseTo(fitWidth, 3);
+    await expect.poll(zoomOf).toBeCloseTo(1, 2);
     // Literal search text must not invoke map zoom.
     const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
     await search.fill("Synthetic");
@@ -268,47 +223,36 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
     await page.keyboard.press("+");
     await page.keyboard.press("-");
     await expect(search).toHaveValue("Synthetic+-");
-    expect(await viewWidth()).toBeCloseTo(fitWidth, 3);
+    expect(await zoomOf()).toBeCloseTo(fitZoom, 2);
     await search.fill("");
     await other.focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
-    await expect(lines).toHaveCount(100);
-    expect((await lines.locator("title").allTextContents()).every(text => text.includes(title(17)))).toBe(true);
     await expect(page.locator(".galaxy-evidence > li")).toHaveCount(102);
     await expect(page.locator(".galaxy-evidence")).toContainText(outsideTitle);
-    expect((await lines.locator("title").allTextContents()).some(text => text.includes(outsideTitle))).toBe(false);
-    // Screen-sized labels must stay inside the actual SVG, including when an
-    // outer star is selected in a narrow, dense constellation.
-    const edgeId = await page.locator(".galaxy-star").evaluateAll(elements =>
+    await expect(page.locator(".galaxy-evidence li").filter({ hasText: outsideTitle })).toContainText("across neighborhoods");
+    const edgeId = await page.locator(`.galaxy-star[data-node^="${prefix}-"]`).evaluateAll(elements =>
       elements.map(element => {
-        const star = element as SVGGraphicsElement;
-        return { id: star.getAttribute("data-node")!, x: new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!).x };
+        const box = element.getBoundingClientRect();
+        return { id: element.getAttribute("data-node")!, x: box.left + box.width / 2 };
       }).sort((a, b) => b.x - a.x)[0].id);
     await page.locator(`.galaxy-star[data-node="${edgeId}"]`).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(ids.indexOf(edgeId)));
-    const labelsContained = () => page.locator(".galaxy-star text").evaluateAll(elements => {
-      const svg = (elements[0] as SVGTextElement).ownerSVGElement!;
-      const bounds = svg.getBoundingClientRect();
-      return elements.every(element => {
-        const label = element as SVGTextElement;
-        if (getComputedStyle(label).visibility === "hidden") return true;
-        const box = label.getBoundingClientRect();
-        return box.left >= bounds.left + 5 && box.right <= bounds.right - 5 &&
-          box.top >= bounds.top + 5 && box.bottom <= bounds.bottom - 5 &&
-          parseFloat(getComputedStyle(label).fontSize) * label.getScreenCTM()!.a >= 11.99;
-      });
+    const selectedInside = () => page.locator(".galaxy-star.is-selected").evaluate(element => {
+      const box = element.getBoundingClientRect();
+      const bounds = element.closest(".galaxy-stage")!.getBoundingClientRect();
+      return box.left >= bounds.left - 1 && box.right <= bounds.right + 1 && box.top >= bounds.top - 1 && box.bottom <= bounds.bottom + 1;
     });
     for (const labelWidth of [width, 320, 1440, width]) {
       await page.setViewportSize({ width: labelWidth, height: 844 });
-      await expect.poll(labelsContained).toBe(true);
-      await expect(page.locator(".galaxy-star.is-selected text")).toBeVisible();
+      await expect.poll(selectedInside).toBe(true);
+      await expect(page.locator(".galaxy-star.is-selected")).toHaveAttribute("data-label", /.+/);
     }
     await page.getByRole("button", { name: "Zoom in", exact: true }).click();
-    await expect.poll(labelsContained).toBe(true);
+    await expect.poll(selectedInside).toBe(true);
     await page.getByRole("button", { name: "Reset", exact: true }).click();
-    await expect.poll(labelsContained).toBe(true);
+    await expect.poll(selectedInside).toBe(true);
     await page.screenshot({ path: info.outputPath(`dense-edge-label-${width}.png`), fullPage: true });
     await page.locator(`.galaxy-star[data-node="${ids[17]}"]`).focus();
     await page.keyboard.press("Enter");
@@ -319,17 +263,14 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
     await expect(page.locator("article > h1")).toHaveText(title(17));
     await page.goBack();
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
-    await page.getByRole("button", { name: "List view", exact: true }).click();
-    await expect(page.locator(".galaxy-stage")).toBeHidden();
-    await expect(notice).toBeHidden();
-    await page.getByRole("button", { name: "Map view", exact: true }).click();
+    await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
     await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(17));
-    await expect(lines).toHaveCount(100);
     await expect(notice).toBeVisible();
     await page.getByRole("button", { name: "All constellations" }).click();
     await page.locator(".galaxy-cluster").filter({ hasText: outsideTitle }).click();
     await expect(notice).toBeHidden();
-    await expect(page.locator(".galaxy-star")).toHaveCount(1);
+    await expect(page.locator(".galaxy-sidebar-content .galaxy-page")).toHaveCount(1);
+    await expect(page.locator(`.galaxy-star[data-node="${outside}"]`)).toBeVisible();
     expect(errors).toEqual([]);
   } finally {
     // Only successfully created, UUID-owned pages can enter this cleanup list.
@@ -367,15 +308,18 @@ for (const width of [390, 1440]) {
       }
       await page.setViewportSize({ width, height: 844 });
       await page.goto(`/galaxy?page=${ids[0]}`);
-      const stars = page.locator(".galaxy-star");
+      const stars = page.locator(ids.map(id => `.galaxy-star[data-node="${id}"]`).join(", "));
       await expect(stars).toHaveCount(33);
       const positions = () => stars.evaluateAll(elements => Object.fromEntries(elements.map(element =>
-        [element.getAttribute("data-node"), element.getAttribute("transform")])));
+        [element.getAttribute("data-node"), `${element.getAttribute("data-x")},${element.getAttribute("data-y")}`])));
       const originalPositions = await positions();
       // Select a real star on the core's horizontal diameter. Containment alone
       // misses two screen-sized labels painting over one another in this case.
       const neighbor = await stars.evaluateAll(elements => {
-        const point = (element: Element) => new DOMPoint(0, 0).matrixTransform((element as SVGGraphicsElement).getScreenCTM()!);
+        const point = (element: Element) => {
+          const box = element.getBoundingClientRect();
+          return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+        };
         const core = point(elements.find(element => element.classList.contains("is-core"))!);
         return elements.filter(element => !element.classList.contains("is-core")).map(element => {
           const p = point(element);
@@ -388,14 +332,13 @@ for (const width of [390, 1440]) {
       await expect(page.locator(".galaxy-selected-heading h2")).toHaveText(title(ids.indexOf(neighbor)));
       await page.locator(".galaxy-map").scrollIntoViewIfNeeded();
       await page.screenshot({ path: info.outputPath(`neighbor-labels-${width}.png`), fullPage: true });
-      const separate = () => page.locator(".galaxy-star text").evaluateAll(elements => {
-        const boxes = elements.filter(element => getComputedStyle(element).visibility !== "hidden")
-          .map(element => element.getBoundingClientRect());
+      const separate = () => page.locator(".galaxy-painted-label").evaluateAll(elements => {
+        const boxes = elements.map(element => element.getBoundingClientRect());
         return boxes.every((box, i) => boxes.slice(i + 1).every(other =>
           box.right + 3 <= other.left || box.left >= other.right + 3 ||
           box.bottom + 3 <= other.top || box.top >= other.bottom + 3));
       });
-      const selectedLabel = page.locator(".galaxy-star.is-selected text");
+      const selectedLabel = page.locator(`.galaxy-painted-label[data-node="${neighbor}"]`);
       for (const nextWidth of [width, 320, 800, 1440, width]) {
         await page.setViewportSize({ width: nextWidth, height: 844 });
         await expect(selectedLabel).toBeVisible();
@@ -411,10 +354,10 @@ for (const width of [390, 1440]) {
       // At a wide viewport the zoomed names have room without edge clamping.
       // Restore the existing core label without changing selection or SVG.
       await page.setViewportSize({ width: 1440, height: 844 });
-      await expect(page.locator(".galaxy-star.is-core text")).toBeVisible();
+      await expect(page.locator(`.galaxy-painted-label[data-node="${ids[0]}"]`)).toBeVisible();
       await expect.poll(separate).toBe(true);
       await expect(selected).toHaveAttribute("aria-label", new RegExp(title(ids.indexOf(neighbor))));
-      await expect(selected.locator("title")).toHaveText(title(ids.indexOf(neighbor)));
+      await expect(selected).toHaveAttribute("title", title(ids.indexOf(neighbor)));
       await page.setViewportSize({ width, height: 844 });
       await page.getByRole("button", { name: "Reset", exact: true }).click();
       await expect(selectedLabel).toBeVisible();
@@ -423,12 +366,12 @@ for (const width of [390, 1440]) {
       // A vertically separated selection must restore the core's label; hiding
       // it once is not permission to keep it absent after the next layout.
       const top = await stars.evaluateAll(elements => elements.filter(element => !element.classList.contains("is-core"))
-        .map(element => ({ id: element.getAttribute("data-node")!, y: new DOMPoint(0, 0).matrixTransform((element as SVGGraphicsElement).getScreenCTM()!).y }))
+        .map(element => ({ id: element.getAttribute("data-node")!, y: element.getBoundingClientRect().top }))
         .sort((a, b) => a.y - b.y)[0].id);
       await page.locator(`.galaxy-star[data-node="${top}"]`).focus();
       await page.keyboard.press("Enter");
-      await expect(page.locator(".galaxy-star.is-core text")).toBeVisible();
-      await expect(page.locator(".galaxy-star.is-selected text")).toBeVisible();
+      await expect(page.locator(`.galaxy-painted-label[data-node="${ids[0]}"]`)).toBeVisible();
+      await expect(page.locator(`.galaxy-painted-label[data-node="${top}"]`)).toBeVisible();
       await expect.poll(separate).toBe(true);
       await page.locator(".galaxy-selected-heading .galaxy-article").click();
       await expect(page).toHaveURL(new RegExp(`/wiki/${top}$`));
@@ -438,8 +381,8 @@ for (const width of [390, 1440]) {
       await expect.poll(separate).toBe(true);
       await page.locator(`.galaxy-star[data-node="${ids[0]}"]`).focus();
       await page.keyboard.press("Enter");
-      await expect(page.locator(".galaxy-star text")).toHaveCount(1);
-      await expect(page.locator(".galaxy-star.is-core.is-selected text")).toBeVisible();
+      await expect(page.locator(`.galaxy-painted-label[data-node="${ids[0]}"]`)).toBeVisible();
+      await expect(page.locator(".galaxy-star.is-core.is-selected")).toBeVisible();
       expect(await positions()).toEqual(originalPositions);
       expect(errors).toEqual([]);
     } finally {

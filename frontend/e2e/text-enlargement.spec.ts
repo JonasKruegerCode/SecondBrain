@@ -41,8 +41,7 @@ for (const width of [320, 1440]) {
           expect(box!.x).toBeGreaterThanOrEqual(workspace!.x);
           expect(box!.x + box!.width).toBeLessThanOrEqual(workspace!.x + workspace!.width);
         }
-        await page.getByRole("button", { name: "List view", exact: true }).click();
-        await expect(page.locator(".galaxy")).toHaveClass(/is-list-view/);
+        await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
         const input = page.locator(".galaxy-search input");
         const sizes = await input.evaluate(node => ({ height: node.clientHeight, font: parseFloat(getComputedStyle(node).fontSize), padding: parseFloat(getComputedStyle(node).paddingTop) + parseFloat(getComputedStyle(node).paddingBottom) }));
         expect(sizes.height).toBeGreaterThanOrEqual(sizes.font + sizes.padding - 1);
