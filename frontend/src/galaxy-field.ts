@@ -553,14 +553,22 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     labels.replaceChildren();
     ranked.forEach(star => {
       if (star.isolated) return;
-      if (!star.core && star.id !== selected && (labeled >= limit || star.degree < floor)) return;
+      const pinned = star.core || star.id === selected;
+      if (!pinned && (labeled >= limit || star.degree < floor)) return;
       const point = shots.get(star.id)!;
-      if (point.x < 8 || point.y < 16 || point.x > width - 8 || point.y > height - 8) return;
+      if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) return;
       const text = paintedTitle(star.title);
       const textWidth = ctx.measureText(text).width;
-      if (taken.some(spot => Math.abs(spot.x - point.x) < (spot.w + textWidth) / 2 + 14 && Math.abs(spot.y - point.y) < 18)) return;
       if (query && !`${star.title} ${star.id}`.toLowerCase().includes(query)) return;
-      taken.push({ x: point.x, y: point.y, w: textWidth });
+      const offsets = pinned ? [0, -22, 22, -44, 44] : [0];
+      const y = offsets.find(offset => {
+        const next = point.y + offset;
+        return next >= 12 && next <= height - 12 && !taken.some(spot =>
+          Math.abs(spot.x - point.x) < (spot.w + textWidth) / 2 + 14 && Math.abs(spot.y - next) < 18);
+      });
+      if (y === undefined) return;
+      const top = point.y + y;
+      taken.push({ x: point.x, y: top, w: textWidth });
       labeled += 1;
       buttons.get(star.id)!.dataset.label = text;
       const name = document.createElement("span");
@@ -568,7 +576,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       name.dataset.node = star.id;
       name.textContent = text;
       name.style.left = `${point.x + 10}px`;
-      name.style.top = `${point.y - 12}px`;
+      name.style.top = `${top - 12}px`;
       labels.append(name);
     });
     const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.35, width / 2, height / 2, Math.max(width, height) * 0.72);
