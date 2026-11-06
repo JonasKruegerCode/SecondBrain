@@ -202,6 +202,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     }
     field.resize();
     field.setView({ selected: selectedNode, query, focusGroup: selectedCluster });
+    if (selectedNode) field.reveal(selectedNode);
     const pairs = new Map<string, { a: string; b: string; n: number }>();
     bridges.forEach(edge => {
       const leftName = clusterName(clusters[membership.get(edge.source)!]);
@@ -394,7 +395,12 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   render();
   root.querySelector<HTMLInputElement>("input")!.value = query;
   sidebar.scrollTop = previous?.sidebarScroll || 0;
-  const resize = new ResizeObserver(() => { field?.resize(); });
+  const resize = new ResizeObserver(() => {
+    field?.resize();
+    if (selectedNode) field?.reveal(selectedNode);
+    const live = field?.getCamera();
+    if (live) { scale = live.scale; panX = live.panX; panY = live.panY; }
+  });
   resize.observe(stage);
   return () => {
     const camera = field?.getCamera();
