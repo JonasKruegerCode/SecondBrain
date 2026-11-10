@@ -547,7 +547,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     });
     const floor = closeness > 1.65 ? 5 : 8;
     const limit = closeness > 1.65 ? 28 : 8;
-    const taken: { x: number; y: number; w: number }[] = [];
+    const taken: { l: number; y: number; w: number }[] = [];
     let labeled = 0;
     buttons.forEach(button => { delete button.dataset.label; });
     labels.replaceChildren();
@@ -560,23 +560,28 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       const text = paintedTitle(star.title);
       const textWidth = ctx.measureText(text).width;
       if (query && !`${star.title} ${star.id}`.toLowerCase().includes(query)) return;
-      const offsets = pinned ? [0, -22, 22, -44, 44] : [0];
-      const y = offsets.find(offset => {
-        const next = point.y + offset;
-        return next >= 12 && next <= height - 12 && !taken.some(spot =>
-          Math.abs(spot.x - point.x) < (spot.w + textWidth) / 2 + 14 && Math.abs(spot.y - next) < 18);
+      const labelHeight = 22;
+      const gap = 8;
+      const left = point.x + 10;
+      const offsets = pinned ? [0, -28, 28, -56, 56] : [0];
+      const center = offsets.map(offset => point.y + offset).find(next => {
+        if (next < 14 || next > height - 14) return false;
+        return !taken.some(spot => {
+          const aT = next - labelHeight / 2, aB = next + labelHeight / 2;
+          const bT = spot.y - labelHeight / 2, bB = spot.y + labelHeight / 2;
+          return !(left + textWidth + gap <= spot.l || spot.l + spot.w + gap <= left || aB + gap <= bT || bB + gap <= aT);
+        });
       });
-      if (y === undefined) return;
-      const top = point.y + y;
-      taken.push({ x: point.x, y: top, w: textWidth });
+      if (center === undefined) return;
+      taken.push({ l: left, y: center, w: textWidth });
       labeled += 1;
       buttons.get(star.id)!.dataset.label = text;
       const name = document.createElement("span");
       name.className = "galaxy-painted-label";
       name.dataset.node = star.id;
       name.textContent = text;
-      name.style.left = `${point.x + 10}px`;
-      name.style.top = `${top - 12}px`;
+      name.style.left = `${left}px`;
+      name.style.top = `${center}px`;
       labels.append(name);
     });
     const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.35, width / 2, height / 2, Math.max(width, height) * 0.72);

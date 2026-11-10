@@ -5,7 +5,7 @@
 @media(prefers-reduced-motion:reduce){.galaxy *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .galaxy-refresh{font-size:10px;text-decoration:none;border-bottom:1px solid #62758f;padding-bottom:2px;white-space:nowrap}
 .galaxy-stage { user-select: none; -webkit-user-select: none; }
-.galaxy .galaxy-stage { height: min(72vh, 740px); min-height: 460px; margin: 0 12px 12px; border-radius: 22px; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, #1b2444, #070a14 72%); box-shadow: inset 0 0 0 1px #ffffff66, 0 18px 44px #243e5c1f; touch-action: none; }
+.galaxy .galaxy-stage { position: relative; height: min(72vh, 740px); min-height: 460px; margin: 0 12px 12px; border-radius: 22px; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, #1b2444, #070a14 72%); box-shadow: inset 0 0 0 1px #ffffff66, 0 18px 44px #243e5c1f; touch-action: none; }
 .galaxy-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .galaxy-stars, .galaxy-labels { position: absolute; inset: 0; }
 .galaxy-labels { pointer-events: none; z-index: 3; }
