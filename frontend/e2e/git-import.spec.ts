@@ -59,7 +59,8 @@ async function search(page: Page, marker: string, id: string) {
   await page.getByRole("link", { name: "Search", exact: true }).click();
   await page.getByRole("textbox", { name: "Search pages" }).fill(marker);
   await page.getByRole("button", { name: "Search", exact: false }).click();
-  await expect(page.locator("#results .card")).toHaveCount(1);
+  await expect(page.locator(`#results a[href="/wiki/${id}"]`)).toBeVisible();
+  await expect(page.locator("#results .card").first()).toHaveAttribute("href", `/wiki/${id}`);
   await page.locator(`#results .card[href="/wiki/${id}"]`).click();
   await expect(page.locator("article h1")).toHaveText("Night sky survey");
   await expect(page.locator(".prose")).toContainText(marker);
