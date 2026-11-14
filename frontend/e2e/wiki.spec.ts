@@ -760,7 +760,7 @@ for (const older of ["failure", "success"] as const) {
         older === "success" ? "Updated search fixture" : "Current search fixture",
       );
       await expect(page.locator("#results .error")).toHaveCount(0);
-      await expect(page.locator("#results .card").first().locator(`a[href="/wiki/${top.id}"]`)).toBeVisible();
+      await expect(page.locator("#results .card").first()).toHaveAttribute("href", `/wiki/${top.id}`);
       await expect(page.locator("#results")).toHaveAttribute("aria-busy", "false");
       await expect(page).toHaveURL(new RegExp(`/search\\?q=${older === "success" ? firstTerm : secondTerm}$`));
       if (older === "failure") {
