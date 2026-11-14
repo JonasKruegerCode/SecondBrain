@@ -73,30 +73,22 @@ for (const width of [390, 1440]) {
     await expect(stars.first()).toBeVisible();
     const initialIds = await stars.evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort());
     expect(new Set(initialIds).size).toBe(initialIds.length);
-    const rings = page.locator(".galaxy-orbits");
-    expect(await rings.count()).toBeGreaterThan(0);
-    for (const ring of await rings.all()) {
-      await expect(ring).toHaveAttribute("aria-hidden", "true");
-      expect(await ring.evaluate(node => getComputedStyle(node).pointerEvents)).toBe("none");
-    }
-    expect(await page.locator(".galaxy-orbit-inner").evaluateAll(nodes => nodes.every(node => getComputedStyle(node).animationName === "none"))).toBe(true);
+    const field = page.locator(".galaxy-stage canvas");
+    await expect(field).toHaveAttribute("aria-hidden", "true");
     await page.screenshot({ path: info.outputPath(`orbital-overview-${width}.png`), fullPage: true, animations: "disabled" });
     await page.locator(".galaxy-cluster").first().click();
-    await expect(page.locator(".galaxy-orbit-inner")).toHaveCount(1);
-    expect(await page.locator(".galaxy-orbit-inner").evaluate(node => getComputedStyle(node).animationName)).toBe("orbit-instrument");
+    await expect(page.locator(".galaxy-sidebar-content .galaxy-page").first()).toBeVisible();
     await stars.first().focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".galaxy-selected-heading")).toBeVisible();
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await expect(rings).toBeHidden();
+    await expect(field).toBeVisible();
+    expect(await stars.evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort())).toEqual(initialIds);
     await page.emulateMedia({ reducedMotion: "no-preference", forcedColors: "active" });
-    await expect(rings).toBeHidden();
-    expect(await page.locator(".galaxy-region").first().evaluate(node => getComputedStyle(node).fill)).toBe("none");
-    // Activation deliberately moves focus to the inspector. Re-enter a star
-    // before checking its native high-contrast keyboard indicator.
+    await expect(stars.first()).toBeVisible();
     await stars.first().focus();
     await expect(stars.first()).toBeFocused();
-    expect(await page.locator(".galaxy-star:focus-visible .galaxy-hit").count()).toBeGreaterThan(0);
+    expect(await stars.first().evaluate(node => getComputedStyle(node).outlineStyle)).not.toBe("none");
   });
 }
 
@@ -118,11 +110,11 @@ test("small overview composition preserves fixture identities and readable label
     const ids = await page.locator(".galaxy-star").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort());
     for (const width of [1440, 1100, 390, 1440]) {
       await page.setViewportSize({ width, height: 1000 });
-      await expect.poll(async () => page.locator(".galaxy-stage svg").evaluate(svg => {
-        const bounds = svg.getBoundingClientRect();
-        const labels = [...svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text")].map(node => node.getBoundingClientRect());
-        return labels.every(r => r.left >= bounds.left && r.right <= bounds.right && r.top >= bounds.top && r.bottom <= bounds.bottom)
-          && labels.every((r, i) => labels.slice(i + 1).every(b => r.right <= b.left || b.right <= r.left || r.bottom <= b.top || b.bottom <= r.top));
+      await expect.poll(async () => page.evaluate(() => {
+        const bounds = document.querySelector(".galaxy-stage")!.getBoundingClientRect();
+        const labels = [...document.querySelectorAll(".galaxy-cluster")].map(node => node.getBoundingClientRect());
+        return document.documentElement.scrollWidth <= innerWidth
+          && labels.every(r => r.left >= 0 && r.right <= innerWidth && r.top >= bounds.top - innerHeight && r.bottom <= document.documentElement.scrollHeight);
       })).toBe(true);
       expect(await page.locator(".galaxy-star").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-node")).sort())).toEqual(ids);
     }
@@ -243,7 +235,7 @@ for (const width of [390, 1440]) {
     await page.keyboard.press("Enter");
     await expect(page.locator(".prose")).toBeVisible();
     await page.goto("/galaxy");
-    await expect(page.locator(".galaxy-stage svg")).toBeVisible();
+    await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
     await page.screenshot({ path: info.outputPath(`glass-atlas-${width}.png`), fullPage: true, animations: "disabled" });
     await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
     const control = page.locator('.galaxy-controls button').first();

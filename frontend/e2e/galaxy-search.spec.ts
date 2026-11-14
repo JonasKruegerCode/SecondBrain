@@ -114,15 +114,13 @@ for (const width of [390, 1440]) {
       edge.source === id ? [edge.target] : edge.target === id ? [edge.source] : [])]);
     await page.setViewportSize({ width, height: 844 });
     await page.goto(`/galaxy?page=${encodeURIComponent(id)}`);
-    const mode = page.locator('[data-action="list"]');
-    if (await mode.getAttribute("aria-pressed") === "true") await mode.click();
     const stage = page.locator(".galaxy-stage");
-    const svg = await stage.locator("svg").elementHandle();
-    expect(svg).not.toBeNull();
+    const canvas = await stage.locator("canvas").elementHandle();
+    expect(canvas).not.toBeNull();
     await page.locator('[data-action="zoom-in"]').click();
-    const viewBox = await stage.locator("svg").getAttribute("viewBox");
+    const viewBox = `${await stage.getAttribute("data-zoom")}|${await stage.getAttribute("data-pan")}`;
     const positions = await stage.locator(".galaxy-star").evaluateAll(stars =>
-      stars.map(star => [star.getAttribute("data-node"), star.getAttribute("transform")]));
+      stars.map(star => [star.getAttribute("data-node"), (star as HTMLElement).style.left, (star as HTMLElement).style.top]));
     const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
     await search.focus();
     await search.pressSequentially(id, { delay: 15 });
@@ -131,10 +129,10 @@ for (const width of [390, 1440]) {
       if (query !== id) await search.fill(query);
       // A search changes visibility/highlights, never the geometry or the SVG
       // identity. This also protects pan/zoom and the selected link evidence.
-      expect(await svg!.evaluate(element => element.isConnected)).toBe(true);
-      await expect(stage.locator("svg")).toHaveAttribute("viewBox", viewBox!);
+      expect(await canvas!.evaluate(element => element.isConnected)).toBe(true);
+      await expect.poll(() => stage.evaluate(element => `${element.getAttribute("data-zoom")}|${element.getAttribute("data-pan")}`)).toBe(viewBox);
       expect(await stage.locator(".galaxy-star").evaluateAll(stars =>
-        stars.map(star => [star.getAttribute("data-node"), star.getAttribute("transform")]))).toEqual(positions);
+        stars.map(star => [star.getAttribute("data-node"), (star as HTMLElement).style.left, (star as HTMLElement).style.top]))).toEqual(positions);
       const stars = await stage.locator(".galaxy-star").evaluateAll(elements =>
         elements.map(element => ({ id: element.getAttribute("data-node")!, dimmed: element.classList.contains("is-dimmed") })));
       for (const star of stars) {

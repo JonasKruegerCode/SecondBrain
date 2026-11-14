@@ -1,4 +1,5 @@
 import "./galaxy.css";
+import { layoutGalaxyField, mountGalaxyField, type GalaxyField } from "./galaxy-field";
 
 export interface Graph {
   nodes: { id: string; title: string; galaxy?: { group: string; label?: string; anchor?: boolean } }[];
@@ -10,12 +11,10 @@ export interface Graph {
   ambiguous_targets?: { source: string; target: string; candidates: string[] }[];
 }
 type Cluster = { id: number; core: string; members: string[]; isolated: boolean; curated: boolean; label?: string };
-type Point = { x: number; y: number };
 export interface GalaxyViewState {
   selectedNode: string | null;
   clusterCore: string | null;
   query: string;
-  listOnly: boolean;
   scale: number;
   panX: number;
   panY: number;
@@ -24,19 +23,6 @@ export interface GalaxyViewState {
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const compareId = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const colors = ["#81e1d3", "#c5a5fa", "#f5c887", "#90baf8", "#f0a8c1", "#b8d787"];
-const segmenter = typeof Intl.Segmenter === "function"
-  ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
-function displayUnits(text: string, limit = Infinity): string[] {
-  // Keep accents, modifiers, flags and joined emoji together. Older browsers
-  // retain the previous code-point behavior without making the map unusable.
-  const units: string[] = [];
-  const segments = segmenter ? segmenter.segment(text) : text;
-  for (const part of segments) {
-    units.push(typeof part === "string" ? part : part.segment);
-    if (units.length >= limit) break;
-  }
-  return units;
-}
 
 /**
  * Render a snapshot from /api/wiki/graph. onOpen receives a page ID, never a URL.
@@ -131,8 +117,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const linked = clusters.filter(c => !c.isolated), isolated = clusters.filter(c => c.isolated);
   const bridges = edges.filter(e => membership.get(e.source) !== membership.get(e.target));
   const largeGraph = nodes.length > 250 || edges.length > 800;
-  let selectedCluster: number | null = null, selectedNode: string | null = null, query = "", listOnly = largeGraph;
-  let scale = 1, panX = 0, panY = 0, height = 600;
+  let selectedCluster: number | null = null, selectedNode: string | null = null, query = "";
+  let scale = 1, panX = 0, panY = 0;
   const previous = options.initialState;
   if (previous) {
     // Resolve stable page IDs against the freshly read graph. A deleted page
@@ -144,7 +130,6 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       selectedCluster = membership.get(previous.clusterCore)!;
     }
     query = previous.query;
-    listOnly = previous.listOnly;
     scale = Math.max(.75, Math.min(selectedCluster === null ? 2.5 : 4, previous.scale));
     panX = previous.panX; panY = previous.panY;
   } else if (options.initialPage && byId.has(options.initialPage)) {
@@ -158,16 +143,18 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     selectedNode = null; selectedCluster = null; query = "";
     scale = 1; panX = 0; panY = 0;
   }
+  // A single roving tab stop keeps a large graph out of the page's tab sequence.
+  // Arrow keys move spatially; the list remains the complete alternative.
+  let rovingNode = selectedNode || (selectedCluster === null
+    ? linked[0]?.core || isolated[0]?.core : clusters[selectedCluster]?.core) || null;
   const uid = `galaxy-${Math.random().toString(36).slice(2, 9)}`;
   const name = (id: string) => byId.get(id)?.title || id;
   const clusterName = (cluster: Cluster) => cluster.label || name(cluster.core);
   const article = (id: string, label = "Open article ↗") => `<a class="galaxy-article" data-open="${escape(id)}" href="/wiki/${encodeURIComponent(id)}">${escape(label)}</a>`;
   const matching = (id: string) => !query || `${name(id)} ${id}`.toLowerCase().includes(query);
-  const dimmed = (id: string) => !matching(id) ||
-    (selectedNode !== null && id !== selectedNode && !adjacency.get(selectedNode)!.has(id));
   const color = (c: Cluster) => c.isolated ? "#a6afc2" : colors[c.id % colors.length];
   const button = (id: string) => `<button type="button" class="galaxy-page${selectedNode === id ? " is-selected" : ""}" data-node="${escape(id)}" aria-pressed="${selectedNode === id}"><i style="--cluster-color:${color(clusters[membership.get(id)!])}"></i><span>${escape(name(id))}<small>${adjacency.get(id)!.size} neighbor${adjacency.get(id)!.size === 1 ? "" : "s"}</small></span><b>→</b></button>`;
-  main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: list view opens first. Map view shows one core per constellation and counts only real links between them; choose a constellation to expand its pages.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button><button type="button" data-action="list" aria-pressed="${listOnly}">${listOnly ? "Map view" : "List view"}</button></div></div><p class="galaxy-density-note" hidden aria-live="polite"></p><div class="galaxy-stage"></div><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag to pan · Focus a star and press + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
+  main.innerHTML = `<section class="galaxy" aria-labelledby="${uid}-title"><div class="galaxy-heading"><div><div class="galaxy-eyebrow">YOUR WIKI, IN ORBIT</div><h1 id="${uid}-title">Follow a connection.</h1><p>Explore curated constellations and honest link neighborhoods. Pick a page to see the evidence.</p></div><a class="galaxy-return" href="/?overview=1">Page overview ↗</a></div><div class="galaxy-snapshot"><span><i></i>${nodes.length} pages</span><span>${edges.length} explicit links</span><span>${linked.length} constellation${linked.length === 1 ? "" : "s"}</span><span>${isolated.length} unlinked</span><span class="galaxy-revision">Snapshot ${escape(graph.revision?.slice(0, 8) || "empty")} · ${escape(graph.status || "unknown")}</span><a class="galaxy-refresh" href="/galaxy">Refresh snapshot ↻</a></div>${largeGraph ? '<p class="galaxy-scale-note">Large snapshot: every page is still a star. Brighter stars have more explicit links. Search and the side panel name every page.</p>' : ""}<div class="galaxy-workspace"><div class="galaxy-map"><div class="galaxy-mapbar"><div class="galaxy-breadcrumb"></div><div class="galaxy-controls"><button type="button" data-action="zoom-out" aria-label="Zoom out">−</button><button type="button" data-action="zoom-in" aria-label="Zoom in">+</button><button type="button" data-action="reset">Reset</button></div></div><p class="galaxy-density-note" hidden aria-live="polite"></p><div class="galaxy-stage"></div><ul class="galaxy-bridge-index sr-only"></ul><div class="galaxy-mapnote"><span><i class="galaxy-legend-link"></i>Explicit Markdown link</span><span><i class="galaxy-legend-bridge"></i>Link across constellations</span><span>Drag or touch to pan · Arrow keys move between stars · Enter to inspect · + / − to zoom</span></div><details class="galaxy-method"><summary>How this map is arranged</summary><p>Pages with <code>galaxy_group</code> frontmatter form named, curated constellations; <code>galaxy_anchor: true</code> selects their core. Other pages fall back to deterministic link-topology neighborhoods. Broad connectors linked to at least 80% of a component are left as ordinary stars where possible. Unlinked pages have their own shelf. Positions and colors help navigation; they do not invent topics, relevance, or dependencies. Lines are resolved links from this Markdown snapshot. Link direction and declared relation are shown as evidence. This map stays at the shown revision until you refresh it.</p></details></div><aside class="galaxy-sidebar" aria-label="Explore pages"><label class="galaxy-search"><span>Find a page in this snapshot</span><input type="search" placeholder="Title or page ID…" aria-label="Find a page in this snapshot"></label><div class="galaxy-sidebar-content"></div></aside></div><div class="galaxy-status" aria-live="polite"></div></section>`;
   const root = main.querySelector<HTMLElement>(".galaxy")!;
   const refresh = root.querySelector<HTMLAnchorElement>(".galaxy-refresh")!;
   refresh.href = options.initialPage ? `/galaxy?page=${encodeURIComponent(options.initialPage)}` : "/galaxy";
@@ -182,256 +169,66 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const stage = root.querySelector<HTMLElement>(".galaxy-stage")!;
   const sidebar = root.querySelector<HTMLElement>(".galaxy-sidebar-content")!;
   const status = root.querySelector<HTMLElement>(".galaxy-status")!;
-  const bridgeLegend = root.querySelector<HTMLElement>(".galaxy-legend-bridge")!.parentElement!;
-  root.querySelector(".galaxy-method p")!.append(document.createTextNode(" In the overview, dashed lines combine all real page links between each pair of constellations, including reciprocal links. Their counts do not imply links between the core pages. Select a page to inspect exact source, target and direction."));
-  root.querySelector(".galaxy-mapnote span:last-child")!.append(document.createTextNode(" · Use the page list for closely spaced stars."));
-  let hitSpacing = Infinity;
-  let overviewColumns = 3;
-  let overviewOrbit = false;
-  const orbitForWidth = () => linked.length > 0 && linked.length <= 6 && stage.clientWidth >= 700;
-  const columnsForWidth = () => linked.length <= 2 || (stage.clientWidth > 0 && stage.clientWidth < 520) ? 2 : 3;
-  const setView = () => {
-    const svg = stage.querySelector("svg");
-    if (!svg || !stage.clientWidth || !stage.clientHeight) return;
-    const active = selectedCluster !== null;
-    const aspect = stage.clientWidth / stage.clientHeight;
-    const baseWidth = active ? Math.max(460, 460 * aspect) : 1100;
-    // Reserve screen-scaled headroom even when a tall overview is fitted by
-    // height; otherwise its first readable heading would sit outside the SVG.
-    const overviewUnit = Math.min(stage.clientWidth / 1100, stage.clientHeight / height);
-    const fitHeight = height + 96 / overviewUnit;
-    const fitUnit = Math.min(stage.clientWidth / 1100, stage.clientHeight / fitHeight);
-    // Fitting many rows makes readable labels collide. Keep the full world,
-    // but open a width-fitted window when row spacing would fall below 64px.
-    // This decision is independent of zoom, avoiding mode changes mid-gesture.
-    const crowded = !active && 300 * fitUnit < 64;
-    const baseHeight = active ? baseWidth / aspect : crowded ? 1100 / aspect : fitHeight;
-    const width = baseWidth / scale, viewHeight = baseHeight / scale;
-    const unit = Math.min(stage.clientWidth / width, stage.clientHeight / viewHeight);
-    const originY = crowded ? -120 + (baseHeight - viewHeight) / 2 : (height - viewHeight) / 2;
-    panX = Math.max(-350, Math.min(350, panX));
-    // Include the entire world and a screen-scaled focus margin, so distant
-    // cores and unlinked shelves stay reachable by pointer and keyboard.
-    panY = crowded
-      ? Math.max(-120 - originY, Math.min(Math.max(-120 - originY, height + 26 / unit - viewHeight - originY), panY))
-      : Math.max(-height / 3, Math.min(height / 3, panY));
-    svg.setAttribute("viewBox", `${(1100 - width) / 2 + panX} ${originY + panY} ${width} ${viewHeight}`);
-    if (!active) root.querySelector(".galaxy-breadcrumb span")!.textContent = crowded ? "Overview window" : "Galaxy overview";
-    root.querySelector(".galaxy-mapnote span:last-child")!.textContent = crowded
-      ? "This window shows part of the map. Drag to pan · Focus a star and press + / − to zoom · Use the list for every page."
-      : "Drag to pan · Focus a star and press + / − to zoom · Use the page list for closely spaced stars.";
-    svg.querySelectorAll<SVGTextElement>(".galaxy-neighborhood text").forEach(label => {
-      const count = label.classList.contains("galaxy-count");
-      label.style.fontSize = `${(count ? 11 : 14) / unit}px`;
-      label.setAttribute("y", String(Number(label.dataset.top) - (count ? 6 : 24) / unit));
-      const full = label.dataset.label!;
-      label.textContent = count && !active && 1100 / overviewColumns * unit < 200 ? full.split(" · ")[0] : full;
-      const slot = Number(label.dataset.slotWidth) || 1100 / overviewColumns;
-      const available = active ? stage.clientWidth - 24 : slot * unit - 16;
-      const letters = displayUnits(label.textContent);
-      if (label.getComputedTextLength() * unit > available) {
-        let low = 0, high = letters.length;
-        while (low < high) {
-          const middle = Math.ceil((low + high) / 2);
-          label.textContent = `${letters.slice(0, Math.ceil(middle * .65)).join("")}…${letters.slice(letters.length - Math.floor(middle * .35)).join("")}`;
-          if (label.getComputedTextLength() * unit <= available) low = middle;
-          else high = middle - 1;
-        }
-        label.textContent = `${letters.slice(0, Math.ceil(low * .65)).join("")}…${letters.slice(letters.length - Math.floor(low * .35)).join("")}`;
-      }
-    });
-    const occupied = [...svg.querySelectorAll<SVGGraphicsElement>(".galaxy-neighborhood text, .galaxy-dot")].map(label => label.getBoundingClientRect());
-    const bounds = svg.getBoundingClientRect();
-    svg.querySelectorAll<SVGTextElement>(".galaxy-bridge-count").forEach(label => {
-      label.style.fontSize = `${11 / unit}px`;
-      label.style.strokeWidth = `${3 / unit}px`;
-      label.style.visibility = "hidden";
-      // Keep counts near their real link segment, without painting over
-      // constellation names or other counts. Dense maps retain exact totals
-      // in the line title and constellation details if no nearby slot fits.
-      for (const [dx, dy] of [[0, -8], [0, 12], [14, 0], [-14, 0], [0, -24], [0, 24]]) {
-        label.setAttribute("x", String(Number(label.dataset.x) + dx / unit));
-        label.setAttribute("y", String(Number(label.dataset.y) + dy / unit));
-        const box = label.getBoundingClientRect();
-        if (box.left < bounds.left || box.right > bounds.right || box.top < bounds.top || box.bottom > bounds.bottom) continue;
-        if (occupied.some(other => box.left < other.right + 3 && box.right > other.left - 3 && box.top < other.bottom + 3 && box.bottom > other.top - 3)) continue;
-        label.style.visibility = "visible"; occupied.push(box); break;
-      }
-    });
-    svg.querySelectorAll<SVGTextElement>(".galaxy-shelf").forEach(label => { label.style.fontSize = `${11 / unit}px`; });
-    if (active) {
-      svg.querySelectorAll<SVGTextElement>(".galaxy-star text").forEach(label => {
-        const size = label.classList.contains("galaxy-count") ? 11 : label.closest(".galaxy-star") ? 12 : 14;
-        label.style.fontSize = `${size / unit}px`;
-        if (label.closest(".galaxy-star")) {
-          label.setAttribute("y", String(24 / unit));
-          label.style.strokeWidth = `${3 / unit}px`;
-          label.setAttribute("x", "0");
-          const star = label.closest<SVGGElement>(".galaxy-star")!;
-          const point = new DOMPoint(0, 0).matrixTransform(star.getScreenCTM()!);
-          const visible = point.x >= bounds.left && point.x <= bounds.right &&
-            point.y >= bounds.top && point.y <= bounds.bottom;
-          label.style.visibility = visible ? "visible" : "hidden";
-          // Labels stay screen-sized while the map zooms. Fit their text and
-          // offset within the SVG without moving stars, hit circles or links.
-          const letters = displayUnits(label.dataset.label || label.textContent || "");
-          label.textContent = letters.join("");
-          while (letters.length > 1 && label.getComputedTextLength() * unit > bounds.width - 12) {
-            letters.pop(); label.textContent = letters.join("") + "…";
-          }
-          let baseline = 24;
-          if (label.getBoundingClientRect().bottom > bounds.bottom - 6) {
-            baseline = -18;
-            label.setAttribute("y", String(baseline / unit));
-          }
-          const box = label.getBoundingClientRect();
-          const dx = Math.max(bounds.left + 6 - box.left, Math.min(0, bounds.right - 6 - box.right));
-          const dy = Math.max(bounds.top + 6 - box.top, Math.min(0, bounds.bottom - 6 - box.bottom));
-          label.setAttribute("x", String(dx / unit));
-          label.setAttribute("y", String((baseline + dy) / unit));
-        }
-      });
-      // The only active labels are the core and the selected page. Their
-      // screen-sized text can collide even when both fit inside the map.
-      // Give the selection priority without shifting stars or detaching text
-      // from its star. The normal fit above restores the core on every view
-      // change, so it reappears as soon as the labels have room again.
-      const selectedLabel = svg.querySelector<SVGTextElement>(".galaxy-star.is-selected text");
-      const coreLabel = svg.querySelector<SVGTextElement>(".galaxy-star.is-core:not(.is-selected) text");
-      if (selectedLabel?.style.visibility === "visible" && coreLabel?.style.visibility === "visible") {
-        const selected = selectedLabel.getBoundingClientRect(), core = coreLabel.getBoundingClientRect();
-        if (selected.left < core.right + 3 && selected.right + 3 > core.left &&
-          selected.top < core.bottom + 3 && selected.bottom + 3 > core.top) {
-          coreLabel.style.visibility = "hidden";
-        }
-      }
-      svg.querySelectorAll<SVGCircleElement>(".galaxy-hit").forEach(hit => {
-        hit.setAttribute("r", String(Math.min(22 / unit, hitSpacing * .45)));
-      });
+  const syncRovingTabStop = () => {
+    const stars = [...stage.querySelectorAll<HTMLElement>(".galaxy-star")];
+    if (!stars.length) return;
+    if (!stars.some(star => star.dataset.node === rovingNode)) {
+      rovingNode = selectedNode && stars.some(star => star.dataset.node === selectedNode)
+        ? selectedNode : stars[0].dataset.node || null;
     }
+    stars.forEach(star => { star.tabIndex = star.dataset.node === rovingNode ? 0 : -1; });
   };
+  root.querySelector(".galaxy-method p")!.append(document.createTextNode(" Brightness and size follow the number of explicit neighbors. Warmer threads are individual links that cross groups, not similarity and not one edge between the cores. Select a page to read direction and relation."));
+  root.querySelector(".galaxy-mapnote span:last-child")!.append(document.createTextNode(" · Use the page list for closely spaced stars."));
+  const fieldModel = nodes.length ? layoutGalaxyField(nodes, edges, clusters, adjacency) : null;
+  const field: GalaxyField | null = fieldModel ? mountGalaxyField(stage, fieldModel, {
+    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    onSelect: () => undefined,
+  }) : null;
+  if (!field && !nodes.length) stage.innerHTML = `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
+  const setView = () => { field?.setCamera({ scale, panX, panY }); };
+  let cameraReady = false;
   function renderMap() {
-    const densityNote = root.querySelector<HTMLElement>(".galaxy-density-note")!;
-    densityNote.hidden = true;
     const active = selectedCluster === null ? null : clusters[selectedCluster];
-    root.classList.toggle("has-active-constellation", Boolean(active));
-    const compactOverview = largeGraph && !active;
-    bridgeLegend.lastChild!.textContent = active ? "Link across constellations" : "Combined links between constellations";
-    stage.hidden = listOnly;
-    root.classList.toggle("is-list-view", listOnly);
-    root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
-    if (listOnly) { stage.innerHTML = ""; return; }
-    const positions = new Map<string, Point>(), centers = new Map<number, Point>();
-    const columns = overviewColumns = columnsForWidth();
-    const rows = Math.ceil(linked.length / columns);
-    const orbital = overviewOrbit = !active && orbitForWidth();
-    const shelfY = orbital ? 740 : Math.max(340, rows * 300);
-    height = active ? 600 : orbital ? 740 + (isolated.length ? 140 : 0)
-      : Math.max(480, rows * 300 + (isolated.length ? 140 : 0));
-    // A few actual neighborhoods form an open sky rather than a partial grid.
-    // There is deliberately no central node: position never implies a hub/link.
-    const overviewCenter = (index: number): Point => {
-      if (!orbital) return { x: (index % columns + .5) * 1100 / columns, y: Math.floor(index / columns) * 300 + 145 };
-      if (linked.length === 1) return { x: 550, y: 360 };
-      if (linked.length === 2) return { x: 320 + index * 460, y: 360 };
-      const angle = -Math.PI / 2 + index * Math.PI * 2 / linked.length;
-      return { x: 550 + Math.cos(angle) * 380, y: 360 + Math.sin(angle) * 220 };
-    };
-    const shown = active ? [active] : linked;
-    shown.forEach((c, i) => {
-      const center = active ? { x: 550, y: 300 } : overviewCenter(i);
-      centers.set(c.id, center); positions.set(c.core, center);
-      if (compactOverview) return;
-      const rest = c.members.filter(id => id !== c.core);
-      const ringCapacity = active ? 16 : 12;
-      rest.forEach((id, j) => {
-        const ring = Math.floor(j / ringCapacity), count = Math.min(ringCapacity, rest.length - ring * ringCapacity);
-        const angle = -Math.PI / 2 + (j % ringCapacity) * Math.PI * 2 / count + ring * .24;
-        const rings = Math.ceil(rest.length / ringCapacity);
-        const radius = active ? (rings <= 3 ? 105 + ring * 44 : 70 + (ring + 1) * 145 / rings) : (rings <= 3 ? 52 + ring * 20 : 35 + (ring + 1) * 65 / rings);
-        positions.set(id, { x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius * .8 });
-      });
+    stage.hidden = false;
+    root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy</span>`;
+    if (!field) return;
+    if (!cameraReady) {
+      field.setCamera({ scale, panX, panY });
+      cameraReady = true;
+    } else {
+      const live = field.getCamera();
+      scale = live.scale; panX = live.panX; panY = live.panY;
+    }
+    field.resize();
+    field.setView({ selected: selectedNode, query, focusGroup: selectedCluster });
+    if (selectedNode) field.reveal(selectedNode);
+    const pairs = new Map<string, { a: string; b: string; n: number }>();
+    bridges.forEach(edge => {
+      const leftName = clusterName(clusters[membership.get(edge.source)!]);
+      const rightName = clusterName(clusters[membership.get(edge.target)!]);
+      const [a, b] = leftName < rightName ? [leftName, rightName] : [rightName, leftName];
+      const key = `${a}\0${b}`;
+      const row = pairs.get(key) || { a, b, n: 0 };
+      row.n += 1;
+      pairs.set(key, row);
     });
-    if (!active) isolated.forEach((c, i) => positions.set(c.core, { x: 70 + i % 15 * 68, y: shelfY + 55 + Math.floor(i / 15) * 55 }));
-    if (!active && isolated.length > 15) height += Math.floor((isolated.length - 1) / 15) * 55;
-    // Bound enlarged targets by actual spacing in smaller constellations.
-    // Above 120 stars use a conservative bound from the elliptical ring layout:
-    // different rings are at least .8 times their radial step apart; same-ring
-    // chords and the core gap are wider. Keep targets disjoint without a
-    // quadratic scan. The page list remains the comfortable dense touch path.
-    hitSpacing = Infinity;
-    if (active) {
-      const points = [...positions.values()];
-      if (points.length > 120) hitSpacing = .8 * 145 / Math.ceil((active.members.length - 1) / 16);
-      else for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-        hitSpacing = Math.min(hitSpacing, Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y));
-      }
+    const index = root.querySelector(".galaxy-bridge-index");
+    if (index) index.innerHTML = [...pairs.values()]
+      .sort((p, q) => p.a < q.a ? -1 : p.a > q.a ? 1 : p.b < q.b ? -1 : p.b > q.b ? 1 : 0)
+      .map(row => `<li>${row.n} explicit link${row.n === 1 ? "" : "s"} between ${escape(row.a)} and ${escape(row.b)}</li>`).join("");
+    const internalLinks = edges.filter(edge => edge.source !== edge.target && membership.get(edge.source) === membership.get(edge.target)).length;
+    stage.dataset.internalLinks = String(internalLinks);
+    stage.dataset.bridgeLinks = String(bridges.length);
+    const densityNote = root.querySelector<HTMLElement>(".galaxy-density-note");
+    if (densityNote) {
+      const inside = active ? edges.filter(edge => membership.get(edge.source) === active.id && membership.get(edge.target) === active.id).length : 0;
+      if (active && inside > 80) {
+        densityNote.hidden = false;
+        densityNote.textContent = `Dense constellation: showing stars for all ${active.members.length} pages. Direct links within this constellation are drawn as you zoom, and in full when a page or the core is selected.`;
+      } else densityNote.hidden = true;
     }
-    const bundledBridges = !active ? (() => {
-      const grouped = new Map<string, { from: number; to: number; count: number }>();
-      bridges.forEach(e => {
-        const source = membership.get(e.source)!;
-        const target = membership.get(e.target)!;
-        const from = Math.min(source, target), to = Math.max(source, target);
-        const key = `${from}:${to}`;
-        const previous = grouped.get(key);
-        grouped.set(key, { from, to, count: (previous?.count || 0) + 1 });
-      });
-      return [...grouped.values()].map(link => {
-        const a = centers.get(link.from), b = centers.get(link.to);
-        if (!a || !b) return "";
-        // Keep labels away from the shared midpoint of crossing diagonals.
-        const x = a.x + (b.x - a.x) * .42, y = a.y + (b.y - a.y) * .42;
-        const label = `${link.count} explicit link${link.count === 1 ? "" : "s"} between ${clusterName(clusters[link.from])} and ${clusterName(clusters[link.to])}`;
-        return `<g class="galaxy-aggregate-link"><line class="galaxy-edge is-bridge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(label)}</title></line>${link.count > 1 ? `<text class="galaxy-bridge-count" x="${x}" y="${y - 6}" data-x="${x}" data-y="${y}" text-anchor="middle">${link.count}</text>` : ""}</g>`;
-      }).join("");
-    })() : "";
-    const activeEdges = active ? edges.filter(e =>
-      positions.has(e.source) && positions.has(e.target) && e.source !== e.target) : [];
-    const edgeFocus = active && activeEdges.length > 800 ? selectedNode || active.core : null;
-    if (edgeFocus) {
-      densityNote.hidden = false;
-      densityNote.textContent = `Dense constellation: showing direct links within this constellation to and from ${selectedNode ? "the selected page" : "the core"}, ${name(edgeFocus)}. Select another page to follow its connections; all pages remain in the list.`;
-    }
-    const individualLinks = compactOverview ? "" : (active ? activeEdges : edges)
-      .filter(e => !edgeFocus || e.source === edgeFocus || e.target === edgeFocus).map(e => {
-      const a = positions.get(e.source), b = positions.get(e.target);
-      if (!a || !b || e.source === e.target) return "";
-      const cross = membership.get(e.source) !== membership.get(e.target);
-      if (!active && cross) return "";
-      const selected = selectedNode === e.source || selectedNode === e.target;
-      return `<line class="galaxy-edge${cross ? " is-bridge" : ""}${selected ? " is-active" : ""}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"><title>${escape(`${name(e.source)} → ${name(e.target)} (${e.rel || "wikilink"})`)}</title></line>`;
-    }).join("");
-    const svgLinks = bundledBridges + individualLinks;
-    const halos = shown.map(c => {
-      const p = centers.get(c.id)!;
-      const size = active ? 225 : 125;
-      const label = clusterName(c);
-      const count = `${c.members.length} pages · ${c.curated ? "curated" : c.isolated ? "unlinked" : "link topology"}`;
-      const top = p.y - size * .8;
-      return `<g class="galaxy-neighborhood" style="--cluster-color:${color(c)}"><title>${escape(label)} · ${escape(count)}</title>
-        <defs><radialGradient id="cluster-light-${c.id}"><stop offset="0" stop-color="${color(c)}" stop-opacity=".28"/><stop offset=".6" stop-color="${color(c)}" stop-opacity=".07"/><stop offset="1" stop-color="${color(c)}" stop-opacity="0"/></radialGradient></defs>
-        <ellipse class="galaxy-region" style="fill:url(#cluster-light-${c.id})" cx="${p.x}" cy="${p.y}" rx="${size}" ry="${size * .8}"/>
-        <g class="galaxy-orbits" aria-hidden="true" transform="translate(${p.x} ${p.y})">
-          <path class="galaxy-orbit-track" d="M ${-size} 0 a ${size} ${size * .8} 0 1 0 ${size * 2} 0 a ${size} ${size * .8} 0 1 0 ${-size * 2} 0"/>
-          <path class="galaxy-orbit-light" d="M ${-size} 0 a ${size} ${size * .8} 0 0 1 ${size * .5} ${-size * .69}"/>
-          <path class="galaxy-orbit-inner" d="M ${-size * .7} 0 a ${size * .7} ${size * .56} 0 1 0 ${size * 1.4} 0 a ${size * .7} ${size * .56} 0 1 0 ${-size * 1.4} 0"/>
-        </g>
-        <text x="${p.x}" y="${top - 15}" data-top="${top}" data-slot-width="${orbital ? 280 : 0}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>
-        <text class="galaxy-count" x="${p.x}" y="${top + 3}" data-top="${top}" data-slot-width="${orbital ? 280 : 0}" data-label="${escape(count)}" text-anchor="middle">${escape(count)}</text>
-      </g>`;
-    }).join("");
-    const stars = [...positions].map(([id, p]) => {
-      const c = clusters[membership.get(id)!], core = !c.isolated && id === c.core;
-      const titleLetters = displayUnits(name(id), 28);
-      const label = titleLetters.length > 27 ? titleLetters.slice(0, 25).join("") + "…" : titleLetters.join("");
-      return `<g class="galaxy-star${core ? " is-core" : ""}${selectedNode === id ? " is-selected" : ""}${dimmed(id) ? " is-dimmed" : ""}" style="--cluster-color:${color(c)}" transform="translate(${p.x} ${p.y})" role="button" tabindex="0" data-node="${escape(id)}" aria-label="${escape(`${name(id)}, ${core ? "core, " : ""}${adjacency.get(id)!.size} neighbors`)}"><title>${escape(name(id))}</title>${core ? '<path class="galaxy-core-reticle" aria-hidden="true" d="M -24 -6 V -14 H -16 M 16 -14 H 24 V -6 M 24 6 V 14 H 16 M -16 14 H -24 V 6"/>' : ""}<circle class="galaxy-hit" r="18"/><circle class="galaxy-glow" r="${core ? 17 : 9}"/><circle class="galaxy-dot" r="${core ? 7 : 4}"/>${(selectedNode === id || (active && core)) ? `<text x="0" y="${core ? 30 : 22}" data-label="${escape(label)}" text-anchor="middle">${escape(label)}</text>` : ""}</g>`;
-    }).join("");
-    stage.innerHTML = nodes.length ? `<svg role="group" aria-label="Wiki link galaxy; each page is a keyboard selectable star" viewBox="0 0 1100 ${height}" xmlns="http://www.w3.org/2000/svg">${halos}${svgLinks}${!active && isolated.length ? `<text class="galaxy-shelf" x="42" y="${shelfY + 16}">UNLINKED PAGES · ${isolated.length}</text>` : ""}${stars}</svg>` : `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
-    stage.hidden = listOnly;
-    root.classList.toggle("is-list-view", listOnly);
-    root.querySelector(".galaxy-breadcrumb")!.innerHTML = active ? `<button type="button" data-action="overview">← All constellations</button><span>${escape(clusterName(active))}</span>` : `<span>Galaxy overview</span>`;
-    setView();
+    syncRovingTabStop();
   }
   let searchMarkup: string | null = null;
   function renderSidebar() {
@@ -450,7 +247,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         ...(graph.missing_targets || []).filter(e => e.source === id).map(e => `<li>Unresolved target: <code>${escape(e.target)}</code></li>`),
         ...(graph.ambiguous_targets || []).filter(e => e.source === id).map(e => `<li>Ambiguous target: <code>${escape(e.target)}</code> (${e.candidates.length} candidates)</li>`),
       ];
-      sidebar.innerHTML = `<button type="button" class="galaxy-back" data-action="cluster">← Neighborhood pages</button><div class="galaxy-selected-heading"><div class="galaxy-eyebrow">${c.isolated ? "UNLINKED PAGE" : c.core === id ? "NEIGHBORHOOD CORE" : "SELECTED PAGE"}</div><h2>${escape(name(id))}</h2><code>${escape(id)}</code>${article(id)}</div><div class="galaxy-panel-heading"><h3>Link evidence</h3><span>${evidence.length}</span></div><p class="galaxy-muted">Arrows show the source page and its declared link target.</p>${evidence.length ? `<ul class="galaxy-evidence">${evidence.map(e => `<li><div>${article(e.source, name(e.source))}<span role="img" aria-label="links to">→</span>${article(e.target, name(e.target))}</div><small>${escape(e.rel ? `Declared relation: ${e.rel}` : "Explicit wikilink")}${membership.get(e.source) !== membership.get(e.target) ? " · across neighborhoods" : ""}</small>${e.source !== e.target ? `<button type="button" data-node="${escape(e.source === id ? e.target : e.source)}">Inspect neighbor →</button>` : '<small>Self-link</small>'}</li>`).join("")}</ul>` : '<p class="galaxy-muted">No resolved links. This page is placed separately.</p>'}${problems.length ? `<details class="galaxy-problems"><summary>${problems.length} unresolved link${problems.length === 1 ? "" : "s"}</summary><ul>${problems.join("")}</ul></details>` : ""}`;
+      sidebar.innerHTML = `<button type="button" class="galaxy-back" data-action="cluster">← Neighborhood pages</button><div class="galaxy-selected-heading"><div class="galaxy-eyebrow">${c.isolated ? "UNLINKED PAGE" : c.core === id ? "NEIGHBORHOOD CORE" : "SELECTED PAGE"}</div><h2>${escape(name(id))}</h2><code>${escape(id)}</code>${article(id)}</div><div class="galaxy-panel-heading"><h3>Link evidence</h3><span>${evidence.length}</span></div><p class="galaxy-muted">Arrows show the source page and its declared link target. Brightness on the map is ${adjacency.get(id)!.size} explicit neighbor${adjacency.get(id)!.size === 1 ? "" : "s"}, not importance.</p>${evidence.length ? `<ul class="galaxy-evidence">${evidence.map(e => `<li><div>${article(e.source, name(e.source))}<span role="img" aria-label="links to">→</span>${article(e.target, name(e.target))}</div><small>${escape(e.rel ? `Declared relation: ${e.rel}` : "Explicit wikilink")}${membership.get(e.source) !== membership.get(e.target) ? " · across neighborhoods" : ""}</small>${e.source !== e.target ? `<button type="button" data-node="${escape(e.source === id ? e.target : e.source)}">Inspect neighbor →</button>` : '<small>Self-link</small>'}</li>`).join("")}</ul>` : '<p class="galaxy-muted">No resolved links. This page is placed separately.</p>'}${problems.length ? `<details class="galaxy-problems"><summary>${problems.length} unresolved link${problems.length === 1 ? "" : "s"}</summary><ul>${problems.join("")}</ul></details>` : ""}`;
     } else if (selectedCluster !== null) {
       searchMarkup = null;
       const c = clusters[selectedCluster];
@@ -472,7 +269,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     if (!byId.has(id)) return;
     const next = membership.get(id)!;
     if (selectedCluster !== next) { scale = 1; panX = panY = 0; }
-    selectedCluster = next; selectedNode = id; query = "";
+    selectedCluster = next; selectedNode = id; rovingNode = id; query = "";
     root.querySelector<HTMLInputElement>("input")!.value = "";
     render();
   };
@@ -491,148 +288,132 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       return;
     }
     if (target.dataset.node !== undefined) {
-      select(target.dataset.node);
-      if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
-      else if (window.matchMedia("(max-width: 680px)").matches) {
-        // Reveal article and evidence without stealing keyboard focus.
-        revealMobile(sidebar.parentElement!);
+      const id = target.dataset.node;
+      const fromStar = target.classList.contains("galaxy-star");
+      const fromPage = target.classList.contains("galaxy-page");
+      const fromSidebarButton = target.tagName === "BUTTON" && !fromStar;
+      const mobile = window.matchMedia("(max-width: 680px)").matches;
+      select(id);
+      // A desktop star click keeps focus on that star. Sidebar controls and
+      // a narrow-screen star click move focus to the evidence.
+      if (event.detail === 0 || fromPage || fromSidebarButton || (fromStar && mobile)) {
+        sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus({ preventScroll: true });
+      } else if (fromStar) {
+        [...stage.querySelectorAll<HTMLElement>(".galaxy-star")]
+          .find(star => star.dataset.node === id)?.focus({ preventScroll: true });
       }
+      if (event.detail !== 0 && mobile && (fromStar || fromPage)) revealMobile(sidebar.parentElement!);
     }
     else if (target.dataset.cluster !== undefined) {
-      selectedCluster = Number(target.dataset.cluster); selectedNode = null; scale = 1; panX = panY = 0; render();
-      if (event.detail === 0) sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus();
-      else if (!listOnly) revealMobile(root.querySelector<HTMLElement>(".galaxy-map")!);
+      selectedCluster = Number(target.dataset.cluster); selectedNode = null; rovingNode = clusters[selectedCluster].core; scale = 1; panX = panY = 0; render();
+      const touchNavigation = event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches;
+      if (touchNavigation) {
+        // On a stacked mobile layout, reveal the map itself rather than the
+        // taller map-plus-sidebar workspace. Keep focus on its real core star.
+        stage.querySelector<HTMLElement>('.galaxy-star[tabindex="0"]')?.focus({ preventScroll: true });
+        revealMobile(root.querySelector<HTMLElement>(".galaxy-map")!);
+      } else {
+        // Keyboard users can continue directly into the complete page list.
+        sidebar.querySelector<HTMLElement>(".galaxy-page")?.focus({ preventScroll: true });
+      }
     } else switch (target.dataset.action) {
       case "overview": {
         const previous = selectedCluster;
-        selectedCluster = selectedNode = null; scale = 1; panX = panY = 0; render();
-        if (event.detail === 0 && previous !== null) {
+        selectedCluster = selectedNode = null;
+        rovingNode = previous === null ? rovingNode : clusters[previous].core;
+        scale = 1; panX = panY = 0; render();
+        if (previous !== null) {
           const cluster = sidebar.querySelector<HTMLElement>(`[data-cluster="${previous}"]`);
           const unlinked = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === clusters[previous].core);
-          (cluster || unlinked || root.querySelector<HTMLInputElement>("input"))?.focus();
+          (cluster || unlinked || root.querySelector<HTMLInputElement>("input"))?.focus({ preventScroll: true });
+          if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
         }
         break;
       }
       case "cluster": {
         const previous = selectedNode;
         selectedNode = null; render();
-        if (event.detail === 0) {
-          const page = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === previous);
-          (page || root.querySelector<HTMLInputElement>("input"))?.focus();
-        }
+        const page = [...sidebar.querySelectorAll<HTMLElement>("[data-node]")].find(el => el.dataset.node === previous);
+        (page || root.querySelector<HTMLInputElement>("input"))?.focus({ preventScroll: true });
+        if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
         break;
       }
       case "zoom-in": scale = Math.min(selectedCluster === null ? 2.5 : 4, scale + .25); setView(); break;
       case "zoom-out": scale = Math.max(.75, scale - .25); setView(); break;
       case "reset": scale = 1; panX = panY = 0; setView(); break;
-      case "list":
-        listOnly = !listOnly;
-        target.setAttribute("aria-pressed", String(listOnly));
-        target.textContent = listOnly ? "Map view" : "List view";
-        // Display mode changes no selection, query or link evidence. Keep the
-        // sidebar mounted so expanded diagnostics remain available to read.
-        renderMap();
-        break;
     }
   };
   const keydown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement;
-    // Only a focused map star owns these shortcuts. Preserve literal search
-    // text, browser zoom chords and every other document control.
-    if (target.matches(".galaxy-star") && !event.ctrlKey && !event.metaKey && !event.altKey &&
-      (event.key === "+" || event.key === "=" || event.key === "-")) {
-      event.preventDefault();
-      scale = Math.max(.75, Math.min(selectedCluster === null ? 2.5 : 4,
-        scale + (event.key === "-" ? -.25 : .25)));
-      setView();
-      revealStar(target as unknown as SVGGraphicsElement);
+    if (!field || !target.matches(".galaxy-star") || event.ctrlKey || event.metaKey || event.altKey) {
+      if (target.matches?.(".galaxy-star") && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault(); select(target.dataset.node!);
+        sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
+      }
       return;
     }
-    if (target.matches(".galaxy-star") && (event.key === "Enter" || event.key === " ")) {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      const direction = event.key === "ArrowLeft" ? { x: -1, y: 0 }
+        : event.key === "ArrowRight" ? { x: 1, y: 0 }
+        : event.key === "ArrowUp" ? { x: 0, y: -1 } : { x: 0, y: 1 };
+      const nextId = field.nearest(target.dataset.node || "", direction);
+      const next = [...stage.querySelectorAll<HTMLElement>(".galaxy-star")].find(star => star.dataset.node === nextId);
+      if (next) {
+        event.preventDefault();
+        rovingNode = next.dataset.node || null;
+        syncRovingTabStop();
+        next.focus();
+      }
+      return;
+    }
+    if (event.key === "+" || event.key === "=" || event.key === "-") {
+      event.preventDefault();
+      scale = Math.max(.75, Math.min(4, scale + (event.key === "-" ? -.25 : .25)));
+      setView();
+      field.reveal(target.dataset.node || "");
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); select(target.dataset.node!);
       sidebar.querySelector<HTMLElement>(".galaxy-article")?.focus();
     }
   };
-  const revealStar = (star: SVGGraphicsElement) => {
-    if (!star.matches(".galaxy-star")) return;
-    const svg = star.ownerSVGElement;
-    const position = star.transform.baseVal.consolidate()?.matrix;
-    if (!svg || !position) return;
-    // The focus ring surrounds the 18-unit hit circle and scales with
-    // zoom. Retain the minimum screen margin while exposing its full stroke.
-    const margin = Math.max(26 / (svg.getScreenCTM()?.a || 1), 20);
-    // SVG focus does not scroll a clipped viewBox as HTML focus would. Move
-    // only enough to expose the star and its focus ring in the current map.
-    const visible = () => {
-      const view = svg.viewBox.baseVal;
-      // Panning onto a boundary can differ by floating-point rounding. Do
-      // not reset an already exposed star for a subpixel arithmetic error.
-      return position.e >= view.x + margin - .01 && position.e <= view.x + view.width - margin + .01 &&
-        position.f >= view.y + margin - .01 && position.f <= view.y + view.height - margin + .01;
-    };
-    const view = svg.viewBox.baseVal;
-    panX += Math.min(0, position.e - view.x - margin) + Math.max(0, position.e - view.x - view.width + margin);
-    panY += Math.min(0, position.f - view.y - margin) + Math.max(0, position.f - view.y - view.height + margin);
-    setView();
-    // Very distant shelves can exceed the bounded pan range. An overview is
-    // preferable to leaving keyboard focus outside the map indefinitely.
-    if (!visible()) { scale = 1; panX = panY = 0; setView(); }
+  const focusin = (event: FocusEvent) => {
+    const target = event.target as HTMLElement;
+    if (!target.matches?.(".galaxy-star")) return;
+    rovingNode = target.dataset.node || rovingNode;
+    syncRovingTabStop();
+    field?.reveal(target.dataset.node || "");
   };
-  const focusin = (event: FocusEvent) => revealStar(event.target as SVGGraphicsElement);
   const input = () => {
     query = root.querySelector<HTMLInputElement>("input")!.value.trim().toLowerCase();
-    // Searching changes highlights, not the snapshot geometry. Preserve the
-    // mounted map and its pan/zoom instead of rebuilding and measuring every
-    // SVG label on each keystroke. Selection still uses the full render path.
-    stage.querySelectorAll<SVGElement>(".galaxy-star").forEach(star => {
-      star.classList.toggle("is-dimmed", dimmed(star.dataset.node!));
-    });
+    field?.setView({ selected: selectedNode, query, focusGroup: selectedCluster });
     renderSidebar();
-  };
-  let drag: { x: number; y: number; px: number; py: number; pointerId: number } | null = null;
-  const pointerdown = (event: PointerEvent) => {
-    if (event.button !== 0 || (event.target as Element).closest(".galaxy-star")) return;
-    drag = { x: event.clientX, y: event.clientY, px: panX, py: panY, pointerId: event.pointerId };
-    stage.setPointerCapture(event.pointerId);
-  };
-  const pointermove = (event: PointerEvent) => {
-    if (!drag) return;
-    const unit = stage.querySelector("svg")?.getScreenCTM()?.a;
-    if (!unit) return;
-    panX = drag.px - (event.clientX - drag.x) / unit;
-    panY = drag.py - (event.clientY - drag.y) / unit;
-    setView();
-  };
-  const pointerup = () => {
-    if (drag && stage.hasPointerCapture(drag.pointerId)) stage.releasePointerCapture(drag.pointerId);
-    drag = null;
   };
   root.addEventListener("click", click); root.addEventListener("keydown", keydown); root.addEventListener("focusin", focusin);
   root.querySelector("input")!.addEventListener("input", input);
-  stage.addEventListener("pointerdown", pointerdown); stage.addEventListener("pointermove", pointermove);
-  stage.addEventListener("pointerup", pointerup); stage.addEventListener("pointercancel", pointerup);
   render();
   root.querySelector<HTMLInputElement>("input")!.value = query;
   sidebar.scrollTop = previous?.sidebarScroll || 0;
   const resize = new ResizeObserver(() => {
-    if (selectedCluster === null && !listOnly && (columnsForWidth() !== overviewColumns || orbitForWidth() !== overviewOrbit)) {
-      const focused = document.activeElement?.closest<SVGElement>(".galaxy-star")?.dataset.node;
-      renderMap();
-      if (focused) [...stage.querySelectorAll<SVGElement>(".galaxy-star")].find(el => el.dataset.node === focused)?.focus({ preventScroll: true });
-    } else setView();
+    field?.resize();
+    if (selectedNode) field?.reveal(selectedNode);
+    const live = field?.getCamera();
+    if (live) { scale = live.scale; panX = live.panX; panY = live.panY; }
   });
   resize.observe(stage);
   return () => {
+    const camera = field?.getCamera();
     options.onLeave?.({
       selectedNode,
       clusterCore: selectedCluster === null ? null : clusters[selectedCluster].core,
-      query, listOnly, scale, panX, panY, sidebarScroll: sidebar.scrollTop,
+      query, scale: camera?.scale ?? scale, panX: camera?.panX ?? panX, panY: camera?.panY ?? panY,
+      sidebarScroll: sidebar.scrollTop,
     });
     resize.disconnect();
+    field?.destroy();
     root.removeEventListener("click", click); root.removeEventListener("keydown", keydown); root.removeEventListener("focusin", focusin);
     root.querySelector("input")?.removeEventListener("input", input);
-    stage.removeEventListener("pointerdown", pointerdown); stage.removeEventListener("pointermove", pointermove);
-    stage.removeEventListener("pointerup", pointerup); stage.removeEventListener("pointercancel", pointerup);
   };
 }
 

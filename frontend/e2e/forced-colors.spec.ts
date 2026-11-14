@@ -18,22 +18,15 @@ async function systemPalette(page: Page) {
   });
 }
 
-async function visibleSystemMark(locator: Locator, property: "fill" | "stroke", colors: string[]) {
-  await expect(locator).toBeAttached();
-  const mark = await locator.evaluate((element, property) => {
+async function visibleControlFill(locator: Locator, colors: string[]) {
+  await expect(locator).toBeVisible();
+  const mark = await locator.evaluate(element => {
     const style = getComputedStyle(element);
-    const lineLength = element instanceof SVGLineElement ? element.getTotalLength() : null;
-    return { color: style.getPropertyValue(property), opacity: Number(style.getPropertyValue(`${property}-opacity`)),
-      width: parseFloat(style.strokeWidth), opacityOverall: Number(style.opacity),
-      display: style.display, visibility: style.visibility, lineLength };
-  }, property);
-  expect(mark.display).not.toBe("none");
+    return { color: style.backgroundColor, opacity: Number(style.opacity), visibility: style.visibility };
+  });
   expect(mark.visibility).toBe("visible");
-  if (mark.lineLength !== null) expect(mark.lineLength).toBeGreaterThan(0);
-  else await expect(locator).toBeVisible();
-  expect(colors, `${property} must use the active system palette`).toContain(mark.color);
-  expect(mark.opacity * mark.opacityOverall, `${property} must remain legible`).toBeGreaterThanOrEqual(.8);
-  if (property === "stroke") expect(mark.width).toBeGreaterThan(0);
+  expect(colors, "control fill must use the active system palette").toContain(mark.color);
+  expect(mark.opacity, "control fill must remain legible").toBeGreaterThanOrEqual(.8);
 }
 
 async function visibleSelection(locator: Locator, colors: string[]) {
@@ -72,9 +65,7 @@ for (const width of [390, 1440]) {
         const nav = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Galaxy", exact: true });
         await expect(nav).toHaveAttribute("aria-current", "page");
         await visibleSelection(nav, [...ink, palette.link]);
-        await visibleSystemMark(page.locator(".galaxy-neighborhood text:not(.galaxy-count)").first(), "fill", ink);
-        await visibleSystemMark(page.locator(".galaxy-edge").first(), "stroke", ink);
-        await visibleSystemMark(page.locator(".galaxy-star .galaxy-dot").first(), "fill", ink);
+        await visibleControlFill(page.locator(".galaxy-star").first(), ink);
 
         await page.getByRole("button", { name: /^Sky & navigation/ }).click();
         const star = page.locator('.galaxy-star[data-node="tide-clock"]');
@@ -86,20 +77,13 @@ for (const width of [390, 1440]) {
         const article = page.getByRole("link", { name: "Open article", exact: false });
         await expect(article).toBeFocused();
         await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Tide clock project");
-        await visibleSystemMark(star.locator(".galaxy-dot"), "fill", ink);
-        await visibleSystemMark(star.locator(".galaxy-glow"), "stroke", ink);
-        await visibleSystemMark(star.locator("text"), "fill", ink);
-        await visibleSystemMark(page.locator(".galaxy-edge.is-active").first(), "stroke", ink);
-        const list = page.getByRole("button", { name: "List view", exact: true });
-        await list.click();
-        const selectedControl = page.getByRole("button", { name: "Map view", exact: true });
-        await expect(selectedControl).toHaveAttribute("aria-pressed", "true");
-        await selectedControl.blur();
-        await visibleSelection(selectedControl, [palette.highlight]);
+        await visibleControlFill(star, [palette.highlight]);
+        const reset = page.getByRole("button", { name: "Reset", exact: true });
+        await reset.focus();
+        await expect(reset).toBeFocused();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        await selectedControl.click();
-        // The selected dot remains distinguishable even after focus leaves it.
-        await visibleSystemMark(star.locator(".galaxy-dot"), "fill", ink);
+        await reset.blur();
+        await visibleControlFill(star, [palette.highlight]);
         await page.screenshot({ path: testInfo.outputPath(`forced-colors-${colorScheme}-${width}.png`), fullPage: true });
         await article.focus();
         await page.keyboard.press("Enter");

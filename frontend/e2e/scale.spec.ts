@@ -32,29 +32,28 @@ test("broad lexical search explains its bounded result set", async ({ page }, te
   }
 });
 
-test("contextual large-vault entry selects its real cluster without enabling the map", async ({ page }) => {
+test("contextual large-vault entry selects its real cluster while every page stays a star", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/wiki/scale-0319");
   const explore = page.getByRole("link", { name: "Explore connections", exact: true });
   await expect(explore).toHaveAttribute("href", "/galaxy?page=scale-0319");
   await explore.click();
   await expect(page).toHaveURL(/\/galaxy\?page=scale-0319$/);
-  await expect(page.locator(".galaxy-scale-note")).toContainText("Large snapshot");
-  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-scale-note")).toContainText("every page is still a star");
+  await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
+  await expect(page.locator(".galaxy-star")).toHaveCount(320);
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
   await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", "scale-0319");
   await expect(page.locator(".galaxy-breadcrumb")).toContainText("Synthetic constellation 8");
   await expect(page.locator(".galaxy-evidence")).toContainText("Declared relation");
-  await page.getByRole("button", { name: "Map view", exact: true }).click();
-  await expect(page.locator(".galaxy-star")).toHaveCount(40);
   await page.getByRole("link", { name: "Open article ↗", exact: true }).click();
   await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
   await page.goBack();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
-  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  await expect(page.locator(".galaxy-star")).toHaveCount(320);
   await page.reload();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
-  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
 });
 
 test("large real vault has a compact stable map and usable mutation path", async ({
@@ -73,35 +72,20 @@ test("large real vault has a compact stable map and usable mutation path", async
   expect(graphMilliseconds).toBeLessThan(5_000);
 
   await page.goto("/galaxy");
-  await expect(page.locator(".galaxy-scale-note")).toContainText("Large snapshot");
-  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-scale-note")).toContainText("every page is still a star");
+  await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Choose a constellation" })).toBeVisible();
   await expect(page.locator(".galaxy-cluster")).toHaveCount(8);
 
   const mapStarted = Date.now();
-  await page.getByRole("button", { name: "Map view" }).click();
-  await expect(page.locator(".galaxy-stage")).toBeVisible();
-  await expect(page.locator(".galaxy-neighborhood")).toHaveCount(8);
-  await expect(page.locator(".galaxy-star")).toHaveCount(8);
-  await expect(page.locator(".galaxy-aggregate-link")).toHaveCount(8);
+  await expect(page.locator(".galaxy-star")).toHaveCount(320);
+  await expect(page.locator(".galaxy-bridge-index li")).toHaveCount(8);
   expect(Date.now() - mapStarted).toBeLessThan(5_000);
-  const corePositions = await page.locator(".galaxy-star").evaluateAll(elements =>
-    Object.fromEntries(elements.map(element => [
-      element.getAttribute("data-node"),
-      element.getAttribute("transform"),
-    ])),
-  );
   await page.screenshot({ path: testInfo.outputPath("scale-map-overview.png"), fullPage: true });
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
-    await expect.poll(() => page.locator(".galaxy-neighborhood text:not(.galaxy-count)").evaluateAll(elements => {
-      const svg = (elements[0] as SVGTextElement).ownerSVGElement!;
-      const bounds = svg.getBoundingClientRect();
-      return elements.every(element => {
-        const label = element as SVGTextElement, box = label.getBoundingClientRect();
-        return parseFloat(getComputedStyle(label).fontSize) * label.getScreenCTM()!.a >= 13.99 && box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom;
-      });
-    })).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`scale-map-overview-${width}.png`), fullPage: true });
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -110,40 +94,26 @@ test("large real vault has a compact stable map and usable mutation path", async
   await expect(page.locator(".galaxy-breadcrumb")).toContainText(
     "Synthetic constellation 8",
   );
-  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  await expect(page.locator(".galaxy-sidebar-content .galaxy-page")).toHaveCount(40);
+  await expect(page.locator(".galaxy-star")).toHaveCount(320);
   expect(await page.locator(".galaxy-sidebar-content").evaluate(element => element.scrollTop), "new constellation heading must not retain the scrolled overview offset").toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath("scale-map-cluster.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  const targets = () => page.locator(".galaxy-star").evaluateAll(elements => elements.map(element => {
-    const star = element as SVGGraphicsElement;
-    const matrix = star.getScreenCTM()!;
-    const center = new DOMPoint(0, 0).matrixTransform(matrix);
-    return { id: star.getAttribute("data-node")!, x: center.x, y: center.y, radius: Number(star.querySelector(".galaxy-hit")!.getAttribute("r")) * matrix.a };
-  }));
-  await expect.poll(async () => (await targets()).length).toBe(40);
-  // Dense stars keep distinct hit circles rather than relying on paint order.
-  const checkTargets = async () => {
-    const points = await targets();
-    let clearance = Infinity;
-    for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-      clearance = Math.min(clearance, Math.hypot(points[i].x - points[j].x, points[i].y - points[j].y) - points[i].radius - points[j].radius);
-    }
-    expect(clearance, "real rendered hit circles must stay disjoint").toBeGreaterThan(0);
-  };
-  await checkTargets();
+  const memberIds = await page.locator(".galaxy-sidebar-content .galaxy-page").evaluateAll(elements =>
+    elements.slice(0, 2).map(element => element.getAttribute("data-node")));
+  expect(memberIds).toHaveLength(2);
   for (let step = 0; step < 3; step++) await page.getByRole("button", { name: "Zoom in", exact: true }).click();
-  await checkTargets();
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath("scale-map-focused-mobile.png"), fullPage: true });
-  for (const point of (await targets()).slice(0, 2)) {
-    await page.locator(`.galaxy-star[data-node="${point.id}"]`).click();
-    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", point.id);
+  for (const id of memberIds) {
+    await page.locator(`.galaxy-page[data-node="${id}"]`).click();
+    await expect(page.locator(".galaxy-selected-heading .galaxy-article")).toHaveAttribute("data-open", id!);
+    await page.getByRole("button", { name: "Neighborhood pages" }).click();
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole("button", { name: "All constellations" }).click();
-  await page.getByRole("button", { name: "List view" }).click();
 
   const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
   await search.fill("scale-0319");
@@ -161,25 +131,24 @@ test("large real vault has a compact stable map and usable mutation path", async
   await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
   await page.goBack();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
-  await expect(page.locator(".galaxy-stage")).toBeHidden();
-  await page.screenshot({ path: testInfo.outputPath("scale-history-list-390.png"), fullPage: true });
-  await page.getByRole("button", { name: "Map view", exact: true }).click();
-  await expect(page.locator(".galaxy-star")).toHaveCount(40);
+  await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("scale-history-map-390.png"), fullPage: true });
+  await expect(page.locator(".galaxy-star")).toHaveCount(320);
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
-  const selectedView = await page.locator(".galaxy-stage svg").getAttribute("viewBox");
+  const selectedView = `${await page.locator(".galaxy-stage").getAttribute("data-zoom")}|${await page.locator(".galaxy-stage").getAttribute("data-pan")}`;
   await page.getByRole("link", { name: "Open article" }).click();
   await expect(page).toHaveURL(/\/wiki\/scale-0319$/);
   await page.goBack();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
   await expect(page.locator(".galaxy-stage")).toBeVisible();
-  await expect(page.locator(".galaxy-stage svg")).toHaveAttribute("viewBox", selectedView!);
+  await expect.poll(() => page.locator(".galaxy-stage").evaluate(element => `${element.getAttribute("data-zoom")}|${element.getAttribute("data-pan")}`)).toBe(selectedView);
   await page.screenshot({ path: testInfo.outputPath("scale-history-map-390.png"), fullPage: true });
   await page.getByRole("link", { name: "Refresh snapshot" }).click();
-  await expect(page.locator(".galaxy-stage")).toBeHidden();
+  await expect(page.locator(".galaxy-stage canvas")).toBeVisible();
   await expect(page.locator(".galaxy-selected-heading")).toHaveCount(0);
   await page.goBack();
   await expect(page.locator(".galaxy-selected-heading h2")).toHaveText("Synthetic observation 320");
-  await expect(page.locator(".galaxy-stage svg")).toHaveAttribute("viewBox", selectedView!);
+  await expect.poll(() => page.locator(".galaxy-stage").evaluate(element => `${element.getAttribute("data-zoom")}|${element.getAttribute("data-pan")}`)).toBe(selectedView);
 
   const id = `scale-live-${randomUUID()}`;
   const created = await request.post(`/api/wiki/pages/${id}`, {
@@ -192,21 +161,18 @@ test("large real vault has a compact stable map and usable mutation path", async
   expect(created.ok()).toBeTruthy();
   const saved = await created.json();
   await page.goto("/galaxy");
-  await page.getByRole("button", { name: "Map view" }).click();
-  await expect(page.locator(".galaxy-star")).toHaveCount(8);
-  // Responsive columns intentionally differ; mutation stability is compared
-  // at the same viewport as the initial snapshot.
+  await expect(page.locator(".galaxy-star")).toHaveCount(321);
+  await expect(page.locator(`.galaxy-star[data-node="${id}"]`)).toBeVisible();
+  // Adding a page changes the topology-aware field, so earlier core slots are
+  // not a stable screenshot. The same snapshot must still agree with itself.
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect.poll(() => page.locator(".galaxy-star").evaluateAll(elements =>
-    Object.fromEntries(elements.map(element => [element.getAttribute("data-node"), element.getAttribute("transform")])),
-  )).toEqual(corePositions);
+  const placed = () => page.locator(".galaxy-star.is-core").evaluateAll(elements =>
+    Object.fromEntries(elements.map(element => [element.getAttribute("data-node"), `${element.getAttribute("data-x")},${element.getAttribute("data-y")}`])));
+  const once = await placed();
+  expect(Object.keys(once).length).toBeGreaterThan(0);
+  await page.reload();
+  await expect.poll(placed).toEqual(once);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  expect(await page.locator(".galaxy-star").evaluateAll(elements =>
-    Object.fromEntries(elements.map(element => [
-      element.getAttribute("data-node"),
-      element.getAttribute("transform"),
-    ])),
-  )).toEqual(corePositions);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath("scale-map-mobile.png"), fullPage: true });

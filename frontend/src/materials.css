@@ -31,7 +31,7 @@ header nav a::before, .primary::before, .card::before, .galaxy-controls button::
 .primary { background: linear-gradient(135deg, #326ee2, #174ba9); border: 1px solid #174ba9; box-shadow: inset 0 1px 0 #ffffff66, 0 8px 22px #245dc42b; }
 .primary:hover { background: linear-gradient(135deg, #265ec9, #123f92); }
 /* Keep existing semantic geometry, labels, counts and hit targets untouched. */
-.galaxy-map { position: relative; background: #081426; }
+.galaxy-map { position: relative; background: linear-gradient(180deg, #ffffffc7, #eef4fa); }
 .galaxy-stage { position: relative; isolation: isolate; }
 .galaxy-stage::before {
   content: ""; pointer-events: none; position: absolute; inset: -8%; z-index: -1;
@@ -40,7 +40,9 @@ header nav a::before, .primary::before, .card::before, .galaxy-controls button::
     radial-gradient(ellipse at 50% 100%, #236ea43d, transparent 48%);
 }
 .galaxy-mapbar { background: linear-gradient(100deg, #90c8e012, #adadff09); }
-.galaxy-controls button { border-radius: 12px; padding: 8px 12px; background: #ffffff09; box-shadow: inset 0 1px 0 #ffffff12; }
+.galaxy-mapbar, .galaxy-mapnote, .galaxy-method, .galaxy-method summary, .galaxy-breadcrumb, .galaxy-breadcrumb button { color: #1d3b5c; }
+.galaxy-controls button { border-radius: 12px; padding: 8px 12px; background: #fff; color: #17324f; border: 1px solid #c5d7ea; box-shadow: inset 0 1px 0 #fff, 0 1px 2px #294b6b12; }
+.galaxy-controls button:hover, .galaxy-controls button[aria-pressed=true] { background: #e7f0fb; }
 .galaxy-neighborhood ellipse { fill-opacity: .07; stroke-opacity: .3; stroke-dasharray: none; }
 .galaxy-star.is-core .galaxy-glow { fill-opacity: .24; filter: drop-shadow(0 0 7px var(--cluster-color)); }
 .galaxy-star:is(:hover, :focus-visible) .galaxy-glow { fill-opacity: .4; }
@@ -184,4 +186,133 @@ main > article > h1 { margin-top: 30px; }
   .galaxy-mapbar, .galaxy-mapnote, .galaxy-method, .galaxy .galaxy-cluster, .primary, main > article { background: Canvas; border-color: CanvasText; box-shadow: none; }
   .galaxy .galaxy-cluster > i { box-shadow: none; }
   main > article > .eyebrow, .galaxy-selected-heading { border-color: CanvasText; }
+}
+
+
+/* A quiet instrument frame gives the link field a physical edge. The overlay
+   never participates in pointer targeting or changes the SVG's coordinates. */
+.galaxy-stage {
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  height: clamp(460px, 60vh, 680px);
+  overflow: hidden;
+  border: 1px solid #b8d8f02b;
+  border-radius: 22px;
+  background: #091629;
+  box-shadow: inset 0 1px 0 #ffffff12, inset 0 0 0 1px #ffffff05,
+    0 18px 42px #02091542;
+}
+.galaxy-stage::after {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  z-index: 2;
+  pointer-events: none;
+  border: 1px solid #c2e4ff24;
+  border-radius: 15px;
+  box-shadow: inset 0 0 0 1px #ffffff08;
+  background:
+    linear-gradient(#c2e4ff78, #c2e4ff78) left top / 28px 1px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) left top / 1px 28px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) right top / 28px 1px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) right top / 1px 28px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) left bottom / 28px 1px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) left bottom / 1px 28px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) right bottom / 28px 1px no-repeat,
+    linear-gradient(#c2e4ff78, #c2e4ff78) right bottom / 1px 28px no-repeat;
+}
+.galaxy-stage:focus-within::after { border-color: #b8e3ff55; }
+
+/* The selected page reads like an instrument card, not another list row. */
+.galaxy-selected-heading {
+  position: relative;
+  margin: 4px 0 20px;
+  padding: 20px 17px 18px;
+  border: 1px solid #d5e4f2;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #ffffff, #f3f8ff 68%, #f0faf7);
+  box-shadow: inset 0 1px 0 #ffffff, 0 12px 28px #244f7b0d;
+}
+.galaxy-selected-heading::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 18px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg, #76b8e9, #9bd9cc 58%, #d9eaf6);
+}
+.galaxy-selected-heading .galaxy-eyebrow {
+  color: #466d91;
+  letter-spacing: .14em;
+}
+.galaxy-selected-heading h2 {
+  margin: 9px 0 10px;
+  font-size: clamp(21px, 1.6vw, 25px);
+  line-height: 1.2;
+  letter-spacing: -.035em;
+  color: #172f50;
+}
+.galaxy-selected-heading code {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 0 14px;
+  padding: 6px 8px;
+  border: 1px solid #dce8f4;
+  border-radius: 8px;
+  background: #edf4fb;
+  color: #49647e;
+  overflow-wrap: anywhere;
+}
+.galaxy-selected-heading > .galaxy-article {
+  margin-top: 2px;
+  min-height: 44px;
+  padding: 10px 15px;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 #ffffff70, 0 7px 16px #245dc425;
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .galaxy-selected-heading {
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .galaxy-selected-heading:hover {
+    border-color: #b8cfe7;
+    box-shadow: inset 0 1px 0 #ffffff, 0 15px 32px #244f7b13;
+  }
+}
+@media (max-width: 550px) {
+  .galaxy-stage {
+    width: calc(100% - 20px);
+    margin: 0 10px;
+    height: clamp(380px, 112vw, 500px);
+    border-radius: 16px;
+  }
+  .galaxy-stage::after { inset: 7px; border-radius: 11px; }
+  .galaxy-selected-heading { padding: 17px 15px 16px; border-radius: 15px; }
+  .galaxy-selected-heading::before { left: 15px; right: 15px; }
+}
+@media (forced-colors: active) {
+  .galaxy-stage {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .galaxy-stage::before { display: none; }
+  .galaxy-stage::after {
+    background: none;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .galaxy-selected-heading {
+    background: Canvas;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .galaxy-selected-heading::before { display: none; }
+  .galaxy-selected-heading code {
+    background: Canvas;
+    border-color: CanvasText;
+    color: CanvasText;
+  }
 }
