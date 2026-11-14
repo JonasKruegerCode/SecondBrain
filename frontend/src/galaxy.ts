@@ -1,5 +1,5 @@
 import "./galaxy.css";
-import { layoutGalaxyField, mountGalaxyField, type GalaxyField } from "./galaxy-field";
+import { clampZoomScale, layoutGalaxyField, mountGalaxyField, type GalaxyField } from "./galaxy-field";
 
 export interface Graph {
   nodes: { id: string; title: string; galaxy?: { group: string; label?: string; anchor?: boolean } }[];
@@ -130,7 +130,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       selectedCluster = membership.get(previous.clusterCore)!;
     }
     query = previous.query;
-    scale = Math.max(.75, Math.min(selectedCluster === null ? 2.5 : 4, previous.scale));
+    scale = clampZoomScale(previous.scale);
     panX = previous.panX; panY = previous.panY;
   } else if (options.initialPage && byId.has(options.initialPage)) {
     // A direct article entry is resolved against this snapshot, not a title or
@@ -338,8 +338,8 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
         break;
       }
-      case "zoom-in": scale = Math.min(selectedCluster === null ? 2.5 : 4, scale + .25); setView(); break;
-      case "zoom-out": scale = Math.max(.75, scale - .25); setView(); break;
+      case "zoom-in": scale = clampZoomScale(scale + .25); setView(); break;
+      case "zoom-out": scale = clampZoomScale(scale - .25); setView(); break;
       case "reset": scale = 1; panX = panY = 0; setView(); break;
     }
   };
@@ -368,7 +368,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     }
     if (event.key === "+" || event.key === "=" || event.key === "-") {
       event.preventDefault();
-      scale = Math.max(.75, Math.min(4, scale + (event.key === "-" ? -.25 : .25)));
+      scale = clampZoomScale(scale + (event.key === "-" ? -.25 : .25));
       setView();
       field.reveal(target.dataset.node || "");
       return;

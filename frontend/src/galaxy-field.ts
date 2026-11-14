@@ -59,6 +59,28 @@ const PALETTE: [number, number, number][] = [
   [196, 150, 236],
   [104, 206, 186],
 ];
+// Palette plus a neutral tint for unlinked pages, in star.hue order.
+const SPRITE_TINTS: [number, number, number][] = [...PALETTE, [168, 176, 196]];
+
+// Zoom is bounded so the overview stays whole and a deep zoom can still reach
+// single pages. The overview glow cross-fades into distinct suns long before
+// MAX_ZOOM_IN, so the bound only protects against runaway trackpad gestures.
+export const MAX_ZOOM_OUT = 2.6;
+export const MAX_ZOOM_IN = 64;
+export const clampZoomScale = (scale: number) =>
+  Math.max(1 / MAX_ZOOM_OUT, Math.min(MAX_ZOOM_IN, scale));
+// Projection reference: at this camera distance perspective is unscaled, so the
+// fitted overview and the fit probe keep their original look.
+const PERSPECTIVE_REFERENCE = 100;
+// Hover reveals one title at a time once stars are large enough that a pointer
+// can reasonably single one out. This keeps the fitted overview uncluttered.
+const HOVER_CLOSENESS = 1.5;
+const HOVER_RADIUS = 26;
+
+function smoothstep(edge0: number, edge1: number, value: number) {
+  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
 
 function localPositions(ids: string[], degree: Map<string, number>, links: [string, string][]) {
   const maxDegree = Math.max(1, ...ids.map(id => degree.get(id) || 0));
@@ -312,7 +334,9 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
   host.append(canvas, stars, labels);
   host.dataset.reducedMotion = options.reducedMotion ? "1" : "0";
   const ctx = canvas.getContext("2d", { alpha: false })!;
-  const sprites = [...PALETTE, [168, 176, 196] as [number, number, number]].map(tint);
+  const sprites = SPRITE_TINTS.map(tint);
+  const halos = SPRITE_TINTS.map(tintHalo);
+  const cores = SPRITE_TINTS.map(tintCore);
   const home: Camera = { yaw: 0.22, pitch: 0.18, distance: 260, panX: 0, panY: 0, focal: 480 };
   const cam: Camera = { ...home };
   let homeDistance = 260;
@@ -323,6 +347,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
   let pendingPanX = 0;
   let pendingPanY = 0;
   let selected: string | null = null;
+  let hovered: string | null = null;
   let query = "";
   let focusGroup: number | null = null;
   const shots = new Map<string, Shot>();
@@ -352,23 +377,25 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     const y1 = star.y * cp - z1 * sp;
     const z2 = star.y * sp + z1 * cp;
     const depth = Math.max(32, shot.distance - z2);
-    const s = shot.focal / depth;
+    // Perspective strength is normalised to PERSPECTIVE_REFERENCE so the fitted
+    // overview looks exactly as before while deep zooms stay usable.
+    const s = (shot.focal * PERSPECTIVE_REFERENCE) / depth;
     return { x: host.clientWidth / 2 + x1 * s + shot.panX, y: host.clientHeight / 2 + y1 * s + shot.panY, depth, s };
   };
 
   const fit = () => {
     if (!host.clientWidth || !host.clientHeight || fitted) return;
-    const probe = { ...cam, panX: 0, panY: 0, distance: 100 };
+    const probe = { ...cam, panX: 0, panY: 0, distance: PERSPECTIVE_REFERENCE };
     let reach = 1;
     model.stars.forEach(star => {
       const point = project(star, probe);
       reach = Math.max(reach, Math.hypot(point.x - host.clientWidth / 2, point.y - host.clientHeight / 2));
     });
     const want = Math.min(host.clientWidth, host.clientHeight) * (host.clientWidth < 700 ? 0.5 : 0.58);
-    homeDistance = 100 * (reach / Math.max(40, want));
+    homeDistance = PERSPECTIVE_REFERENCE * (reach / Math.max(40, want));
     if (!fitted) {
       fitted = true;
-      let distance = homeDistance / Math.max(0.75, Math.min(4, pendingScale));
+      let distance = homeDistance / clampZoomScale(pendingScale);
       let panX = pendingPanX;
       let panY = pendingPanY;
       if (!pendingPanX && !pendingPanY) {
@@ -394,7 +421,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
           panY = (host.clientHeight - minY - maxY) / 2;
           break;
         }
-        homeDistance = distance * Math.max(0.75, Math.min(4, pendingScale));
+        homeDistance = distance * clampZoomScale(pendingScale);
       }
       cam.distance = distance;
       cam.panX = panX;
@@ -411,6 +438,8 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     if (list) list.push(star);
     else groups.set(star.groupId, [star]);
   });
+
+  const closenessOf = () => homeDistance / cam.distance;
 
   const paint = () => {
     fit();
@@ -432,7 +461,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     ctx.fillStyle = backdrop;
     ctx.fillRect(0, 0, width, height);
     model.stars.forEach(star => shots.set(star.id, project(star)));
-    const closeness = homeDistance / cam.distance;
+    const closeness = closenessOf();
     ctx.globalCompositeOperation = "lighter";
     groups.forEach(members => {
       let sx = 0;
@@ -454,8 +483,10 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     });
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    const internal = Math.max(0.05, Math.min(0.42, 0.05 * closeness));
-    const bridge = Math.max(0.16, Math.min(0.72, 0.18 + closeness * 0.08));
+    // Links stay out of the overview: internal filaments fade in as the camera
+    // descends, while only faint cross-constellation chords remain at fit zoom.
+    const internal = 0.42 * smoothstep(1.05, 2.4, closeness);
+    const bridge = 0.16 + 0.5 * smoothstep(1, 3.2, closeness);
     const maxScreen = 18 + closeness * 26;
     const internalEdges = model.edges.filter(edge => !edge.bridge).length;
     const crowded = internalEdges > model.stars.length * 4;
@@ -469,6 +500,9 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       const b = shots.get(model.stars[edge.b].id)!;
       const screen = Math.hypot(a.x - b.x, a.y - b.y);
       if (screen < 3) return;
+      // Cull links whose whole span sits outside the stage.
+      if (Math.max(a.x, b.x) < -90 || Math.min(a.x, b.x) > width + 90) return;
+      if (Math.max(a.y, b.y) < -90 || Math.min(a.y, b.y) > height + 90) return;
       const row = { x1: a.x, y1: a.y, x2: b.x, y2: b.y, screen };
       if (edge.bridge) {
         if (screen > 70 + closeness * 80 && closeness < 1.4) return;
@@ -511,7 +545,10 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       });
       ctx.stroke();
     }
-    const homeScale = cam.focal / homeDistance;
+    const homeScale = (cam.focal * PERSPECTIVE_REFERENCE) / homeDistance;
+    // Level of detail: the flat overview glow cross-fades into a sun with its
+    // own corona and core once stars grow large enough to read as bodies.
+    const sunFade = smoothstep(1.55, 4.2, closeness);
     const order = [...model.stars].sort((a, b) => shots.get(b.id)!.depth - shots.get(a.id)!.depth);
     ctx.globalCompositeOperation = "lighter";
     order.forEach(star => {
@@ -525,9 +562,23 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       const prominence = Math.pow(star.degree / model.maxDegree, 0.62);
       const relative = Math.max(0.45, Math.min(point.s / homeScale, 5));
       const glow = (star.isolated ? 2.4 : 3.2 + prominence * 28) * relative;
-      ctx.globalAlpha = (match ? 1 : 0.07) * (related ? 1 : 0.3) * (star.isolated ? 0.5 : 1);
-      const sprite = sprites[star.hue] || sprites[sprites.length - 1];
-      ctx.drawImage(sprite, point.x - glow, point.y - glow, glow * 2, glow * 2);
+      const alpha = (match ? 1 : 0.07) * (related ? 1 : 0.3) * (star.isolated ? 0.5 : 1);
+      // Cull only when the largest sprite the star can paint is fully outside
+      // the stage, so a corona never pops in from the edge.
+      const reach = glow * 1.7 + 8;
+      const onStage = point.x > -reach && point.x < width + reach && point.y > -reach && point.y < height + reach;
+      if (onStage && sunFade < 1) {
+        ctx.globalAlpha = alpha * (1 - sunFade);
+        ctx.drawImage(sprites[star.hue] || sprites[sprites.length - 1], point.x - glow, point.y - glow, glow * 2, glow * 2);
+      }
+      if (onStage && sunFade > 0) {
+        const corona = glow * (1 + 0.6 * sunFade);
+        ctx.globalAlpha = alpha * sunFade * 0.85;
+        ctx.drawImage(halos[star.hue] || halos[halos.length - 1], point.x - corona, point.y - corona, corona * 2, corona * 2);
+        const core = Math.max(1.2, glow * (0.2 + 0.08 * sunFade));
+        ctx.globalAlpha = alpha * sunFade;
+        ctx.drawImage(cores[star.hue] || cores[cores.length - 1], point.x - core, point.y - core, core * 2, core * 2);
+      }
       const button = buttons.get(star.id)!;
       const size = Math.max(28, Math.min(46, glow * 0.7));
       button.style.left = `${point.x}px`;
@@ -552,8 +603,10 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     buttons.forEach(button => { delete button.dataset.label; });
     labels.replaceChildren();
     ranked.forEach(star => {
-      if (star.isolated) return;
-      const pinned = star.core || star.id === selected;
+      // Core, selected and hovered stars always get their title, even when the
+      // degree floor or budget would otherwise leave them unnamed.
+      const pinned = star.core || star.id === selected || star.id === hovered;
+      if (star.isolated && !pinned) return;
       if (!pinned && (labeled >= limit || star.degree < floor)) return;
       const point = shots.get(star.id)!;
       if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) return;
@@ -597,7 +650,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     const rect = host.getBoundingClientRect();
     const sx = clientX ?? rect.left + rect.width / 2;
     const sy = clientY ?? rect.top + rect.height / 2;
-    const next = Math.max(homeDistance * 0.18, Math.min(homeDistance * 2.6, cam.distance / factor));
+    const next = Math.max(homeDistance / MAX_ZOOM_IN, Math.min(homeDistance * MAX_ZOOM_OUT, cam.distance / factor));
     const applied = cam.distance / next;
     const cx = sx - rect.left - host.clientWidth / 2;
     const cy = sy - rect.top - host.clientHeight / 2;
@@ -611,6 +664,21 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
   let drag: { x: number; y: number; panX: number; panY: number; moved: boolean } | null = null;
   let pinch = 0;
   let suppressClick = false;
+  const pickStar = (clientX: number, clientY: number) => {
+    if (closenessOf() < HOVER_CLOSENESS) return null;
+    const rect = host.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    let best: string | null = null;
+    let bestDist = HOVER_RADIUS * HOVER_RADIUS;
+    shots.forEach((point, id) => {
+      const dx = point.x - x;
+      const dy = point.y - y;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) { bestDist = dist; best = id; }
+    });
+    return best;
+  };
   const pointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -618,7 +686,19 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
   };
   const pointerMove = (event: PointerEvent) => {
     const point = pointers.get(event.pointerId);
-    if (!point) return;
+    if (!point) {
+      // A pointer that is merely passing over the stage names the star under
+      // it. Repaint only when the target changes so a drag stays smooth.
+      if (pointers.size === 0) {
+        const next = pickStar(event.clientX, event.clientY);
+        if (next !== hovered) {
+          hovered = next;
+          host.style.cursor = next ? "pointer" : "";
+          paint();
+        }
+      }
+      return;
+    }
     point.x = event.clientX;
     point.y = event.clientY;
     if (pointers.size >= 2) {
@@ -659,17 +739,24 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     event.preventDefault();
     zoomAt(Math.exp(-event.deltaY * 0.0011), event.clientX, event.clientY);
   };
+  const onPointerLeave = () => {
+    if (hovered === null) return;
+    hovered = null;
+    host.style.cursor = "";
+    paint();
+  };
   host.addEventListener("pointerdown", pointerDown);
   host.addEventListener("pointermove", pointerMove);
   host.addEventListener("pointerup", pointerUp);
   host.addEventListener("pointercancel", pointerUp);
+  host.addEventListener("pointerleave", onPointerLeave);
   host.addEventListener("click", onClick, true);
   host.addEventListener("wheel", onWheel, { passive: false });
   return {
     paint,
     resize: paint,
     setCamera(camera) {
-      pendingScale = Math.max(0.75, Math.min(4, camera.scale || 1));
+      pendingScale = clampZoomScale(camera.scale || 1);
       pendingPanX = camera.panX;
       pendingPanY = camera.panY;
       if (fitted) {
@@ -724,6 +811,7 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
       host.removeEventListener("pointermove", pointerMove);
       host.removeEventListener("pointerup", pointerUp);
       host.removeEventListener("pointercancel", pointerUp);
+      host.removeEventListener("pointerleave", onPointerLeave);
       host.removeEventListener("click", onClick, true);
       host.removeEventListener("wheel", onWheel);
     },
@@ -741,17 +829,42 @@ function blob(ctx: CanvasRenderingContext2D, x: number, y: number, radius: numbe
   ctx.fill();
 }
 
-function tint(rgb: [number, number, number]) {
+function sprite(stops: [number, string][]) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 96;
   const ctx = canvas.getContext("2d")!;
   const gradient = ctx.createRadialGradient(48, 48, 0, 48, 48, 48);
-  gradient.addColorStop(0, "rgba(255,255,255,0.95)");
-  gradient.addColorStop(0.1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.8)`);
-  gradient.addColorStop(0.28, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.22)`);
-  gradient.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+  stops.forEach(([offset, color]) => gradient.addColorStop(offset, color));
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 96, 96);
   return canvas;
+}
+
+function tint(rgb: [number, number, number]) {
+  return sprite([
+    [0, "rgba(255,255,255,0.95)"],
+    [0.1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.8)`],
+    [0.28, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.22)`],
+    [1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`],
+  ]);
+}
+
+// The overview glow resolves into a translucent corona and a hot core once a
+// star is large enough on screen to read as a sun rather than a point of light.
+function tintHalo(rgb: [number, number, number]) {
+  return sprite([
+    [0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.5)`],
+    [0.35, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.24)`],
+    [1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`],
+  ]);
+}
+
+function tintCore(rgb: [number, number, number]) {
+  return sprite([
+    [0, "rgba(255,253,247,1)"],
+    [0.2, "rgba(255,244,222,0.96)"],
+    [0.45, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.5)`],
+    [1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`],
+  ]);
 }
