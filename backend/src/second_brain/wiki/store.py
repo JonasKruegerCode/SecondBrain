@@ -1330,7 +1330,8 @@ class WikiStore:
             )
         )
         return [
-            {key: value for key, value in page.items() if key != "rank_score"} for page in hits[:limit]
+            {key: value for key, value in page.items() if key != "rank_score"}
+            for page in hits[:limit]
         ]
 
     def graph(self) -> dict[str, Any]:

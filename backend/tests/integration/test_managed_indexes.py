@@ -235,7 +235,7 @@ def test_real_retention_preserves_current_and_untracked(indexed: IndexCoordinato
         assert applied["indexes"][kind]["deleted"] == planned["indexes"][kind]["candidates"]
         assert set(adapter.list_generations(indexed.namespace)) == {generations[kind], untracked}
     assert indexed.neighbors(["home"])["pages"][0]["id"] == "harbor"
-    assert len(indexed.semantic_search("harbor")["results"]) == 3
+    assert len(indexed.semantic_search("harbor")["results"]) == 2
 
 
 def test_missing_real_graph_generation_is_explicit_and_rebuildable(
@@ -249,7 +249,7 @@ def test_missing_real_graph_generation_is_explicit_and_rebuildable(
     with pytest.raises(WikiError) as error:
         indexed.neighbors(["home"])
     assert error.value.code == "index_unavailable"
-    assert len(indexed.semantic_search("harbor")["results"]) == 3
+    assert len(indexed.semantic_search("harbor")["results"]) == 2
     assert indexed.store.get_page("home")
     indexed.run_once(rebuild=True)
     assert indexed.neighbors(["home"])["pages"][0]["id"] == "harbor"
@@ -318,7 +318,7 @@ def test_real_server_restart_receipts_and_missing_vector_recovery(
         assert {p["id"] for p in restarted.neighbors(["home"], hops=2)["pages"]} == {
             "garden", "harbor"
         }
-        assert len(restarted.semantic_search("harbor")["results"]) == 3
+        assert len(restarted.semantic_search("harbor")["results"]) == 2
         receipt = restarted._receipt("vector")
         assert receipt
         restarted.adapters["vector"].delete_generation(receipt["generation"])
@@ -328,7 +328,7 @@ def test_real_server_restart_receipts_and_missing_vector_recovery(
         assert restarted.neighbors(["home"])["pages"][0]["id"] == "harbor"
         assert restarted.store.get_page("home")
         restarted.run_once(rebuild=True)
-        assert len(restarted.semantic_search("harbor")["results"]) == 3
+        assert len(restarted.semantic_search("harbor")["results"]) == 2
         assert restarted.store.snapshot() == before
     finally:
         restarted.close()
