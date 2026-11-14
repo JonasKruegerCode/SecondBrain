@@ -774,7 +774,10 @@ for (const older of ["failure", "success"] as const) {
         await submit(secondTerm);
         await expect(page.locator("#results .error")).toHaveText("Current synthetic search outage.");
         await submit(secondTerm);
-        await expect(page.locator("#results .card h3")).toHaveText("Current search fixture");
+        await expect(page.locator(`#results a[href="/wiki/${second.id}"] h3`)).toHaveText(
+          "Current search fixture",
+        );
+        await expect(page.locator("#results .card").first()).toHaveAttribute("href", `/wiki/${second.id}`);
         await expect(page.locator("#results .error")).toHaveCount(0);
       }
       if (older === "success") {
