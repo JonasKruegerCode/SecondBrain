@@ -64,7 +64,7 @@ async def test_tail_retrieval_maps_to_one_current_article_and_preserves_source(
         assert result["results"][0]["id"] == "archive"
         assert result["results"][0]["revision"] == saved["revision"]
         assert result["results"][0]["score"] == pytest.approx(1.0)
-        assert len({hit["id"] for hit in result["results"]}) == len(result["results"]) == 2
+        assert [hit["id"] for hit in result["results"]] == ["archive"]
         assert any("TAIL_EVIDENCE" in value for value in provider.inputs[:-1])
         assert store.snapshot() == before
         mcp = create_mcp(store, indexes=indexes)
@@ -74,7 +74,7 @@ async def test_tail_retrieval_maps_to_one_current_article_and_preserves_source(
         assert response[1] == cutoff
         assert [hit["id"] for hit in cutoff["results"]] == ["archive"]
         assert cutoff["results"][0]["score"] == pytest.approx(1.0)
-        assert cutoff["cutoff"] is True
+        assert "cutoff" not in cutoff
         limited = await mcp.call_tool(
             "search_wiki", {"query": "TAIL_EVIDENCE", "limit": 10}
         )
