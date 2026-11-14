@@ -436,16 +436,19 @@ class IndexCoordinator:
     def graph_search(self, query: str, hops: int = 1) -> dict[str, Any]:
         """Non-generative vector seeds plus bounded graph context at one revision."""
         seeds = self.semantic_search(query)
-        expanded = self.neighbors([p["id"] for p in seeds["results"][:10]], hops)
+        vector_hits = [
+            page for page in seeds["results"] if float(page.get("score") or 0) > 0
+        ]
+        expanded = self.neighbors([p["id"] for p in vector_hits[:10]], hops)
         if seeds["revision"] != expanded["revision"] or self.store._head() != seeds["revision"]:
             raise WikiError(
                 "index_pending", "Content changed during retrieval. Retry after indexing."
             )
-        seen = {p["id"] for p in seeds["results"]}
+        seen = {p["id"] for p in vector_hits}
         return {
             "mode": "graph_rag",
             "revision": seeds["revision"],
-            "results": [{**p, "retrieval": "vector"} for p in seeds["results"]]
+            "results": [{**p, "retrieval": "vector"} for p in vector_hits]
             + [{**p, "retrieval": "graph"} for p in expanded["pages"] if p["id"] not in seen],
             "hops": hops,
         }

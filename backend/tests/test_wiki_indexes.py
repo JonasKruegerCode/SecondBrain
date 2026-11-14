@@ -295,22 +295,28 @@ def test_provider_query_failure_and_mid_query_write_are_explicit(
     indexes.run_once()
     vector = indexes.adapters["vector"]
     search = vector.search
+    grouped = getattr(vector, "search_grouped", None)
+    grouped_impl = grouped or search
 
     def failing(*args: Any) -> Any:
         raise RuntimeError("private access token")
 
     monkeypatch.setattr(vector, "search", failing)
+    if grouped is not None:
+        monkeypatch.setattr(vector, "search_grouped", failing)
     with pytest.raises(WikiError) as error:
         indexes.semantic_search("harbor")
     assert error.value.code == "index_unavailable"
     assert "token" not in error.value.message
 
     def racing(*args: Any) -> Any:
-        result = search(*args)
+        result = grouped_impl(*args)
         store.save_page("later", "# Later", None, "mid-query")
         return result
 
     monkeypatch.setattr(vector, "search", racing)
+    if grouped is not None:
+        monkeypatch.setattr(vector, "search_grouped", racing)
     with pytest.raises(WikiError) as error:
         indexes.semantic_search("harbor")
     assert error.value.code == "index_pending"
@@ -323,15 +329,17 @@ def test_vector_seeds_graph_context_and_stale_receipt(
     indexes.run_once()
     home = store.get_page("home")
     assert home
-    monkeypatch.setattr(
-        indexes.adapters["vector"],
-        "search",
-        lambda *args: [
+    def _mock_vector_search(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        return [
             {"id": "home", "revision": home["revision"], "score": 1.0},
             {"id": "harbor", "revision": "stale", "score": 0.9},
             {"id": "ghost", "revision": "fake", "score": 0.8},
-        ],
-    )
+        ]
+
+    vector = indexes.adapters["vector"]
+    monkeypatch.setattr(vector, "search", _mock_vector_search)
+    if hasattr(vector, "search_grouped"):
+        monkeypatch.setattr(vector, "search_grouped", _mock_vector_search)
     result = indexes.graph_search("harbor")
     assert [(p["id"], p["retrieval"]) for p in result["results"]] == [
         ("home", "vector"),
