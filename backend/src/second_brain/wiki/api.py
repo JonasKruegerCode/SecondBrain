@@ -24,7 +24,8 @@ from second_brain.wiki.delivery import DeliveryCoordinator
 from second_brain.wiki.delivery_runtime import DeliveryWorker
 from second_brain.wiki.demo import check_demo_history
 from second_brain.wiki.indexes import IndexCoordinator
-from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
+from second_brain.wiki.search_service import search_wiki as run_wiki_search
+from second_brain.wiki.store import WikiError, WikiStore
 
 
 def _same_origin_authority(origin: str, host: str | None) -> bool:
@@ -129,27 +130,30 @@ def create_app(
 
     async def search(request: Request) -> Response:
         query = request.query_params.get("q", "")[:500]
-        if request.query_params.get("mode") == "semantic":
-            return JSONResponse(await run_in_threadpool(indexes.semantic_search, query))
-        if request.query_params.get("mode") == "graph_rag":
+        mode = request.query_params.get("mode")
+        limit_raw = request.query_params.get("limit")
+        limit: int | None = None
+        if limit_raw is not None:
+            try:
+                limit = int(limit_raw)
+            except ValueError as exc:
+                raise WikiError("invalid_payload", "limit must be an integer.") from exc
+        if mode == "graph_rag":
             return JSONResponse(await run_in_threadpool(indexes.graph_search, query))
-        if request.query_params.get("mode", "lexical") != "lexical":
+        if mode is not None and mode not in {"lexical", "semantic"}:
             raise WikiError("invalid_payload", "mode must be lexical, semantic or graph_rag.")
-        rows = await run_in_threadpool(
-            store.search, query, limit=SEARCH_RESULT_LIMIT + 1
+        payload = await run_in_threadpool(
+            run_wiki_search,
+            store,
+            indexes,
+            query,
+            mode=mode,
+            limit=limit,
         )
-        truncated = len(rows) > SEARCH_RESULT_LIMIT
-        return JSONResponse(
-            {
-                "results": [
-                    {k: v for k, v in p.items() if k != "markdown"}
-                    for p in rows[:SEARCH_RESULT_LIMIT]
-                ],
-                "mode": "lexical",
-                "limit": SEARCH_RESULT_LIMIT,
-                "truncated": truncated,
-            }
-        )
+        payload["results"] = [
+            {k: v for k, v in p.items() if k != "markdown"} for p in payload["results"]
+        ]
+        return JSONResponse(payload)
 
     async def graph(request: Request) -> Response:
         return JSONResponse(await run_in_threadpool(store.graph))

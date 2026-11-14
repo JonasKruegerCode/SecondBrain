@@ -22,6 +22,7 @@ from typing import Any, NamedTuple
 
 from second_brain.wiki.bounded_script import project_flat_scripts
 from second_brain.wiki.galaxy_groups import galaxy_groups
+from second_brain.wiki.relevance import rank_pages
 
 REF = "refs/heads/wiki"
 ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
@@ -1308,20 +1309,27 @@ class WikiStore:
     def search(self, query: str, *, limit: int = SEARCH_RESULT_LIMIT) -> list[dict[str, Any]]:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
             raise WikiError("invalid_payload", "Search limit must be a positive integer.")
-        terms = query.casefold().strip().split()
-        if not terms:
+        folded = query.casefold().strip()
+        if not folded:
             return []
         pages = self.list_pages()
-        hits = [
-            p for p in pages if all(t in (p["id"] + " " + p["markdown"]).casefold() for t in terms)
-        ]
-        return sorted(
-            hits,
-            key=lambda p: (
-                0 if query.casefold() in {p["id"].casefold(), p["title"].casefold()} else 1,
-                p["title"].casefold(),
-            ),
-        )[:limit]
+        ranked = rank_pages(query, pages, {})
+        hits: list[dict[str, Any]] = []
+        for page in ranked:
+            if float(page["rank_score"]) <= 0.0:
+                continue
+            hits.append(page)
+        hits.sort(
+            key=lambda page: (
+                0
+                if query.casefold() in {str(page["id"]).casefold(), str(page["title"]).casefold()}
+                else 1,
+                -float(page["rank_score"]),
+                str(page["title"]).casefold(),
+                str(page["id"]),
+            )
+        )
+        return hits[:limit]
 
     def graph(self) -> dict[str, Any]:
         result: dict[str, Any] = self._navigation_snapshot()["graph"]

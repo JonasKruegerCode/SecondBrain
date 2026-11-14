@@ -70,7 +70,16 @@ async def test_tail_retrieval_maps_to_one_current_article_and_preserves_source(
         mcp = create_mcp(store, indexes=indexes)
         response = await mcp.call_tool("search_wiki", {"query": "TAIL_EVIDENCE"})
         assert isinstance(response, tuple)
-        assert response[1] == result
+        cutoff = indexes.semantic_search("TAIL_EVIDENCE", None)
+        assert response[1] == cutoff
+        assert [hit["id"] for hit in cutoff["results"]] == ["archive"]
+        assert cutoff["results"][0]["score"] == pytest.approx(1.0)
+        assert cutoff["cutoff"] is True
+        limited = await mcp.call_tool(
+            "search_wiki", {"query": "TAIL_EVIDENCE", "limit": 10}
+        )
+        assert isinstance(limited, tuple)
+        assert limited[1] == result
         with TestClient(create_app(store.path, indexes=indexes)) as api:
             assert api.get("/api/wiki/search?q=TAIL_EVIDENCE&mode=semantic").json() == result
         receipt = indexes._receipt("vector")

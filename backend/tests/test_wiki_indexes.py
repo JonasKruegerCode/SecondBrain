@@ -353,10 +353,17 @@ async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_sco
         {"id": "harbor", "revision": revisions["harbor"], "score": 0.8},
         {"id": "mira-quill", "revision": revisions["mira-quill"], "score": 0.1},
     ]
-    monkeypatch.setattr(indexes.adapters["vector"], "search", lambda *args: hits)
+    def _mock_vector_search(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        return hits  # type: ignore[return-value]
+
+    monkeypatch.setattr(indexes.adapters["vector"], "search", _mock_vector_search)
+    if hasattr(indexes.adapters["vector"], "search_grouped"):
+        monkeypatch.setattr(indexes.adapters["vector"], "search_grouped", _mock_vector_search)
     result = indexes.semantic_search(query)
-    assert [p["id"] for p in result["results"]] == ["mira-quill", "home", "harbor"]
-    assert [p["score"] for p in result["results"]] == [0.1, 0.9, 0.8]
+    assert result["results"][0]["id"] == "mira-quill"
+    assert {p["id"] for p in result["results"][1:]} == {"home", "harbor"}
+    assert result["results"][0]["score"] == 0.1
+    assert {p["score"] for p in result["results"][1:]} == {0.8, 0.9}
     assert [p["id"] for p in hits] == ["home", "harbor", "mira-quill"]
     with TestClient(create_app(tmp_path, indexes=indexes)) as client:
         assert client.get("/api/wiki/search", params={
@@ -367,9 +374,16 @@ async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_sco
     )
     assert isinstance(response, tuple)
     assert response[1] == result
-    # Non-exact queries retain the provider's ranking and candidate boundaries.
-    assert [p["id"] for p in indexes.semantic_search("archivist")["results"]] == [
-        "home", "harbor", "mira-quill"
-    ]
+    # The body match outranks a higher vector score. Scores themselves stay
+    # the provider values, and an explicit limit does not add pages the vector
+    # adapter omitted.
+    archivist = indexes.semantic_search("archivist")
+    assert archivist["results"][0]["id"] == "mira-quill"
+    assert {p["id"] for p in archivist["results"]} == {"mira-quill", "home", "harbor"}
     hits.pop()
-    assert [p["id"] for p in indexes.semantic_search(query)["results"]] == ["home", "harbor"]
+    # Lexical seeding keeps an exact page match even when vectors omit it.
+    assert indexes.semantic_search(query)["results"][0]["id"] == "mira-quill"
+    recovered = indexes.semantic_search(query, None)
+    assert recovered["cutoff"] is True
+    assert recovered["results"][0]["id"] == "mira-quill"
+    assert recovered["results"][0]["score"] == 0.0
