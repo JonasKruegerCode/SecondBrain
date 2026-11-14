@@ -22,7 +22,7 @@ from second_brain.wiki.relevance import (
     IMPLICIT_CANDIDATE_LIMIT,
     adaptive_cutoff,
     combine_chunk_scores,
-    exclusive_token_restriction,
+    drop_lexical_gap_tail,
     overlapping_ids,
     rank_pages,
 )
@@ -336,6 +336,13 @@ class IndexCoordinator:
         ``limit=None`` fetches a bounded candidate pool, fuses it with lexical
         title and body evidence, and applies the adaptive cutoff.
         """
+        if not query.strip():
+            snapshot = self.store.snapshot()
+            return {
+                "mode": "semantic",
+                "revision": snapshot["revision"],
+                "results": [],
+            }
         pool = IMPLICIT_CANDIDATE_LIMIT if limit is None else min(50, max(1, limit))
         with self._reader():
             snapshot, receipt = self._current("vector")
@@ -387,9 +394,10 @@ class IndexCoordinator:
             ranked.sort(
                 key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
             )
-            ranked = exclusive_token_restriction(query, snapshot["pages"], ranked)
+            ranked = drop_lexical_gap_tail(query, snapshot["pages"], ranked)
             cutoff = limit is None
             window = adaptive_cutoff(ranked, pool) if cutoff else ranked[:pool]
+            dropped_tail = cutoff and len(window) < len(ranked)
             results = []
             for page in window:
                 page_id = str(page["id"])
@@ -408,7 +416,7 @@ class IndexCoordinator:
                 "revision": snapshot["revision"],
                 "results": results,
             }
-            if cutoff:
+            if dropped_tail:
                 payload["cutoff"] = True
             return payload
 

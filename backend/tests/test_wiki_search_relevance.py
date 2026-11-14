@@ -14,140 +14,140 @@ from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.relevance import (
     adaptive_cutoff,
     content_tokens,
-    exclusive_token_restriction,
+    drop_lexical_gap_tail,
     rank_pages,
 )
 from second_brain.wiki.search_service import search_wiki as run_wiki_search
 from second_brain.wiki.store import WikiStore
 
 PAGES: dict[str, str] = {
-    "heartbeat-richtlinie": """---
+    "pulse-canonical-policy": """---
 type: topic
 status: current
 ---
-# Heartbeat – kanonische Richtlinie
+# Pulse – canonical policy
 
-Diese Seite ist die einzige aktuelle kanonische Heartbeat-Richtlinie.
-Ein Heartbeat ist ein autonomer Zyklus mit klarer Freigabe.
+This page is the only current canonical pulse policy.
+A pulse is an autonomous cycle with explicit release.
 """,
-    "integrationstest-tc-18-heartbeat-timer": """# Integrationstest TC-18 – Heartbeat-Timer
+    "integrationtest-case-18-pulse-timer": """# Integration test case 18 – pulse timer
 
-TC-18 validiert den Heartbeat-Timer. Heartbeat Heartbeat Heartbeat Heartbeat.
-Der Test ist historisch und keine Richtlinie.
+Case 18 validates the pulse timer. Pulse pulse pulse pulse.
+Historical test material, not policy.
 """,
-    "topic-heartbeat-loop": """# Historischer Verweis: Heartbeat-Loop
+    "topic-pulse-loop": """# Historical note: pulse loop
 
-Historische Bezeichnung für autonome Zyklen. Die maßgebliche Definition steht
-auf der Heartbeat-Richtlinie.
+Older label for autonomous cycles. The definition lives on the pulse policy page.
 """,
-    "heartbeat-sensor-python": """---
+    "pulse-sensor-sketch": """---
 type: archive
 status: historical
 ---
-# Historische Skizze: Heartbeat-Sensor
+# Archive sketch: pulse sensor
 
-Ältere Skizze eines Heartbeat-Sensors. Kein aktueller Betrieb.
+Older pulse-sensor sketch. Not current operation.
 """,
-    "heartbeat-reflexion-standortbestimmung": """---
+    "pulse-reflection-site-survey": """---
 type: archive
 status: historical
 ---
-# Historische Heartbeat-Reflexion
+# Historical pulse reflection
 
-Bewahrt einen alten Heartbeat-Eintrag.
+Preserves an old pulse journal entry.
 """,
-    "roadmap-merge-auswirkungen": """# Roadmap Merge Auswirkungen
+    "roadmap-merge-effects": """# Roadmap merge effects
 
-Ein Plan für ein schrittweises Roll-out nach einem Merge. Kein Heartbeat.
+Plan for a phased roll-out after a merge. Not about pulse policy.
 """,
-    "person-jonas": """---
+    "person-mira-quill": """---
 type: person
 ---
-# Jonas
+# Mira Quill
 
-Jonas ist die zentrale Bezugsperson dieses SecondBrains.
+Mira Quill is the central fictional persona in this eval vault.
+Mira Mira Mira — primary knowledge hub for questions about Mira.
 
-## Interessen und Freizeit
+## Interests and leisure
 
-In der Freizeit spielt Jonas League of Legends sowie Teamfight Tactics (TFT).
-Das tft-spielprofil hält Comp-Vorlieben fest.
+Mira enjoys auto-battler strategy games and a companion tactics title in prose here.
+See profile-tactics-comps for comp preferences.
 """,
-    "person-jonas-krueger": """# Jonas Krüger – Stammdaten
+    "person-mira-bio": """# Bio record (secondary)
 
-Jonas Krüger ist der Nutzer und Eigentümer. Biografische Stammdaten.
+Secondary biographical stub for the vault. Mentions the persona only briefly.
 """,
-    "jonas-linkedin-schreibstil": """# Jonas' LinkedIn-Schreibstil
+    "mira-writing-style": """# Mira's professional writing style
 
-Präferenzen von Jonas für LinkedIn-Texte und Beitragsbilder.
+Fictional preferences for short posts and header images.
 """,
-    "vater-von-jonas": """# Vater von Jonas Krüger
+    "mentor-of-mira": """# Mentor of Mira Quill
 
-Vater von Jonas Krüger, erfahrener IT-Berater.
+Fictional senior advisor to Mira Quill.
 """,
-    "tft-spielprofil": """# TFT-Spielprofil
+    "profile-tactics-comps": """# Tactics comp profile
 
-Teamfight Tactics Spielprofil und League of Legends Erfahrung.
+Team tactics profile and ranked-mode experience (fictional).
 """,
-    "person-jarvis": """---
+    "bot-archivus": """---
 type: person
 ---
-# Jarvis
+# Archivus
 
-Jarvis ist der persönliche KI-Assistent. Für „Jarvis, Status?“ der kompakte
-Orientierungsstand und Persönlichkeits-Hub.
+Archivus is a fictional assistant bot. For “Archivus status?” the compact
+orientation hub.
 """,
-    "secondbrain-20-zielbild": """# SecondBrain 2.0 – Zielbild
+    "vault-navigation-vision": """# Vault navigation vision
 
-Projektseite: Wiki-Navigation, semantische Suche, Galaxy und MCP.
+Fiction project page: wiki navigation, semantic search, star map and MCP.
 """,
-    "zufallsnotiz": """# Tagesnotiz
+    "daily-chance-note": """# Daily chance note
 
-Was so ein Tag bringt, weiß niemand. Kein Personenartikel.
+Nobody knows what a day brings. Not a person article.
 """,
-    "galaxy": """# Galaxy
+    "star-map": """# Star map
 
-Die Galaxy zeigt das Wiki als Sternenkarte mit Gruppen und Links.
+The star map shows the wiki as constellations with groups and links.
 """,
-    "galaxy-archiv": """---
+    "star-map-archive": """---
 type: archive
 status: historical
 ---
-# Historisches Galaxy-Log
+# Historical star-map log
 
-Alter Export der Galaxy, nicht die aktuelle Ansicht.
+Old export, not the current view.
 """,
-    "nebula-notiz": """# Nebel
+    "nebula-mention": """# Nebula
 
-Erwähnt die Galaxy nur am Rande einer anderen Beobachtung.
+Mentions the star map only in passing.
 """,
 }
 
 JUDGMENTS: dict[str, dict[str, int]] = {
-    "heartbeat": {"heartbeat-richtlinie": 3},
-    "Was weiß Jonas so": {
-        "person-jonas": 3,
-        "person-jonas-krueger": 2,
-        "jonas-linkedin-schreibstil": 1,
+    "pulse": {"pulse-canonical-policy": 3},
+    "Was weiß Mira so": {
+        "person-mira-quill": 3,
+        "person-mira-bio": 2,
+        "mira-writing-style": 1,
     },
-    "Jonas Gaming": {
-        "person-jonas": 3,
-        "tft-spielprofil": 2,
+    "Mira gaming": {
+        "person-mira-quill": 3,
+        "profile-tactics-comps": 2,
     },
-    "Welche Projekte hat Jonas": {
-        "person-jonas": 3,
-        "secondbrain-20-zielbild": 2,
+    "Welche Projekte hat Mira": {
+        "person-mira-quill": 3,
+        "vault-navigation-vision": 2,
     },
-    "Jarvis Status": {"person-jarvis": 3},
-    "Galaxy": {"galaxy": 3},
+    "Archivus status": {"bot-archivus": 3},
+    "Star map": {"star-map": 3},
 }
 
-FLAT_HEARTBEAT: dict[str, float] = {
-    "integrationstest-tc-18-heartbeat-timer": 0.393,
-    "topic-heartbeat-loop": 0.339,
-    "heartbeat-richtlinie": 0.330,
-    "roadmap-merge-auswirkungen": 0.309,
-    "heartbeat-reflexion-standortbestimmung": 0.305,
-    "heartbeat-sensor-python": 0.297,
+FLAT_PULSE: dict[str, float] = {
+    "integrationtest-case-18-pulse-timer": 0.393,
+    "topic-pulse-loop": 0.339,
+    "pulse-canonical-policy": 0.330,
+    "roadmap-merge-effects": 0.309,
+    "pulse-reflection-site-survey": 0.305,
+    "pulse-sensor-sketch": 0.297,
 }
 
 
@@ -192,23 +192,24 @@ class HashEmbedder:
         return [value / norm for value in vector]
 
 
-def test_lexical_jonas_gaming_finds_gaming_section_without_literal_gaming_word(
+def test_lexical_name_plus_topic_finds_body_without_literal_topic_word(
     tmp_path: Path,
 ) -> None:
     store = WikiStore(tmp_path)
-    store.save_page("person-jonas", PAGES["person-jonas"], None, "seed")
-    store.save_page("person-jarvis", "# Jarvis\nJonas Gaming mention only.", None, "seed2")
-    hits = store.search("Jonas Gaming", limit=10)
+    store.save_page("person-mira-quill", PAGES["person-mira-quill"], None, "seed")
+    store.save_page("bot-archivus", "# Archivus\nUnrelated decoy mention.", None, "seed2")
+    hits = store.search("Mira gaming", limit=10)
     assert hits
-    assert hits[0]["id"] == "person-jonas"
+    assert hits[0]["id"] == "person-mira-quill"
+    assert "rank_score" not in hits[0]
 
 
 def test_question_words_do_not_erase_the_subject() -> None:
-    assert content_tokens("Was weiß Jonas so") == ["jonas"]
-    assert content_tokens("Jonas Gaming") == ["jonas", "gaming"]
+    assert content_tokens("Was weiß Mira so") == ["mira"]
+    assert content_tokens("Mira gaming") == ["mira", "gaming"]
 
 
-def test_exclusive_uuid_tokens_suppress_vector_fixture_neighbors() -> None:
+def test_lexical_gap_tail_drops_vector_neighbors_for_rare_anchor_tokens() -> None:
     pages = [
         *(_pages()),
         {
@@ -219,19 +220,19 @@ def test_exclusive_uuid_tokens_suppress_vector_fixture_neighbors() -> None:
     ]
     term = "queued-abcdef123456"
     ranked = rank_pages(term, pages, {str(page["id"]): 0.9 for page in pages})
-    restricted = exclusive_token_restriction(term, pages, ranked)
-    assert [page["id"] for page in restricted] == ["queued-fixture"]
-    assert exclusive_token_restriction("Jonas Gaming", pages, ranked) == ranked
+    pruned = drop_lexical_gap_tail(term, pages, ranked)
+    assert [page["id"] for page in pruned] == ["queued-fixture"]
+    assert drop_lexical_gap_tail("Mira gaming", pages, ranked) == ranked
 
 
 def test_flat_vector_scores_no_longer_outrank_the_canonical_page() -> None:
-    pages = [page for page in _pages() if page["id"] in FLAT_HEARTBEAT]
-    before = sorted(pages, key=lambda page: -FLAT_HEARTBEAT[str(page["id"])])
-    assert before[0]["id"] == "integrationstest-tc-18-heartbeat-timer"
-    ranked = rank_pages("heartbeat", pages, FLAT_HEARTBEAT)
+    pages = [page for page in _pages() if page["id"] in FLAT_PULSE]
+    before = sorted(pages, key=lambda page: -FLAT_PULSE[str(page["id"])])
+    assert before[0]["id"] == "integrationtest-case-18-pulse-timer"
+    ranked = rank_pages("pulse", pages, FLAT_PULSE)
     kept = adaptive_cutoff(ranked, cap=15)
-    assert kept[0]["id"] == "heartbeat-richtlinie"
-    assert _mrr([str(page["id"]) for page in kept], {"heartbeat-richtlinie"}) == 1.0
+    assert kept[0]["id"] == "pulse-canonical-policy"
+    assert _mrr([str(page["id"]) for page in kept], {"pulse-canonical-policy"}) == 1.0
 
 
 def test_hybrid_search_metrics_and_cutoff_without_network(tmp_path: Path) -> None:
@@ -251,6 +252,7 @@ def test_hybrid_search_metrics_and_cutoff_without_network(tmp_path: Path) -> Non
             ids = [str(hit["id"]) for hit in ranked["results"]]
             canonical = next(page_id for page_id, gain in gains.items() if gain == 3)
             assert ids[0] == canonical, query
+            assert all("rank_score" not in hit for hit in ranked["results"])
             reciprocal.append(_mrr(ids, {canonical}))
             discounted.append(_ndcg(ids, gains))
             explicit = run_wiki_search(store, indexes, query, limit=15)
@@ -263,6 +265,19 @@ def test_hybrid_search_metrics_and_cutoff_without_network(tmp_path: Path) -> Non
     finally:
         indexes.close()
         client.close()
+
+
+def test_whitespace_query_returns_empty_results(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("home", "# Home\nFixture.", None, "seed")
+    indexes = IndexCoordinator(store)
+    try:
+        for query in ("", "   ", "\n"):
+            payload = run_wiki_search(store, indexes, query)
+            assert payload["results"] == []
+            assert "cutoff" not in payload
+    finally:
+        indexes.close()
 
 
 def test_naive_vector_order_baseline_is_weaker(tmp_path: Path) -> None:

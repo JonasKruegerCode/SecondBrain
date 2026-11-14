@@ -151,7 +151,8 @@ def create_app(
             limit=limit,
         )
         payload["results"] = [
-            {k: v for k, v in p.items() if k != "markdown"} for p in payload["results"]
+            {k: v for k, v in p.items() if k not in {"markdown", "rank_score"}}
+            for p in payload["results"]
         ]
         return JSONResponse(payload)
 

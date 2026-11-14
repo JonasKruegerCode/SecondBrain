@@ -1329,7 +1329,9 @@ class WikiStore:
                 str(page["id"]),
             )
         )
-        return hits[:limit]
+        return [
+            {key: value for key, value in page.items() if key != "rank_score"} for page in hits[:limit]
+        ]
 
     def graph(self) -> dict[str, Any]:
         result: dict[str, Any] = self._navigation_snapshot()["graph"]

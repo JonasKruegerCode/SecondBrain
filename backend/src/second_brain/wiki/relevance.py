@@ -29,7 +29,7 @@ FIELD_RE = re.compile(r"(?im)^[ \t]*(type|status)[ \t]*:[ \t]*([a-z0-9_-]+)")
 IMPLICIT_CANDIDATE_LIMIT = 15
 
 # Question and function words. Stripped only when a content word remains,
-# so "Was weiß Jonas so" matches Jonas without requiring "was" or "so".
+# so "Was weiß Mira so" matches Mira without requiring "was" or "so".
 STOPWORDS = frozenset(
     {
         "a",
@@ -305,39 +305,43 @@ def overlapping_ids(
     return [page_id for _overlap, page_id in scored[:limit]]
 
 
-def exclusive_token_restriction(
+def drop_lexical_gap_tail(
     query: str,
-    pages: list[dict[str, Any]],
+    corpus: list[dict[str, Any]],
     ranked: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Drop vector-only neighbors when a long query token hits exactly one page.
-
-    Playwright acceptance issues unique ``queued-<uuid>`` terms; pure cosine
-    similarity must not surface unrelated fixture pages when the uuid is unambiguous.
-    """
+    """Drop vector-only rows when the leader lexically anchors a rare query token."""
     tokens = content_tokens(query)
-    if not ranked or not tokens:
+    if len(ranked) <= 1 or not tokens:
         return ranked
-    page_bags = {
+    lexical = bm25_scores(tokens, corpus)
+    top_id = str(ranked[0].get("id") or "")
+    if lexical.get(top_id, 0.0) <= 0.0:
+        return ranked
+    bags = {
         str(page.get("id") or ""): set(
             tokenize(
                 f"{page.get('title') or ''} {page.get('markdown') or ''} "
                 f"{str(page.get('id') or '').replace('-', ' ')}"
             )
         )
-        for page in pages
+        for page in corpus
     }
-    exclusive_ids: set[str] = set()
+    rare_anchor = False
     for token in tokens:
         if len(token) < 6:
             continue
-        hits = [page_id for page_id, bag in page_bags.items() if token in bag]
-        if len(hits) == 1:
-            exclusive_ids.add(hits[0])
-    if not exclusive_ids:
+        hits = [page_id for page_id, bag in bags.items() if token in bag]
+        if len(hits) <= 2 and top_id in hits:
+            rare_anchor = True
+            break
+    if not rare_anchor:
         return ranked
-    filtered = [page for page in ranked if str(page.get("id") or "") in exclusive_ids]
-    return filtered or ranked
+    kept = [ranked[0]]
+    for page in ranked[1:]:
+        if lexical.get(str(page.get("id") or ""), 0.0) > 0.0:
+            kept.append(page)
+    return kept
 
 
 def adaptive_cutoff(rows: list[dict[str, Any]], cap: int) -> list[dict[str, Any]]:

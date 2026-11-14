@@ -12,6 +12,12 @@ from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.relevance import trim_ranked
 from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
 
+_SEARCH_HIT_KEYS = frozenset({"markdown", "rank_score"})
+
+
+def _public_hits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: v for k, v in row.items() if k not in _SEARCH_HIT_KEYS} for row in rows]
+
 
 def search_wiki(
     store: WikiStore,
@@ -36,6 +42,23 @@ def search_wiki(
         raise WikiError("invalid_payload", "mode must be lexical, semantic or graph_rag.")
     if limit is not None and not 1 <= limit <= SEARCH_RESULT_LIMIT:
         raise WikiError("invalid_payload", "limit must be between 1 and 50.")
+    if not query.strip():
+        if selected == "graph_rag":
+            return {"mode": "graph_rag", "results": [], "hops": 1}
+        if selected == "semantic":
+            snapshot = store.snapshot()
+            return {
+                "mode": "semantic",
+                "revision": snapshot["revision"],
+                "results": [],
+            }
+        maximum = limit or SEARCH_RESULT_LIMIT
+        return {
+            "mode": "lexical",
+            "results": [],
+            "limit": maximum,
+            "truncated": False,
+        }
     if selected == "semantic":
         try:
             if implicit and limit is None:
@@ -56,7 +79,7 @@ def search_wiki(
     visible, truncated, cutoff = trim_ranked(rows, maximum, enabled=limit is None)
     payload: dict[str, Any] = {
         "mode": "lexical",
-        "results": visible,
+        "results": _public_hits(visible),
         "limit": maximum,
         "truncated": truncated,
     }

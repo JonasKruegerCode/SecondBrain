@@ -88,7 +88,6 @@ def test_late_snapshot_never_current_then_reconstructs_pending(tmp_path: Path) -
     assert {p["id"] for p in restarted.semantic_search("harbor")["results"]} == {
         "home",
         "harbor",
-        "new",
     }
 
 
@@ -387,7 +386,7 @@ async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_sco
     # adapter omitted.
     archivist = indexes.semantic_search("archivist")
     assert archivist["results"][0]["id"] == "mira-quill"
-    assert {p["id"] for p in archivist["results"]} == {"mira-quill", "home", "harbor"}
+    assert [p["id"] for p in archivist["results"]] == ["mira-quill"]
     hits.pop()
     # Lexical seeding keeps an exact page match even when vectors omit it.
     assert indexes.semantic_search(query)["results"][0]["id"] == "mira-quill"
