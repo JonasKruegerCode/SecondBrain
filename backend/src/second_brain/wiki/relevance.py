@@ -305,6 +305,41 @@ def overlapping_ids(
     return [page_id for _overlap, page_id in scored[:limit]]
 
 
+def exclusive_token_restriction(
+    query: str,
+    pages: list[dict[str, Any]],
+    ranked: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Drop vector-only neighbors when a long query token hits exactly one page.
+
+    Playwright acceptance issues unique ``queued-<uuid>`` terms; pure cosine
+    similarity must not surface unrelated fixture pages when the uuid is unambiguous.
+    """
+    tokens = content_tokens(query)
+    if not ranked or not tokens:
+        return ranked
+    page_bags = {
+        str(page.get("id") or ""): set(
+            tokenize(
+                f"{page.get('title') or ''} {page.get('markdown') or ''} "
+                f"{str(page.get('id') or '').replace('-', ' ')}"
+            )
+        )
+        for page in pages
+    }
+    exclusive_ids: set[str] = set()
+    for token in tokens:
+        if len(token) < 6:
+            continue
+        hits = [page_id for page_id, bag in page_bags.items() if token in bag]
+        if len(hits) == 1:
+            exclusive_ids.add(hits[0])
+    if not exclusive_ids:
+        return ranked
+    filtered = [page for page in ranked if str(page.get("id") or "") in exclusive_ids]
+    return filtered or ranked
+
+
 def adaptive_cutoff(rows: list[dict[str, Any]], cap: int) -> list[dict[str, Any]]:
     """Keep a relevance prefix of an already ranked list.
 

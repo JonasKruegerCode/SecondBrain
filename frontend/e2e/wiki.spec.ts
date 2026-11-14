@@ -749,11 +749,16 @@ for (const older of ["failure", "success"] as const) {
       if (older === "success") {
         // A -> B -> A has the same input value but a newer content snapshot.
         await submit(firstTerm);
-        await expect(page.locator("#results .card h3")).toHaveText("Updated search fixture");
+        await expect(page.locator(`#results a[href="/wiki/${first.id}"] h3`)).toHaveText(
+          "Updated search fixture",
+        );
       }
       release();
       await page.waitForFunction(count => (window as any).__settledSearchBodies === count, older === "success" ? 3 : 2);
-      await expect(page.locator("#results .card h3")).toHaveText(older === "success" ? "Updated search fixture" : "Current search fixture");
+      const top = older === "success" ? first : second;
+      await expect(page.locator(`#results a[href="/wiki/${top.id}"] h3`)).toHaveText(
+        older === "success" ? "Updated search fixture" : "Current search fixture",
+      );
       await expect(page.locator("#results .error")).toHaveCount(0);
       await expect(page.locator("#search-status")).toHaveText(`1 result for “${older === "success" ? firstTerm : secondTerm}”.`);
       await expect(page.locator("#results")).toHaveAttribute("aria-busy", "false");

@@ -14,6 +14,7 @@ from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.relevance import (
     adaptive_cutoff,
     content_tokens,
+    exclusive_token_restriction,
     rank_pages,
 )
 from second_brain.wiki.search_service import search_wiki as run_wiki_search
@@ -205,6 +206,22 @@ def test_lexical_jonas_gaming_finds_gaming_section_without_literal_gaming_word(
 def test_question_words_do_not_erase_the_subject() -> None:
     assert content_tokens("Was weiß Jonas so") == ["jonas"]
     assert content_tokens("Jonas Gaming") == ["jonas", "gaming"]
+
+
+def test_exclusive_uuid_tokens_suppress_vector_fixture_neighbors() -> None:
+    pages = [
+        *(_pages()),
+        {
+            "id": "queued-fixture",
+            "title": "Queued fixture",
+            "markdown": "# Queued fixture\nqueued-abcdef123456\n",
+        },
+    ]
+    term = "queued-abcdef123456"
+    ranked = rank_pages(term, pages, {str(page["id"]): 0.9 for page in pages})
+    restricted = exclusive_token_restriction(term, pages, ranked)
+    assert [page["id"] for page in restricted] == ["queued-fixture"]
+    assert exclusive_token_restriction("Jonas Gaming", pages, ranked) == ranked
 
 
 def test_flat_vector_scores_no_longer_outrank_the_canonical_page() -> None:

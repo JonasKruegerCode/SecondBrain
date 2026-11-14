@@ -22,6 +22,7 @@ from second_brain.wiki.relevance import (
     IMPLICIT_CANDIDATE_LIMIT,
     adaptive_cutoff,
     combine_chunk_scores,
+    exclusive_token_restriction,
     overlapping_ids,
     rank_pages,
 )
@@ -386,6 +387,7 @@ class IndexCoordinator:
             ranked.sort(
                 key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
             )
+            ranked = exclusive_token_restriction(query, snapshot["pages"], ranked)
             cutoff = limit is None
             window = adaptive_cutoff(ranked, pool) if cutoff else ranked[:pool]
             results = []
