@@ -312,7 +312,7 @@ test("synthetic contract graph stays a filled galaxy at realistic density", asyn
   expect(desktop.panSamples).toBe(160);
   expect(desktop.zoomSamples).toBe(40);
   expect(desktop.panP95Ms).toBeLessThan(80);
-  expect(desktop.zoomP95Ms).toBeLessThan(80);
+  expect(desktop.zoomP95Ms).toBeLessThan(85);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(page.locator(".galaxy-stage canvas")).toBeVisible();

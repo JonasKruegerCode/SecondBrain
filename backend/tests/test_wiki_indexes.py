@@ -88,7 +88,6 @@ def test_late_snapshot_never_current_then_reconstructs_pending(tmp_path: Path) -
     assert {p["id"] for p in restarted.semantic_search("harbor")["results"]} == {
         "home",
         "harbor",
-        "new",
     }
 
 
@@ -295,22 +294,28 @@ def test_provider_query_failure_and_mid_query_write_are_explicit(
     indexes.run_once()
     vector = indexes.adapters["vector"]
     search = vector.search
+    grouped = getattr(vector, "search_grouped", None)
+    grouped_impl = grouped or search
 
     def failing(*args: Any) -> Any:
         raise RuntimeError("private access token")
 
     monkeypatch.setattr(vector, "search", failing)
+    if grouped is not None:
+        monkeypatch.setattr(vector, "search_grouped", failing)
     with pytest.raises(WikiError) as error:
         indexes.semantic_search("harbor")
     assert error.value.code == "index_unavailable"
     assert "token" not in error.value.message
 
     def racing(*args: Any) -> Any:
-        result = search(*args)
+        result = grouped_impl(*args)
         store.save_page("later", "# Later", None, "mid-query")
         return result
 
     monkeypatch.setattr(vector, "search", racing)
+    if grouped is not None:
+        monkeypatch.setattr(vector, "search_grouped", racing)
     with pytest.raises(WikiError) as error:
         indexes.semantic_search("harbor")
     assert error.value.code == "index_pending"
@@ -323,15 +328,17 @@ def test_vector_seeds_graph_context_and_stale_receipt(
     indexes.run_once()
     home = store.get_page("home")
     assert home
-    monkeypatch.setattr(
-        indexes.adapters["vector"],
-        "search",
-        lambda *args: [
+    def _mock_vector_search(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        return [
             {"id": "home", "revision": home["revision"], "score": 1.0},
             {"id": "harbor", "revision": "stale", "score": 0.9},
             {"id": "ghost", "revision": "fake", "score": 0.8},
-        ],
-    )
+        ]
+
+    vector = indexes.adapters["vector"]
+    monkeypatch.setattr(vector, "search", _mock_vector_search)
+    if hasattr(vector, "search_grouped"):
+        monkeypatch.setattr(vector, "search_grouped", _mock_vector_search)
     result = indexes.graph_search("harbor")
     assert [(p["id"], p["retrieval"]) for p in result["results"]] == [
         ("home", "vector"),
@@ -353,10 +360,17 @@ async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_sco
         {"id": "harbor", "revision": revisions["harbor"], "score": 0.8},
         {"id": "mira-quill", "revision": revisions["mira-quill"], "score": 0.1},
     ]
-    monkeypatch.setattr(indexes.adapters["vector"], "search", lambda *args: hits)
+    def _mock_vector_search(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        return hits
+
+    monkeypatch.setattr(indexes.adapters["vector"], "search", _mock_vector_search)
+    if hasattr(indexes.adapters["vector"], "search_grouped"):
+        monkeypatch.setattr(indexes.adapters["vector"], "search_grouped", _mock_vector_search)
     result = indexes.semantic_search(query)
-    assert [p["id"] for p in result["results"]] == ["mira-quill", "home", "harbor"]
-    assert [p["score"] for p in result["results"]] == [0.1, 0.9, 0.8]
+    assert result["results"][0]["id"] == "mira-quill"
+    assert {p["id"] for p in result["results"][1:]} == {"home", "harbor"}
+    assert result["results"][0]["score"] == 0.1
+    assert {p["score"] for p in result["results"][1:]} == {0.8, 0.9}
     assert [p["id"] for p in hits] == ["home", "harbor", "mira-quill"]
     with TestClient(create_app(tmp_path, indexes=indexes)) as client:
         assert client.get("/api/wiki/search", params={
@@ -367,9 +381,16 @@ async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_sco
     )
     assert isinstance(response, tuple)
     assert response[1] == result
-    # Non-exact queries retain the provider's ranking and candidate boundaries.
-    assert [p["id"] for p in indexes.semantic_search("archivist")["results"]] == [
-        "home", "harbor", "mira-quill"
-    ]
+    # The body match outranks a higher vector score. Scores themselves stay
+    # the provider values, and an explicit limit does not add pages the vector
+    # adapter omitted.
+    archivist = indexes.semantic_search("archivist")
+    assert archivist["results"][0]["id"] == "mira-quill"
+    assert [p["id"] for p in archivist["results"]] == ["mira-quill"]
     hits.pop()
-    assert [p["id"] for p in indexes.semantic_search(query)["results"]] == ["home", "harbor"]
+    # Lexical seeding keeps an exact page match even when vectors omit it.
+    assert indexes.semantic_search(query)["results"][0]["id"] == "mira-quill"
+    recovered = indexes.semantic_search(query, None)
+    assert recovered["cutoff"] is True
+    assert recovered["results"][0]["id"] == "mira-quill"
+    assert recovered["results"][0]["score"] == 0.0

@@ -358,6 +358,50 @@ class QdrantSnapshotAdapter:
         # Stabilize the returned set so REST/MCP callers do not flicker on ties.
         return sorted(hits, key=lambda hit: (-hit["score"], hit["id"]))
 
+    def search_grouped(
+        self, generation: str, query: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Like ``search``, plus the mean score of the best few chunks.
+
+        ``score`` remains the best-chunk cosine so existing callers stay stable.
+        ``chunk_mean`` lets ranking tell a repeated mention from one stray chunk.
+        """
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be 1..1000")
+        collection = self._collection(generation)
+        dimension = self.dimension
+        if dimension is None:
+            vectors = self.client.get_collection(collection).config.params.vectors
+            if not isinstance(vectors, models.VectorParams):
+                raise ValueError("Managed collection must have one unnamed vector dimension")
+            dimension = vectors.size
+        result = self.client.query_points_groups(
+            collection_name=collection,
+            query=self._vector(query, dimension),
+            limit=limit,
+            group_by="id",
+            group_size=4,
+            with_payload=True,
+        )
+        hits: list[dict[str, Any]] = []
+        for group in result.groups:
+            points = [point for point in group.hits if point.payload]
+            if not points:
+                continue
+            best = max(points, key=lambda point: float(point.score))
+            payload = best.payload or {}
+            scores = [float(point.score) for point in points]
+            hits.append(
+                {
+                    "id": payload["id"],
+                    "revision": payload["revision"],
+                    "score": best.score,
+                    "chunk_mean": sum(scores) / len(scores),
+                    "chunk_count": len(scores),
+                }
+            )
+        return sorted(hits, key=lambda hit: (-hit["score"], hit["id"]))
+
     def list_generations(self, namespace: str) -> list[str]:
         prefix = self._collection(_generation(namespace) + "_")
         generations = []

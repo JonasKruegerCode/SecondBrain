@@ -28,7 +28,8 @@ env:
 
 jobs:
   acceptance:
-    runs-on: ubuntu-latest
+    # ubuntu-latest (26.04) breaks setup-python SSL inside the Playwright container.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     # Match the locked Playwright version. System libraries and both browser
     # binaries are preinstalled; do not spend the suite's budget on apt mirrors.

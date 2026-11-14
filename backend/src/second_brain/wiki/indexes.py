@@ -18,6 +18,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, Protocol
 
+from second_brain.wiki.relevance import (
+    IMPLICIT_CANDIDATE_LIMIT,
+    adaptive_cutoff,
+    combine_chunk_scores,
+    drop_lexical_gap_tail,
+    overlapping_ids,
+    rank_pages,
+)
 from second_brain.wiki.store import WikiError, WikiStore
 
 
@@ -321,37 +329,96 @@ class IndexCoordinator:
             raise WikiError("index_pending", "The index has not completed this content revision.")
         return snapshot, receipt
 
-    def semantic_search(self, query: str, limit: int = 10) -> dict[str, Any]:
+    def semantic_search(self, query: str, limit: int | None = 10) -> dict[str, Any]:
+        """Rank the current vector generation.
+
+        An integer ``limit`` is a hard cap and does not drop a weak tail.
+        ``limit=None`` fetches a bounded candidate pool, fuses it with lexical
+        title and body evidence, and applies the adaptive cutoff.
+        """
+        if not query.strip():
+            snapshot = self.store.snapshot()
+            return {
+                "mode": "semantic",
+                "revision": snapshot["revision"],
+                "results": [],
+            }
+        pool = IMPLICIT_CANDIDATE_LIMIT if limit is None else min(50, max(1, limit))
         with self._reader():
             snapshot, receipt = self._current("vector")
             try:
-                hits = self.adapters["vector"].search(
-                    receipt["generation"], query[:500], min(50, max(1, limit))
+                adapter = self.adapters["vector"]
+                grouped = getattr(adapter, "search_grouped", None)
+                hits = (
+                    grouped(receipt["generation"], query[:500], pool)
+                    if grouped is not None
+                    else adapter.search(receipt["generation"], query[:500], pool)
                 )
             except Exception as exc:
                 raise WikiError("index_unavailable", "The vector provider is unavailable.") from exc
             pages = {p["id"]: p for p in snapshot["pages"]}
-            results = []
+            candidates: list[dict[str, Any]] = []
+            signals: dict[str, float] = {}
+            published: dict[str, float] = {}
+            seen: set[str] = set()
             for hit in hits:
                 page = pages.get(hit.get("id"))
-                if page and hit.get("revision") == page["revision"]:
-                    results.append(
-                        {
-                            **{k: v for k, v in page.items() if k != "markdown"},
-                            "score": hit.get("score"),
-                        }
-                    )
+                if not page or hit.get("revision") != page["revision"]:
+                    continue
+                page_id = str(page["id"])
+                score = float(hit.get("score") or 0.0)
+                mean = hit.get("chunk_mean")
+                candidates.append(page)
+                signals[page_id] = combine_chunk_scores(
+                    score, float(mean) if isinstance(mean, (int, float)) else None
+                )
+                published[page_id] = score
+                seen.add(page_id)
+            lex_pool = min(len(snapshot["pages"]), pool + 20)
+            for page in rank_pages(query, snapshot["pages"], {})[:lex_pool]:
+                page_id = str(page["id"])
+                if page_id in seen or float(page["rank_score"]) <= 0:
+                    continue
+                candidates.append(pages[page_id])
+                published.setdefault(page_id, 0.0)
+                seen.add(page_id)
+            if limit is None:
+                for page_id in overlapping_ids(query, snapshot["pages"], seen, pool):
+                    candidates.append(pages[page_id])
+                    published.setdefault(page_id, 0.0)
+                    seen.add(page_id)
+            ranked = rank_pages(query, candidates, signals)
             exact = query.strip().casefold()
-            # Preserve provider scores/order within each tier. An exact page
-            # identity is a stronger navigation signal than a similar mention.
-            results.sort(
+            # Exact page identity stays ahead of a merely similar mention.
+            # Vector cosine is preserved on ``score`` and is not rewritten.
+            ranked.sort(
                 key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
             )
+            ranked = drop_lexical_gap_tail(query, snapshot["pages"], ranked)
+            cutoff = limit is None
+            window = adaptive_cutoff(ranked, pool) if cutoff else ranked[:pool]
+            dropped_tail = cutoff and len(window) < len(ranked)
+            results = []
+            for page in window:
+                page_id = str(page["id"])
+                results.append(
+                    {
+                        **{k: v for k, v in page.items() if k not in {"markdown", "rank_score"}},
+                        "score": published.get(page_id, 0.0),
+                    }
+                )
             if self.store._head() != snapshot["revision"]:
                 raise WikiError(
                     "index_pending", "Content changed during search. Retry after indexing."
                 )
-            return {"mode": "semantic", "revision": snapshot["revision"], "results": results}
+            payload: dict[str, Any] = {
+                "mode": "semantic",
+                "revision": snapshot["revision"],
+                "results": results,
+            }
+            if dropped_tail:
+                payload["cutoff"] = True
+            return payload
 
     def neighbors(self, seeds: list[str], hops: int = 1, limit: int = 50) -> dict[str, Any]:
         if not 1 <= hops <= 3 or not 1 <= limit <= 100 or len(seeds) > 20:
@@ -379,16 +446,19 @@ class IndexCoordinator:
     def graph_search(self, query: str, hops: int = 1) -> dict[str, Any]:
         """Non-generative vector seeds plus bounded graph context at one revision."""
         seeds = self.semantic_search(query)
-        expanded = self.neighbors([p["id"] for p in seeds["results"][:10]], hops)
+        vector_hits = [
+            page for page in seeds["results"] if float(page.get("score") or 0) > 0
+        ]
+        expanded = self.neighbors([p["id"] for p in vector_hits[:10]], hops)
         if seeds["revision"] != expanded["revision"] or self.store._head() != seeds["revision"]:
             raise WikiError(
                 "index_pending", "Content changed during retrieval. Retry after indexing."
             )
-        seen = {p["id"] for p in seeds["results"]}
+        seen = {p["id"] for p in vector_hits}
         return {
             "mode": "graph_rag",
             "revision": seeds["revision"],
-            "results": [{**p, "retrieval": "vector"} for p in seeds["results"]]
+            "results": [{**p, "retrieval": "vector"} for p in vector_hits]
             + [{**p, "retrieval": "graph"} for p in expanded["pages"] if p["id"] not in seen],
             "hops": hops,
         }

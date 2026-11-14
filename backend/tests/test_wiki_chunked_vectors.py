@@ -64,13 +64,22 @@ async def test_tail_retrieval_maps_to_one_current_article_and_preserves_source(
         assert result["results"][0]["id"] == "archive"
         assert result["results"][0]["revision"] == saved["revision"]
         assert result["results"][0]["score"] == pytest.approx(1.0)
-        assert len({hit["id"] for hit in result["results"]}) == len(result["results"]) == 2
+        assert [hit["id"] for hit in result["results"]] == ["archive"]
         assert any("TAIL_EVIDENCE" in value for value in provider.inputs[:-1])
         assert store.snapshot() == before
         mcp = create_mcp(store, indexes=indexes)
         response = await mcp.call_tool("search_wiki", {"query": "TAIL_EVIDENCE"})
         assert isinstance(response, tuple)
-        assert response[1] == result
+        cutoff = indexes.semantic_search("TAIL_EVIDENCE", None)
+        assert response[1] == cutoff
+        assert [hit["id"] for hit in cutoff["results"]] == ["archive"]
+        assert cutoff["results"][0]["score"] == pytest.approx(1.0)
+        assert "cutoff" not in cutoff
+        limited = await mcp.call_tool(
+            "search_wiki", {"query": "TAIL_EVIDENCE", "limit": 10}
+        )
+        assert isinstance(limited, tuple)
+        assert limited[1] == result
         with TestClient(create_app(store.path, indexes=indexes)) as api:
             assert api.get("/api/wiki/search?q=TAIL_EVIDENCE&mode=semantic").json() == result
         receipt = indexes._receipt("vector")
