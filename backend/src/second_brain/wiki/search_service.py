@@ -37,9 +37,15 @@ def search_wiki(
     if limit is not None and not 1 <= limit <= SEARCH_RESULT_LIMIT:
         raise WikiError("invalid_payload", "limit must be between 1 and 50.")
     if selected == "semantic":
-        if implicit and limit is None:
-            return indexes.semantic_search(query, None)
-        return indexes.semantic_search(query, 10 if limit is None else limit)
+        try:
+            if implicit and limit is None:
+                return indexes.semantic_search(query, None)
+            return indexes.semantic_search(query, 10 if limit is None else limit)
+        except WikiError as exc:
+            # While vectors rebuild, default searches stay useful via lexical ranking.
+            if not (implicit and exc.code == "index_pending"):
+                raise
+            selected = "lexical"
     if selected == "graph_rag":
         result = indexes.graph_search(query)
         if limit is not None:

@@ -354,7 +354,7 @@ async def test_exact_identity_precedes_similar_vector_hits_without_rewriting_sco
         {"id": "mira-quill", "revision": revisions["mira-quill"], "score": 0.1},
     ]
     def _mock_vector_search(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
-        return hits  # type: ignore[return-value]
+        return hits
 
     monkeypatch.setattr(indexes.adapters["vector"], "search", _mock_vector_search)
     if hasattr(indexes.adapters["vector"], "search_grouped"):
