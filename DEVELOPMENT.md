@@ -53,7 +53,7 @@ The standard Compose stack has five services:
   (`second_brain.wiki.mcp:http_app_factory`) from the same backend image. It
   reads and writes the same store; the Compose service disables its background
   worker so only REST runs automatic delivery.
-- `neo4j`: graph retrieval storage (`neo4j:5`) with the private `neo4j_data`
+- `neo4j`: graph retrieval storage (pinned `neo4j:5.26.33` digest) with the private `neo4j_data`
   volume. No published ports and no healthcheck, so `up --wait` returns once the
   wiki app is healthy.
 - `qdrant`: vector storage (pinned `qdrant/qdrant` digest) with the private

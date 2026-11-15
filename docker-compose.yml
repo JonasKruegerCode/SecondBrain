@@ -88,7 +88,7 @@ services:
   # no healthchecks, so `up --wait` returns once the wiki app is healthy even
   # while these are still starting. Indexes may remain pending after startup.
   neo4j:
-    image: neo4j:5
+    image: neo4j:5.26.33@sha256:577eb43120e8688e62e753e962c47d30044ecaa95147ee5386c29f226b878008
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-secondbrain-local}
       NEO4J_server_memory_heap_initial__size: 256m
