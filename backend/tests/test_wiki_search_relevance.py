@@ -574,3 +574,98 @@ def test_naive_vector_order_baseline_is_weaker(tmp_path: Path) -> None:
     finally:
         indexes.close()
         client.close()
+
+
+INTERLEAVED_PAGES: dict[str, str] = {
+    "gaming-hub": "# Gaming hub\nSynthetic topic hub for the gaming eval.\n",
+    "hobby-neighbor": "# Neighbor\nRelated synthetic gaming notes for the hobby.\n",
+    "lexical-stub": "# Stub page\n## Gaming\nNothing else on this page.\n",
+}
+
+INTERLEAVED_VECTORS: dict[str, float] = {
+    "gaming-hub": 0.32,
+    "hobby-neighbor": 0.28,
+    "lexical-stub": 0.0,
+}
+
+
+def _interleaved_pages() -> list[dict[str, Any]]:
+    return [
+        {"id": page_id, "title": markdown.splitlines()[0][2:], "markdown": markdown}
+        for page_id, markdown in INTERLEAVED_PAGES.items()
+    ]
+
+
+def test_zero_cosine_lexical_stub_does_not_outrank_semantic_near_match(
+    tmp_path: Path,
+) -> None:
+    """A heading-boosted 0.0 page must not jump ahead of a ~0.28 semantic hit."""
+    pages = _interleaved_pages()
+    ranked = rank_pages("gaming", pages, INTERLEAVED_VECTORS)
+    ids = [str(page["id"]) for page in ranked]
+    assert ids[0] == "gaming-hub"
+    assert ids.index("hobby-neighbor") < ids.index("lexical-stub")
+
+    store = WikiStore(tmp_path)
+    for page_id, markdown in INTERLEAVED_PAGES.items():
+        store.save_page(page_id, markdown, None, page_id)
+    indexes = IndexCoordinator(store, {"vector": InjectedVectorAdapter(INTERLEAVED_VECTORS)})
+    try:
+        assert indexes.run_once()["indexes"]["vector"]["state"] == "current"
+        hits = indexes.semantic_search("gaming", limit=15)["results"]
+        result_ids = [str(hit["id"]) for hit in hits]
+        assert result_ids.index("hobby-neighbor") < result_ids.index("lexical-stub")
+        assert all("rank_score" not in hit for hit in hits)
+        scores = {str(hit["id"]): hit["score"] for hit in hits}
+        assert scores["hobby-neighbor"] == 0.28
+        assert scores["lexical-stub"] == 0.0
+    finally:
+        indexes.close()
+
+
+def test_exact_identity_still_precedes_higher_cosine_semantic_hits() -> None:
+    """A strong identity match survives the weak-boost gate at low cosine."""
+    pages = [
+        {"id": "gaming", "title": "Gaming", "markdown": "# Gaming\nSynthetic hub.\n"},
+        {
+            "id": "gaming-hub",
+            "title": "Gaming hub",
+            "markdown": "# Gaming hub\nSynthetic notes.\n",
+        },
+    ]
+    ranked = rank_pages("gaming", pages, {"gaming": 0.1, "gaming-hub": 0.44})
+    assert [str(page["id"]) for page in ranked] == ["gaming", "gaming-hub"]
+
+
+LONG_TAIL_PAGES: dict[str, str] = {
+    "alpha-hub": "# Alpha hub\nSynthetic eval notes.\n",
+    "beta-neighbor": "# Beta neighbor\nSynthetic eval notes.\n",
+    "gamma-tail": "# Gamma tail\nSynthetic eval notes.\n",
+    "delta-tail": "# Delta tail\nSynthetic eval notes.\n",
+    "epsilon-noise": "# Epsilon noise\nSynthetic eval notes.\n",
+}
+
+LONG_TAIL_VECTORS: dict[str, float] = {
+    "alpha-hub": 0.32,
+    "beta-neighbor": 0.28,
+    "gamma-tail": 0.27,
+    "delta-tail": 0.24,
+    "epsilon-noise": 0.05,
+}
+
+
+def test_semantic_search_trims_smooth_cosine_tail(tmp_path: Path) -> None:
+    """A smooth RRF slope must not leak unrelated ~0.24-0.27 cosine rows."""
+    store = WikiStore(tmp_path)
+    for page_id, markdown in LONG_TAIL_PAGES.items():
+        store.save_page(page_id, markdown, None, page_id)
+    indexes = IndexCoordinator(store, {"vector": InjectedVectorAdapter(LONG_TAIL_VECTORS)})
+    try:
+        assert indexes.run_once()["indexes"]["vector"]["state"] == "current"
+        payload = run_wiki_search(store, indexes, "gaming")
+        ids = [str(hit["id"]) for hit in payload["results"]]
+        assert ids == ["alpha-hub", "beta-neighbor"]
+        assert payload.get("cutoff") is True
+        assert {hit["score"] for hit in payload["results"]} == {0.32, 0.28}
+    finally:
+        indexes.close()

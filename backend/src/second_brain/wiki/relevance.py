@@ -29,7 +29,7 @@ CLIFF_OF_TOP = 0.82
 # a zero-similarity neighbor never rides along. An opaque identifier or a token
 # of at least ``ANCHOR_MIN_LENGTH`` characters can anchor a lexical gap; shorter
 # ordinary topic words never do.
-SEMANTIC_FLOOR = 0.8
+SEMANTIC_FLOOR = 0.85
 SEMANTIC_ABSOLUTE_FLOOR = 0.15
 ANCHOR_MIN_LENGTH = 6
 TOKEN_RE = re.compile(r"[0-9a-zäöü]+", re.IGNORECASE)
@@ -219,8 +219,20 @@ def _opaque_hex_fragment(token: str) -> bool:
     return len(token) in HEX_FRAGMENT_LENGTHS and HEX_FRAGMENT_RE.fullmatch(token) is not None
 
 
-def field_boost(query: str, tokens: list[str], page: dict[str, Any]) -> float:
-    """Largest title or id match, plus a small heading bonus."""
+def field_boost(
+    query: str,
+    tokens: list[str],
+    page: dict[str, Any],
+    *,
+    semantic_evidence: bool = True,
+) -> float:
+    """Largest title or id match, plus a small heading bonus.
+
+    ``semantic_evidence`` is false for a page whose vector cosine is missing or
+    below the absolute floor while other candidates carry usable vectors. Then
+    only a strong identity match survives: a weak prefix, id-segment or heading
+    boost must not let a lexical-only stub outrank a genuine semantic hit.
+    """
     folded = query.strip().casefold()
     title = str(page.get("title") or "").casefold().strip()
     page_id = str(page.get("id") or "").casefold()
@@ -232,11 +244,11 @@ def field_boost(query: str, tokens: list[str], page: dict[str, Any]) -> float:
         for token in tokens:
             if title == token or page_id == token:
                 identity = max(identity, 1.2)
-            elif title.startswith(token) or page_id.startswith(token + "-"):
+            elif semantic_evidence and (title.startswith(token) or page_id.startswith(token + "-")):
                 identity = max(identity, 0.9)
-            elif token in segments and not _opaque_hex_fragment(token):
+            elif semantic_evidence and token in segments and not _opaque_hex_fragment(token):
                 identity = max(identity, 0.45)
-    if any(token in _heading_tokens(page, title) for token in tokens):
+    if semantic_evidence and any(token in _heading_tokens(page, title) for token in tokens):
         identity += 0.15
     return identity
 
@@ -287,17 +299,22 @@ def rank_pages(
     lexical_rank = {
         str(page.get("id") or ""): index for index, page in enumerate(lexical_order, start=1)
     }
+    has_usable_vector = any(
+        vectors.get(str(page.get("id") or ""), 0.0) >= SEMANTIC_ABSOLUTE_FLOOR for page in pages
+    )
     fused: list[tuple[float, float, dict[str, Any]]] = []
     for page in pages:
         page_id = str(page.get("id") or "")
-        boost = field_boost(query, tokens, page)
+        vector_score = vectors.get(page_id, 0.0)
+        # Only gate weak boosts when a usable semantic hit is present to protect.
+        semantic_evidence = not has_usable_vector or vector_score >= SEMANTIC_ABSOLUTE_FLOOR
+        boost = field_boost(query, tokens, page, semantic_evidence=semantic_evidence)
         penalty = ARCHIVE_PENALTY if is_archival(page) else 1.0
         rrf = 0.0
         if page_id in vector_rank:
             rrf += 1.0 / (RRF_K + vector_rank[page_id])
         if page_id in lexical_rank:
             rrf += 1.0 / (RRF_K + lexical_rank[page_id])
-        vector_score = vectors.get(page_id, 0.0)
         fused.append(((rrf + boost) * penalty, vector_score, page))
     fused.sort(key=lambda item: (-item[0], -item[1], str(item[2].get("id") or "")))
     return [{**page, "rank_score": score} for score, _vector, page in fused]
@@ -413,8 +430,10 @@ def adaptive_cutoff(
     far below a boosted top score, ends the list. With a strong leading
     cosine, a weak interstitial is skipped and the scan continues, but a weak
     row is only appended when it is itself a semantic near-match of the
-    leader. Without usable vector scores the scan stops at the first weak row.
-    The first row always stays first.
+    leader. Even a smooth fused slope trims rows whose cosine is not a
+    near-match of the leader, so an RRF tail cannot leak. Without usable
+    vector scores the scan stops at the first weak row. The first row always
+    stays first.
     """
     if cap < 1 or not rows:
         return []
@@ -435,7 +454,9 @@ def adaptive_cutoff(
         near_match = has_vectors and _semantic_near_match(
             signals.get(str(row.get("id") or ""), 0.0), leader_vector
         )
-        if weak and not near_match:
+        # Without a score cliff, a non-near-match row is still a cosine tail.
+        cosine_tail = has_vectors and not use_floor and not near_match
+        if (weak and not near_match) or cosine_tail:
             if has_vectors:
                 continue
             break
