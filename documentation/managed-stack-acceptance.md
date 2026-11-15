@@ -44,10 +44,11 @@ deployment or existing production authentication. Direct frontend/MCP ports
 remain loopback-only for the separate HTTP checks; this fixture does not prove
 that a production host has no authentication bypass.
 
-Inherited OpenRouter credentials, optional index providers and outbound Git
-delivery settings are disabled for this rehearsal. It makes no OpenRouter
-calls and needs no external service credentials. Run it only with the included
-synthetic fixture: service logs are retained as acceptance evidence.
+Inherited OpenRouter credentials, index providers and outbound Git delivery
+settings are disabled for this rehearsal, and the bundled Neo4j and Qdrant
+services are dropped from the isolated config so it stays fast. It makes no
+OpenRouter calls and needs no external service credentials. Run it only with the
+included synthetic fixture: service logs are retained as acceptance evidence.
 
 The runner also temporarily starts the built backend with a held synthetic
 chat provider, using the real API, Uvicorn and both nginx layers. A verified TLS

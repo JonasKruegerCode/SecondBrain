@@ -168,9 +168,13 @@ per-index states.
 Run the managed API or MCP profile with `SECOND_BRAIN_WIKI_VAULT` pointing to its
 managed vault. `configured_indexes(store)` reads the same `.env`, then `../.env`,
 then process ENV precedence as the legacy configuration. An explicitly supplied,
-nonempty `NEO4J_URI` or `QDRANT_URL` enables that index automatically. Settings'
-default localhost endpoints and a chat key alone do not start provider work.
-Managed flags override detection: `0` disables, `1` requires the provider,
+nonempty `NEO4J_URI` enables the graph index automatically. A nonempty
+`QDRANT_URL` enables the vector index automatically only when the selected
+provider also has an embedding credential (`OPENROUTER_API_KEY` for the default
+`openrouter`, `GCP_API_KEY` for `gcp`); otherwise the endpoint is simply unused
+and startup still succeeds. Settings' default localhost endpoints and a chat key
+alone do not start provider work. Managed flags override detection: `0` disables,
+`1` requires the provider (and may raise if credentials are missing),
 empty/unset inherits the configured endpoint. Other flag values are refused.
 
 | Backend | Opt-in flag | Required configuration |
@@ -195,8 +199,11 @@ The managed Compose file passes the table's flags, endpoints, credentials,
 dimension and provider/model routing to both API and MCP. Put them in the same
 operator ENV file supplied with `--env-file`; they are server-side only. An empty
 `NEO4J_DATABASE` uses the server's default database and an empty `QDRANT_API_KEY`
-means no API-key authentication. Database services are not started by this
-Compose file: supply reachable endpoints, not a host-only localhost address.
+means no API-key authentication. The default Compose file starts Neo4j and
+Qdrant itself and injects their in-network endpoints, so an installation needs
+no external database. To use your own databases instead, point `NEO4J_URI` /
+`QDRANT_URL` at reachable endpoints (not a host-only localhost address); the
+bundled containers then go unused.
 
 Existing explicit provider endpoints now activate managed indexes without new
 flags, and the vector dimension is inferred as in the legacy workflow. This is

@@ -35,8 +35,8 @@ therefore include these changes without another revert workaround.
 Use the Compose and environment template from the branch matching the selected
 channel: the stable installation and the Next installation have different service
 layouts. The Next Compose is the self-contained image installation with separate
-REST and MCP services. Its source-build and optional database overlays are
-explicitly documented there.
+REST and MCP services. It starts the Neo4j and Qdrant databases from the base
+file; only the source-build overlay is added explicitly.
 
 For Next, set these non-secret environment entries in the installation's `.env`:
 

@@ -1,11 +1,20 @@
 # Install, update and recover SecondBrain
 
-The [README](../README.md#install-with-docker) is the short installation path:
-copy `docker-compose.yml` and `.env.example`, configure `.env`, then pull/start.
-Only Docker Engine with Compose v2 is needed on the host. The base Compose has
-**no build context, host startup script, worker/Redis/Jaeger service or old UI**.
-The backend image's normal command is the current REST factory; the MCP service
-uses its own native factory from that same image. Do not add `run-managed.py`.
+The [README](../README.md#quick-start) is the short installation path:
+[`install.sh`](../install.sh) downloads `docker-compose.yml` and `.env.example`,
+generates the MCP key and Neo4j password, then pulls and starts the complete
+stack. You can also copy `docker-compose.yml` and `.env.example` yourself,
+configure `.env`, and pull/start. Only Docker Engine with Compose v2 is needed on
+the host. The base Compose has **no build context, host startup script,
+worker/Redis/Jaeger service or old UI**. The backend image's normal command is
+the current REST factory; the MCP service uses its own native factory from that
+same image. Do not add `run-managed.py`.
+
+The base file starts the complete stack: frontend, REST backend, MCP server and
+the Neo4j and Qdrant retrieval databases. Both databases use private named
+volumes (`neo4j_data`, `qdrant_data`), publish no host ports and define no
+healthcheck, so `up --wait` returns once the wiki app is healthy even while they
+are still starting. Indexes may remain pending after the app is already usable.
 
 ## Network and authentication
 
@@ -44,29 +53,34 @@ to `1_knowledge/wiki`; an empty value selects repository root. See
 [Git delivery](managed-delivery.md) for conflicts, credentials and retry.
 Mount explicitly selected SSH key/trust files read-only; no host script is needed.
 
-Without model/index settings, article/editor/history, explicit links, local graph
-and lexical search work. Configure OpenRouter for paid chat, and reachable
-Neo4j/Qdrant endpoints for the optional indexes. The same settings reach REST
-and MCP; only REST owns the background Git/index loops. Health checks verify
-local storage, not completed indexing or provider quality. Use the index/delivery
+Without a model key, article/editor/history, explicit links, the local Markdown
+graph and lexical search work. Configure OpenRouter (`OPENROUTER_API_KEY`) for
+semantic-search embeddings and paid chat. The same settings reach REST and MCP;
+only REST owns the background Git/index loops. Health checks verify local
+storage, not completed indexing or provider quality. Use the index/delivery
 status tools independently. Never paste secrets into logs or print resolved
 Compose configuration; `docker compose config --quiet` checks it silently.
 
-## Optional index databases
+## Retrieval databases
 
-Use existing reachable database endpoints, or copy `docker-compose.indexes.yml`
-alongside the base file. Set `NEO4J_PASSWORD` and the chosen embedding provider key
-in `.env`, then run:
+The default file starts Neo4j and Qdrant and injects their internal endpoints
+(`bolt://neo4j:7687`, `http://qdrant:6333`) into both app processes, so the graph
+index and vector index work against the bundled databases with no extra overlay.
+Set `NEO4J_PASSWORD` before the first start (Neo4j stores the password in its
+volume; `install.sh` generates a random one, and an empty value falls back to the
+documented default `secondbrain-local`).
 
-```sh
-docker compose -f docker-compose.yml -f docker-compose.indexes.yml up -d --wait
-```
+Set `SECOND_BRAIN_WIKI_VECTOR_INDEX=0` to defer paid embeddings, and
+`SECOND_BRAIN_WIKI_GRAPH_INDEX=0` to disable graph retrieval. Vector indexing
+also needs an embedding key; without one the bundled Qdrant simply stays unused
+and the app keeps serving lexical search. The graph/vector adapters and GraphRAG
+tools are part of the app. Consult [index operation](managed-indexes.md).
 
-This adds only Neo4j and Qdrant, with private persistent volumes and no public
-ports. It sets internal endpoints in both app processes. Set
-`SECOND_BRAIN_WIKI_VECTOR_INDEX=0` to defer paid embeddings. The graph/vector
-adapters and GraphRAG tools remain part of the app; removing Celery does not
-remove these features. Consult [index operation](managed-indexes.md).
+An operator who still has `docker-compose.indexes.yml` can keep passing it
+(`-f docker-compose.yml -f docker-compose.indexes.yml`): it is a no-op
+compatibility stub and does not start duplicate databases. Delete it at your
+convenience. The volume names `neo4j_data` and `qdrant_data` are unchanged, so
+existing indexed data stays in place.
 
 ## Source builds and native development
 
@@ -279,8 +293,11 @@ inspect the recovered wiki through Compose, use the checked-in
 `docker-compose.wiki.recovery.yml` with the base file. It selects the restored
 subdirectory and external volume, disables paid chat and remote delivery, and
 uses only the three explicitly selected local images. It inherits local HTTP
-access, not the installation's public proxy. Create an ignored inspection env
-file (for example `.env.inspect`) with these values:
+access, not the installation's public proxy. Because the base file also defines
+the databases, the recovery overlay parks Neo4j and Qdrant behind a non-default
+profile, so recovery resolves to the three app services and no database password
+is required. Create an ignored inspection env file (for example `.env.inspect`)
+with these values:
 
 ```dotenv
 WIKI_RECOVERY_VOLUME=the-new-volume-you-just-restored

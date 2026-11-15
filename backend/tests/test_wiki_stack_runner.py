@@ -91,14 +91,28 @@ def config() -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("danger", [None, "build", "command", "entrypoint", "bind", "external",
-                                    "mutable", "foreign"])
+                                    "mutable", "foreign", "db-bind"])
 def test_copied_image_install_refuses_source_and_old_starters(danger: str | None) -> None:
     data = config()
+    # The standard install now ships the retrieval databases with named volumes.
+    data["services"]["neo4j"] = {
+        "image": "neo4j:5",
+        "volumes": [{"type": "volume", "source": "neo4j_data", "target": "/data"}],
+    }
+    data["services"]["qdrant"] = {
+        "image": "qdrant/qdrant@sha256:" + "a" * 64,
+        "volumes": [{"type": "volume", "source": "qdrant_data", "target": "/qdrant/storage"}],
+    }
+    data["volumes"]["neo4j_data"] = {}
+    data["volumes"]["qdrant_data"] = {}
     images = {name: "127.0.0.1:50001/" + name + "@sha256:" + "1" * 64
-              for name in data["services"]}
+              for name in ("backend", "mcp", "frontend")}
     for name, service in data["services"].items():
-        service["image"] = images[name]
-    if danger == "build":
+        if name in images:
+            service["image"] = images[name]
+    if danger == "db-bind":
+        data["services"]["neo4j"]["volumes"][0]["type"] = "bind"
+    elif danger == "build":
         data["services"]["backend"]["build"] = {"context": "./backend"}
     elif danger == "command":
         data["services"]["backend"]["command"] = ["python", "/host/run-managed.py"]

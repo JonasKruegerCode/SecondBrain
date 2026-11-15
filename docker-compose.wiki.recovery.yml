@@ -32,6 +32,13 @@ services:
     image: ${WIKI_FRONTEND_IMAGE:?Select the retained local frontend image ID}
     pull_policy: never
     restart: "no"
+  # Recovery inspects restored content only, so the default databases from the
+  # base file are parked behind a non-default profile: config and up resolve to
+  # the three app services and no Neo4j password is required.
+  neo4j:
+    profiles: ["indexes-excluded-from-recovery"]
+  qdrant:
+    profiles: ["indexes-excluded-from-recovery"]
 volumes:
   managed_wiki:
     external: true
