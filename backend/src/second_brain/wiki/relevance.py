@@ -29,7 +29,7 @@ CLIFF_OF_TOP = 0.82
 # a zero-similarity neighbor never rides along. An opaque identifier or a token
 # of at least ``ANCHOR_MIN_LENGTH`` characters can anchor a lexical gap; shorter
 # ordinary topic words never do.
-SEMANTIC_FLOOR = 0.85
+SEMANTIC_FLOOR = 0.87
 SEMANTIC_ABSOLUTE_FLOOR = 0.15
 ANCHOR_MIN_LENGTH = 6
 TOKEN_RE = re.compile(r"[0-9a-zäöü]+", re.IGNORECASE)
@@ -187,18 +187,26 @@ def _counts(page: dict[str, Any]) -> Counter[str]:
     return counts
 
 
-def bm25_scores(tokens: list[str], pages: list[dict[str, Any]]) -> dict[str, float]:
-    """BM25 over the supplied page set. Unknown ids score 0."""
-    if not tokens or not pages:
+def _documents(pages: list[dict[str, Any]]) -> list[tuple[str, Counter[str]]]:
+    return [(str(page.get("id") or ""), _counts(page)) for page in pages]
+
+
+def _idf(token: str, documents: list[tuple[str, Counter[str]]], total: int) -> float:
+    df = sum(1 for _page_id, counts in documents if counts[token])
+    return math.log(1.0 + (total - df + 0.5) / (df + 0.5))
+
+
+def _bm25_from_documents(
+    tokens: list[str], documents: list[tuple[str, Counter[str]]]
+) -> dict[str, float]:
+    if not tokens or not documents:
         return {}
-    documents = [(str(page.get("id") or ""), _counts(page)) for page in pages]
     total = len(documents)
     lengths = [sum(counts.values()) or 1 for _page_id, counts in documents]
     average = sum(lengths) / total
     scores = {page_id: 0.0 for page_id, _counts in documents}
     for token in set(tokens):
-        df = sum(1 for _page_id, counts in documents if counts[token])
-        idf = math.log(1.0 + (total - df + 0.5) / (df + 0.5))
+        idf = _idf(token, documents, total)
         for (page_id, counts), length in zip(documents, lengths, strict=True):
             tf = counts[token]
             if not tf:
@@ -206,6 +214,41 @@ def bm25_scores(tokens: list[str], pages: list[dict[str, Any]]) -> dict[str, flo
             denom = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * length / average)
             scores[page_id] += idf * (tf * (BM25_K1 + 1.0)) / denom
     return scores
+
+
+def bm25_scores(tokens: list[str], pages: list[dict[str, Any]]) -> dict[str, float]:
+    """BM25 over the supplied page set. Unknown ids score 0."""
+    if not tokens or not pages:
+        return {}
+    return _bm25_from_documents(tokens, _documents(pages))
+
+
+def _idf_weights(
+    tokens: list[str], documents: list[tuple[str, Counter[str]]]
+) -> dict[str, float]:
+    """Collection-frequency weight per query token, relative to the rarest.
+
+    A common identity token scores below one, a rare discriminating token scores
+    one, so a weak prefix on a common name cannot match a rare topic segment.
+    A single-token query keeps full strength.
+    """
+    if not tokens or not documents:
+        return {}
+    total = len(documents)
+    idfs = {token: _idf(token, documents, total) for token in set(tokens)}
+    peak = max(idfs.values()) if idfs else 0.0
+    if peak <= 0.0:
+        return dict.fromkeys(tokens, 1.0)
+    return {token: idfs[token] / peak for token in tokens}
+
+
+def token_weights(query: str, pages: list[dict[str, Any]]) -> dict[str, float]:
+    """IDF-like per-token weights over a whole collection, not a candidate subset.
+
+    Ranking calls reuse this so the common/rare split stays stable even when the
+    candidate pool is biased toward the common token.
+    """
+    return _idf_weights(content_tokens(query), _documents(pages))
 
 
 def _opaque_hex_fragment(token: str) -> bool:
@@ -225,6 +268,7 @@ def field_boost(
     page: dict[str, Any],
     *,
     semantic_evidence: bool = True,
+    token_weights: dict[str, float] | None = None,
 ) -> float:
     """Largest title or id match, plus a small heading bonus.
 
@@ -232,10 +276,20 @@ def field_boost(
     below the absolute floor while other candidates carry usable vectors. Then
     only a strong identity match survives: a weak prefix, id-segment or heading
     boost must not let a lexical-only stub outrank a genuine semantic hit.
+
+    ``token_weights`` scales the weak prefix, id-segment and heading boosts by
+    each token's collection frequency, so a common identity token cannot match a
+    rare topic token. Exact title/id identity is never scaled.
     """
     folded = query.strip().casefold()
     title = str(page.get("title") or "").casefold().strip()
     page_id = str(page.get("id") or "").casefold()
+
+    def weight(token: str) -> float:
+        if not token_weights:
+            return 1.0
+        return token_weights.get(token, 1.0)
+
     if folded and folded in {title, page_id}:
         identity = 1.6
     else:
@@ -245,11 +299,13 @@ def field_boost(
             if title == token or page_id == token:
                 identity = max(identity, 1.2)
             elif semantic_evidence and (title.startswith(token) or page_id.startswith(token + "-")):
-                identity = max(identity, 0.9)
+                identity = max(identity, 0.9 * weight(token))
             elif semantic_evidence and token in segments and not _opaque_hex_fragment(token):
-                identity = max(identity, 0.45)
-    if semantic_evidence and any(token in _heading_tokens(page, title) for token in tokens):
-        identity += 0.15
+                identity = max(identity, 0.45 * weight(token))
+    heading_tokens = _heading_tokens(page, title)
+    matched_headings = [token for token in tokens if token in heading_tokens]
+    if semantic_evidence and matched_headings:
+        identity += 0.15 * max(weight(token) for token in matched_headings)
     return identity
 
 
@@ -276,10 +332,18 @@ def rank_pages(
     query: str,
     pages: list[dict[str, Any]],
     vectors: dict[str, float],
+    *,
+    token_weights: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return copies ordered by fused relevance. ``rank_score`` is unrounded."""
+    """Return copies ordered by fused relevance. ``rank_score`` is unrounded.
+
+    ``token_weights`` lets a caller pass collection-wide IDF weights so a
+    candidate pool biased toward a common token still down-weights it.
+    """
     tokens = content_tokens(query)
-    lexical = bm25_scores(tokens, pages)
+    documents = _documents(pages)
+    lexical = _bm25_from_documents(tokens, documents)
+    weights = token_weights if token_weights is not None else _idf_weights(tokens, documents)
     vector_order = sorted(
         pages,
         key=lambda page: (-vectors.get(str(page.get("id") or ""), 0.0), str(page.get("id") or "")),
@@ -308,7 +372,9 @@ def rank_pages(
         vector_score = vectors.get(page_id, 0.0)
         # Only gate weak boosts when a usable semantic hit is present to protect.
         semantic_evidence = not has_usable_vector or vector_score >= SEMANTIC_ABSOLUTE_FLOOR
-        boost = field_boost(query, tokens, page, semantic_evidence=semantic_evidence)
+        boost = field_boost(
+            query, tokens, page, semantic_evidence=semantic_evidence, token_weights=weights
+        )
         penalty = ARCHIVE_PENALTY if is_archival(page) else 1.0
         rrf = 0.0
         if page_id in vector_rank:

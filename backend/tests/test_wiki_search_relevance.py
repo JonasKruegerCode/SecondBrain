@@ -669,3 +669,129 @@ def test_semantic_search_trims_smooth_cosine_tail(tmp_path: Path) -> None:
         assert {hit["score"] for hit in payload["results"]} == {0.32, 0.28}
     finally:
         indexes.close()
+
+
+COMMON_NAME_PAGES: dict[str, str] = {
+    "person-mira-quill": "# Mira Quill\nCentral fictional persona with a tactics log.\n",
+    "profile-tactics-comps": "# Tactics comp profile\nTeam tactics for a fictional auto-battler.\n",
+    "tactics-rotation-theory": "# Tactics rotation theory\nRotation notes for the same hobby.\n",
+    "mira-quill-folio-balance": "# Mira Quill folio balance\nSynthetic finance stub.\n",
+    "mira-quill-ledger-notes": "# Mira Quill ledger notes\nSynthetic finance stub.\n",
+    "mira-quill-invoice-log": "# Mira Quill invoice log\nSynthetic finance stub.\n",
+    "mira-quill-budget-draft": "# Mira Quill budget draft\nSynthetic finance stub.\n",
+    "mira-quill-expense-stub": "# Mira Quill expense stub\nSynthetic finance stub.\n",
+    "mira-quill-payroll-sketch": "# Mira Quill payroll sketch\nSynthetic finance stub.\n",
+    "mira-quill-receipt-index": "# Mira Quill receipt index\nSynthetic finance stub.\n",
+    "mira-quill-audit-brief": "# Mira Quill audit brief\nSynthetic finance stub.\n",
+}
+
+COMMON_NAME_VECTORS: dict[str, float] = {
+    "person-mira-quill": 0.42,
+    "profile-tactics-comps": 0.38,
+    "tactics-rotation-theory": 0.36,
+    **{
+        page_id: 0.20
+        for page_id in COMMON_NAME_PAGES
+        if page_id.startswith("mira-quill-")
+    },
+}
+
+
+def test_common_name_stubs_do_not_bury_the_rare_topic(tmp_path: Path) -> None:
+    """A common identity token must not dominate a name-plus-topic query.
+
+    Finance stubs share the frequent first name and a mid cosine, but the
+    rarer topic term and the pages that carry it should lead. Public ``score``
+    stays the injected cosine; ``rank_score`` stays off the payload.
+    """
+    store = WikiStore(tmp_path)
+    for page_id, markdown in COMMON_NAME_PAGES.items():
+        store.save_page(page_id, markdown, None, page_id)
+    indexes = IndexCoordinator(store, {"vector": InjectedVectorAdapter(COMMON_NAME_VECTORS)})
+    finance = [page_id for page_id in COMMON_NAME_PAGES if page_id.startswith("mira-quill-")]
+    try:
+        assert indexes.run_once()["indexes"]["vector"]["state"] == "current"
+        payload = run_wiki_search(store, indexes, "Mira tactics")
+        ids = [str(hit["id"]) for hit in payload["results"]]
+        assert "profile-tactics-comps" in ids
+        assert "tactics-rotation-theory" in ids
+        assert "person-mira-quill" in ids
+        assert ids[0] in {"profile-tactics-comps", "tactics-rotation-theory", "person-mira-quill"}
+        assert all(page_id not in ids for page_id in finance)
+        scores = {str(hit["id"]): hit["score"] for hit in payload["results"]}
+        assert scores["person-mira-quill"] == 0.42
+        assert scores["profile-tactics-comps"] == 0.38
+        assert all("rank_score" not in hit for hit in payload["results"])
+        relevance = [float(hit["relevance"]) for hit in payload["results"]]
+        assert all(left >= right for left, right in zip(relevance, relevance[1:], strict=False))
+    finally:
+        indexes.close()
+
+
+OFF_TOPIC_PAGES: dict[str, str] = {
+    "garden-plot-journal": "# Garden plot journal\nSynthetic garden notes.\n",
+    "soil-rotation-notes": "# Soil rotation notes\nRelated garden soil notes.\n",
+    "network-intrusion-log": "# Network intrusion log\nUnrelated security incident log.\n",
+}
+
+OFF_TOPIC_VECTORS: dict[str, float] = {
+    "garden-plot-journal": 0.42,
+    "soil-rotation-notes": 0.37,
+    "network-intrusion-log": 0.36,
+}
+
+
+def test_mid_cosine_off_topic_page_is_dropped_when_not_a_near_match(
+    tmp_path: Path,
+) -> None:
+    """An unrelated 0.36 cosine must not ride a 0.42 garden leader (ratio < 0.87)."""
+    store = WikiStore(tmp_path)
+    for page_id, markdown in OFF_TOPIC_PAGES.items():
+        store.save_page(page_id, markdown, None, page_id)
+    indexes = IndexCoordinator(store, {"vector": InjectedVectorAdapter(OFF_TOPIC_VECTORS)})
+    try:
+        assert indexes.run_once()["indexes"]["vector"]["state"] == "current"
+        payload = run_wiki_search(store, indexes, "garden")
+        ids = [str(hit["id"]) for hit in payload["results"]]
+        assert ids[0] == "garden-plot-journal"
+        assert "soil-rotation-notes" in ids
+        assert "network-intrusion-log" not in ids
+        scores = {str(hit["id"]): hit["score"] for hit in payload["results"]}
+        assert scores["garden-plot-journal"] == 0.42
+        assert scores["soil-rotation-notes"] == 0.37
+    finally:
+        indexes.close()
+
+
+CLOSE_COSINE_PAGES: dict[str, str] = {
+    "beacon-drift-log": "# Beacon drift log\nSynthetic beacon notes.\n",
+    "signal-tower-notes": "# Signal tower notes\nRelated beacon tower notes.\n",
+}
+
+CLOSE_COSINE_VECTORS: dict[str, float] = {
+    "signal-tower-notes": 0.327,
+    "beacon-drift-log": 0.318,
+}
+
+
+def test_public_relevance_matches_visible_order_without_rewriting_scores(
+    tmp_path: Path,
+) -> None:
+    """Public ``score`` stays cosine; public ``relevance`` follows the sort order."""
+    store = WikiStore(tmp_path)
+    for page_id, markdown in CLOSE_COSINE_PAGES.items():
+        store.save_page(page_id, markdown, None, page_id)
+    indexes = IndexCoordinator(store, {"vector": InjectedVectorAdapter(CLOSE_COSINE_VECTORS)})
+    try:
+        assert indexes.run_once()["indexes"]["vector"]["state"] == "current"
+        payload = run_wiki_search(store, indexes, "beacon")
+        hits = payload["results"]
+        assert {hit["id"] for hit in hits} == {"beacon-drift-log", "signal-tower-notes"}
+        scores = {str(hit["id"]): hit["score"] for hit in hits}
+        assert scores["signal-tower-notes"] == 0.327
+        assert scores["beacon-drift-log"] == 0.318
+        assert all("rank_score" not in hit for hit in hits)
+        relevance = [float(hit["relevance"]) for hit in hits]
+        assert all(left >= right for left, right in zip(relevance, relevance[1:], strict=False))
+    finally:
+        indexes.close()
