@@ -25,6 +25,7 @@ from second_brain.wiki.relevance import (
     drop_lexical_gap_tail,
     overlapping_ids,
     rank_pages,
+    token_weights,
 )
 from second_brain.wiki.store import WikiError, WikiStore
 
@@ -375,7 +376,10 @@ class IndexCoordinator:
                 published[page_id] = score
                 seen.add(page_id)
             lex_pool = min(len(snapshot["pages"]), pool + 20)
-            for page in rank_pages(query, snapshot["pages"], {})[:lex_pool]:
+            weights = token_weights(query, snapshot["pages"])
+            for page in rank_pages(
+                query, snapshot["pages"], {}, token_weights=weights
+            )[:lex_pool]:
                 page_id = str(page["id"])
                 if page_id in seen or float(page["rank_score"]) <= 0:
                     continue
@@ -387,7 +391,7 @@ class IndexCoordinator:
                     candidates.append(pages[page_id])
                     published.setdefault(page_id, 0.0)
                     seen.add(page_id)
-            ranked = rank_pages(query, candidates, signals)
+            ranked = rank_pages(query, candidates, signals, token_weights=weights)
             exact = query.strip().casefold()
             # Exact page identity stays ahead of a merely similar mention.
             # Vector cosine is preserved on ``score`` and is not rewritten.
@@ -398,13 +402,22 @@ class IndexCoordinator:
             cutoff = limit is None
             window = adaptive_cutoff(ranked, pool, signals) if cutoff else ranked[:pool]
             dropped_tail = cutoff and len(window) < len(ranked)
+            top_rank = max(
+                (float(page.get("rank_score") or 0.0) for page in window), default=0.0
+            )
             results = []
+            previous = float("inf")
             for page in window:
                 page_id = str(page["id"])
+                # Public relevance follows the visible order; ``score`` stays the
+                # provider cosine and is never rewritten.
+                rank = min(float(page.get("rank_score") or 0.0), previous)
+                previous = rank
                 results.append(
                     {
                         **{k: v for k, v in page.items() if k not in {"markdown", "rank_score"}},
                         "score": published.get(page_id, 0.0),
+                        "relevance": rank / top_rank if top_rank > 0.0 else 0.0,
                     }
                 )
             if self.store._head() != snapshot["revision"]:
