@@ -23,6 +23,12 @@ PEAK_SCORE = 0.2
 RELATIVE_FLOOR = 0.36
 CLIFF_RATIO = 0.62
 CLIFF_OF_TOP = 0.82
+# A rank_score cliff can hide a semantic near-match whose vector similarity is
+# still close to the best hit. Such rows survive the cutoff; a genuinely weak
+# semantic tail still ends the list. An opaque identifier or a long exclusive
+# token can anchor a lexical gap; short ordinary topic words never do.
+SEMANTIC_FLOOR = 0.8
+ANCHOR_MIN_LENGTH = 8
 TOKEN_RE = re.compile(r"[0-9a-zäöü]+", re.IGNORECASE)
 HEADING_RE = re.compile(r"(?m)^#{1,6}[ \t]+(.+?)\s*$")
 FIELD_RE = re.compile(r"(?im)^[ \t]*(type|status)[ \t]*:[ \t]*([a-z0-9_-]+)")
@@ -305,6 +311,16 @@ def overlapping_ids(
     return [page_id for _overlap, page_id in scored[:limit]]
 
 
+def _anchor_token(token: str) -> bool:
+    """True for opaque identifier-like or long exclusive tokens.
+
+    A digit marks a generated or external identifier, and a token of at least
+    ``ANCHOR_MIN_LENGTH`` characters is long enough that a unique corpus hit is
+    a genuine anchor. Short ordinary topic words (``gaming``) never anchor.
+    """
+    return any(character.isdigit() for character in token) or len(token) >= ANCHOR_MIN_LENGTH
+
+
 def drop_lexical_gap_tail(
     query: str,
     corpus: list[dict[str, Any]],
@@ -329,7 +345,7 @@ def drop_lexical_gap_tail(
     }
     rare_anchor = False
     for token in tokens:
-        if len(token) < 6:
+        if not _anchor_token(token):
             continue
         hits = [page_id for page_id, bag in bags.items() if token in bag]
         if len(hits) <= 2 and top_id in hits:
@@ -344,25 +360,49 @@ def drop_lexical_gap_tail(
     return kept
 
 
-def adaptive_cutoff(rows: list[dict[str, Any]], cap: int) -> list[dict[str, Any]]:
+def adaptive_cutoff(
+    rows: list[dict[str, Any]],
+    cap: int,
+    vectors: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
     """Keep a relevance prefix of an already ranked list.
 
     A smooth score slope is preserved up to ``cap``. A cliff, or a long tail
-    far below a boosted top score, ends the list. The first row always stays.
+    far below a boosted top score, ends the list when there is no vector
+    evidence. With vector scores, a weak interstitial is skipped and the
+    scan continues for later semantic near-matches (vector similarity still
+    close to the leader). The first row always stays.
     """
     if cap < 1 or not rows:
         return []
     kept = [rows[0]]
     top = float(rows[0].get("rank_score") or 0.0)
     use_floor = top >= PEAK_SCORE
+    semantic_scores = vectors or {}
+    leader_id = str(rows[0].get("id") or "")
+    leader_vector = semantic_scores.get(leader_id, 0.0)
+    semantic_floor = leader_vector * SEMANTIC_FLOOR if leader_vector > 0.0 else 0.0
     for previous, row in zip(rows, rows[1:], strict=False):
         if len(kept) >= cap:
             break
         score = float(row.get("rank_score") or 0.0)
         prev = float(previous.get("rank_score") or 0.0)
-        if use_floor and score < top * RELATIVE_FLOOR:
+        semantic_match = (
+            semantic_floor > 0.0
+            and semantic_scores.get(str(row.get("id") or ""), 0.0) >= semantic_floor
+        )
+        if use_floor and score < top * RELATIVE_FLOOR and not semantic_match:
+            if semantic_floor > 0.0:
+                continue
             break
-        if prev > 0.0 and score < prev * CLIFF_RATIO and score < top * CLIFF_OF_TOP:
+        if (
+            prev > 0.0
+            and score < prev * CLIFF_RATIO
+            and score < top * CLIFF_OF_TOP
+            and not semantic_match
+        ):
+            if semantic_floor > 0.0:
+                continue
             break
         kept.append(row)
     return kept

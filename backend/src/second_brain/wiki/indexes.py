@@ -396,7 +396,7 @@ class IndexCoordinator:
             )
             ranked = drop_lexical_gap_tail(query, snapshot["pages"], ranked)
             cutoff = limit is None
-            window = adaptive_cutoff(ranked, pool) if cutoff else ranked[:pool]
+            window = adaptive_cutoff(ranked, pool, signals) if cutoff else ranked[:pool]
             dropped_tail = cutoff and len(window) < len(ranked)
             results = []
             for page in window:

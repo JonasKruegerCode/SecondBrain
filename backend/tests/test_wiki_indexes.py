@@ -85,9 +85,10 @@ def test_late_snapshot_never_current_then_reconstructs_pending(tmp_path: Path) -
     graph.callback = None
     restarted = IndexCoordinator(store, indexes.adapters)
     assert restarted.run_once()["indexes"]["vector"]["state"] == "current"
-    assert {p["id"] for p in restarted.semantic_search("harbor")["results"]} == {
-        "home",
-        "harbor",
+    # "harbor" is an ordinary word, so it no longer prunes vector-only
+    # neighbors; the harbor-related pages are still present.
+    assert {"home", "harbor"} <= {
+        p["id"] for p in restarted.semantic_search("harbor")["results"]
     }
 
 
