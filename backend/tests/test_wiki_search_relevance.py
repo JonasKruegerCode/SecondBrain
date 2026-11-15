@@ -15,6 +15,7 @@ from second_brain.wiki.relevance import (
     adaptive_cutoff,
     content_tokens,
     drop_lexical_gap_tail,
+    field_boost,
     rank_pages,
     trim_ranked,
 )
@@ -301,8 +302,12 @@ def test_lexical_gap_tail_drops_vector_neighbors_for_rare_anchor_tokens() -> Non
     assert drop_lexical_gap_tail("Mira gaming", pages, ranked) == ranked
 
 
-def test_drop_lexical_gap_tail_keeps_neighbors_for_short_topic_words() -> None:
-    """A short ordinary topic word is not a rare exclusive identifier anchor."""
+def test_drop_lexical_gap_tail_drops_zero_cosine_neighbor_for_rare_topic_token() -> None:
+    """A rare 6-letter topic token anchors, pruning a zero-similarity tail.
+
+    This mirrors the managed-index "harbor" case: a page in the corpus shares
+    the topic token, so the orthogonal vector-only neighbor must go.
+    """
     pages = [
         {
             "id": "gaming-hub",
@@ -315,11 +320,70 @@ def test_drop_lexical_gap_tail_keeps_neighbors_for_short_topic_words() -> None:
             "markdown": "# Neighbor\nRelated synthetic hobby notes.\n",
         },
     ]
-    ranked = rank_pages("Gaming", pages, {"gaming-hub": 0.9, "hobby-neighbor": 0.8})
-    assert [page["id"] for page in drop_lexical_gap_tail("Gaming", pages, ranked)] == [
-        "gaming-hub",
-        "hobby-neighbor",
+    vectors = {"gaming-hub": 0.32, "hobby-neighbor": 0.0}
+    ranked = rank_pages("Gaming", pages, vectors)
+    assert [
+        page["id"] for page in drop_lexical_gap_tail("Gaming", pages, ranked, vectors)
+    ] == ["gaming-hub"]
+
+
+def test_drop_lexical_gap_tail_keeps_semantic_near_match_for_rare_topic_token() -> None:
+    """The rare-anchor prune keeps a vector-only row close to the leader.
+
+    The neighbor shares no literal topic token, so only its injected cosine
+    saves it. This is the live-like "Gaming" ~0.28 vs ~0.32 near-match.
+    """
+    pages = [
+        {
+            "id": "gaming-hub",
+            "title": "Gaming hub",
+            "markdown": "# Gaming hub\nGaming notes for synthetic hobby pages.\n",
+        },
+        {
+            "id": "hobby-neighbor",
+            "title": "Neighbor",
+            "markdown": "# Neighbor\nRelated synthetic hobby notes.\n",
+        },
     ]
+    vectors = {"gaming-hub": 0.32, "hobby-neighbor": 0.28}
+    ranked = rank_pages("Gaming", pages, vectors)
+    assert [
+        page["id"] for page in drop_lexical_gap_tail("Gaming", pages, ranked, vectors)
+    ] == ["gaming-hub", "hobby-neighbor"]
+
+
+def test_field_boost_skips_opaque_hex_id_fragments() -> None:
+    """A query and an id that share only random hex pieces get no boost."""
+    term = "queued-aaaa-050f-bbbb-cccccccccccc"
+    page = {
+        "id": "e2e-dead-050f-beef-000000000000",
+        "title": "Unrelated fixture",
+        "markdown": "# Unrelated fixture\nNothing relevant here.\n",
+    }
+    assert field_boost(term, content_tokens(term), page) == 0.0
+
+
+def test_field_boost_keeps_word_like_id_segment() -> None:
+    """A real word in an id segment still earns the small segment boost."""
+    page = {"id": "mira-quill", "title": "Notes", "markdown": "# Notes\n"}
+    assert field_boost("quill", content_tokens("quill"), page) == 0.45
+
+
+def test_unique_body_term_outranks_colliding_hex_id_segment() -> None:
+    """The page containing the term beats an unrelated id that shares fragments."""
+    term = "queued-aaaa-050f-bbbb-cccccccccccc"
+    matching = {
+        "id": "e2e-11111111-2222-3333-4444-555555555555",
+        "title": "Earlier search fixture",
+        "markdown": f"# Earlier search fixture\n{term}\n",
+    }
+    colliding = {
+        "id": "e2e-dead-050f-beef-000000000000",
+        "title": "Unrelated fixture",
+        "markdown": "# Unrelated fixture\nNothing relevant here.\n",
+    }
+    ranked = rank_pages(term, [colliding, matching], {})
+    assert [page["id"] for page in ranked] == [matching["id"], colliding["id"]]
 
 
 def test_adaptive_cutoff_keeps_semantic_near_match_across_rank_cliff() -> None:
@@ -333,6 +397,29 @@ def test_adaptive_cutoff_keeps_semantic_near_match_across_rank_cliff() -> None:
     assert [row["id"] for row in kept] == ["field-boosted", "hobby-neighbor"]
     # Without semantic evidence the same rank cliff still ends the list.
     assert [row["id"] for row in adaptive_cutoff(rows, cap=15)] == ["field-boosted"]
+
+
+def test_adaptive_cutoff_keeps_high_similarity_near_match_and_top() -> None:
+    """The live-like ~0.37 vs ~0.42 near-match survives without reordering."""
+    rows = [
+        {"id": "leader", "rank_score": 1.05},
+        {"id": "hobby-neighbor", "rank_score": 0.02},
+        {"id": "weak-noise", "rank_score": 0.01},
+    ]
+    vectors = {"leader": 0.42, "hobby-neighbor": 0.37, "weak-noise": 0.05}
+    kept = adaptive_cutoff(rows, cap=15, vectors=vectors)
+    assert [row["id"] for row in kept] == ["leader", "hobby-neighbor"]
+    assert kept[0]["id"] == "leader"
+
+
+def test_adaptive_cutoff_respects_absolute_semantic_floor() -> None:
+    """A relatively close but absolutely weak cosine is not rescued."""
+    rows = [
+        {"id": "leader", "rank_score": 1.05},
+        {"id": "too-weak", "rank_score": 0.02},
+    ]
+    vectors = {"leader": 0.15, "too-weak": 0.13}
+    assert [row["id"] for row in adaptive_cutoff(rows, cap=15, vectors=vectors)] == ["leader"]
 
 
 def test_adaptive_cutoff_keeps_semantic_near_match_after_weak_interstitial() -> None:
@@ -386,9 +473,9 @@ def test_name_plus_topic_surfaces_semantic_hobby_page(tmp_path: Path) -> None:
     """A strong semantic match survives a pile of common name-token pages.
 
     The hobby page shares no literal query word and is buried by fused lexical
-    rank, yet its injected cosine is close to the leader. The cutoff and the
-    relaxed rare-anchor scope must both keep it. The common topic token appears
-    in two name pages, which previously looked like a rare exclusive anchor.
+    rank, yet its injected cosine is close to the leader. The rare-anchor prune
+    and the cutoff must both keep it. The common topic token appears in two name
+    pages, so the prune sees a rare anchor and must still rescue the match.
     """
     store = WikiStore(tmp_path)
     for page_id, markdown in NAME_TOPIC_PAGES.items():
@@ -401,7 +488,6 @@ def test_name_plus_topic_surfaces_semantic_hobby_page(tmp_path: Path) -> None:
         assert ids[0] == "mira-quill"
         assert "profile-tactics-comps" in ids
         assert "weak-noise" not in ids
-        assert payload.get("cutoff") is True
         assert all("rank_score" not in hit for hit in payload["results"])
         assert "gaming" not in NAME_TOPIC_PAGES["profile-tactics-comps"].casefold()
     finally:
