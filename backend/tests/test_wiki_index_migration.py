@@ -14,7 +14,7 @@ import pytest
 import qdrant_client
 
 from second_brain.wiki.delivery_runtime import configured_delivery
-from second_brain.wiki.index_config import _index_environment, configured_indexes
+from second_brain.wiki.index_config import _enabled, _index_environment, configured_indexes
 from second_brain.wiki.store import WikiStore
 
 
@@ -57,6 +57,56 @@ def test_settings_defaults_and_chat_key_do_not_enable_index_work(tmp_path: Path)
     indexes.close()
 
 
+def test_vector_endpoint_without_embedding_key_stays_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The standard Compose always injects QDRANT_URL. Without an embedding key the
+    # vector factory would raise during startup, so the index must stay off while
+    # lexical reading/editing/history keep working.
+    monkeypatch.setenv("QDRANT_URL", "http://synthetic.invalid")
+    monkeypatch.setenv("SECOND_BRAIN_WIKI_VECTOR_INDEX", "")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("GCP_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    indexes = configured_indexes(WikiStore(tmp_path / "vault"))
+    assert indexes.adapters == {}
+    indexes.close()
+
+
+def test_implicit_vector_enablement_requires_embedding_credentials() -> None:
+    endpoint = {"QDRANT_URL": "http://synthetic.invalid"}
+    # Implicit (blank flag) enablement needs a key for the selected provider.
+    assert _enabled(
+        endpoint, "SECOND_BRAIN_WIKI_VECTOR_INDEX", "QDRANT_URL",
+        requires_embedding_credentials=True,
+    ) is False
+    assert _enabled(
+        {**endpoint, "OPENROUTER_API_KEY": "synthetic"},
+        "SECOND_BRAIN_WIKI_VECTOR_INDEX",
+        "QDRANT_URL",
+        requires_embedding_credentials=True,
+    ) is True
+    assert _enabled(
+        {**endpoint, "LLM_PROVIDER": "gcp", "GCP_API_KEY": "synthetic"},
+        "SECOND_BRAIN_WIKI_VECTOR_INDEX",
+        "QDRANT_URL",
+        requires_embedding_credentials=True,
+    ) is True
+    assert _enabled(
+        {**endpoint, "LLM_PROVIDER": "gcp", "OPENROUTER_API_KEY": "synthetic"},
+        "SECOND_BRAIN_WIKI_VECTOR_INDEX",
+        "QDRANT_URL",
+        requires_embedding_credentials=True,
+    ) is False
+    # An explicit 1 still enables it; a missing key then raises in the factory.
+    assert _enabled(
+        {**endpoint, "SECOND_BRAIN_WIKI_VECTOR_INDEX": "1"},
+        "SECOND_BRAIN_WIKI_VECTOR_INDEX",
+        "QDRANT_URL",
+        requires_embedding_credentials=True,
+    ) is True
+
+
 def test_invalid_switch_is_not_silently_treated_as_disabled(tmp_path: Path) -> None:
     Path(".env").write_text("SECOND_BRAIN_WIKI_GRAPH_INDEX=typo\n")
     with pytest.raises(ValueError, match="must be empty, 0 or 1"):
@@ -94,6 +144,8 @@ def test_legacy_vector_start_rebuild_restart_and_provider_failure(
     from second_brain.core import config
 
     endpoint = "http://synthetic.invalid"
+    # Implicit endpoint enablement now also needs the provider's embedding key.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-embedding-key")
     if source == "dotenv":
         Path(".env").write_text("QDRANT_URL=" + endpoint + "\n")
     else:

@@ -34,11 +34,34 @@ def _index_environment() -> dict[str, str]:
     return configured
 
 
-def _enabled(config: dict[str, str], flag: str, endpoint: str) -> bool:
+def _embedding_credentials(config: dict[str, str]) -> bool:
+    """Whether the selected provider has the credential needed for embeddings.
+
+    A reachable Qdrant endpoint alone is not enough to embed: without a key the
+    vector factory would raise during startup. Only actual credentials may
+    implicitly enable optional paid vector work.
+    """
+    provider = (config.get("LLM_PROVIDER", "") or "openrouter").strip() or "openrouter"
+    if provider == "gcp":
+        return bool(config.get("GCP_API_KEY", "").strip())
+    return bool(config.get("OPENROUTER_API_KEY", "").strip())
+
+
+def _enabled(
+    config: dict[str, str],
+    flag: str,
+    endpoint: str,
+    *,
+    requires_embedding_credentials: bool = False,
+) -> bool:
     value = config.get(flag, "").strip()
     if value not in {"", "0", "1"}:
         raise ValueError(f"{flag} must be empty, 0 or 1.")
-    return value == "1" or (not value and bool(config.get(endpoint, "").strip()))
+    if value:
+        return value == "1"
+    if not config.get(endpoint, "").strip():
+        return False
+    return not requires_embedding_credentials or _embedding_credentials(config)
 
 
 def _progress_logging() -> None:
@@ -77,7 +100,12 @@ def configured_indexes(store: WikiStore) -> IndexCoordinator:
             cleanup.callback(_close_after_failure, driver)
             adapters["graph"] = Neo4jSnapshotAdapter(driver, database=database)
             identity["graph"] = [uri, user, database]
-        if _enabled(config, "SECOND_BRAIN_WIKI_VECTOR_INDEX", "QDRANT_URL"):
+        if _enabled(
+            config,
+            "SECOND_BRAIN_WIKI_VECTOR_INDEX",
+            "QDRANT_URL",
+            requires_embedding_credentials=True,
+        ):
             _progress_logging()
             from qdrant_client import QdrantClient  # noqa: PLC0415
 

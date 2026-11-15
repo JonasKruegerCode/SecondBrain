@@ -16,9 +16,11 @@ scripts/          demo, import, browser and stack acceptance runners
 examples/         synthetic demo and review vaults, plus a disposable TLS/auth
                   proxy fixture
 docker-compose.yml                  image-only standard installation
+                                    (app, MCP, Neo4j and Qdrant)
 docker-compose.source.yml           source-build overlay for local images
-docker-compose.indexes.yml          optional Neo4j and Qdrant services
+docker-compose.indexes.yml          compatibility stub; indexes ship in the base file
 docker-compose.wiki.recovery.yml    isolated recovery inspection overlay
+install.sh                          one-command installer for the standard stack
 Makefile                            demo, check and acceptance targets
 check.sh                            lint, type, test and build wrapper
 ```
@@ -40,7 +42,7 @@ Git history. This is implemented in `backend/src/second_brain/wiki/store.py`.
 
 ### Services
 
-The standard Compose stack has three services:
+The standard Compose stack has five services:
 
 - `frontend`: the Vite build served by nginx. It proxies same-origin `/api/` to
   the backend and keeps the public Host header intact for write-origin checks.
@@ -51,6 +53,15 @@ The standard Compose stack has three services:
   (`second_brain.wiki.mcp:http_app_factory`) from the same backend image. It
   reads and writes the same store; the Compose service disables its background
   worker so only REST runs automatic delivery.
+- `neo4j`: graph retrieval storage (`neo4j:5`) with the private `neo4j_data`
+  volume. No published ports and no healthcheck, so `up --wait` returns once the
+  wiki app is healthy.
+- `qdrant`: vector storage (pinned `qdrant/qdrant` digest) with the private
+  `qdrant_data` volume. Also private and healthcheck-free.
+
+Neo4j and Qdrant endpoints are injected into both app processes. The recovery
+overlay parks them behind a non-default profile so recovery resolves to the
+three app services only.
 
 MCP is also available over stdio for local use:
 

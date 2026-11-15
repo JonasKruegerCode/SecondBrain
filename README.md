@@ -14,7 +14,7 @@ SecondBrain keeps the knowledge itself: readable Markdown, real revision
 history, and a repository you can back up or move. The web UI is for reading and
 writing, the MCP server is for agents, and both work against the same source of
 truth. Core reading, editing, history and lexical search work without a model
-key or an external database.
+key.
 
 ## What you get
 
@@ -41,57 +41,79 @@ key or an external database.
   with an optional folder prefix; export the current wiki as plain Markdown.
 - **Installable PWA.** An online-first app with install and update notices. It
   deliberately does not cache private pages, chat or authorization responses.
-- **Optional retrieval services.** Add Neo4j for graph retrieval and Qdrant for
-  vectors with a Compose overlay. Missing indexes or provider keys never block
-  reads, edits, history or lexical search.
+- **Retrieval services included.** The default Compose stack starts Neo4j for
+  graph retrieval and Qdrant for vectors, so the graph and (with an embedding
+  key) semantic ranking work alongside lexical search out of the box. A missing
+  key or a still-building index never blocks reads, edits, history or lexical
+  search.
 - **Portable backups.** Create and verify a backup of Git history, request
   receipts and local ledgers, then restore into a new vault.
 
 ## Quick start
 
+One command installs the complete stack — web app, REST backend, MCP server,
+Neo4j and Qdrant — with generated secrets:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/install.sh | sh
+```
+
+The script downloads the Compose file and environment template into a
+`secondbrain` directory, creates a random MCP key and Neo4j password, then pulls
+and starts everything. Open <http://127.0.0.1:8080> when it finishes.
+
 Requires **Docker Engine with Compose v2**. No host Python, Poetry, Node or source
 checkout is needed.
 
-1. Download the Compose file and environment template:
+Prefer to do it yourself?
 
-   ```sh
-   mkdir secondbrain && cd secondbrain
-   curl -fLO https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/docker-compose.yml
-   curl -fsSL https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/.env.example -o .env
-   ```
+```sh
+mkdir secondbrain && cd secondbrain
+curl -fLO https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/.env.example -o .env
+```
 
-2. Edit `.env` and replace the MCP secret. This is the minimum change:
+Set a long random `SECOND_BRAIN_WIKI_API_KEY` and `NEO4J_PASSWORD` in `.env` (for
+example with `openssl rand -hex 32`), then start the published images:
 
-   ```dotenv
-   SECOND_BRAIN_WIKI_API_KEY=replace-with-a-long-random-secret
-   ```
+```sh
+docker compose pull
+docker compose up -d --wait
+```
 
-   A new instance starts empty. No Git repository, database or model key is
-   required. Useful optional settings:
+### The OpenRouter key
 
-   | Variable | Purpose |
-   | --- | --- |
-   | `VAULT_GIT_URL` | Git repository to import at startup and sync afterwards |
-   | `VAULT_GIT_BRANCH` | Branch to use; defaults to the remote's advertised HEAD |
-   | `SECOND_BRAIN_WIKI_GIT_PREFIX` | Markdown folder in the repository; defaults to `1_knowledge/wiki`, empty means the repository root |
-   | `OPENROUTER_API_KEY` | Enables read-only wiki chat |
-   | `NEO4J_URI`, `QDRANT_URL` | Enable optional graph and vector indexes when reachable; vector indexing also needs embedding credentials |
-   | `WIKI_FRONTEND_PORT`, `WIKI_MCP_PORT` | Host ports; default `8080` and `3001` |
+An **OpenRouter API key** (set `OPENROUTER_API_KEY` in `.env`) enables two extra
+features: semantic-search embeddings written into Qdrant, and the optional
+read-only chat. Everything else works without it:
 
-3. Start the published images:
+- Reading, editing, history, the Markdown link graph, Galaxy and lexical search.
+- The MCP server for agents, Git-backed storage and sync, import/export and
+  backups.
+- The frontend, REST backend, MCP server, Neo4j and Qdrant all start and stay up.
 
-   ```sh
-   docker compose pull
-   docker compose up -d --wait
-   ```
+Without a key, chat and semantic ranking simply stay off; add the key and
+recreate the stack to turn them on. Indexes may still be building after the app
+is already usable, and a pending index never blocks lexical search.
 
-4. Open <http://127.0.0.1:8080>. The HTTP MCP endpoint is at
-   <http://127.0.0.1:3001/mcp>; connect with the Bearer key from `.env`.
+### Settings you may want
 
-Both ports bind to loopback. For remote access, put the frontend and its
-same-origin `/api/` behind an authenticated HTTPS reverse proxy (for example
-`https://your-domain.example`), and configure
-`SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS` and
+| Variable | Purpose |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Enables semantic-search embeddings and read-only wiki chat |
+| `VAULT_GIT_URL` | Git repository to import at startup and sync afterwards |
+| `VAULT_GIT_BRANCH` | Branch to use; defaults to the remote's advertised HEAD |
+| `SECOND_BRAIN_WIKI_GIT_PREFIX` | Markdown folder in the repository; defaults to `1_knowledge/wiki`, empty means the repository root |
+| `SECOND_BRAIN_WIKI_VECTOR_INDEX`, `SECOND_BRAIN_WIKI_GRAPH_INDEX` | Set to `0` to disable the vector (paid embeddings) or graph index |
+| `WIKI_FRONTEND_PORT`, `WIKI_MCP_PORT` | Host ports; default `8080` and `3001` |
+
+A new instance starts empty; no Git repository or model key is required. Both
+ports bind to loopback. The HTTP MCP endpoint is at
+<http://127.0.0.1:3001/mcp>; connect with the Bearer key from `.env`.
+
+For remote access, put the frontend and its same-origin `/api/` behind an
+authenticated HTTPS reverse proxy (for example `https://your-domain.example`),
+and configure `SECOND_BRAIN_WIKI_MCP_ALLOWED_HOSTS` and
 `SECOND_BRAIN_WIKI_MCP_ALLOWED_ORIGINS` for the MCP host before exposing it.
 See the [installation, update and recovery guide](documentation/install-update.md).
 

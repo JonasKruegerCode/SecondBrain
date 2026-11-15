@@ -130,7 +130,16 @@ def replacement_ip(network: dict[str, Any], old_ip: str) -> str:
 def isolated_config(
     config: dict[str, Any], project: str, key: str, *, restored: bool = False
 ) -> dict[str, Any]:
-    """Only modify the managed preview; refuse external or host data mounts."""
+    """Only modify the managed preview; refuse external or host data mounts.
+
+    The standard file now ships Neo4j and Qdrant. The isolated rehearsal disables
+    both indexes (GRAPH/VECTOR=0) and must stay fast, so the database services and
+    their volumes are dropped before the remaining shape is validated.
+    """
+    for name in ("neo4j", "qdrant"):
+        config["services"].pop(name, None)
+    for name in ("neo4j_data", "qdrant_data"):
+        config.get("volumes", {}).pop(name, None)
     if set(config["services"]) != {"backend", "mcp", "frontend"}:
         raise RuntimeError("unexpected managed Compose services")
     for resource in ("volumes", "networks"):
@@ -229,11 +238,18 @@ def import_config(
 
 
 def validate_image_install(config: dict[str, Any], images: dict[str, str]) -> None:
-    """The copied public install must need images and named storage, never source."""
+    """The copied public install must need images and named storage, never source.
+
+    The standard install is now the full five-service stack; the two databases
+    use their published images and named volumes. Candidates remain the three
+    application images.
+    """
     services = config["services"]
-    if set(services) != {"backend", "mcp", "frontend"} or set(images) != set(services):
+    expected = {"backend", "mcp", "frontend", "neo4j", "qdrant"}
+    if set(services) != expected or set(images) != {"backend", "mcp", "frontend"}:
         raise RuntimeError("unexpected image-install services")
-    for name, service in services.items():
+    for name in ("backend", "mcp", "frontend"):
+        service = services[name]
         if not re.fullmatch(
             r"(?:sha256:[0-9a-f]{64}|127\.0\.0\.1:\d+/[a-z-]+@sha256:[0-9a-f]{64})", images[name]
         ):
@@ -245,6 +261,13 @@ def validate_image_install(config: dict[str, Any], images: dict[str, str]) -> No
         if any(m.get("type") != "volume" or m.get("source") != "managed_wiki"
                for m in service.get("volumes", [])):
             raise RuntimeError("image-install cannot require host files")
+    for name, source in (("neo4j", "neo4j_data"), ("qdrant", "qdrant_data")):
+        service = services[name]
+        if service.get("build") or service.get("entrypoint"):
+            raise RuntimeError("image-install must not build or override the databases")
+        if any(m.get("type") != "volume" or m.get("source") != source
+               for m in service.get("volumes", [])):
+            raise RuntimeError("image-install databases may only use named volumes")
     for resource in ("volumes", "networks"):
         if any(value.get("external") for value in config.get(resource, {}).values()):
             raise RuntimeError("image-install cannot attach to existing resources")
@@ -1114,6 +1137,7 @@ class Run:
             "MCP_API_KEY": "",
             "OPENROUTER_API_KEY": "",
             "GCP_API_KEY": "",
+            "NEO4J_PASSWORD": "synthetic-neo4j-password",
             "SECOND_BRAIN_WIKI_GRAPH_INDEX": "0",
             "SECOND_BRAIN_WIKI_VECTOR_INDEX": "0",
             "SECOND_BRAIN_WIKI_GIT_SYNC": "0",

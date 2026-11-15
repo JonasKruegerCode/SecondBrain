@@ -1,6 +1,7 @@
-# SecondBrain: current Wiki-first application, using published images only.
+# SecondBrain: complete Wiki-first application, using published images only.
 # Copy this file and .env.example into an empty directory; no source checkout needed.
-# Git and optional index providers are shared by REST and MCP; only REST runs delivery.
+# Frontend, REST, MCP and the Neo4j/Qdrant retrieval databases start together.
+# Git and index providers are shared by REST and MCP; only REST runs delivery.
 x-vault-git: &vault-git
   SECOND_BRAIN_WIKI_GIT_SYNC: ${SECOND_BRAIN_WIKI_GIT_SYNC:-}
   # Omit the value to retain existing vault layout; empty deliberately selects repo root.
@@ -22,11 +23,11 @@ x-wiki-indexes: &wiki-indexes
   SECOND_BRAIN_WIKI_GRAPH_INDEX: ${SECOND_BRAIN_WIKI_GRAPH_INDEX:-}
   SECOND_BRAIN_WIKI_VECTOR_INDEX: ${SECOND_BRAIN_WIKI_VECTOR_INDEX:-}
   SECOND_BRAIN_WIKI_VECTOR_DIMENSION: ${SECOND_BRAIN_WIKI_VECTOR_DIMENSION:-}
-  NEO4J_URI: ${NEO4J_URI:-}
+  NEO4J_URI: ${NEO4J_URI:-bolt://neo4j:7687}
   NEO4J_USER: ${NEO4J_USER:-neo4j}
-  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-secondbrain-local}
   NEO4J_DATABASE: ${NEO4J_DATABASE:-}
-  QDRANT_URL: ${QDRANT_URL:-}
+  QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
   QDRANT_API_KEY: ${QDRANT_API_KEY:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-openrouter}
   EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
@@ -83,5 +84,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Retrieval databases. Private to the Compose network, no published ports and
+  # no healthchecks, so `up --wait` returns once the wiki app is healthy even
+  # while these are still starting. Indexes may remain pending after startup.
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-secondbrain-local}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 128m
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant@sha256:b7b0444c4c351c970b98e90a6f89c2ee4287c65b44e52b4cb503fa5b2aa927ad
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
 volumes:
   managed_wiki:
+  neo4j_data:
+  qdrant_data:
