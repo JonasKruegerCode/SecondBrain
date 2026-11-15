@@ -1,6 +1,6 @@
 [project]
 name = "second-brain"
-version = "0.1.0"
+version = "2.0.0"
 description = "Git-backed managed personal wiki with REST and MCP services"
 authors = [
     {name = "Jonas Krüger", email = "jonas.krueger.senden@gmail.com"}

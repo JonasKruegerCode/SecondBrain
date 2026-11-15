@@ -2,6 +2,7 @@
   "id": "/",
   "name": "Secondbrain · Your knowledge, connected",
   "short_name": "Secondbrain",
+  "version": "2.0.0",
   "description": "A private, managed Markdown wiki with search, knowledge galaxy and read-only chat.",
   "lang": "en",
   "start_url": "/?source=pwa",
