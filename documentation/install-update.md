@@ -1,6 +1,6 @@
 # Install, update and recover SecondBrain
 
-The [README](../README.md#install-with-docker) is the short installation path:
+The [README](../README.md#quick-start) is the short installation path:
 copy `docker-compose.yml` and `.env.example`, configure `.env`, then pull/start.
 Only Docker Engine with Compose v2 is needed on the host. The base Compose has
 **no build context, host startup script, worker/Redis/Jaeger service or old UI**.

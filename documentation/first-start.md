@@ -7,7 +7,8 @@ Use Linux or WSL for this milestone: managed worker/template locks use `fcntl`,
 and atomic plain export requires Linux `renameat2`. Native Windows execution has
 not been accepted; the intended container runtime is Linux.
 
-Install the locked dependencies using the [main setup instructions](../README.md).
+Install the locked dependencies using the
+[development setup instructions](../DEVELOPMENT.md#local-development).
 From the repository root, select Poetry's actual Python executable and a new
 destination:
 

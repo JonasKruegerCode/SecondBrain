@@ -8,7 +8,8 @@ The demo launcher disables Vite hot reload so restarting its services does not a
 
 ## Run locally
 
-Use the Linux/WSL prerequisites in the [main setup instructions](../README.md).
+Use the Linux/WSL prerequisites in the
+[development setup instructions](../DEVELOPMENT.md#local-development).
 From the repository root, install the locked dependencies, select Poetry's actual
 Python executable and start both services with the isolated launcher:
 
