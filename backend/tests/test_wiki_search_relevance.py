@@ -15,7 +15,9 @@ from second_brain.wiki.relevance import (
     adaptive_cutoff,
     content_tokens,
     drop_lexical_gap_tail,
+    field_boost,
     rank_pages,
+    trim_ranked,
 )
 from second_brain.wiki.search_service import search_wiki as run_wiki_search
 from second_brain.wiki.store import WikiStore
@@ -192,16 +194,91 @@ class HashEmbedder:
         return [value / norm for value in vector]
 
 
+class InjectedVectorAdapter:
+    """Deterministic per-page cosine scores. No network and no provider SDK.
+
+    The bag-of-tokens embedder cannot invent a semantic link, so this adapter
+    lets a test inject the vector evidence a real provider would return.
+    """
+
+    def __init__(self, scores: dict[str, float]) -> None:
+        self.scores = scores
+        self.snapshot: dict[str, Any] | None = None
+
+    def build(self, generation: str, snapshot: dict[str, Any]) -> None:
+        self.snapshot = snapshot
+
+    def _hits(self, limit: int) -> list[dict[str, Any]]:
+        assert self.snapshot is not None
+        revisions = {page["id"]: page["revision"] for page in self.snapshot["pages"]}
+        hits = [
+            {"id": page_id, "revision": revisions[page_id], "score": score}
+            for page_id, score in self.scores.items()
+            if page_id in revisions
+        ]
+        hits.sort(key=lambda hit: (-float(hit["score"]), str(hit["id"])))
+        return hits[:limit]
+
+    def search(self, generation: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        return self._hits(limit)
+
+    def search_grouped(
+        self, generation: str, query: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        return self._hits(limit)
+
+
+NAME_TOPIC_PAGES: dict[str, str] = {
+    "mira-quill": (
+        "# Mira Quill\n\nCentral fictional persona. Mira also keeps a gaming log.\n"
+    ),
+    "mira-bio": "# Bio record\nSecondary stub; Mira and gaming appear once.\n",
+    "mira-writing": "# Mira writing style\nFictional posting preferences.\n",
+    "mira-mentor": "# Mentor of Mira\nSenior fictional advisor to Mira.\n",
+    "mira-photo": "# Mira photo log\nSynthetic photo notes for Mira.\n",
+    "mira-notes": "# Mira notes\nShort synthetic notes mentioning Mira.\n",
+    "mira-draft": "# Mira draft\nRough draft about Mira.\n",
+    "mira-sketch": "# Mira sketch\nSketch of a fictional scene with Mira.\n",
+    "mira-archive": "# Mira archive\nArchived mention of Mira.\n",
+    "mira-log": "# Mira log\nDaily synthetic log for Mira.\n",
+    "profile-tactics-comps": (
+        "# Tactics comp profile\nTeam tactics profile and ranked-mode "
+        "experience for an auto-battler hobby.\n"
+    ),
+    "weak-noise": "# Weak noise\nAn unrelated page with no shared terms.\n",
+}
+
+NAME_TOPIC_VECTORS: dict[str, float] = {
+    "mira-quill": 0.42,
+    "profile-tactics-comps": 0.37,
+    "mira-bio": 0.31,
+    "mira-writing": 0.29,
+    "mira-mentor": 0.27,
+    "mira-photo": 0.25,
+    "mira-notes": 0.23,
+    "mira-draft": 0.21,
+    "mira-sketch": 0.19,
+    "mira-archive": 0.17,
+    "mira-log": 0.15,
+    "weak-noise": 0.05,
+}
+
+
 def test_lexical_name_plus_topic_finds_body_without_literal_topic_word(
     tmp_path: Path,
 ) -> None:
     store = WikiStore(tmp_path)
     store.save_page("person-mira-quill", PAGES["person-mira-quill"], None, "seed")
     store.save_page("bot-archivus", "# Archivus\nUnrelated decoy mention.", None, "seed2")
-    hits = store.search("Mira gaming", limit=10)
-    assert hits
-    assert hits[0]["id"] == "person-mira-quill"
-    assert "rank_score" not in hits[0]
+    indexes = IndexCoordinator(store)
+    try:
+        payload = run_wiki_search(store, indexes, "Mira gaming", mode="lexical")
+        hits = payload["results"]
+        assert hits
+        assert hits[0]["id"] == "person-mira-quill"
+        assert all("rank_score" not in hit for hit in hits)
+    finally:
+        indexes.close()
 
 
 def test_question_words_do_not_erase_the_subject() -> None:
@@ -223,6 +300,198 @@ def test_lexical_gap_tail_drops_vector_neighbors_for_rare_anchor_tokens() -> Non
     pruned = drop_lexical_gap_tail(term, pages, ranked)
     assert [page["id"] for page in pruned] == ["queued-fixture"]
     assert drop_lexical_gap_tail("Mira gaming", pages, ranked) == ranked
+
+
+def test_drop_lexical_gap_tail_drops_zero_cosine_neighbor_for_rare_topic_token() -> None:
+    """A rare 6-letter topic token anchors, pruning a zero-similarity tail.
+
+    This mirrors the managed-index "harbor" case: a page in the corpus shares
+    the topic token, so the orthogonal vector-only neighbor must go.
+    """
+    pages = [
+        {
+            "id": "gaming-hub",
+            "title": "Gaming hub",
+            "markdown": "# Gaming hub\nGaming notes for synthetic hobby pages.\n",
+        },
+        {
+            "id": "hobby-neighbor",
+            "title": "Neighbor",
+            "markdown": "# Neighbor\nRelated synthetic hobby notes.\n",
+        },
+    ]
+    vectors = {"gaming-hub": 0.32, "hobby-neighbor": 0.0}
+    ranked = rank_pages("Gaming", pages, vectors)
+    assert [
+        page["id"] for page in drop_lexical_gap_tail("Gaming", pages, ranked, vectors)
+    ] == ["gaming-hub"]
+
+
+def test_drop_lexical_gap_tail_keeps_semantic_near_match_for_rare_topic_token() -> None:
+    """The rare-anchor prune keeps a vector-only row close to the leader.
+
+    The neighbor shares no literal topic token, so only its injected cosine
+    saves it. This is the live-like "Gaming" ~0.28 vs ~0.32 near-match.
+    """
+    pages = [
+        {
+            "id": "gaming-hub",
+            "title": "Gaming hub",
+            "markdown": "# Gaming hub\nGaming notes for synthetic hobby pages.\n",
+        },
+        {
+            "id": "hobby-neighbor",
+            "title": "Neighbor",
+            "markdown": "# Neighbor\nRelated synthetic hobby notes.\n",
+        },
+    ]
+    vectors = {"gaming-hub": 0.32, "hobby-neighbor": 0.28}
+    ranked = rank_pages("Gaming", pages, vectors)
+    assert [
+        page["id"] for page in drop_lexical_gap_tail("Gaming", pages, ranked, vectors)
+    ] == ["gaming-hub", "hobby-neighbor"]
+
+
+def test_field_boost_skips_opaque_hex_id_fragments() -> None:
+    """A query and an id that share only random hex pieces get no boost."""
+    term = "queued-aaaa-050f-bbbb-cccccccccccc"
+    page = {
+        "id": "e2e-dead-050f-beef-000000000000",
+        "title": "Unrelated fixture",
+        "markdown": "# Unrelated fixture\nNothing relevant here.\n",
+    }
+    assert field_boost(term, content_tokens(term), page) == 0.0
+
+
+def test_field_boost_keeps_word_like_id_segment() -> None:
+    """A real word in an id segment still earns the small segment boost."""
+    page = {"id": "mira-quill", "title": "Notes", "markdown": "# Notes\n"}
+    assert field_boost("quill", content_tokens("quill"), page) == 0.45
+
+
+def test_unique_body_term_outranks_colliding_hex_id_segment() -> None:
+    """The page containing the term beats an unrelated id that shares fragments."""
+    term = "queued-aaaa-050f-bbbb-cccccccccccc"
+    matching = {
+        "id": "e2e-11111111-2222-3333-4444-555555555555",
+        "title": "Earlier search fixture",
+        "markdown": f"# Earlier search fixture\n{term}\n",
+    }
+    colliding = {
+        "id": "e2e-dead-050f-beef-000000000000",
+        "title": "Unrelated fixture",
+        "markdown": "# Unrelated fixture\nNothing relevant here.\n",
+    }
+    ranked = rank_pages(term, [colliding, matching], {})
+    assert [page["id"] for page in ranked] == [matching["id"], colliding["id"]]
+
+
+def test_adaptive_cutoff_keeps_semantic_near_match_across_rank_cliff() -> None:
+    rows = [
+        {"id": "field-boosted", "rank_score": 1.05},
+        {"id": "hobby-neighbor", "rank_score": 0.02},
+        {"id": "weak-noise", "rank_score": 0.01},
+    ]
+    vectors = {"field-boosted": 0.32, "hobby-neighbor": 0.28, "weak-noise": 0.05}
+    kept = adaptive_cutoff(rows, cap=15, vectors=vectors)
+    assert [row["id"] for row in kept] == ["field-boosted", "hobby-neighbor"]
+    # Without semantic evidence the same rank cliff still ends the list.
+    assert [row["id"] for row in adaptive_cutoff(rows, cap=15)] == ["field-boosted"]
+
+
+def test_adaptive_cutoff_keeps_high_similarity_near_match_and_top() -> None:
+    """The live-like ~0.37 vs ~0.42 near-match survives without reordering."""
+    rows = [
+        {"id": "leader", "rank_score": 1.05},
+        {"id": "hobby-neighbor", "rank_score": 0.02},
+        {"id": "weak-noise", "rank_score": 0.01},
+    ]
+    vectors = {"leader": 0.42, "hobby-neighbor": 0.37, "weak-noise": 0.05}
+    kept = adaptive_cutoff(rows, cap=15, vectors=vectors)
+    assert [row["id"] for row in kept] == ["leader", "hobby-neighbor"]
+    assert kept[0]["id"] == "leader"
+
+
+def test_adaptive_cutoff_respects_absolute_semantic_floor() -> None:
+    """A relatively close but absolutely weak cosine is not rescued."""
+    rows = [
+        {"id": "leader", "rank_score": 1.05},
+        {"id": "too-weak", "rank_score": 0.02},
+    ]
+    vectors = {"leader": 0.15, "too-weak": 0.13}
+    assert [row["id"] for row in adaptive_cutoff(rows, cap=15, vectors=vectors)] == ["leader"]
+
+
+def test_adaptive_cutoff_keeps_semantic_near_match_after_weak_interstitial() -> None:
+    """A zero-similarity lexical row must not hide a later semantic near-match."""
+    rows = [
+        {"id": "field-boosted", "rank_score": 1.05},
+        {"id": "lexical-only", "rank_score": 0.02},
+        {"id": "hobby-neighbor", "rank_score": 0.02},
+        {"id": "weak-noise", "rank_score": 0.01},
+    ]
+    vectors = {
+        "field-boosted": 0.32,
+        "lexical-only": 0.0,
+        "hobby-neighbor": 0.28,
+        "weak-noise": 0.05,
+    }
+    kept = adaptive_cutoff(rows, cap=15, vectors=vectors)
+    assert [row["id"] for row in kept] == ["field-boosted", "hobby-neighbor"]
+
+
+def test_trim_ranked_applies_cutoff_only_while_rank_score_is_present() -> None:
+    rows = [
+        {"id": "top", "rank_score": 1.0},
+        {"id": "tail", "rank_score": 0.01},
+    ]
+    visible, truncated, cutoff = trim_ranked(rows, 15, enabled=True)
+    assert [row["id"] for row in visible] == ["top"]
+    assert truncated is False
+    assert cutoff is True
+    # A public payload without rank_score cannot be trimmed again.
+    stripped = [{k: v for k, v in row.items() if k != "rank_score"} for row in rows]
+    visible2, _truncated2, cutoff2 = trim_ranked(stripped, 15, enabled=True)
+    assert [row["id"] for row in visible2] == ["top", "tail"]
+    assert cutoff2 is False
+
+
+def test_store_search_keeps_rank_score_until_the_public_payload(tmp_path: Path) -> None:
+    store = WikiStore(tmp_path)
+    store.save_page("home", "# Home\nSynthetic harbor notes.", None, "seed")
+    rows = store.search("harbor")
+    assert rows and "rank_score" in rows[0]
+    indexes = IndexCoordinator(store)
+    try:
+        public = run_wiki_search(store, indexes, "harbor", mode="lexical")["results"]
+        assert public and all("rank_score" not in hit for hit in public)
+    finally:
+        indexes.close()
+
+
+def test_name_plus_topic_surfaces_semantic_hobby_page(tmp_path: Path) -> None:
+    """A strong semantic match survives a pile of common name-token pages.
+
+    The hobby page shares no literal query word and is buried by fused lexical
+    rank, yet its injected cosine is close to the leader. The rare-anchor prune
+    and the cutoff must both keep it. The common topic token appears in two name
+    pages, so the prune sees a rare anchor and must still rescue the match.
+    """
+    store = WikiStore(tmp_path)
+    for page_id, markdown in NAME_TOPIC_PAGES.items():
+        store.save_page(page_id, markdown, None, page_id)
+    indexes = IndexCoordinator(store, {"vector": InjectedVectorAdapter(NAME_TOPIC_VECTORS)})
+    try:
+        assert indexes.run_once()["indexes"]["vector"]["state"] == "current"
+        payload = run_wiki_search(store, indexes, "Mira gaming")
+        ids = [str(hit["id"]) for hit in payload["results"]]
+        assert ids[0] == "mira-quill"
+        assert "profile-tactics-comps" in ids
+        assert "weak-noise" not in ids
+        assert all("rank_score" not in hit for hit in payload["results"])
+        assert "gaming" not in NAME_TOPIC_PAGES["profile-tactics-comps"].casefold()
+    finally:
+        indexes.close()
 
 
 def test_flat_vector_scores_no_longer_outrank_the_canonical_page() -> None:

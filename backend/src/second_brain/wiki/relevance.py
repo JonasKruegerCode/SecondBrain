@@ -23,7 +23,18 @@ PEAK_SCORE = 0.2
 RELATIVE_FLOOR = 0.36
 CLIFF_RATIO = 0.62
 CLIFF_OF_TOP = 0.82
+# A rank_score cliff can hide a semantic near-match whose vector similarity is
+# still close to the best hit. A row counts as such only when it is within
+# ``SEMANTIC_FLOOR`` of the leader *and* clears an absolute similarity floor, so
+# a zero-similarity neighbor never rides along. An opaque identifier or a token
+# of at least ``ANCHOR_MIN_LENGTH`` characters can anchor a lexical gap; shorter
+# ordinary topic words never do.
+SEMANTIC_FLOOR = 0.8
+SEMANTIC_ABSOLUTE_FLOOR = 0.15
+ANCHOR_MIN_LENGTH = 6
 TOKEN_RE = re.compile(r"[0-9a-zäöü]+", re.IGNORECASE)
+HEX_FRAGMENT_RE = re.compile(r"[0-9a-f]+")
+HEX_FRAGMENT_LENGTHS = frozenset({4, 8, 12})
 HEADING_RE = re.compile(r"(?m)^#{1,6}[ \t]+(.+?)\s*$")
 FIELD_RE = re.compile(r"(?im)^[ \t]*(type|status)[ \t]*:[ \t]*([a-z0-9_-]+)")
 IMPLICIT_CANDIDATE_LIMIT = 15
@@ -197,6 +208,17 @@ def bm25_scores(tokens: list[str], pages: list[dict[str, Any]]) -> dict[str, flo
     return scores
 
 
+def _opaque_hex_fragment(token: str) -> bool:
+    """True for short hex strings that look like generated identifier pieces.
+
+    Random ids produce 4/8/12-character hex fragments (``050f``, ``81276bc6``).
+    Such a fragment collides by chance across many pages, so matching one in a
+    page-id segment is not evidence of relevance. Word-like segments (``quill``)
+    still count.
+    """
+    return len(token) in HEX_FRAGMENT_LENGTHS and HEX_FRAGMENT_RE.fullmatch(token) is not None
+
+
 def field_boost(query: str, tokens: list[str], page: dict[str, Any]) -> float:
     """Largest title or id match, plus a small heading bonus."""
     folded = query.strip().casefold()
@@ -212,7 +234,7 @@ def field_boost(query: str, tokens: list[str], page: dict[str, Any]) -> float:
                 identity = max(identity, 1.2)
             elif title.startswith(token) or page_id.startswith(token + "-"):
                 identity = max(identity, 0.9)
-            elif token in segments:
+            elif token in segments and not _opaque_hex_fragment(token):
                 identity = max(identity, 0.45)
     if any(token in _heading_tokens(page, title) for token in tokens):
         identity += 0.15
@@ -305,12 +327,42 @@ def overlapping_ids(
     return [page_id for _overlap, page_id in scored[:limit]]
 
 
+def _anchor_token(token: str) -> bool:
+    """True for opaque identifier-like or long exclusive tokens.
+
+    A digit marks a generated or external identifier, and a token of at least
+    ``ANCHOR_MIN_LENGTH`` characters is long enough that a unique corpus hit is
+    a genuine anchor. Ordinary topic words shorter than that (``team``) never
+    anchor, so a semantic near-match is not pruned away with the vector tail.
+    """
+    return any(character.isdigit() for character in token) or len(token) >= ANCHOR_MIN_LENGTH
+
+
+def _semantic_near_match(candidate: float, leader: float) -> bool:
+    """True when ``candidate`` cosine is close enough to the leader's.
+
+    Shared by the lexical-gap prune and the adaptive cutoff so both treat a
+    semantic near-match the same way. Both rows must clear the absolute floor
+    and the candidate must stay within ``SEMANTIC_FLOOR`` of the leader; a weak
+    leader has no meaningful semantic evidence, so a zero or orthogonal
+    candidate never rides along.
+    """
+    if leader < SEMANTIC_ABSOLUTE_FLOOR:
+        return False
+    return candidate >= leader * SEMANTIC_FLOOR and candidate >= SEMANTIC_ABSOLUTE_FLOOR
+
+
 def drop_lexical_gap_tail(
     query: str,
     corpus: list[dict[str, Any]],
     ranked: list[dict[str, Any]],
+    vectors: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
-    """Drop vector-only rows when the leader lexically anchors a rare query token."""
+    """Drop vector-only rows when the leader lexically anchors a rare query token.
+
+    A vector-only row survives when its cosine is a semantic near-match of the
+    leader, so a genuine semantic hit is not hidden by a rank_score gap.
+    """
     tokens = content_tokens(query)
     if len(ranked) <= 1 or not tokens:
         return ranked
@@ -329,7 +381,7 @@ def drop_lexical_gap_tail(
     }
     rare_anchor = False
     for token in tokens:
-        if len(token) < 6:
+        if not _anchor_token(token):
             continue
         hits = [page_id for page_id, bag in bags.items() if token in bag]
         if len(hits) <= 2 and top_id in hits:
@@ -337,32 +389,55 @@ def drop_lexical_gap_tail(
             break
     if not rare_anchor:
         return ranked
+    signals = vectors or {}
+    leader_vector = signals.get(top_id, 0.0)
     kept = [ranked[0]]
     for page in ranked[1:]:
-        if lexical.get(str(page.get("id") or ""), 0.0) > 0.0:
+        page_id = str(page.get("id") or "")
+        if lexical.get(page_id, 0.0) > 0.0:
+            kept.append(page)
+            continue
+        if _semantic_near_match(signals.get(page_id, 0.0), leader_vector):
             kept.append(page)
     return kept
 
 
-def adaptive_cutoff(rows: list[dict[str, Any]], cap: int) -> list[dict[str, Any]]:
+def adaptive_cutoff(
+    rows: list[dict[str, Any]],
+    cap: int,
+    vectors: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
     """Keep a relevance prefix of an already ranked list.
 
     A smooth score slope is preserved up to ``cap``. A cliff, or a long tail
-    far below a boosted top score, ends the list. The first row always stays.
+    far below a boosted top score, ends the list. With a strong leading
+    cosine, a weak interstitial is skipped and the scan continues, but a weak
+    row is only appended when it is itself a semantic near-match of the
+    leader. Without usable vector scores the scan stops at the first weak row.
+    The first row always stays first.
     """
     if cap < 1 or not rows:
         return []
     kept = [rows[0]]
     top = float(rows[0].get("rank_score") or 0.0)
     use_floor = top >= PEAK_SCORE
+    signals = vectors or {}
+    leader_vector = signals.get(str(rows[0].get("id") or ""), 0.0)
+    has_vectors = leader_vector >= SEMANTIC_ABSOLUTE_FLOOR
     for previous, row in zip(rows, rows[1:], strict=False):
         if len(kept) >= cap:
             break
         score = float(row.get("rank_score") or 0.0)
         prev = float(previous.get("rank_score") or 0.0)
-        if use_floor and score < top * RELATIVE_FLOOR:
-            break
-        if prev > 0.0 and score < prev * CLIFF_RATIO and score < top * CLIFF_OF_TOP:
+        weak = (use_floor and score < top * RELATIVE_FLOOR) or (
+            prev > 0.0 and score < prev * CLIFF_RATIO and score < top * CLIFF_OF_TOP
+        )
+        near_match = has_vectors and _semantic_near_match(
+            signals.get(str(row.get("id") or ""), 0.0), leader_vector
+        )
+        if weak and not near_match:
+            if has_vectors:
+                continue
             break
         kept.append(row)
     return kept

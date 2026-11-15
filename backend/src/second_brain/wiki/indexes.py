@@ -394,9 +394,9 @@ class IndexCoordinator:
             ranked.sort(
                 key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
             )
-            ranked = drop_lexical_gap_tail(query, snapshot["pages"], ranked)
+            ranked = drop_lexical_gap_tail(query, snapshot["pages"], ranked, signals)
             cutoff = limit is None
-            window = adaptive_cutoff(ranked, pool) if cutoff else ranked[:pool]
+            window = adaptive_cutoff(ranked, pool, signals) if cutoff else ranked[:pool]
             dropped_tail = cutoff and len(window) < len(ranked)
             results = []
             for page in window:
