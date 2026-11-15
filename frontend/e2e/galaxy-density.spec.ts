@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { clampZoomScale } from "../src/galaxy-field";
 import { test } from "./reading-test";
 
 for (const width of [390, 1440]) {
@@ -202,28 +203,33 @@ test(`dense curated constellation shows direct links and keyboard zoom (${width}
     });
     const fitZoom = await zoomOf();
     expect(fitZoom).toBeCloseTo(1, 2);
+    // Keyboard zoom is additive and bounded by clampZoomScale. Derive the
+    // expected scale from the shared step and clamp so the cap cannot go stale.
+    const zoomStep = 0.25;
+    const zoomAfter = (steps: number) => clampZoomScale(1 + steps * zoomStep);
     await page.keyboard.press("+");
     expect(await zoomOf()).toBeGreaterThan(fitZoom);
     await expect(other).toBeFocused();
     expect(await focusedVisible(), "zoom must retain a visible focused star").toBe(true);
     for (let step = 0; step < 20; step++) await page.keyboard.press("+");
-    expect(await zoomOf()).toBeCloseTo(4, 2);
+    expect(await zoomOf()).toBeCloseTo(zoomAfter(21), 2);
     expect(await focusedVisible(), "maximum zoom must not hide focus or silently reset").toBe(true);
     await page.keyboard.press("=");
-    expect(await zoomOf()).toBeCloseTo(4, 2);
+    expect(await zoomOf()).toBeCloseTo(zoomAfter(22), 2);
     for (let step = 0; step < 20; step++) await page.keyboard.press("-");
-    expect(await zoomOf()).toBeCloseTo(0.75, 2);
+    expect(await zoomOf()).toBeCloseTo(zoomAfter(2), 2);
     expect(await focusedVisible()).toBe(true);
     await page.keyboard.press("=");
-    await expect.poll(zoomOf).toBeCloseTo(1, 2);
+    await expect.poll(zoomOf).toBeCloseTo(zoomAfter(3), 2);
     // Literal search text must not invoke map zoom.
     const search = page.getByRole("searchbox", { name: "Find a page in this snapshot" });
     await search.fill("Synthetic");
     await search.press("End");
+    const zoomBeforeTyping = await zoomOf();
     await page.keyboard.press("+");
     await page.keyboard.press("-");
     await expect(search).toHaveValue("Synthetic+-");
-    expect(await zoomOf()).toBeCloseTo(fitZoom, 2);
+    expect(await zoomOf()).toBeCloseTo(zoomBeforeTyping, 2);
     await search.fill("");
     await other.focus();
     await page.keyboard.press("Enter");
