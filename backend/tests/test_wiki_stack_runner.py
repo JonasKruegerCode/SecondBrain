@@ -96,7 +96,10 @@ def test_copied_image_install_refuses_source_and_old_starters(danger: str | None
     data = config()
     # The standard install now ships the retrieval databases with named volumes.
     data["services"]["neo4j"] = {
-        "image": "neo4j:5.26.33@sha256:577eb43120e8688e62e753e962c47d30044ecaa95147ee5386c29f226b878008",
+        "image": (
+            "neo4j:5.26.33@sha256:"
+            "577eb43120e8688e62e753e962c47d30044ecaa95147ee5386c29f226b878008"
+        ),
         "volumes": [{"type": "volume", "source": "neo4j_data", "target": "/data"}],
     }
     data["services"]["qdrant"] = {
