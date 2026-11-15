@@ -76,6 +76,9 @@ const PERSPECTIVE_REFERENCE = 100;
 // can reasonably single one out. This keeps the fitted overview uncluttered.
 const HOVER_CLOSENESS = 1.5;
 const HOVER_RADIUS = 26;
+// A focused star also paints a 2px :focus-visible outline at a 3px offset.
+// Reserve that ring so reveal() keeps the whole indicator inside the stage.
+const FOCUS_OUTLINE = 6;
 
 function smoothstep(edge0: number, edge1: number, value: number) {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
@@ -756,13 +759,16 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     paint,
     resize: paint,
     setCamera(camera) {
+      // A caller-supplied pan is authoritative, including an exact 0. Treating 0
+      // as "absent" and snapping to the fitted home pan threw a focused star off
+      // screen on every zoom step. The pre-fit mount resolves the home pan in fit().
       pendingScale = clampZoomScale(camera.scale || 1);
       pendingPanX = camera.panX;
       pendingPanY = camera.panY;
       if (fitted) {
         cam.distance = homeDistance / pendingScale;
-        cam.panX = pendingPanX || homePanX;
-        cam.panY = pendingPanY || homePanY;
+        cam.panX = pendingPanX;
+        cam.panY = pendingPanY;
       }
       paint();
     },
@@ -801,9 +807,24 @@ export function mountGalaxyField(host: HTMLElement, model: FieldModel, options: 
     reveal(id) {
       const point = shots.get(id);
       if (!point || !host.clientWidth) return;
-      const margin = 48;
-      cam.panX += Math.max(0, margin - point.x) - Math.max(0, point.x - (host.clientWidth - margin));
-      cam.panY += Math.max(0, margin - point.y) - Math.max(0, point.y - (host.clientHeight - margin));
+      // Focusing an off-screen control can make the browser scroll the stage
+      // container, which would shift the DOM box out of the viewport even when
+      // the projection is correct. Clear it before measuring (no-op with clip).
+      host.scrollTop = 0;
+      host.scrollLeft = 0;
+      // Keep the complete focused control inside the map viewport: the star
+      // button box plus its :focus-visible outline and offset. Clamping to the
+      // star center alone left the outline (and, at deep zoom, part of the box)
+      // outside the stage.
+      const button = buttons.get(id);
+      const halfWidth = (button?.offsetWidth || 46) / 2 + FOCUS_OUTLINE;
+      const halfHeight = (button?.offsetHeight || 46) / 2 + FOCUS_OUTLINE;
+      if (host.clientWidth > halfWidth * 2) {
+        cam.panX += Math.max(0, halfWidth - point.x) - Math.max(0, point.x - (host.clientWidth - halfWidth));
+      }
+      if (host.clientHeight > halfHeight * 2) {
+        cam.panY += Math.max(0, halfHeight - point.y) - Math.max(0, point.y - (host.clientHeight - halfHeight));
+      }
       paint();
     },
     destroy() {

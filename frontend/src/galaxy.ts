@@ -187,6 +187,18 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   }) : null;
   if (!field && !nodes.length) stage.innerHTML = `<div class="galaxy-empty"><h2>A quiet sky.</h2><p>Add Markdown pages and explicit wikilinks to give this galaxy its first stars.</p><a href="/?overview=1">Go to pages →</a></div>`;
   const setView = () => { field?.setCamera({ scale, panX, panY }); };
+  // Zoom and reveal both move the live camera. Mirror it back into the saved
+  // view state so the next setCamera cannot restore a stale pan or scale.
+  const syncCamera = () => {
+    const live = field?.getCamera();
+    if (live) { scale = live.scale; panX = live.panX; panY = live.panY; }
+  };
+  // Control-button zoom has no focused star to anchor to, so keep the selected
+  // page, otherwise the roving tab stop, inside the stage afterwards.
+  const keepCurrentStarInView = () => {
+    const id = selectedNode || rovingNode;
+    if (id) field?.reveal(id);
+  };
   let cameraReady = false;
   function renderMap() {
     const active = selectedCluster === null ? null : clusters[selectedCluster];
@@ -197,8 +209,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
       field.setCamera({ scale, panX, panY });
       cameraReady = true;
     } else {
-      const live = field.getCamera();
-      scale = live.scale; panX = live.panX; panY = live.panY;
+      syncCamera();
     }
     field.resize();
     field.setView({ selected: selectedNode, query, focusGroup: selectedCluster });
@@ -338,9 +349,9 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
         if (event.detail !== 0 && window.matchMedia("(max-width: 680px)").matches) revealMobile(sidebar.parentElement!);
         break;
       }
-      case "zoom-in": scale = clampZoomScale(scale + .25); setView(); break;
-      case "zoom-out": scale = clampZoomScale(scale - .25); setView(); break;
-      case "reset": scale = 1; panX = panY = 0; setView(); break;
+      case "zoom-in": syncCamera(); scale = clampZoomScale(scale + .25); setView(); keepCurrentStarInView(); syncCamera(); break;
+      case "zoom-out": syncCamera(); scale = clampZoomScale(scale - .25); setView(); keepCurrentStarInView(); syncCamera(); break;
+      case "reset": scale = 1; panX = panY = 0; field?.reset(); syncCamera(); break;
     }
   };
   const keydown = (event: KeyboardEvent) => {
@@ -368,9 +379,14 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
     }
     if (event.key === "+" || event.key === "=" || event.key === "-") {
       event.preventDefault();
+      // The wheel and drag gestures also move the camera; read it before
+      // stepping so the zoom continues from the live scale, then keep the
+      // focused star's complete indicator inside the stage.
+      syncCamera();
       scale = clampZoomScale(scale + (event.key === "-" ? -.25 : .25));
       setView();
       field.reveal(target.dataset.node || "");
+      syncCamera();
       return;
     }
     if (event.key === "Enter" || event.key === " ") {
@@ -398,8 +414,7 @@ export function renderGalaxy(main: HTMLElement, graph: Graph, onOpen?: (id: stri
   const resize = new ResizeObserver(() => {
     field?.resize();
     if (selectedNode) field?.reveal(selectedNode);
-    const live = field?.getCamera();
-    if (live) { scale = live.scale; panX = live.panX; panY = live.panY; }
+    syncCamera();
   });
   resize.observe(stage);
   return () => {
