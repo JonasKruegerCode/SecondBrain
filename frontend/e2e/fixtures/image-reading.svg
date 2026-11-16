@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="600" viewBox="0 0 2400 600">
+  <rect width="2400" height="600" fill="#edf4ef"/>
+  <rect width="800" height="600" fill="#2e776a"/>
+  <rect x="800" width="800" height="600" fill="#95b8a4"/>
+  <text x="1200" y="320" text-anchor="middle" font-family="sans-serif" font-size="72" fill="#172e27">Synthetic wide reading image</text>
+</svg>

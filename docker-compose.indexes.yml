@@ -1,0 +1,6 @@
+# Compatibility stub. Neo4j and Qdrant now ship in docker-compose.yml, so the
+# separate database overlay is no longer needed. Existing commands such as
+#   docker compose -f docker-compose.yml -f docker-compose.indexes.yml up -d
+# keep parsing and do not start a second set of databases. You can delete this
+# file at your convenience.
+services: {}

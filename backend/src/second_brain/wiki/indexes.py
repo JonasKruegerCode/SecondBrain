@@ -1,0 +1,554 @@
+"""Recoverable snapshot indexing; Git remains the only content authority.
+
+The worker lock serializes builders, not content writers. Every attempt has a
+fresh isolated generation, so a failed/late build cannot corrupt a live index.
+Only a durable ready receipt makes that generation readable. Semantic search
+keeps the last compatible ready generation while a new one builds or fails.
+Page revisions are checked against the current search projection before use.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import sqlite3
+import time
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any, Protocol
+
+from second_brain.wiki.relevance import (
+    ANCHOR_MIN_LENGTH,
+    IMPLICIT_CANDIDATE_LIMIT,
+    _semantic_near_match,
+    adaptive_cutoff,
+    combine_chunk_scores,
+    content_tokens,
+    rank_pages,
+)
+from second_brain.wiki.store import WikiError, WikiStore
+
+
+class SnapshotIndex(Protocol):
+    def build(self, generation: str, snapshot: dict[str, Any]) -> None: ...
+
+
+class IndexCoordinator:
+    def __init__(
+        self, store: WikiStore, adapters: dict[str, Any] | None = None, *, config_id: str = "v1"
+    ) -> None:
+        self.store = store
+        self.adapters = adapters or {}
+        if set(self.adapters) - {"graph", "vector"}:
+            raise ValueError("Supported indexes: graph and vector.")
+        self.config_id = config_id
+        self.db_path = store.path / ".wiki-indexes.sqlite3"
+        with self._db() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT)")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS receipts (kind TEXT PRIMARY KEY, revision TEXT, "
+                "generation TEXT, config TEXT, state TEXT)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS generations (kind TEXT, generation TEXT, "
+                "revision TEXT, config TEXT, state TEXT, created_at REAL, "
+                "PRIMARY KEY (kind, generation))"
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO metadata VALUES ('namespace', ?)", (uuid.uuid4().hex,)
+            )
+            self.namespace = str(
+                db.execute("SELECT value FROM metadata WHERE key='namespace'").fetchone()[0]
+            )
+            # Existing receipts predate the retention ledger. Start their grace
+            # period now rather than guessing whether an old provider target is safe.
+            db.execute(
+                "INSERT OR IGNORE INTO generations "
+                "SELECT kind,generation,revision,config,state,? FROM receipts",
+                (time.time(),),
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS reuse_sources "
+                "(kind TEXT PRIMARY KEY, config TEXT, generation TEXT)"
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO reuse_sources "
+                "SELECT kind,config,generation FROM receipts WHERE state='ready'"
+            )
+
+    @contextmanager
+    def _db(self) -> Iterator[sqlite3.Connection]:
+        db = sqlite3.connect(self.db_path, timeout=10)
+        try:
+            with db:
+                db.execute("PRAGMA synchronous=FULL")
+                yield db
+        finally:
+            db.close()
+
+    def close(self) -> None:
+        error: Exception | None = None
+        for adapter in self.adapters.values():
+            client = getattr(adapter, "client", None) or getattr(adapter, "driver", None)
+            if client is not None:
+                try:
+                    client.close()
+                except Exception as exc:
+                    if error is None:
+                        error = exc
+        if error is not None:
+            raise error
+
+    def _receipt(self, kind: str) -> dict[str, Any] | None:
+        with self._db() as db:
+            row = db.execute(
+                "SELECT revision,generation,config,state FROM receipts WHERE kind=?", (kind,)
+            ).fetchone()
+        return (
+            dict(zip(("revision", "generation", "config", "state"), row, strict=True))
+            if row
+            else None
+        )
+
+    @contextmanager
+    def _reader(self) -> Iterator[None]:
+        with (self.store.path / ".wiki-index-readers.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_SH)
+            yield
+
+    def _record_attempt(self, kind: str, generation: str, revision: str, created_at: float) -> None:
+        with self._db() as db:
+            db.execute(
+                "INSERT INTO generations VALUES (?,?,?,?,?,?)",
+                (kind, generation, revision, self.config_id, "building", created_at),
+            )
+
+    def _record_result(self, kind: str, generation: str, revision: str, state: str) -> None:
+        with self._db() as db:
+            db.execute(
+                "UPDATE generations SET state=? WHERE kind=? AND generation=?",
+                (state, kind, generation),
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO receipts VALUES (?,?,?,?,?)",
+                (kind, revision, generation, self.config_id, state),
+            )
+            if state == "ready":
+                db.execute(
+                    "INSERT OR REPLACE INTO reuse_sources VALUES (?,?,?)",
+                    (kind, self.config_id, generation),
+                )
+
+    def _reuse_source(self, kind: str) -> str | None:
+        with self._db() as db:
+            row = db.execute(
+                "SELECT generation FROM reuse_sources WHERE kind=? AND config=?",
+                (kind, self.config_id),
+            ).fetchone()
+        return str(row[0]) if row else None
+
+    def _serving_receipt(self, kind: str) -> dict[str, Any] | None:
+        """Last fully built generation for this config, including after a failure.
+
+        reuse_sources is advanced in the same transaction as a successful build
+        receipt. Failed/building generations never displace that ready pointer.
+        """
+        with self._db() as db:
+            row = db.execute(
+                "SELECT g.revision,g.generation,g.config,g.state FROM generations g "
+                "JOIN reuse_sources s ON s.kind=g.kind AND s.generation=g.generation "
+                "AND s.config=g.config WHERE g.kind=? AND g.config=? AND g.state='ready'",
+                (kind, self.config_id),
+            ).fetchone()
+        return (
+            dict(zip(("revision", "generation", "config", "state"), row, strict=True))
+            if row
+            else None
+        )
+
+    def status(self) -> dict[str, Any]:
+        revision = self.store._head() or None
+        states: dict[str, Any] = {}
+        for kind in ("graph", "vector"):
+            receipt = self._receipt(kind)
+            configured = kind in self.adapters
+            if not configured:
+                state = "not_configured"
+            elif (
+                not revision
+                or not receipt
+                or receipt["config"] != self.config_id
+                or receipt["revision"] != revision
+            ):
+                state = "pending"
+            else:
+                state = "current" if receipt["state"] == "ready" else "error"
+            states[kind] = {
+                "state": state,
+                "indexed_revision": receipt["revision"] if receipt else None,
+            }
+            if kind == "vector" and configured:
+                serving = self._serving_receipt(kind)
+                states[kind]["serving_revision"] = serving["revision"] if serving else None
+                states[kind]["available"] = serving is not None
+        return {"revision": revision, "indexes": states}
+
+    def run_once(self, *, rebuild: bool = False) -> dict[str, Any]:
+        with (self.store.path / ".wiki-index-worker.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {**self.status(), "worker": "busy"}
+            revision = self.store._head()
+            receipts = {kind: self._receipt(kind) for kind in self.adapters}
+            if not rebuild and all(
+                receipt
+                and receipt["revision"] == revision
+                and receipt["config"] == self.config_id
+                and receipt["state"] == "ready"
+                for receipt in receipts.values()
+            ):
+                return {**self.status(), "worker": "idle"}
+            snapshot = self.store.snapshot()
+            if not snapshot["revision"]:
+                return {**self.status(), "worker": "idle"}
+            for kind, adapter in self.adapters.items():
+                receipt = self._receipt(kind)
+                if (
+                    not rebuild
+                    and receipt
+                    and (
+                        receipt["revision"] == snapshot["revision"]
+                        and receipt["config"] == self.config_id
+                        and receipt["state"] == "ready"
+                    )
+                ):
+                    continue
+                generation = self.namespace + "_" + uuid.uuid4().hex
+                self._record_attempt(kind, generation, snapshot["revision"], time.time())
+                state = "ready"
+                try:
+                    incremental = getattr(adapter, "build_from", None)
+                    source = self._reuse_source(kind) if not rebuild else None
+                    if callable(incremental) and source:
+                        incremental(generation, snapshot, source)
+                    else:
+                        adapter.build(generation, snapshot)
+                except Exception:
+                    # Provider exceptions may contain credentials or private text.
+                    # Never put raw messages in public status/logs or receipts.
+                    state = "error"
+                self._record_result(kind, generation, snapshot["revision"], state)
+            return {**self.status(), "worker": "completed"}
+
+    def prune(
+        self, *, keep_ready: int = 2, min_age_seconds: float = 86400, dry_run: bool = True
+    ) -> dict[str, Any]:
+        """Plan or remove only old generations recorded by this coordinator.
+
+        The worker lock excludes builders. The exclusive reader lock makes the
+        receipt lookup and provider read atomic with respect to deletion across
+        processes. Provider generations absent from the local ledger are never
+        cleanup candidates.
+        """
+        if not 1 <= keep_ready <= 100 or min_age_seconds < 0:
+            raise ValueError("keep_ready must be 1..100 and min_age_seconds nonnegative")
+        with (self.store.path / ".wiki-index-worker.lock").open("a") as worker_lock:
+            try:
+                fcntl.flock(worker_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"cleanup": "busy", "dry_run": dry_run, "indexes": {}}
+            with (self.store.path / ".wiki-index-readers.lock").open("a") as reader_lock:
+                try:
+                    fcntl.flock(reader_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return {"cleanup": "busy", "dry_run": dry_run, "indexes": {}}
+                cutoff = time.time() - min_age_seconds
+                results: dict[str, Any] = {}
+                for kind, adapter in self.adapters.items():
+                    if not all(
+                        callable(getattr(adapter, method, None))
+                        for method in ("list_generations", "delete_generation")
+                    ):
+                        results[kind] = {"state": "unsupported", "candidates": [], "deleted": []}
+                        continue
+                    try:
+                        available = set(adapter.list_generations(self.namespace))
+                    except Exception:
+                        results[kind] = {
+                            "state": "error",
+                            "candidates": [],
+                            "deleted": [],
+                        }
+                        continue
+                    with self._db() as db:
+                        rows = db.execute(
+                            "SELECT generation,state,created_at FROM generations "
+                            "WHERE kind=? ORDER BY created_at DESC",
+                            (kind,),
+                        ).fetchall()
+                    receipt = self._receipt(kind)
+                    # Missing provider generations cannot satisfy retention.
+                    # Otherwise a lost recent backup can evict the last actual
+                    # predecessor even while keep_ready requests two copies.
+                    ready = [row[0] for row in rows if row[1] == "ready" and row[0] in available]
+                    protected = (
+                        {receipt["generation"]}
+                        if receipt and receipt["state"] == "ready"
+                        else set()
+                    )
+                    with self._db() as db:
+                        reusable = db.execute(
+                            "SELECT generation FROM reuse_sources WHERE kind=?", (kind,)
+                        ).fetchone()
+                    if reusable:
+                        protected.add(str(reusable[0]))
+                    for generation in ready:
+                        if len(protected.intersection(ready)) >= keep_ready:
+                            break
+                        protected.add(generation)
+                    candidates = [
+                        generation
+                        for generation, _state, created_at in rows
+                        if generation not in protected
+                        and generation in available
+                        and created_at <= cutoff
+                    ]
+                    deleted: list[str] = []
+                    failed = False
+                    if not dry_run:
+                        for generation in candidates:
+                            try:
+                                adapter.delete_generation(generation)
+                            except Exception:
+                                failed = True
+                                break
+                            with self._db() as db:
+                                db.execute(
+                                    "DELETE FROM generations WHERE kind=? AND generation=?",
+                                    (kind, generation),
+                                )
+                            deleted.append(generation)
+                    results[kind] = {
+                        "state": "planned" if dry_run else "error" if failed else "completed",
+                        "candidates": candidates,
+                        "deleted": deleted,
+                        "untracked": len(
+                            available.difference(generation for generation, *_ in rows)
+                        ),
+                    }
+                return {"cleanup": "completed", "dry_run": dry_run, "indexes": results}
+
+    def _current(self, kind: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        # Explicit graph traversal needs an exact receipt, not graph derivation.
+        revision = self.store._head()
+        receipt = self._receipt(kind)
+        if kind not in self.adapters:
+            raise WikiError("index_not_configured", "This optional index is not configured.")
+        if not receipt or (
+            receipt["revision"] != revision
+            or receipt["config"] != self.config_id
+            or receipt["state"] != "ready"
+        ):
+            raise WikiError("index_pending", "The index has not completed this content revision.")
+        return {"revision": revision}, receipt
+
+    def semantic_search(self, query: str, limit: int | None = 10) -> dict[str, Any]:
+        """Rank a compatible ready generation against current page metadata.
+
+        An integer ``limit`` is a hard cap and does not drop a weak tail.
+        ``limit=None`` fetches a bounded candidate pool, fuses it with lexical
+        title and body evidence, and applies the adaptive cutoff.
+        """
+        if not query.strip():
+            return {
+                "mode": "semantic",
+                "revision": self.store._head() or None,
+                "results": [],
+            }
+        pool = IMPLICIT_CANDIDATE_LIMIT if limit is None else min(50, max(1, limit))
+        with self._reader(), self.store.search_catalog().read() as view:
+            if "vector" not in self.adapters:
+                raise WikiError("index_not_configured", "This optional index is not configured.")
+            receipt = self._serving_receipt("vector")
+            if receipt is None:
+                raise WikiError("index_pending", "No compatible vector generation is ready yet.")
+            try:
+                adapter = self.adapters["vector"]
+                grouped = getattr(adapter, "search_grouped", None)
+                hits = (
+                    grouped(receipt["generation"], query[:500], pool)
+                    if grouped is not None
+                    else adapter.search(receipt["generation"], query[:500], pool)
+                )
+            except Exception as exc:
+                raise WikiError("index_unavailable", "The vector provider is unavailable.") from exc
+            pages = {p["id"]: p for p in view.pages([hit.get("id", "") for hit in hits])}
+            candidates: list[dict[str, Any]] = []
+            signals: dict[str, float] = {}
+            published: dict[str, float] = {}
+            seen: set[str] = set()
+            for hit in hits:
+                page = pages.get(hit.get("id"))
+                if not page or hit.get("revision") != page["revision"]:
+                    continue
+                page_id = str(page["id"])
+                score = float(hit.get("score") or 0.0)
+                mean = hit.get("chunk_mean")
+                candidates.append(page)
+                signals[page_id] = combine_chunk_scores(
+                    score, float(mean) if isinstance(mean, (int, float)) else None
+                )
+                published[page_id] = score
+                seen.add(page_id)
+            weights = view.weights(query)
+            lexical = view.lexical(query, pool + 20)
+            for page in lexical:
+                page_id = str(page["id"])
+                if page_id in seen or float(page["rank_score"]) <= 0:
+                    continue
+                candidates.append(page)
+                published.setdefault(page_id, 0.0)
+                seen.add(page_id)
+            ranked = rank_pages(query, candidates, signals, token_weights=weights)
+            exact = query.strip().casefold()
+            # Exact page identity stays ahead of a merely similar mention.
+            # Vector cosine is preserved on ``score`` and is not rewritten.
+            ranked.sort(
+                key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
+            )
+            # Preserve the rare-anchor rule using indexed document frequencies,
+            # without rescanning the corpus or rebuilding its token statistics.
+            tokens = content_tokens(query)
+            lexical_ids = {page["id"] for page in lexical}
+            if ranked and ranked[0]["id"] in lexical_ids and any(
+                (len(token) >= ANCHOR_MIN_LENGTH or any(c.isdigit() for c in token))
+                and 0 < view.frequency(token) <= 2
+                and view.contains(ranked[0]["id"], token)
+                for token in tokens
+            ):
+                leader = signals.get(ranked[0]["id"], 0.0)
+                ranked = [
+                    page
+                    for page in ranked
+                    if page["id"] in lexical_ids
+                    or _semantic_near_match(signals.get(page["id"], 0.0), leader)
+                ]
+            cutoff = limit is None
+            window = adaptive_cutoff(ranked, pool, signals) if cutoff else ranked[:pool]
+            dropped_tail = cutoff and len(window) < len(ranked)
+            top_rank = max(
+                (float(page.get("rank_score") or 0.0) for page in window), default=0.0
+            )
+            results = []
+            previous = float("inf")
+            for page in window:
+                page_id = str(page["id"])
+                # Public relevance follows the visible order; ``score`` stays the
+                # provider cosine and is never rewritten.
+                rank = min(float(page.get("rank_score") or 0.0), previous)
+                previous = rank
+                results.append(
+                    {
+                        **{k: v for k, v in page.items() if k not in {"markdown", "rank_score"}},
+                        "score": published.get(page_id, 0.0),
+                        "relevance": rank / top_rank if top_rank > 0.0 else 0.0,
+                    }
+                )
+            if self.store._head() != view.revision:
+                raise WikiError(
+                    "index_pending", "Content changed during search. Retry after indexing."
+                )
+            payload: dict[str, Any] = {
+                "mode": "semantic",
+                "revision": view.revision or None,
+                "results": results,
+            }
+            if receipt["revision"] != view.revision:
+                payload["index_revision"] = receipt["revision"]
+                payload["index_state"] = "updating"
+            if dropped_tail:
+                payload["cutoff"] = True
+            return payload
+
+    def neighbors(self, seeds: list[str], hops: int = 1, limit: int = 50) -> dict[str, Any]:
+        if not 1 <= hops <= 3 or not 1 <= limit <= 100 or len(seeds) > 20:
+            raise WikiError("invalid_payload", "Use up to 20 seeds, 1–3 hops and limit 1–100.")
+        for seed in seeds:
+            self.store._validate_id(seed)
+        with self._reader(), self.store.search_catalog().read() as view:
+            snapshot, receipt = self._current("graph")
+            if view.revision != snapshot["revision"]:
+                raise WikiError("index_pending", "Content changed during graph retrieval.")
+            try:
+                ids = self.adapters["graph"].neighbors(receipt["generation"], seeds, hops, limit)
+            except Exception as exc:
+                raise WikiError("index_unavailable", "The graph provider is unavailable.") from exc
+            pages = [
+                {k: v for k, v in p.items() if k != "markdown"}
+                for p in sorted(view.pages(list(set(ids))), key=lambda p: p["title"].casefold())
+            ][:limit]
+            if self.store._head() != snapshot["revision"]:
+                raise WikiError(
+                    "index_pending", "Content changed during graph search. Retry after indexing."
+                )
+            return {"revision": snapshot["revision"], "pages": pages, "hops": hops}
+
+    def graph_search(self, query: str, hops: int = 1) -> dict[str, Any]:
+        """Non-generative vector seeds plus bounded graph context at one revision."""
+        seeds = self.semantic_search(query)
+        vector_hits = [
+            page for page in seeds["results"] if float(page.get("score") or 0) > 0
+        ]
+        expanded = self.neighbors([p["id"] for p in vector_hits[:10]], hops)
+        if seeds["revision"] != expanded["revision"] or self.store._head() != seeds["revision"]:
+            raise WikiError(
+                "index_pending", "Content changed during retrieval. Retry after indexing."
+            )
+        seen = {p["id"] for p in vector_hits}
+        return {
+            "mode": "graph_rag",
+            "revision": seeds["revision"],
+            "results": [{**p, "retrieval": "vector"} for p in vector_hits]
+            + [{**p, "retrieval": "graph"} for p in expanded["pages"] if p["id"] not in seen],
+            "hops": hops,
+        }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build configured indexes once; safe to repeat.")
+    parser.add_argument("--rebuild", action="store_true")
+    parser.add_argument("--prune", action="store_true", help="Plan retained-generation cleanup")
+    parser.add_argument("--apply", action="store_true", help="Apply cleanup; --prune is required")
+    parser.add_argument("--keep-ready", type=int, default=2)
+    parser.add_argument("--min-age-hours", type=float, default=24.0)
+    args = parser.parse_args()
+    import os  # noqa: PLC0415
+
+    from second_brain.wiki.index_config import configured_indexes  # noqa: PLC0415
+
+    path = os.environ.get("SECOND_BRAIN_WIKI_VAULT")
+    if not path:
+        parser.error("SECOND_BRAIN_WIKI_VAULT is required")
+    coordinator = configured_indexes(WikiStore(path))
+    try:
+        if args.apply and not args.prune:
+            parser.error("--apply requires --prune")
+        result = (
+            coordinator.prune(
+                keep_ready=args.keep_ready,
+                min_age_seconds=args.min_age_hours * 3600,
+                dry_run=not args.apply,
+            )
+            if args.prune
+            else coordinator.run_once(rebuild=args.rebuild)
+        )
+        print(json.dumps(result))
+    finally:
+        coordinator.close()
+
+
+if __name__ == "__main__":
+    main()

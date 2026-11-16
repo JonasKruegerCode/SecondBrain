@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "base_commit": "c5bb9bcb8a4d60457d69d409c7aa49ef5ac61321",
+  "scope": "one current application; image-only root Compose; separate source overlay",
+  "backend": {
+    "passed": 1700,
+    "subtests": 46,
+    "integration_deselected": 23,
+    "removed_packages": 50,
+    "retained_package_version_changes": 0,
+    "ruff": "passed",
+    "mypy_files": 132,
+    "stripped_environment_focused_cases": 65
+  },
+  "frontend": {
+    "typecheck": "passed",
+    "production_build": "passed",
+    "node_tests": 15,
+    "build_entries": [
+      "index.html"
+    ],
+    "legacy_entry_removed": true
+  },
+  "integration": {
+    "yaml_parsing": "passed",
+    "make_recipe_cases": 16,
+    "stack_update_runner_cases": 74,
+    "docker_available": false,
+    "docker_registry_execution": "pending hosted CI",
+    "default_install_requires_host_source": false,
+    "default_install_requires_host_starter": false,
+    "smart_http_fixture": "executed locally: actual clone/push/external pull; not Docker"
+  },
+  "local_browser_attempt": {
+    "api_vite_started": true,
+    "health": "passed",
+    "browser_navigation": "not executed: browser singleton socket denied EPERM",
+    "locked_download": "invalid archive",
+    "alternative_browser": "Chrome for Testing157.0.8103.38",
+    "services_cleanup": true
+  },
+  "boundaries": [
+    "No server access, data deletion, environment change, merge or deployment",
+    "No public candidate image publication",
+    "No provider/model quality or physical Android installation evidence"
+  ]
+}

@@ -2,20 +2,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "SecondBrain"
+    """Shared credentials and provider settings for the managed wiki.
+
+    Index endpoints and enablement are read by wiki.index_config without
+    implicit localhost defaults; Git settings remain compatible with existing
+    operator configuration.
+    """
+
     MCP_API_KEY: str = ""
-    MCP_PORT: int = 3000
-    API_PORT: int = 8000
-
-    REDIS_URL: str = "redis://localhost:6379/0"
-
-    NEO4J_URI: str = "bolt://localhost:7687"
-    NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "secretpassword"
-
-    QDRANT_URL: str = "http://localhost:6333"
-
-    VAULT_PATH: str = "/vault"
 
     # -------------------------------------------------------------------------
     # Vault Git sync
@@ -71,16 +65,6 @@ class Settings(BaseSettings):
     GCP_API_KEY: str = ""
     # OpenAI-compatible base URL; default = Google AI (Gemini) compat endpoint
     GCP_ENDPOINT_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-
-    @property
-    def llm_api_key(self) -> str:
-        """Return the API key of the active LLM provider."""
-        if self.LLM_PROVIDER == "gcp":
-            return self.GCP_API_KEY
-        return self.OPENROUTER_API_KEY
-
-    OTEL_ENABLED: bool = False
-    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
 
     model_config = SettingsConfigDict(
         env_file=[".env", "../.env"], env_file_encoding="utf-8", extra="ignore"

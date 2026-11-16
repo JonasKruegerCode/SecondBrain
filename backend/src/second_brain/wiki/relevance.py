@@ -1,0 +1,549 @@
+"""Relevance ranking for wiki search.
+
+Vector cosine stays the published ``score``. Ordering uses reciprocal rank
+fusion of that signal with BM25, plus title, id and heading boosts. Pages
+marked ``type: archive`` or ``status: historical`` are down-weighted. An
+adaptive cutoff drops the weak tail; an explicit result limit skips it.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections import Counter
+from typing import Any
+
+RRF_K = 60
+BM25_K1 = 1.2
+BM25_B = 0.75
+ARCHIVE_PENALTY = 0.28
+# Relative floor only engages once a real field boost lifts the top score
+# above pure reciprocal-rank noise (~0.03). Flat lexical lists stay intact.
+PEAK_SCORE = 0.2
+RELATIVE_FLOOR = 0.36
+CLIFF_RATIO = 0.62
+CLIFF_OF_TOP = 0.82
+# A rank_score cliff can hide a semantic near-match whose vector similarity is
+# still close to the best hit. A row counts as such only when it is within
+# ``SEMANTIC_FLOOR`` of the leader *and* clears an absolute similarity floor, so
+# a zero-similarity neighbor never rides along. An opaque identifier or a token
+# of at least ``ANCHOR_MIN_LENGTH`` characters can anchor a lexical gap; shorter
+# ordinary topic words never do.
+SEMANTIC_FLOOR = 0.87
+SEMANTIC_ABSOLUTE_FLOOR = 0.15
+ANCHOR_MIN_LENGTH = 6
+TOKEN_RE = re.compile(r"[0-9a-zäöü]+", re.IGNORECASE)
+HEX_FRAGMENT_RE = re.compile(r"[0-9a-f]+")
+HEX_FRAGMENT_LENGTHS = frozenset({4, 8, 12})
+HEADING_RE = re.compile(r"(?m)^#{1,6}[ \t]+(.+?)\s*$")
+FIELD_RE = re.compile(r"(?im)^[ \t]*(type|status)[ \t]*:[ \t]*([a-z0-9_-]+)")
+IMPLICIT_CANDIDATE_LIMIT = 15
+
+# Question and function words. Stripped only when a content word remains,
+# so "Was weiß Mira so" matches Mira without requiring "was" or "so".
+STOPWORDS = frozenset(
+    {
+        "a",
+        "am",
+        "aber",
+        "about",
+        "als",
+        "also",
+        "an",
+        "and",
+        "auch",
+        "auf",
+        "aus",
+        "bei",
+        "bin",
+        "bis",
+        "bitte",
+        "da",
+        "das",
+        "dass",
+        "dem",
+        "den",
+        "der",
+        "des",
+        "die",
+        "do",
+        "does",
+        "du",
+        "ein",
+        "eine",
+        "einem",
+        "einen",
+        "einer",
+        "eines",
+        "er",
+        "es",
+        "etwas",
+        "for",
+        "fuer",
+        "fur",
+        "gibt",
+        "hat",
+        "habe",
+        "haben",
+        "how",
+        "ich",
+        "ihm",
+        "ihn",
+        "ihr",
+        "ihre",
+        "im",
+        "in",
+        "is",
+        "ist",
+        "ja",
+        "mal",
+        "man",
+        "mich",
+        "mir",
+        "mit",
+        "nach",
+        "nicht",
+        "noch",
+        "nur",
+        "ob",
+        "oder",
+        "of",
+        "on",
+        "or",
+        "schon",
+        "sein",
+        "seine",
+        "sich",
+        "sie",
+        "sind",
+        "so",
+        "that",
+        "the",
+        "to",
+        "uber",
+        "über",
+        "und",
+        "uns",
+        "vom",
+        "von",
+        "vor",
+        "wann",
+        "warum",
+        "was",
+        "weiss",
+        "welche",
+        "welcher",
+        "welches",
+        "wer",
+        "what",
+        "when",
+        "where",
+        "who",
+        "wie",
+        "wir",
+        "wo",
+        "zu",
+        "zum",
+        "zur",
+    }
+)
+
+
+def tokenize(text: str) -> list[str]:
+    """Case-folded unicode word tokens. ``ß`` folds to ``ss`` via casefold."""
+    return TOKEN_RE.findall(text.casefold())
+
+
+def content_tokens(query: str) -> list[str]:
+    """Query tokens with question words removed when any content word remains."""
+    raw = tokenize(query)
+    kept = [token for token in raw if token not in STOPWORDS]
+    return kept or raw
+
+
+def _heading_tokens(page: dict[str, Any], title: str) -> set[str]:
+    tokens: set[str] = set()
+    for heading in HEADING_RE.findall(str(page.get("markdown") or "")):
+        if heading.casefold().strip() == title:
+            continue
+        tokens.update(tokenize(heading))
+    return tokens
+
+
+def _counts(page: dict[str, Any]) -> Counter[str]:
+    """Weighted term counts: title, id segments, headings, then body."""
+    title = str(page.get("title") or "")
+    page_id = str(page.get("id") or "")
+    counts: Counter[str] = Counter()
+    for token in tokenize(title):
+        counts[token] += 6
+    for token in tokenize(page_id.replace("-", " ")):
+        counts[token] += 5
+    for token in _heading_tokens(page, title.casefold().strip()):
+        counts[token] += 3
+    body = tokenize(str(page.get("markdown") or ""))
+    for token in body[:4000]:
+        counts[token] += 1
+    return counts
+
+
+def _documents(pages: list[dict[str, Any]]) -> list[tuple[str, Counter[str]]]:
+    return [(str(page.get("id") or ""), _counts(page)) for page in pages]
+
+
+def _idf(token: str, documents: list[tuple[str, Counter[str]]], total: int) -> float:
+    df = sum(1 for _page_id, counts in documents if counts[token])
+    return math.log(1.0 + (total - df + 0.5) / (df + 0.5))
+
+
+def _bm25_from_documents(
+    tokens: list[str], documents: list[tuple[str, Counter[str]]]
+) -> dict[str, float]:
+    if not tokens or not documents:
+        return {}
+    total = len(documents)
+    lengths = [sum(counts.values()) or 1 for _page_id, counts in documents]
+    average = sum(lengths) / total
+    scores = {page_id: 0.0 for page_id, _counts in documents}
+    for token in set(tokens):
+        idf = _idf(token, documents, total)
+        for (page_id, counts), length in zip(documents, lengths, strict=True):
+            tf = counts[token]
+            if not tf:
+                continue
+            denom = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * length / average)
+            scores[page_id] += idf * (tf * (BM25_K1 + 1.0)) / denom
+    return scores
+
+
+def bm25_scores(tokens: list[str], pages: list[dict[str, Any]]) -> dict[str, float]:
+    """BM25 over the supplied page set. Unknown ids score 0."""
+    if not tokens or not pages:
+        return {}
+    return _bm25_from_documents(tokens, _documents(pages))
+
+
+def _idf_weights(
+    tokens: list[str], documents: list[tuple[str, Counter[str]]]
+) -> dict[str, float]:
+    """Collection-frequency weight per query token, relative to the rarest.
+
+    A common identity token scores below one, a rare discriminating token scores
+    one, so a weak prefix on a common name cannot match a rare topic segment.
+    A single-token query keeps full strength.
+    """
+    if not tokens or not documents:
+        return {}
+    total = len(documents)
+    idfs = {token: _idf(token, documents, total) for token in set(tokens)}
+    peak = max(idfs.values()) if idfs else 0.0
+    if peak <= 0.0:
+        return dict.fromkeys(tokens, 1.0)
+    return {token: idfs[token] / peak for token in tokens}
+
+
+def token_weights(query: str, pages: list[dict[str, Any]]) -> dict[str, float]:
+    """IDF-like per-token weights over a whole collection, not a candidate subset.
+
+    Ranking calls reuse this so the common/rare split stays stable even when the
+    candidate pool is biased toward the common token.
+    """
+    return _idf_weights(content_tokens(query), _documents(pages))
+
+
+def _opaque_hex_fragment(token: str) -> bool:
+    """True for short hex strings that look like generated identifier pieces.
+
+    Random ids produce 4/8/12-character hex fragments (``050f``, ``81276bc6``).
+    Such a fragment collides by chance across many pages, so matching one in a
+    page-id segment is not evidence of relevance. Word-like segments (``quill``)
+    still count.
+    """
+    return len(token) in HEX_FRAGMENT_LENGTHS and HEX_FRAGMENT_RE.fullmatch(token) is not None
+
+
+def field_boost(
+    query: str,
+    tokens: list[str],
+    page: dict[str, Any],
+    *,
+    semantic_evidence: bool = True,
+    token_weights: dict[str, float] | None = None,
+) -> float:
+    """Largest title or id match, plus a small heading bonus.
+
+    ``semantic_evidence`` is false for a page whose vector cosine is missing or
+    below the absolute floor while other candidates carry usable vectors. Then
+    only a strong identity match survives: a weak prefix, id-segment or heading
+    boost must not let a lexical-only stub outrank a genuine semantic hit.
+
+    ``token_weights`` scales the weak prefix, id-segment and heading boosts by
+    each token's collection frequency, so a common identity token cannot match a
+    rare topic token. Exact title/id identity is never scaled.
+    """
+    folded = query.strip().casefold()
+    title = str(page.get("title") or "").casefold().strip()
+    page_id = str(page.get("id") or "").casefold()
+
+    def weight(token: str) -> float:
+        if not token_weights:
+            return 1.0
+        return token_weights.get(token, 1.0)
+
+    if folded and folded in {title, page_id}:
+        identity = 1.6
+    else:
+        identity = 0.0
+        segments = set(page_id.split("-"))
+        for token in tokens:
+            if title == token or page_id == token:
+                identity = max(identity, 1.2)
+            elif semantic_evidence and (title.startswith(token) or page_id.startswith(token + "-")):
+                identity = max(identity, 0.9 * weight(token))
+            elif semantic_evidence and token in segments and not _opaque_hex_fragment(token):
+                identity = max(identity, 0.45 * weight(token))
+    heading_tokens = _heading_tokens(page, title)
+    matched_headings = [token for token in tokens if token in heading_tokens]
+    if semantic_evidence and matched_headings:
+        identity += 0.15 * max(weight(token) for token in matched_headings)
+    return identity
+
+
+def is_archival(page: dict[str, Any]) -> bool:
+    """True when Markdown declares ``type: archive`` or ``status: historical``."""
+    text = f"{page.get('title') or ''}\n{str(page.get('markdown') or '')[:4000]}"
+    for kind, value in FIELD_RE.findall(text):
+        normalized = value.casefold()
+        if kind.casefold() == "type" and normalized == "archive":
+            return True
+        if kind.casefold() == "status" and normalized in {"historical", "archive", "archived"}:
+            return True
+    return False
+
+
+def combine_chunk_scores(best: float, mean: float | None) -> float:
+    """Best chunk dominates; supporting chunks nudge the vector rank."""
+    if mean is None or not math.isfinite(mean):
+        return best
+    return 0.75 * best + 0.25 * mean
+
+
+def rank_pages(
+    query: str,
+    pages: list[dict[str, Any]],
+    vectors: dict[str, float],
+    *,
+    token_weights: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Return copies ordered by fused relevance. ``rank_score`` is unrounded.
+
+    ``token_weights`` lets a caller pass collection-wide IDF weights so a
+    candidate pool biased toward a common token still down-weights it.
+    """
+    tokens = content_tokens(query)
+    documents = _documents(pages)
+    lexical = _bm25_from_documents(tokens, documents)
+    weights = token_weights if token_weights is not None else _idf_weights(tokens, documents)
+    vector_order = sorted(
+        pages,
+        key=lambda page: (-vectors.get(str(page.get("id") or ""), 0.0), str(page.get("id") or "")),
+    )
+    vector_rank = {
+        str(page.get("id") or ""): index
+        for index, page in enumerate(vector_order, start=1)
+        if vectors.get(str(page.get("id") or ""), 0.0) > 0.0
+    }
+    lexical_order = sorted(
+        (page for page in pages if lexical.get(str(page.get("id") or ""), 0.0) > 0.0),
+        key=lambda page: (
+            -lexical.get(str(page.get("id") or ""), 0.0),
+            str(page.get("id") or ""),
+        ),
+    )
+    lexical_rank = {
+        str(page.get("id") or ""): index for index, page in enumerate(lexical_order, start=1)
+    }
+    has_usable_vector = any(
+        vectors.get(str(page.get("id") or ""), 0.0) >= SEMANTIC_ABSOLUTE_FLOOR for page in pages
+    )
+    fused: list[tuple[float, float, dict[str, Any]]] = []
+    for page in pages:
+        page_id = str(page.get("id") or "")
+        vector_score = vectors.get(page_id, 0.0)
+        # Only gate weak boosts when a usable semantic hit is present to protect.
+        semantic_evidence = not has_usable_vector or vector_score >= SEMANTIC_ABSOLUTE_FLOOR
+        boost = field_boost(
+            query, tokens, page, semantic_evidence=semantic_evidence, token_weights=weights
+        )
+        penalty = ARCHIVE_PENALTY if is_archival(page) else 1.0
+        rrf = 0.0
+        if page_id in vector_rank:
+            rrf += 1.0 / (RRF_K + vector_rank[page_id])
+        if page_id in lexical_rank:
+            rrf += 1.0 / (RRF_K + lexical_rank[page_id])
+        fused.append(((rrf + boost) * penalty, vector_score, page))
+    fused.sort(key=lambda item: (-item[0], -item[1], str(item[2].get("id") or "")))
+    return [{**page, "rank_score": score} for score, _vector, page in fused]
+
+
+def overlapping_ids(
+    query: str,
+    pages: list[dict[str, Any]],
+    skip: set[str],
+    limit: int,
+) -> list[str]:
+    """Page ids with the most query-token hits, excluding ``skip``."""
+    tokens = content_tokens(query)
+    if not tokens or limit < 1:
+        return []
+    scored: list[tuple[int, str]] = []
+    for page in pages:
+        page_id = str(page.get("id") or "")
+        if not page_id or page_id in skip:
+            continue
+        text = f"{page_id.replace('-', ' ')} {page.get('title') or ''} {page.get('markdown') or ''}"
+        bag = set(tokenize(text))
+        overlap = sum(1 for token in tokens if token in bag)
+        if overlap:
+            scored.append((overlap, page_id))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [page_id for _overlap, page_id in scored[:limit]]
+
+
+def _anchor_token(token: str) -> bool:
+    """True for opaque identifier-like or long exclusive tokens.
+
+    A digit marks a generated or external identifier, and a token of at least
+    ``ANCHOR_MIN_LENGTH`` characters is long enough that a unique corpus hit is
+    a genuine anchor. Ordinary topic words shorter than that (``team``) never
+    anchor, so a semantic near-match is not pruned away with the vector tail.
+    """
+    return any(character.isdigit() for character in token) or len(token) >= ANCHOR_MIN_LENGTH
+
+
+def _semantic_near_match(candidate: float, leader: float) -> bool:
+    """True when ``candidate`` cosine is close enough to the leader's.
+
+    Shared by the lexical-gap prune and the adaptive cutoff so both treat a
+    semantic near-match the same way. Both rows must clear the absolute floor
+    and the candidate must stay within ``SEMANTIC_FLOOR`` of the leader; a weak
+    leader has no meaningful semantic evidence, so a zero or orthogonal
+    candidate never rides along.
+    """
+    if leader < SEMANTIC_ABSOLUTE_FLOOR:
+        return False
+    return candidate >= leader * SEMANTIC_FLOOR and candidate >= SEMANTIC_ABSOLUTE_FLOOR
+
+
+def drop_lexical_gap_tail(
+    query: str,
+    corpus: list[dict[str, Any]],
+    ranked: list[dict[str, Any]],
+    vectors: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Drop vector-only rows when the leader lexically anchors a rare query token.
+
+    A vector-only row survives when its cosine is a semantic near-match of the
+    leader, so a genuine semantic hit is not hidden by a rank_score gap.
+    """
+    tokens = content_tokens(query)
+    if len(ranked) <= 1 or not tokens:
+        return ranked
+    lexical = bm25_scores(tokens, corpus)
+    top_id = str(ranked[0].get("id") or "")
+    if lexical.get(top_id, 0.0) <= 0.0:
+        return ranked
+    bags = {
+        str(page.get("id") or ""): set(
+            tokenize(
+                f"{page.get('title') or ''} {page.get('markdown') or ''} "
+                f"{str(page.get('id') or '').replace('-', ' ')}"
+            )
+        )
+        for page in corpus
+    }
+    rare_anchor = False
+    for token in tokens:
+        if not _anchor_token(token):
+            continue
+        hits = [page_id for page_id, bag in bags.items() if token in bag]
+        if len(hits) <= 2 and top_id in hits:
+            rare_anchor = True
+            break
+    if not rare_anchor:
+        return ranked
+    signals = vectors or {}
+    leader_vector = signals.get(top_id, 0.0)
+    kept = [ranked[0]]
+    for page in ranked[1:]:
+        page_id = str(page.get("id") or "")
+        if lexical.get(page_id, 0.0) > 0.0:
+            kept.append(page)
+            continue
+        if _semantic_near_match(signals.get(page_id, 0.0), leader_vector):
+            kept.append(page)
+    return kept
+
+
+def adaptive_cutoff(
+    rows: list[dict[str, Any]],
+    cap: int,
+    vectors: dict[str, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Keep a relevance prefix of an already ranked list.
+
+    A smooth score slope is preserved up to ``cap``. A cliff, or a long tail
+    far below a boosted top score, ends the list. With a strong leading
+    cosine, a weak interstitial is skipped and the scan continues, but a weak
+    row is only appended when it is itself a semantic near-match of the
+    leader. Even a smooth fused slope trims rows whose cosine is not a
+    near-match of the leader, so an RRF tail cannot leak. Without usable
+    vector scores the scan stops at the first weak row. The first row always
+    stays first.
+    """
+    if cap < 1 or not rows:
+        return []
+    kept = [rows[0]]
+    top = float(rows[0].get("rank_score") or 0.0)
+    use_floor = top >= PEAK_SCORE
+    signals = vectors or {}
+    leader_vector = signals.get(str(rows[0].get("id") or ""), 0.0)
+    has_vectors = leader_vector >= SEMANTIC_ABSOLUTE_FLOOR
+    for previous, row in zip(rows, rows[1:], strict=False):
+        if len(kept) >= cap:
+            break
+        score = float(row.get("rank_score") or 0.0)
+        prev = float(previous.get("rank_score") or 0.0)
+        weak = (use_floor and score < top * RELATIVE_FLOOR) or (
+            prev > 0.0 and score < prev * CLIFF_RATIO and score < top * CLIFF_OF_TOP
+        )
+        near_match = has_vectors and _semantic_near_match(
+            signals.get(str(row.get("id") or ""), 0.0), leader_vector
+        )
+        # Without a score cliff, a non-near-match row is still a cosine tail.
+        cosine_tail = has_vectors and not use_floor and not near_match
+        if (weak and not near_match) or cosine_tail:
+            if has_vectors:
+                continue
+            break
+        kept.append(row)
+    return kept
+
+
+def trim_ranked(
+    rows: list[dict[str, Any]], cap: int, *, enabled: bool
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    """Apply cutoff when every row carries ``rank_score``.
+
+    Returns the visible rows, whether the hard cap hid further matches, and
+    whether the adaptive cutoff discarded a weak tail.
+    """
+    if cap < 1:
+        return [], False, False
+    if not enabled or not rows or any("rank_score" not in row for row in rows):
+        visible = rows[:cap]
+        return visible, len(rows) > cap, False
+    kept = adaptive_cutoff(rows, cap)
+    truncated = len(rows) > cap and len(kept) >= cap
+    cutoff = len(kept) < min(len(rows), cap)
+    return kept, truncated, cutoff

@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "date": "2026-11-05",
+  "base_commit": "e3c57b44dc9001ec93e0494a2c748df62f5cb14f",
+  "status": "prepared galaxy material increment; not final Wow redesign",
+  "changes": [
+    "per-existing-neighborhood radial light fields, decorative orbit arcs and real-core reticles",
+    "only a single focused constellation has an orbit animation; overview stays static",
+    "decorative SVG is aria-hidden and noninteractive; existing edges, coordinates, hit targets and metadata unchanged",
+    "reduced-motion hides orbit instruments; forced-colors restores plain region outlines and keyboard indicators",
+    "long article ambient layers do not animate at document height"
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "production_build": "passed",
+    "real_api_browser": [
+      {
+        "cases": 7,
+        "scope": "real graph mutation, labels/zoom/targets and shell320/390/1440"
+      },
+      {
+        "cases": 5,
+        "scope": "final orbital390/1440, reduced-motion and forced-colors, document coverage and text-spacing"
+      },
+      {
+        "cases": 3,
+        "scope": "synthetic320 graph/list/navigation fixture"
+      }
+    ],
+    "browser": "explicit Chrome Headless Shell157 alternative",
+    "screenshots": "actual synthetic galaxy1440/390 inspected",
+    "own_service_cleanup": true
+  },
+  "limits": [
+    "No full Chromium/WebKit/provider/device/production acceptance",
+    "Existing graph arrangement retained; major final galaxy composition remains open",
+    "No branch ref update, PR change, merge or deployment; prepared commit object only"
+  ]
+}

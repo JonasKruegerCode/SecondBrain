@@ -18,7 +18,8 @@ FROM python:3.12-slim AS runtime
 ENV VIRTUAL_ENV=/app/.venv \
     PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/src" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    SECOND_BRAIN_WIKI_VAULT=/managed-vault
 
 # git and the SSH client are required for GitSync (vault repo clone/push)
 RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client && rm -rf /var/lib/apt/lists/*
@@ -29,6 +30,6 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 COPY src/ ./src/
 
-EXPOSE 8000 3000
+EXPOSE 8000 3001
 
-CMD ["python", "-m", "second_brain.mcp_server"]
+CMD ["python", "-m", "uvicorn", "second_brain.wiki.api:app_factory", "--factory", "--host", "0.0.0.0", "--port", "8000"]

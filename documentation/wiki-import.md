@@ -1,0 +1,137 @@
+# Import a local Git wiki into the managed profile
+
+The explicit importer brings a committed Markdown snapshot into the standalone managed wiki. It leaves the source working repository unchanged and retains its original Git commit objects and ancestry in the target repository. It does not connect a remote, migrate the legacy memory service, or run automatically on startup.
+
+The first stage supports **a clean local Git working repository**. A plain folder, a bare repository, and a dirty working tree are not supported source formats. An empty repository created with `git init` is allowed even before its first commit when importing without a prefix into never-published storage. Shallow, partial, or promisor repositories are refused: source history must be complete and locally available.
+
+## Select and review the snapshot
+
+Choose a source repository and an optional directory prefix, such as `1_knowledge/wiki`. A supplied prefix must exist in the committed tree; a typo is refused rather than treated as an empty snapshot. The importer reads the committed source SHA, not whatever bytes happen to be in the working tree. Commit intended changes first and check that `git status --porcelain` is empty. Tracked changes, staged changes, and untracked files cause refusal. Existing ignored working-tree files are not part of the committed snapshot.
+
+All Markdown files under the prefix become managed pages. Each page ID is its filename without `.md`; nested directories are flattened into those IDs. For example, `1_knowledge/wiki/astronomy/sky.md` becomes `sky`. Two files with the same basename are ambiguous and cause refusal, even if they live in different folders. Links are preserved as written; the importer does not rewrite their destinations. Existing leading-hyphen IDs such as `-synthetic-note` and `--help` remain literal page IDs through import, reads, edits, history and export; they are not renamed or interpreted as command options. The 160-character limit remains, and leading dots, slashes, whitespace and traversal syntax remain invalid.
+
+The complete input is validated before publication. Unsafe page IDs, symbolic-link pages, invalid UTF-8, and pages larger than the managed store's limit are refused. Markdown preserves its original UTF-8 bytes, including Unicode and CRLF line endings. Non-Markdown files are excluded from the managed page set while remaining available in the retained original source history. The original source commit and its complete reachable history are retained, including material **outside the selected prefix**. The prefix controls visible pages, not the scope of source history preserved in Git. Choose a separate, sanitized source repository if that history should not enter the managed destination.
+
+The source and target directories must be separate and must not contain one another. Use a dedicated managed target, not a `.wiki.git` directory placed inside the source repository.
+
+The source must be the repository root, including for a linked Git worktree.
+Repository directory names retain their exact filesystem characters, including
+Unicode and trailing whitespace; quote such paths when invoking the CLI.
+
+Source Git commands disable optional locks, so checking cleanliness does not
+refresh the source's on-disk index when only file timestamps have changed.
+Uncommitted content changes are still refused. Import and audit preserve the
+source index as well as its committed content and configuration.
+
+## Initial import from the CLI
+
+From the repository root, activate the backend Python environment or set `PYTHONPATH=backend/src`. Choose a reviewed source and a new managed target:
+
+```bash
+export PYTHONPATH="$PWD/backend/src"
+python -m second_brain.wiki.importer \
+  --source /absolute/path/to/source-repository \
+  --vault .managed/wiki \
+  --prefix 1_knowledge/wiki \
+  --empty \
+  --request-id reviewed-initial-import-001
+```
+
+`--empty` authorizes only an initially empty managed snapshot. It cannot overwrite an already published snapshot. A successful response reports `publication: imported`, the new managed `revision`, the number of `pages`, and `source_revision` (the original source commit SHA, or `null` for an unborn repository). Graph/vector index status remains pending and remote sync is not configured in this local profile.
+
+The Python entry point is `import_vault(store, source, prefix="", base_revision=None, request_id="...")`. Use `WikiStore` for the explicitly selected managed destination. `base_revision=None` corresponds to the CLI's `--empty` guard.
+
+## Verify the migration evidence
+
+Pin the `revision` returned by the importer and run the read-only audit against
+the same clean source checkout and prefix:
+
+```bash
+python -m second_brain.wiki.import_audit \
+  --source /absolute/path/to/source-repository \
+  --vault .managed/wiki \
+  --prefix 1_knowledge/wiki \
+  --revision PASTE_THE_IMPORTED_MANAGED_REVISION
+```
+
+The audit accepts only a full managed commit that remains in the current
+first-parent history. It rereads the current committed source revision, then
+checks the exact page-ID set and Markdown bytes, the recorded source-path map,
+the direct retained source parent and Git object integrity. Its JSON evidence
+includes both immutable revisions, the sorted page IDs and a deterministic
+content digest. It does not modify either repository or advance indexes.
+
+If the source checkout has advanced since the reviewed import, audit the
+original commit from a separate clean checkout rather than resetting working
+data blindly. A changed source, a managed-only revision, missing provenance or
+missing Git history is a failed migration acceptance, not a warning.
+
+### Check navigation separately
+
+A verified byte audit does not establish that every link is usable. For example,
+`astronomy/sky.md` becomes page ID `sky`, while a literal `[[astronomy/sky]]`
+remains unchanged and can be unresolved. Duplicate titles can also require a
+choice between different page IDs. Neither condition silently rewrites source
+content or invalidates the exact-byte proof for the imported revision.
+
+Inspect the imported graph's `missing_targets` and `ambiguous_targets` through
+`GET /api/wiki/graph`, then follow representative article links and inspect their
+actual targets in the browser. The galaxy excludes unresolved targets from its
+map and reports their count; it is not a substitute for checking those links.
+When a title has several matches, the selection cards show each stable page ID.
+Review any intended corrections through the revision-checked editor. These
+create a later managed revision; the original import audit remains evidence for
+its pinned import, not a byte-equality claim about subsequent edited content.
+
+Markdown export is a flat copy of the selected current pages, not a history or
+rollback archive. Reimport can preserve their bytes and link syntax without
+repairing unresolved links. Use the portable backup/restore path below to retain
+the managed revision and its reachable source history.
+
+Flat export also requires each unchanged page ID plus `.md` to fit the
+destination filesystem's filename byte limit. A valid Unicode ID can exceed
+that limit even within the 160-character ID contract. Export refuses with
+`export_filename_too_long` before preparing output when the limit is known;
+unsupported or indeterminate limit checks fall back to the filesystem write.
+Source pages and any existing empty destination remain unchanged on refusal.
+Use [portable Git-backed backup/restore](backup-restore.md) to retain these IDs
+and their history; export does not truncate or rename them.
+
+## Replace an existing managed snapshot
+
+An import replaces the **entire managed page set** with the selected source snapshot. Pages not present in that snapshot are removed from the current view; prior managed snapshots remain in Git history. A zero-page import into a destination that currently contains pages is refused, so an empty selection cannot erase its content. Zero-page imports are permitted when the current page set is empty; a previously published empty snapshot still requires its exact HEAD as the expected base. The prefix limits the imported source, not which existing managed pages may be replaced.
+
+Before replacement, inspect the target and record its current snapshot HEAD. You can inspect it with `git --git-dir=.managed/wiki/.wiki.git rev-parse refs/heads/wiki` or the current backend primitive `store._head()`. Pin that exact value with `--base-revision` for the reviewed operation:
+
+```bash
+python -m second_brain.wiki.importer \
+  --source /absolute/path/to/source-repository \
+  --vault .managed/wiki \
+  --prefix 1_knowledge/wiki \
+  --base-revision PASTE_THE_REVIEWED_MANAGED_SNAPSHOT_SHA \
+  --request-id reviewed-replacement-import-002
+```
+
+This value is the managed **snapshot HEAD**, not a page's revision token. If another writer saves while the import is being prepared, publication fails with a conflict and that writer's snapshot remains current. Review the new state before submitting a new operation. Do not automatically read a newer HEAD and blindly retry a replacement.
+
+Before a replacement, create a [portable backup](backup-restore.md) of the
+managed vault. Keep the returned archive and revision until the imported
+revision passes the audit above, index delivery completes, and the real user
+paths have been checked. Rollback is an operator action: stop writers, restore
+the archive into a **new** vault directory, verify its reported revision, point
+the service configuration back to that restored directory, and rebuild derived
+providers. Restore deliberately refuses to overwrite the current vault. For a
+first migration from the legacy service, the untouched source clone remains the
+content fallback; do not delete or repurpose it during acceptance.
+
+## Retry and interruption behavior
+
+Keep a stable `request_id` for one operation, with the same source commit, prefix, and expected base. The successful operation stores its receipt atomically with the snapshot. If a reply is lost after publication, retrying that operation—even after a process restart or a later save—returns the original receipt without publishing again. Reusing the ID for a different payload is refused.
+
+A failure before the atomic Git ref update leaves the old complete snapshot visible. A failure after that update leaves the new complete snapshot visible and its receipt recoverable. Readers never see a partial set of imported pages. Concurrent foreign saves use the same publication boundary and cannot be overwritten using a stale base.
+
+For a retry, keep the source repository on the same reviewed commit and clean. If the source has advanced, that is a new payload: inspect it, review the target again, and choose a new request ID.
+
+## After import
+
+Run the standalone wiki API against the managed destination, using the factory entry point described in [demo-start.md](demo-start.md). The page history combines managed edits with original source commits, using the preserved source-path mapping even for nested pages. Edit imported pages through the managed wiki or its normal save API. The source repository is a preserved import source, not a second writer for the managed store. Subsequent source changes appear only through another explicitly reviewed import.

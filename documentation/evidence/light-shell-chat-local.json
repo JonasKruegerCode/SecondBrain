@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "date": "2026-11-04",
+  "base_commit": "f59337fdfe00a2307f92a2f8e4e1d3334e298d9f",
+  "scope": [
+    "shared light glass shell with cyan/mint/blue ambient light",
+    "wider desktop article and 92ch reading limit",
+    "light galaxy inspector with dark constellation canvas",
+    "reduced-motion and forced-colors support",
+    "Enter/Shift+Enter/IME-safe chat composer",
+    "Markdown answers with inert raw HTML, no media loading, bounded link schemes and keyboard-scrollable tables"
+  ],
+  "local_checks": {
+    "frontend_typecheck": "passed",
+    "production_build": "passed; pre-existing large legacy bundle warning remains",
+    "pwa_proxy_dev_security": "13 tests passed",
+    "backend_tie_order": "28 focused tests passed; Ruff src/tests and Mypy src (52 source files) passed",
+    "runner_ruff": "passed"
+  },
+  "real_server_ci": {
+    "commit": "f59337fdfe00a2307f92a2f8e4e1d3334e298d9f",
+    "run": 41772244922,
+    "job": 126384377851,
+    "result": "18 pinned Neo4j/Qdrant integration tests passed",
+    "fix": "sort returned article set by descending score then ID; preserve the unchanged REST/MCP consistency assertion",
+    "limit": "does not guarantee tie membership at a truncated result boundary"
+  },
+  "browser_runs": [
+    {
+      "run": "20261104T042046Z",
+      "status": "passed",
+      "seconds": 35.992,
+      "selection": {
+        "grep": "focused map keeps|overview labels stay|dense constellations keep|zoomed galaxy keeps|HTML text at 200 percent|small muted text|light shell keeps|real demo table|editor saves Markdown|galaxy snapshot refresh|forced colors preserve",
+        "repeat_each": 1
+      },
+      "fixture": "fictional-template",
+      "services_cleaned_up": true
+    },
+    {
+      "run": "20261104T042058Z",
+      "status": "passed",
+      "seconds": 13.918,
+      "selection": {
+        "grep": null,
+        "repeat_each": 1
+      },
+      "fixture": "synthetic-scale-320",
+      "services_cleaned_up": true
+    },
+    {
+      "run": "20261104T042419Z",
+      "status": "passed",
+      "seconds": 10.665,
+      "selection": {
+        "grep": "chat Markdown stays|chat Enter submits|skip link stays|saved chat labels|bounded chat history keeps one conversation|mobile chat opens",
+        "repeat_each": 1
+      },
+      "fixture": "fictional-template",
+      "services_cleaned_up": true
+    },
+    {
+      "run": "20261104T042554Z",
+      "status": "passed",
+      "seconds": 14.175,
+      "selection": {
+        "grep": "light shell keeps|HTML text at 200 percent|skip link stays",
+        "repeat_each": 1
+      },
+      "fixture": "fictional-template",
+      "services_cleaned_up": true
+    }
+  ],
+  "visual_review": {
+    "viewports": [
+      320,
+      390,
+      1440
+    ],
+    "inspected": [
+      "desktop overview/article/galaxy/chat",
+      "narrow article/galaxy/chat Markdown",
+      "320-page constellation map"
+    ],
+    "fixture_content": "synthetic only",
+    "reduced_motion": "pseudo-element animation names none; all five real-service views reflow at 320/390/1440",
+    "text_enlargement": "200% HTML text at 320/1440; not native zoom",
+    "security": "no raw HTML elements, handler attributes, unsafe links, injected globals or remote media requests in saved synthetic model output",
+    "chat_provider": "mocked response for keyboard interaction; saved rendering fixture for Markdown, no model-quality claim",
+    "narrow_navigation": "two columns below 360px avoid mid-word navigation labels; new browser assertion checks all default-size labels"
+  },
+  "limits": [
+    "Chromium 153 alternative executable; locked 156 download unavailable in this environment",
+    "No WebKit/physical device/production/model-quality acceptance in this run",
+    "320-page scale fixture is distinct from prior 818-page backend/navigation fixtures",
+    "UI is a tested next-version foundation, not human walkthrough or merge readiness",
+    "Chat research budget, exact-title ranking, revision explanation, cluster guidance and CI streamlining remain open"
+  ]
+}
