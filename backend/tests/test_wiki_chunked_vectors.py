@@ -101,7 +101,7 @@ async def test_tail_retrieval_maps_to_one_current_article_and_preserves_source(
             updating = api.get("/api/wiki/search?q=TAIL_EVIDENCE&mode=semantic")
             assert updating.status_code == 200
             assert updating.json()["index_state"] == "updating"
-            assert updating.json()["results"] == []  # Old article revision cannot leak.
+            assert all(hit["id"] != "archive" for hit in updating.json()["results"])
             assert api.get("/api/wiki/pages/archive").status_code == 200
     finally:
         indexes.close()

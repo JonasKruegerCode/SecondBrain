@@ -413,7 +413,6 @@ class IndexCoordinator:
                 published.setdefault(page_id, 0.0)
                 seen.add(page_id)
             ranked = rank_pages(query, candidates, signals, token_weights=weights)
-            ranked = [page for page in ranked if float(page["rank_score"]) > 0.0]
             exact = query.strip().casefold()
             # Exact page identity stays ahead of a merely similar mention.
             # Vector cosine is preserved on ``score`` and is not rewritten.
