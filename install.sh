@@ -9,6 +9,8 @@
 #   SECOND_BRAIN_DIR   Install directory when no compose file is in the cwd
 #   OPENROUTER_API_KEY Written into .env when it is empty (prompted otherwise)
 set -eu
+# Generated configuration and temporary replacements contain credentials.
+umask 077
 
 REPO="JonasKruegerCode/SecondBrain"
 REF="${SECOND_BRAIN_REF:-main}"
@@ -125,3 +127,4 @@ Without an OpenRouter key, lexical search and the editor work. Chat and
 semantic search stay off until a key is added to .env and the stack is
 recreated. Indexes may still be building after the app is already usable.
 EOF
+
