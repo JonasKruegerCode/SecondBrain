@@ -33,6 +33,7 @@ def search_wiki(
     An explicit ``limit`` disables cutoff and caps the ranked list, like MCP.
     """
     implicit = mode is None
+    waiting_for_vectors = False
     selected = (
         mode
         if mode is not None
@@ -69,6 +70,7 @@ def search_wiki(
             if not (implicit and exc.code == "index_pending"):
                 raise
             selected = "lexical"
+            waiting_for_vectors = True
     if selected == "graph_rag":
         result = indexes.graph_search(query)
         if limit is not None:
@@ -85,4 +87,6 @@ def search_wiki(
     }
     if cutoff:
         payload["cutoff"] = True
+    if waiting_for_vectors:
+        payload["index_state"] = "pending"
     return payload

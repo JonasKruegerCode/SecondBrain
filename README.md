@@ -25,7 +25,8 @@ key.
   claim of semantic similarity.
 - **Hybrid search.** Ranked lexical search works immediately. When a Qdrant
   vector index is ready, the default search ranks pages by combining lexical
-  and semantic matches, and falls back to lexical while an index is pending.
+  and semantic matches. The last compatible ready index stays searchable during
+  updates; lexical fallback is needed only before a compatible index is ready.
   The API and MCP also expose explicit semantic and GraphRAG modes.
 - **Read-only chat.** With an OpenRouter key configured, ask questions and get
   answers grounded in the pages the assistant actually read, with source links.

@@ -22,7 +22,7 @@ from typing import Any, NamedTuple
 
 from second_brain.wiki.bounded_script import project_flat_scripts
 from second_brain.wiki.galaxy_groups import galaxy_groups
-from second_brain.wiki.relevance import rank_pages
+from second_brain.wiki.search_catalog import SearchCatalog
 
 REF = "refs/heads/wiki"
 ID_RE = re.compile(r"[\w-][\w.-]{0,159}\Z", re.UNICODE)
@@ -1027,6 +1027,7 @@ class WikiStore:
         self._navigation_lock = threading.RLock()
         self._navigation: _NavigationProjection | None = None
         self._navigation_graph: tuple[str, dict[str, Any]] | None = None
+        self._search_catalog: SearchCatalog | None = None
         if self.repo.is_symlink():
             raise WikiError("invalid_vault", "The managed repository must not be a symlink.")
         if not self.repo.exists():
@@ -1312,24 +1313,14 @@ class WikiStore:
         folded = query.casefold().strip()
         if not folded:
             return []
-        pages = self.list_pages()
-        ranked = rank_pages(query, pages, {})
-        hits: list[dict[str, Any]] = []
-        for page in ranked:
-            if float(page["rank_score"]) <= 0.0:
-                continue
-            hits.append(page)
-        hits.sort(
-            key=lambda page: (
-                0
-                if query.casefold() in {str(page["id"]).casefold(), str(page["title"]).casefold()}
-                else 1,
-                -float(page["rank_score"]),
-                str(page["title"]).casefold(),
-                str(page["id"]),
-            )
-        )
-        return hits[:limit]
+        with self.search_catalog().read() as view:
+            return view.lexical(query, limit)
+
+    def search_catalog(self) -> SearchCatalog:
+        with self._catalog_lock:
+            if self._search_catalog is None:
+                self._search_catalog = SearchCatalog(self)
+            return self._search_catalog
 
     def graph(self) -> dict[str, Any]:
         result: dict[str, Any] = self._navigation_snapshot()["graph"]

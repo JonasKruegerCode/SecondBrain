@@ -313,7 +313,8 @@ def test_lexical_search_keeps_a_bounded_default_and_supports_one_extra_probe(
         }
         for index in range(51)
     ]
-    monkeypatch.setattr(store, "list_pages", lambda: pages)
+    for page in pages:
+        store.save_page(page["id"], page["markdown"], None, "create-" + page["id"])
 
     assert len(store.search("bounded search")) == 50
     assert len(store.search("bounded search", limit=51)) == 51
