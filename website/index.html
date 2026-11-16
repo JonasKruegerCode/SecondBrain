@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<script>document.documentElement.classList.remove("no-js");</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SecondBrain — Your knowledge, connected.</title>
+<meta name="description" content="SecondBrain is a self-hosted, MIT-licensed personal wiki for you and your AI agents. Markdown in Git, hybrid search, a living Galaxy view, and an MCP server so every agent shares the same memory.">
+<meta name="theme-color" content="#f7f8f3">
+<meta name="color-scheme" content="light">
+<meta property="og:title" content="SecondBrain — Your knowledge, connected.">
+<meta property="og:description" content="A self-hosted wiki for you and your AI agents. Markdown in Git, hybrid search, a living Galaxy of your ideas — and an MCP server so every agent shares the same memory.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/app-icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- ══════════════════════════ NAV ══════════════════════════ -->
+<header class="nav" id="top">
+  <div class="nav-inner">
+    <a class="brand" href="#top" aria-label="SecondBrain home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 512 512" width="22" height="22" focusable="false">
+          <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="34">
+            <path d="M256 96v320M96 256h320M143 143l226 226M369 143 143 369"/>
+          </g>
+          <circle cx="256" cy="256" r="44" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="brand-name">SecondBrain</span>
+    </a>
+
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#galaxy">Galaxy</a>
+      <a href="#agents">Agents</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+
+    <div class="nav-actions">
+      <a class="btn btn--ghost btn--sm" href="https://github.com/JonasKruegerCode/SecondBrain" target="_blank" rel="noopener noreferrer">
+        <svg class="ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 .5C5.73.5.5 5.74.5 12.02c0 5.1 3.29 9.42 7.86 10.95.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.26 5.69.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.53 11.53 0 0 0 23.5 12.02C23.5 5.74 18.27.5 12 .5z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-drawer" aria-label="Open menu">
+        <span></span><span></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="nav-drawer" id="nav-drawer" hidden>
+    <a href="#features">Features</a>
+    <a href="#galaxy">Galaxy</a>
+    <a href="#agents">Agents</a>
+    <a href="#install">Install</a>
+    <a href="#faq">FAQ</a>
+    <a href="https://github.com/JonasKruegerCode/SecondBrain" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ══════════════════════════ HERO ══════════════════════════ -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-halo" aria-hidden="true"></div>
+    <div class="wrap hero-inner">
+      <p class="pill">
+        <span class="pill-dot" aria-hidden="true"></span>
+        Open source · Self-hosted · MIT
+      </p>
+
+      <h1 class="hero-title" id="hero-title">
+        Your knowledge,<br>
+        <span class="grad">connected.</span>
+      </h1>
+
+      <p class="hero-sub">
+        A self-hosted wiki for you and your AI agents. Plain Markdown in Git, hybrid search that
+        actually finds things, a living Galaxy of your ideas — and an MCP server so every agent
+        shares the same memory.
+      </p>
+
+      <div class="hero-cta">
+        <a class="btn btn--primary btn--lg" href="#install">
+          Install in one line
+          <svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M6 13l6 6 6-6"/></svg>
+        </a>
+        <a class="btn btn--outline btn--lg" href="https://github.com/JonasKruegerCode/SecondBrain" target="_blank" rel="noopener noreferrer">
+          <svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 .5C5.73.5.5 5.74.5 12.02c0 5.1 3.29 9.42 7.86 10.95.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.26 5.69.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.53 11.53 0 0 0 23.5 12.02C23.5 5.74 18.27.5 12 .5z"/></svg>
+          Star on GitHub
+        </a>
+      </div>
+
+      <p class="trust-row">
+        <span>Markdown in Git</span><span class="sep" aria-hidden="true">·</span>
+        <span>Runs on your machine</span><span class="sep" aria-hidden="true">·</span>
+        <span>Works without an API key</span><span class="sep" aria-hidden="true">·</span>
+        <span>MIT licensed</span>
+      </p>
+    </div>
+
+    <!-- Panoramic dark glass stage -->
+    <div class="wrap">
+      <figure class="stage stage--intro" id="galaxy">
+        <div class="stage-media">
+          <img class="stage-poster"
+               src="assets/scale-galaxy-stage.webp"
+               width="1600" height="1202" decoding="async" fetchpriority="high"
+               alt="SecondBrain Galaxy view: 320 wiki pages arranged as eight glowing coloured star clusters on dark navy.">
+          <canvas id="galaxy-canvas" class="stage-canvas" aria-hidden="true"></canvas>
+          <div class="stage-vignette" aria-hidden="true"></div>
+
+          <div class="stage-orbit" aria-hidden="true">
+            <span class="orbit-ring orbit-ring--1"></span>
+            <span class="orbit-ring orbit-ring--2"></span>
+            <span class="orbit-ring orbit-ring--3"></span>
+            <span class="orbit-core">
+              <svg viewBox="0 0 512 512" width="40" height="40" focusable="false">
+                <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="30">
+                  <path d="M256 96v320M96 256h320M143 143l226 226M369 143 143 369"/>
+                </g>
+                <circle cx="256" cy="256" r="44" fill="currentColor"/>
+              </svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="stage-chip">
+          <span class="chip-dot" aria-hidden="true"></span>
+          Galaxy view · every link becomes a star
+        </div>
+        <figcaption class="sr-only">
+          The Galaxy view maps every explicit link between pages as a star map of glowing clusters.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══════════════════ TWO KINDS OF READERS ══════════════════ -->
+  <section class="section readers" id="readers" aria-labelledby="readers-title">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <p class="eyebrow">One brain</p>
+        <h2 class="section-title" id="readers-title">One brain. Two kinds of readers.</h2>
+        <p class="section-lede">
+          Humans read, write, search and see connections in a fast web app. Agents read and maintain
+          the very same pages over MCP. One source of truth — no separate memory service, no vendor lock-in.
+        </p>
+      </header>
+
+      <div class="readers-grid">
+        <!-- Human -->
+        <article class="reader-card reader-card--human reveal">
+          <div class="reader-head">
+            <span class="tag tag--human">For humans</span>
+            <h3>A fast, calm web app</h3>
+            <p>
+              Open a page, edit in Markdown, follow backlinks, jump through history. Your notes stay
+              plain Markdown, rendered in a calm, glassy reader made for long sessions.
+            </p>
+          </div>
+
+          <div class="reader-visual">
+            <div class="browser">
+              <div class="browser-bar">
+                <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="url"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M7 11V8a5 5 0 0 1 10 0v3"/><rect x="5" y="11" width="14" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>127.0.0.1:8080</span>
+              </div>
+              <img src="assets/home-desktop.webp" width="1600" height="1000" loading="lazy" decoding="async"
+                   alt="SecondBrain reader view showing the “Lantern Bay field atlas” wiki page in the light glass interface, with a table of contents and page outline.">
+            </div>
+            <div class="phone">
+              <div class="phone-notch" aria-hidden="true"></div>
+              <img src="assets/galaxy-mobile.webp" width="780" height="1688" loading="lazy" decoding="async"
+                   alt="The Galaxy view on a phone, showing labelled star clusters in a dark panel.">
+            </div>
+          </div>
+
+          <ul class="reader-list">
+            <li>Revision-safe Markdown editor with page history</li>
+            <li>Wikilinks, backlinks and direct URLs</li>
+            <li>Hybrid search with instant lexical results</li>
+          </ul>
+        </article>
+
+        <!-- Agent -->
+        <article class="reader-card reader-card--agent reveal" style="--d:120ms">
+          <div class="reader-head">
+            <span class="tag tag--agent">For agents</span>
+            <h3>The same pages, over MCP</h3>
+            <p>
+              Point any MCP client at the server and it can read, search and maintain your wiki —
+              revision-aware, so agents never silently overwrite each other.
+            </p>
+          </div>
+
+          <div class="terminal terminal--sm session" role="img" aria-label="Example agent session: the agent searches the wiki, reads a page and saves an update against the current revision.">
+            <div class="terminal-bar">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="terminal-title">agent session · example</span>
+              <span class="terminal-lang">mcp</span>
+            </div>
+            <div class="session-body" aria-hidden="true">
+              <p class="s-line s-user" style="--i:0"><span class="s-who">you</span>Add today's tide reading to the tide clock page.</p>
+              <p class="s-line s-call" style="--i:1"><span class="s-arrow">→</span><b>search_wiki</b>(<span class="tk-str">"tide clock"</span>)</p>
+              <p class="s-line s-res" style="--i:2"><span class="s-arrow">←</span>3 pages · <span class="tk-key">tide-clock-project</span> ranked first</p>
+              <p class="s-line s-call" style="--i:3"><span class="s-arrow">→</span><b>get_page</b>(<span class="tk-str">"tide-clock-project"</span>)</p>
+              <p class="s-line s-res" style="--i:4"><span class="s-arrow">←</span>revision <span class="tk-key">a41c…</span> · 6 backlinks</p>
+              <p class="s-line s-call" style="--i:5"><span class="s-arrow">→</span><b>save_page</b>(…, base_revision=<span class="tk-key">a41c…</span>)</p>
+              <p class="s-line s-ok" style="--i:6"><span class="s-arrow">✓</span>saved · new star in the Galaxy</p>
+            </div>
+          </div>
+
+          <dl class="spec-list">
+            <div><dt>Transport</dt><dd>Streamable HTTP · stdio</dd></div>
+            <div><dt>Tools</dt><dd>11, revision-aware</dd></div>
+            <div><dt>Auth</dt><dd>Bearer key from <code>.env</code></dd></div>
+            <div><dt>Guidance</dt><dd><code>wiki://guidance</code> resource</dd></div>
+          </dl>
+          <p class="reader-foot">Stale writes are rejected, never silently merged — two agents can work on the same wiki safely.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ FEATURES BENTO ══════════════════════════ -->
+  <section class="section features" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <header class="section-head section-head--split reveal">
+        <div>
+          <p class="eyebrow">Everything included</p>
+          <h2 class="section-title" id="features-title">A wiki built like a small universe.</h2>
+        </div>
+        <p class="section-lede">
+          Search that finds the right page, a map of how ideas connect, and an interface your agents
+          can use as carefully as you do.
+        </p>
+      </header>
+
+      <div class="bento">
+        <!-- 1 · Hybrid search -->
+        <article class="tile tile--span5 reveal">
+          <span class="tile-num" aria-hidden="true">01</span>
+          <h3 class="tile-title">Hybrid search</h3>
+          <p class="tile-text">
+            Lexical ranking works instantly; with a vector index, keyword and semantic matches are
+            fused so the right page rises to the top. Falls back gracefully while indexes build.
+          </p>
+          <div class="browser browser--inset">
+            <div class="browser-bar">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="url">127.0.0.1:8080/search</span>
+            </div>
+            <img src="assets/search-desktop.webp" width="1600" height="1000" loading="lazy" decoding="async"
+                 alt="The search page titled “Find a thought.” with a ranked result card and highlighted matches.">
+          </div>
+        </article>
+
+        <!-- 2 · Galaxy view (big media tile) -->
+        <article class="tile tile--span7 tile--media reveal" style="--d:100ms">
+          <img class="tile-media-img" src="assets/scale-galaxy-stage-zoom.webp" width="1600" height="1202" loading="lazy" decoding="async"
+               alt="The Galaxy view of a 320-page synthetic demo wiki: eight glowing star clusters in cyan, blue, coral, violet, gold, mint and pink on deep navy.">
+          <div class="tile-media-veil" aria-hidden="true"></div>
+          <div class="tile-media-body">
+            <span class="tile-num" aria-hidden="true">02</span>
+            <h3 class="tile-title">Galaxy view</h3>
+            <p class="tile-text">
+              Every explicit link becomes a star map. Curated constellations, deep zoom, one tap to the
+              page. A navigation map, not a guess.
+            </p>
+          </div>
+        </article>
+
+        <!-- 3 · A real wiki -->
+        <article class="tile tile--span4 reveal">
+          <span class="tile-num" aria-hidden="true">03</span>
+          <h3 class="tile-title">A real wiki</h3>
+          <p class="tile-text">
+            Revision-safe Markdown editor, page history, backlinks, wikilinks and direct URLs.
+          </p>
+          <div class="mini-links" aria-hidden="true">
+            <span>[[Lantern Bay]]</span><span>← backlinks 4</span><span>rev 17</span>
+          </div>
+        </article>
+
+        <!-- 4 · MCP for agents -->
+        <article class="tile tile--span4 tile--dark reveal" style="--d:80ms">
+          <span class="tile-num" aria-hidden="true">04</span>
+          <h3 class="tile-title">MCP for agents</h3>
+          <p class="tile-text">
+            Streamable HTTP or stdio, 11 revision-aware tools for pages, search, graph, history and
+            status. Agents maintain your wiki without overwriting each other.
+          </p>
+          <div class="mini-links mini-links--dark" aria-hidden="true">
+            <span>stdio</span><span>streamable http</span><span>revision-aware</span>
+          </div>
+        </article>
+
+        <!-- 5 · Grounded chat -->
+        <article class="tile tile--span4 reveal" style="--d:160ms">
+          <span class="tile-num" aria-hidden="true">05</span>
+          <h3 class="tile-title">Grounded chat</h3>
+          <p class="tile-text">
+            Ask questions; answers cite the pages the assistant actually read. Read-only, conversations
+            stay in your browser.
+          </p>
+          <div class="cite" aria-hidden="true">
+            <span class="cite-q">How does the tide clock work?</span>
+            <span class="cite-a">From <b>Tide clock project</b> · <b>Lantern Bay field atlas</b></span>
+          </div>
+        </article>
+
+        <!-- 6 · Git-backed & portable -->
+        <article class="tile tile--span7 reveal">
+          <span class="tile-num" aria-hidden="true">06</span>
+          <h3 class="tile-title">Git-backed &amp; portable</h3>
+          <p class="tile-text">
+            A real Git repository under the hood. Optional sync with any remote, visible conflicts
+            instead of force-pushes. Import, export, backups.
+          </p>
+          <div class="gitline" aria-hidden="true">
+            <span class="git-dot"></span><span class="git-edge"></span>
+            <span class="git-dot git-dot--b"></span><span class="git-edge"></span>
+            <span class="git-dot git-dot--c"></span>
+            <span class="git-label">main · no force-push</span>
+          </div>
+        </article>
+
+        <!-- 7 · Installable app -->
+        <article class="tile tile--span5 tile--app reveal" style="--d:100ms">
+          <div class="tile-app-copy">
+            <span class="tile-num" aria-hidden="true">07</span>
+            <h3 class="tile-title">Installable app</h3>
+            <p class="tile-text">
+              Add it to your home screen. Online-first PWA that deliberately never caches private
+              pages, chats or credentials.
+            </p>
+          </div>
+          <div class="phone phone--tile">
+            <div class="phone-notch" aria-hidden="true"></div>
+            <img src="assets/home-mobile.webp" width="780" height="1688" loading="lazy" decoding="async"
+                 alt="A SecondBrain wiki page on a phone screen, installed as a progressive web app.">
+          </div>
+        </article>
+
+        <!-- 8 · Batteries included -->
+        <article class="tile tile--span12 tile--wide reveal">
+          <div class="tile-wide-copy">
+            <span class="tile-num" aria-hidden="true">08</span>
+            <h3 class="tile-title">Batteries included</h3>
+            <p class="tile-text">One Compose stack — nothing else to wire up.</p>
+          </div>
+          <ul class="stack-chips">
+            <li><i style="--c:#2e776a"></i>Web app</li>
+            <li><i style="--c:#6b5bd2"></i>API</li>
+            <li><i style="--c:#1f93ad"></i>MCP server</li>
+            <li><i style="--c:#c08a1e"></i>Neo4j graph</li>
+            <li><i style="--c:#c4577f"></i>Qdrant vectors</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ BUILT FOR AGENTS ══════════════════════════ -->
+  <section class="section agents" id="agents" aria-labelledby="agents-title">
+    <div class="wrap">
+      <header class="section-head reveal">
+        <p class="eyebrow">Built for agents</p>
+        <h2 class="section-title" id="agents-title">Give your agent a memory that outlives the chat.</h2>
+        <p class="section-lede">
+          Three steps from an empty folder to an agent that reads, searches and writes the same wiki
+          you do.
+        </p>
+      </header>
+
+      <div class="agents-grid">
+        <ol class="steps reveal">
+          <li class="step">
+            <span class="step-num" aria-hidden="true">1</span>
+            <div>
+              <h3>Install the stack</h3>
+              <p>One Compose stack brings up the web app, API, MCP server, Neo4j graph and Qdrant vectors.</p>
+            </div>
+          </li>
+          <li class="step">
+            <span class="step-num" aria-hidden="true">2</span>
+            <div>
+              <h3>Point your agent at the server</h3>
+              <p>Use <code class="inline">http://127.0.0.1:3001/mcp</code> with the Bearer key from <code class="inline">.env</code>.</p>
+            </div>
+          </li>
+          <li class="step">
+            <span class="step-num" aria-hidden="true">3</span>
+            <div>
+              <h3>Watch the knowledge grow</h3>
+              <p>Your agent reads, searches and writes pages; you watch the constellations fill in.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="agents-code reveal" style="--d:120ms">
+          <div class="terminal">
+            <div class="terminal-bar">
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="terminal-title">mcp.json · any MCP client</span>
+              <span class="terminal-lang">json</span>
+            </div>
+            <pre class="terminal-body"><code><span class="ln" aria-hidden="true">1</span>{
+<span class="ln" aria-hidden="true">2</span>  <span class="tk-key">"mcpServers"</span>: {
+<span class="ln" aria-hidden="true">3</span>    <span class="tk-key">"secondbrain"</span>: {
+<span class="ln" aria-hidden="true">4</span>      <span class="tk-key">"url"</span>: <span class="tk-str">"http://127.0.0.1:3001/mcp"</span>,
+<span class="ln" aria-hidden="true">5</span>      <span class="tk-key">"headers"</span>: {
+<span class="ln" aria-hidden="true">6</span>        <span class="tk-key">"Authorization"</span>: <span class="tk-str">"Bearer &lt;SECOND_BRAIN_WIKI_API_KEY&gt;"</span>
+<span class="ln" aria-hidden="true">7</span>      }
+<span class="ln" aria-hidden="true">8</span>    }
+<span class="ln" aria-hidden="true">9</span>  }
+<span class="ln" aria-hidden="true">10</span>}</code></pre>
+          </div>
+
+          <div class="tools-panel">
+            <p class="tools-label">Tools your agent gets</p>
+            <ul class="tool-chips tool-chips--wide">
+              <li>search_wiki</li><li>get_page</li><li>save_page</li>
+              <li>get_neighbors</li><li>get_graph</li><li>get_history</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <figure class="agents-shot reveal">
+        <div class="browser">
+          <div class="browser-bar">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="url"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M7 11V8a5 5 0 0 1 10 0v3"/><rect x="5" y="11" width="14" height="9" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>127.0.0.1:8080/galaxy</span>
+          </div>
+          <img src="assets/galaxy-desktop.webp" width="1600" height="1000" loading="lazy" decoding="async"
+               alt="The full Galaxy page: a dark constellation canvas with a light glass sidebar for search, constellations and page detail.">
+        </div>
+        <figcaption class="shot-caption">
+          <span class="chip-dot" aria-hidden="true"></span>
+          Every page an agent writes lands in the same Galaxy you browse.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ INSTALL (dark band) ══════════════════════════ -->
+  <section class="install" id="install" aria-labelledby="install-title">
+    <div class="install-glow" aria-hidden="true"></div>
+    <div class="wrap install-inner">
+      <header class="install-head reveal">
+        <p class="eyebrow eyebrow--light">Install</p>
+        <h2 class="install-title" id="install-title">Up and running in one line.</h2>
+        <p class="install-lede">
+          Downloads one Docker Compose stack, generates secrets, starts everything. Then open
+          <code class="inline inline--light">http://127.0.0.1:8080</code>.
+        </p>
+      </header>
+
+      <div class="terminal terminal--lg reveal" style="--d:100ms">
+        <div class="terminal-bar">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="terminal-title">bash — install</span>
+          <span class="terminal-lang">sh</span>
+        </div>
+        <div class="terminal-cmd">
+          <code id="install-cmd" tabindex="0">curl -fsSL https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/install.sh | sh</code>
+          <button class="copy-btn" type="button" data-copy-target="#install-cmd" aria-describedby="copy-status">
+            <svg class="ico ico--copy" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <rect x="9" y="9" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M15 5.5A2.5 2.5 0 0 0 12.5 3H6.5A2.5 2.5 0 0 0 4 5.5v6A2.5 2.5 0 0 0 6.5 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <svg class="ico ico--check" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5 10 17.5 19 7"/>
+            </svg>
+            <span class="copy-label">Copy</span>
+          </button>
+        </div>
+        <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="install-meta reveal" style="--d:160ms">
+        <p class="req">
+          <span class="req-key" aria-hidden="true">Requirement</span>
+          Docker Engine with Compose v2. Nothing else — no Python, Node or source checkout.
+        </p>
+
+        <details class="manual">
+          <summary>Prefer doing it by hand?</summary>
+          <div class="manual-body">
+            <pre class="manual-code"><code>mkdir secondbrain &amp;&amp; cd secondbrain
+curl -fLO https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/docker-compose.yml
+curl -fsSL https://raw.githubusercontent.com/JonasKruegerCode/SecondBrain/main/.env.example -o .env
+<span class="c-comment"># set SECOND_BRAIN_WIKI_API_KEY and NEO4J_PASSWORD in .env (e.g. openssl rand -hex 32)</span>
+docker compose pull
+docker compose up -d --wait</code></pre>
+          </div>
+        </details>
+      </div>
+
+      <ol class="next-steps reveal" style="--d:220ms" aria-label="After the install">
+        <li>
+          <span class="ns-num" aria-hidden="true">01</span>
+          <h3>Open your wiki</h3>
+          <p>Start writing at <code>127.0.0.1:8080</code> — or import an existing Git repository of Markdown pages.</p>
+        </li>
+        <li>
+          <span class="ns-num" aria-hidden="true">02</span>
+          <h3>Add an OpenRouter key <em>(optional)</em></h3>
+          <p>Set <code>OPENROUTER_API_KEY</code> in <code>.env</code> to switch on semantic search and grounded chat.</p>
+        </li>
+        <li>
+          <span class="ns-num" aria-hidden="true">03</span>
+          <h3>Connect your agents</h3>
+          <p>Any MCP client on <code>127.0.0.1:3001/mcp</code> with the Bearer key from <code>.env</code>.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ FAQ ══════════════════════════ -->
+  <section class="section faq" id="faq" aria-labelledby="faq-title">
+    <div class="wrap wrap--narrow">
+      <header class="section-head reveal">
+        <p class="eyebrow">FAQ</p>
+        <h2 class="section-title" id="faq-title">Questions, answered.</h2>
+      </header>
+
+      <div class="faq-list reveal">
+        <details>
+          <summary>Do I need an OpenRouter key?</summary>
+          <div class="faq-body"><p>For two features: semantic-search embeddings and the optional read-only chat. Add <code class="inline">OPENROUTER_API_KEY</code> to <code class="inline">.env</code> to switch them on. Everything else — reading, editing, history, Galaxy, lexical search, MCP, Git sync and backups — works without any key.</p></div>
+        </details>
+        <details>
+          <summary>Where does my data live?</summary>
+          <div class="faq-body"><p>On your machine or server. Pages are plain Markdown in a Git repository you can back up, move or read with any editor.</p></div>
+        </details>
+        <details>
+          <summary>Can I bring my existing notes?</summary>
+          <div class="faq-body"><p>Yes. Point it at a Git repository of Markdown pages, or import a local one with an optional folder prefix.</p></div>
+        </details>
+        <details>
+          <summary>Which agents work with it?</summary>
+          <div class="faq-body"><p>Any MCP client that supports Streamable HTTP or stdio.</p></div>
+        </details>
+        <details>
+          <summary>Can I use it on my phone?</summary>
+          <div class="faq-body"><p>Yes, install it as a PWA. Put it behind an authenticated HTTPS reverse proxy for remote access.</p></div>
+        </details>
+        <details>
+          <summary>What does it cost?</summary>
+          <div class="faq-body"><p>Nothing. MIT-licensed open source. Model usage (optional) is billed by your OpenRouter account.</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ FINAL CTA ══════════════════════════ -->
+  <section class="finale" aria-labelledby="finale-title">
+    <div class="wrap">
+      <div class="finale-card reveal">
+        <img class="finale-bg" src="assets/scale-galaxy-stage-zoom.webp" width="1600" height="1202" loading="lazy" decoding="async" alt="" aria-hidden="true">
+        <div class="finale-veil" aria-hidden="true"></div>
+        <div class="finale-body">
+          <h2 class="finale-title" id="finale-title">Give your ideas a universe.</h2>
+          <p class="finale-sub">Self-hosted, MIT-licensed, and yours to keep.</p>
+          <div class="finale-cta">
+            <a class="btn btn--light btn--lg" href="#install">Install in one line</a>
+            <a class="btn btn--glass btn--lg" href="https://github.com/JonasKruegerCode/SecondBrain" target="_blank" rel="noopener noreferrer">
+              <svg class="ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 .5C5.73.5.5 5.74.5 12.02c0 5.1 3.29 9.42 7.86 10.95.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.26 5.69.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.53 11.53 0 0 0 23.5 12.02C23.5 5.74 18.27.5 12 .5z"/></svg>
+              Star on GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ══════════════════════════ FOOTER ══════════════════════════ -->
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <span class="brand-mark brand-mark--sm" aria-hidden="true">
+        <svg viewBox="0 0 512 512" width="18" height="18" focusable="false">
+          <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="34">
+            <path d="M256 96v320M96 256h320M143 143l226 226M369 143 143 369"/>
+          </g>
+          <circle cx="256" cy="256" r="44" fill="currentColor"/>
+        </svg>
+      </span>
+      <span>SecondBrain</span>
+    </div>
+    <nav class="footer-links" aria-label="Footer">
+      <span class="footer-license">MIT License</span>
+      <a href="https://github.com/JonasKruegerCode/SecondBrain" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href="https://github.com/JonasKruegerCode/SecondBrain#readme" target="_blank" rel="noopener noreferrer">Docs</a>
+      <span class="footer-made">Made by <a href="https://jonas-krueger.com" target="_blank" rel="noopener noreferrer">Jonas Krüger</a></span>
+    </nav>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>
