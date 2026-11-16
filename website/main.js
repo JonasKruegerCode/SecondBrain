@@ -420,6 +420,8 @@
     initCopy();
     initGalaxy();
     initStageScroll();
+    // Keep the readable CSS fallback until enhancement has initialized.
+    document.documentElement.classList.remove("no-js");
   }
 
   if (document.readyState === "loading") {
@@ -428,3 +430,4 @@
     boot();
   }
 })();
+
