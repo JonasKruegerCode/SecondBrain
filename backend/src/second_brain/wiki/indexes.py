@@ -2,8 +2,9 @@
 
 The worker lock serializes builders, not content writers. Every attempt has a
 fresh isolated generation, so a failed/late build cannot corrupt a live index.
-Only a durable receipt makes that generation readable, and only at its exact
-content revision. Missing receipts are reconstructed by comparing the Git head.
+Only a durable ready receipt makes that generation readable. Semantic search
+keeps the last compatible ready generation while a new one builds or fails.
+Page revisions are checked against the current search projection before use.
 """
 
 from __future__ import annotations
@@ -19,13 +20,13 @@ from contextlib import contextmanager
 from typing import Any, Protocol
 
 from second_brain.wiki.relevance import (
+    ANCHOR_MIN_LENGTH,
     IMPLICIT_CANDIDATE_LIMIT,
+    _semantic_near_match,
     adaptive_cutoff,
     combine_chunk_scores,
-    drop_lexical_gap_tail,
-    overlapping_ids,
+    content_tokens,
     rank_pages,
-    token_weights,
 )
 from second_brain.wiki.store import WikiError, WikiStore
 
@@ -148,6 +149,25 @@ class IndexCoordinator:
             ).fetchone()
         return str(row[0]) if row else None
 
+    def _serving_receipt(self, kind: str) -> dict[str, Any] | None:
+        """Last fully built generation for this config, including after a failure.
+
+        reuse_sources is advanced in the same transaction as a successful build
+        receipt. Failed/building generations never displace that ready pointer.
+        """
+        with self._db() as db:
+            row = db.execute(
+                "SELECT g.revision,g.generation,g.config,g.state FROM generations g "
+                "JOIN reuse_sources s ON s.kind=g.kind AND s.generation=g.generation "
+                "AND s.config=g.config WHERE g.kind=? AND g.config=? AND g.state='ready'",
+                (kind, self.config_id),
+            ).fetchone()
+        return (
+            dict(zip(("revision", "generation", "config", "state"), row, strict=True))
+            if row
+            else None
+        )
+
     def status(self) -> dict[str, Any]:
         revision = self.store._head() or None
         states: dict[str, Any] = {}
@@ -169,6 +189,10 @@ class IndexCoordinator:
                 "state": state,
                 "indexed_revision": receipt["revision"] if receipt else None,
             }
+            if kind == "vector" and configured:
+                serving = self._serving_receipt(kind)
+                states[kind]["serving_revision"] = serving["revision"] if serving else None
+                states[kind]["available"] = serving is not None
         return {"revision": revision, "indexes": states}
 
     def run_once(self, *, rebuild: bool = False) -> dict[str, Any]:
@@ -318,35 +342,39 @@ class IndexCoordinator:
                 return {"cleanup": "completed", "dry_run": dry_run, "indexes": results}
 
     def _current(self, kind: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        snapshot = self.store.snapshot()
+        # Explicit graph traversal needs an exact receipt, not graph derivation.
+        revision = self.store._head()
         receipt = self._receipt(kind)
         if kind not in self.adapters:
             raise WikiError("index_not_configured", "This optional index is not configured.")
         if not receipt or (
-            receipt["revision"] != snapshot["revision"]
+            receipt["revision"] != revision
             or receipt["config"] != self.config_id
             or receipt["state"] != "ready"
         ):
             raise WikiError("index_pending", "The index has not completed this content revision.")
-        return snapshot, receipt
+        return {"revision": revision}, receipt
 
     def semantic_search(self, query: str, limit: int | None = 10) -> dict[str, Any]:
-        """Rank the current vector generation.
+        """Rank a compatible ready generation against current page metadata.
 
         An integer ``limit`` is a hard cap and does not drop a weak tail.
         ``limit=None`` fetches a bounded candidate pool, fuses it with lexical
         title and body evidence, and applies the adaptive cutoff.
         """
         if not query.strip():
-            snapshot = self.store.snapshot()
             return {
                 "mode": "semantic",
-                "revision": snapshot["revision"],
+                "revision": self.store._head() or None,
                 "results": [],
             }
         pool = IMPLICIT_CANDIDATE_LIMIT if limit is None else min(50, max(1, limit))
-        with self._reader():
-            snapshot, receipt = self._current("vector")
+        with self._reader(), self.store.search_catalog().read() as view:
+            if "vector" not in self.adapters:
+                raise WikiError("index_not_configured", "This optional index is not configured.")
+            receipt = self._serving_receipt("vector")
+            if receipt is None:
+                raise WikiError("index_pending", "No compatible vector generation is ready yet.")
             try:
                 adapter = self.adapters["vector"]
                 grouped = getattr(adapter, "search_grouped", None)
@@ -357,7 +385,7 @@ class IndexCoordinator:
                 )
             except Exception as exc:
                 raise WikiError("index_unavailable", "The vector provider is unavailable.") from exc
-            pages = {p["id"]: p for p in snapshot["pages"]}
+            pages = {p["id"]: p for p in view.pages([hit.get("id", "") for hit in hits])}
             candidates: list[dict[str, Any]] = []
             signals: dict[str, float] = {}
             published: dict[str, float] = {}
@@ -375,30 +403,40 @@ class IndexCoordinator:
                 )
                 published[page_id] = score
                 seen.add(page_id)
-            lex_pool = min(len(snapshot["pages"]), pool + 20)
-            weights = token_weights(query, snapshot["pages"])
-            for page in rank_pages(
-                query, snapshot["pages"], {}, token_weights=weights
-            )[:lex_pool]:
+            weights = view.weights(query)
+            lexical = view.lexical(query, pool + 20)
+            for page in lexical:
                 page_id = str(page["id"])
                 if page_id in seen or float(page["rank_score"]) <= 0:
                     continue
-                candidates.append(pages[page_id])
+                candidates.append(page)
                 published.setdefault(page_id, 0.0)
                 seen.add(page_id)
-            if limit is None:
-                for page_id in overlapping_ids(query, snapshot["pages"], seen, pool):
-                    candidates.append(pages[page_id])
-                    published.setdefault(page_id, 0.0)
-                    seen.add(page_id)
             ranked = rank_pages(query, candidates, signals, token_weights=weights)
+            ranked = [page for page in ranked if float(page["rank_score"]) > 0.0]
             exact = query.strip().casefold()
             # Exact page identity stays ahead of a merely similar mention.
             # Vector cosine is preserved on ``score`` and is not rewritten.
             ranked.sort(
                 key=lambda page: exact not in {page["id"].casefold(), page["title"].casefold()}
             )
-            ranked = drop_lexical_gap_tail(query, snapshot["pages"], ranked, signals)
+            # Preserve the rare-anchor rule using indexed document frequencies,
+            # without rescanning the corpus or rebuilding its token statistics.
+            tokens = content_tokens(query)
+            lexical_ids = {page["id"] for page in lexical}
+            if ranked and ranked[0]["id"] in lexical_ids and any(
+                (len(token) >= ANCHOR_MIN_LENGTH or any(c.isdigit() for c in token))
+                and 0 < view.frequency(token) <= 2
+                and view.contains(ranked[0]["id"], token)
+                for token in tokens
+            ):
+                leader = signals.get(ranked[0]["id"], 0.0)
+                ranked = [
+                    page
+                    for page in ranked
+                    if page["id"] in lexical_ids
+                    or _semantic_near_match(signals.get(page["id"], 0.0), leader)
+                ]
             cutoff = limit is None
             window = adaptive_cutoff(ranked, pool, signals) if cutoff else ranked[:pool]
             dropped_tail = cutoff and len(window) < len(ranked)
@@ -420,15 +458,18 @@ class IndexCoordinator:
                         "relevance": rank / top_rank if top_rank > 0.0 else 0.0,
                     }
                 )
-            if self.store._head() != snapshot["revision"]:
+            if self.store._head() != view.revision:
                 raise WikiError(
                     "index_pending", "Content changed during search. Retry after indexing."
                 )
             payload: dict[str, Any] = {
                 "mode": "semantic",
-                "revision": snapshot["revision"],
+                "revision": view.revision or None,
                 "results": results,
             }
+            if receipt["revision"] != view.revision:
+                payload["index_revision"] = receipt["revision"]
+                payload["index_state"] = "updating"
             if dropped_tail:
                 payload["cutoff"] = True
             return payload
@@ -438,17 +479,17 @@ class IndexCoordinator:
             raise WikiError("invalid_payload", "Use up to 20 seeds, 1–3 hops and limit 1–100.")
         for seed in seeds:
             self.store._validate_id(seed)
-        with self._reader():
+        with self._reader(), self.store.search_catalog().read() as view:
             snapshot, receipt = self._current("graph")
+            if view.revision != snapshot["revision"]:
+                raise WikiError("index_pending", "Content changed during graph retrieval.")
             try:
                 ids = self.adapters["graph"].neighbors(receipt["generation"], seeds, hops, limit)
             except Exception as exc:
                 raise WikiError("index_unavailable", "The graph provider is unavailable.") from exc
-            selected = set(ids)
             pages = [
                 {k: v for k, v in p.items() if k != "markdown"}
-                for p in snapshot["pages"]
-                if p["id"] in selected
+                for p in sorted(view.pages(list(set(ids))), key=lambda p: p["title"].casefold())
             ][:limit]
             if self.store._head() != snapshot["revision"]:
                 raise WikiError(

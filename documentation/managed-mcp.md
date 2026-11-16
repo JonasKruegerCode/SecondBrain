@@ -148,6 +148,15 @@ limit caps the combined results. `get_neighbors(id="page")` aliases `ids=["page"
 conflicting simultaneous inputs are refused. REST/chat retain their explicit
 search modes and use the same underlying retrieval services.
 
+During embedding updates, semantic search keeps the last compatible ready
+generation and returns `index_state="updating"` with `index_revision`. Results
+are joined to current page revisions: deleted or edited old vectors cannot leak,
+and fresh lexical matches are available immediately. Before any compatible
+generation exists, default search returns lexical matches and
+`index_state="pending"`; explicit semantic search returns `index_pending`.
+Graph expansion still requires an exactly current graph generation. See the
+[availability and local lexical projection](managed-indexes.md#recovery-and-retention).
+
 `backend/tests/test_wiki_mcp_http.py` exercises the actual in-process FastMCP
 HTTP application and lifespan: initialization, tool discovery, guidance, save,
 retry, conflict, readback through MCP and REST, slash behavior, Bearer rejection,

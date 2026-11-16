@@ -126,9 +126,25 @@ to validate a production embedding service or hosted Qdrant server.
 
 If a backend is unavailable or a build fails, preserve Git and its current content.
 A failed Qdrant attempt can leave a partial collection, so create a fresh attempt
-rather than repairing or publishing that collection. The coordinator stores a sanitized error receipt on failure,
-replacing the prior receipt for that backend. Its retained backend generations are not served as
-current. A ready receipt is published only after its exact snapshot finishes.
+rather than repairing or publishing that collection. The coordinator records a
+sanitized failure receipt without moving the separate last-ready pointer.
+Semantic search continues using the last ready generation of the same
+configuration while a replacement builds or fails. The pointer changes
+atomically only after a complete successful build. Graph expansion still
+requires an exactly current graph receipt.
+
+Search joins old vector hits against current page revisions. Deleted pages and
+old revisions of edited/recreated pages cannot return as semantic hits; new or
+edited pages can already match the current lexical index. An updating semantic
+response includes `index_state: updating` and `index_revision`; its `revision`
+identifies the current content projection. The UI explains that recent edits may
+only match by their wording until embeddings catch up. A first build, or an
+incompatible model/configuration change, has no compatible ready generation:
+default search uses lexical results with `index_state: pending` and a visible
+notice. An explicit semantic request reports `index_pending` in that case.
+Provider outages remain explicit errors rather than empty search results.
+Status includes vector `available` and `serving_revision` alongside the latest
+build's `state` and `indexed_revision`.
 
 If receipt persistence fails after a successful build, the generation is an orphan:
 recovery can start a fresh build, without changing Markdown or an existing
@@ -162,6 +178,22 @@ not present in this coordinator's ledger are reported as untracked and never
 deleted. This includes legacy generations discovered after an upgrade; cleanup
 does not guess their ownership. Provider errors are returned only as sanitized
 per-index states.
+
+## Local lexical projection and query cost
+
+`.wiki-search.sqlite3` is a disposable SQLite FTS5 projection, not a new content
+authority or a provider ledger. Git remains authoritative. The first search
+builds the projection; subsequent searches reuse it across requests and process
+restarts. After a Git head change, only changed page/revision blobs are read and
+deleted documents are removed. One SQLite transaction publishes the projection;
+WAL readers keep a consistent view during a concurrent refresh. Restores can
+rebuild this file from Git, so backups deliberately omit it.
+
+Queries use a bounded FTS candidate set with indexed corpus frequencies and then
+the shared relevance ranking. They do not read every article, retokenize the
+whole wiki, or derive the link graph. Semantic searches read only current
+metadata/body for their vector and lexical candidates. Full snapshot/graph
+derivation is reserved for index building and explicit graph operations.
 
 ## Enable and operate
 

@@ -204,7 +204,12 @@ async def test_real_indexes_shared_rest_mcp_and_stale_revision(indexed: IndexCoo
         assert page
         indexed.store.delete_page("harbor", page["revision"], "remove-harbor")
         indexed.store.save_page("harbor", "# Harbor\nChanged incarnation.", None, "new-harbor")
-        assert client.get("/api/wiki/search?q=harbor&mode=semantic").status_code == 503
+        updating = client.get("/api/wiki/search?q=harbor&mode=semantic")
+        assert updating.status_code == 200
+        assert updating.json()["index_state"] == "updating"
+        replacement = next(p for p in updating.json()["results"] if p["id"] == "harbor")
+        assert replacement["revision"] != page["revision"]
+        assert replacement["score"] == 0  # Fresh lexical match, never the deleted vector.
         assert client.get("/api/wiki/search?q=harbor").status_code == 200
         current(indexed)
         fresh = indexed.semantic_search("harbor")

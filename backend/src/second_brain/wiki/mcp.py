@@ -24,7 +24,7 @@ from second_brain.wiki.indexes import IndexCoordinator
 from second_brain.wiki.search_service import search_wiki as run_wiki_search
 from second_brain.wiki.store import SEARCH_RESULT_LIMIT, WikiError, WikiStore
 
-GUIDANCE = """# Managed Wiki editing guide (v4)
+GUIDANCE = """# Managed Wiki editing guide (v5)
 
 Read a page before editing and keep its revision. Use stable IDs, a concise
 opening paragraph, meaningful headings and expected [[page-id|label]] links
@@ -50,8 +50,14 @@ evidence and returns a short relevance cutoff (at most 15). Without vectors it
 ranks lexical Markdown (at most 50). An explicit limit of 1–50 disables that
 cutoff and returns up to that many ranked hits. Explicit mode lexical always
 works without optional providers; lexical results set truncated=true when the
-hard cap hides further matches. Explicit mode semantic uses current vectors
+hard cap hides further matches. Explicit mode semantic uses compatible ready vectors
 (10 hits by default). hpos 0–2 adds graph neighbors to each semantic hit.
+Semantic search can serve the last ready generation of the same configuration
+while rebuilding: index_state=updating and index_revision identify that case.
+Old vector hits for deleted or edited page revisions are rejected; fresh lexical
+matches remain available. Before the first compatible generation, default search
+uses lexical matches with index_state=pending. Exact graph expansion still
+requires a current graph generation. Use status, not a save receipt, for progress.
 Nonzero hpos requires semantic search.
 Mode graph_rag adds bounded graph context without generating an answer.
 get_neighbors expands explicit links using ids, or the legacy single-page id

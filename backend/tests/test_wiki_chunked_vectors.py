@@ -98,7 +98,10 @@ async def test_tail_retrieval_maps_to_one_current_article_and_preserves_source(
         assert all(p["snapshot_revision"] == before["revision"] for p in archive)
         store.save_page("archive", "# Updated", saved["revision"], "edit")
         with TestClient(create_app(store.path, indexes=indexes)) as api:
-            assert api.get("/api/wiki/search?q=TAIL_EVIDENCE&mode=semantic").status_code == 503
+            updating = api.get("/api/wiki/search?q=TAIL_EVIDENCE&mode=semantic")
+            assert updating.status_code == 200
+            assert updating.json()["index_state"] == "updating"
+            assert updating.json()["results"] == []  # Old article revision cannot leak.
             assert api.get("/api/wiki/pages/archive").status_code == 200
     finally:
         indexes.close()

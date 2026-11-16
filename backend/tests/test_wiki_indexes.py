@@ -76,12 +76,14 @@ def test_restart_separate_receipts_and_no_content_mutation(tmp_path: Path) -> No
     assert restarted._receipt("vector") == receipt  # no repeated provider spend
 
 
-def test_late_snapshot_never_current_then_reconstructs_pending(tmp_path: Path) -> None:
+def test_late_snapshot_remains_searchable_while_reconstructing_pending(tmp_path: Path) -> None:
     store, graph, indexes = setup(tmp_path)
     graph.callback = lambda: store.save_page("new", "# New", None, "during-build")
     assert indexes.run_once()["indexes"]["vector"]["state"] == "pending"
-    with pytest.raises(WikiError, match="not completed"):
-        indexes.semantic_search("harbor")
+    result = indexes.semantic_search("harbor")
+    assert result["index_state"] == "updating"
+    assert result["index_revision"] != result["revision"]
+    assert "harbor" in {page["id"] for page in result["results"]}
     graph.callback = None
     restarted = IndexCoordinator(store, indexes.adapters)
     assert restarted.run_once()["indexes"]["vector"]["state"] == "current"

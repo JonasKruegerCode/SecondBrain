@@ -671,7 +671,12 @@ async function route(focusView = false, reuseShell = false, readingPoint?: Readi
           const refine = truncated
             ? '<p class="search-limit">More pages match. Refine your search to find a specific page.</p>'
             : "";
-          results.innerHTML = `<div class="section-heading"><h2>${countLabel}</h2></div>${refine}<div class="grid">${count ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
+          const indexNotice = data.index_state === "pending"
+            ? '<p class="quiet">Semantic search is not ready yet. Showing word matches.</p>'
+            : data.index_state === "updating"
+              ? '<p class="quiet">Search is updating. Recent edits may only match by their wording.</p>'
+              : "";
+          results.innerHTML = `<div class="section-heading"><h2>${countLabel}</h2></div>${indexNotice}${refine}<div class="grid">${count ? cards(data.results) : '<p class="quiet">No pages found. Try another word or phrase.</p>'}</div>`;
           results.setAttribute("aria-busy", "false");
           searchStatus.textContent = count
             ? truncated
