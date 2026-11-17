@@ -1,20 +1,30 @@
 # SecondBrain
 
-**Your knowledge, connected.** SecondBrain is a self-hosted personal wiki for
-people and AI agents. Pages are plain Markdown in Git, with a fast web app,
-hybrid search, an optional read-only assistant, and an MCP server that lets
-agents read and maintain the same knowledge base.
+**Your knowledge becomes your agent’s experience.**
+
+Build on what you’ve decided, tried and learned, even years later. SecondBrain
+is a self-hosted wiki for you and your AI agent with powerful search that
+brings back the details you barely remember.
 
 <!-- Screenshot: Galaxy view of a small curated wiki. Add a real product screenshot here. -->
 
 ## Why SecondBrain
 
-Notes usually end up trapped in a database, a chat log, or a single vendor.
-SecondBrain keeps the knowledge itself: readable Markdown, real revision
-history, and a repository you can back up or move. The web UI is for reading and
-writing, the MCP server is for agents, and both work against the same source of
-truth. Core reading, editing, history and lexical search work without a model
-key.
+A better model brings more intelligence, while real work brings experience.
+SecondBrain preserves your decisions and their reasons, what you tried, what
+worked and what you learned, so your agent can build on that experience across
+conversations and projects as the models behind it improve.
+
+You read, explore and edit in the web app, while your agent searches and
+maintains the same pages through MCP. Search and links help it find the
+relevant details as your wiki grows. An optional OpenRouter key enables
+meaning-based search alongside keyword matches, helping retrieve pages even
+when your question uses different words.
+
+The knowledge stays in plain Markdown in Git, with real revision history and
+a repository you can back up or move. You can read and correct what your agent
+works from and keep using it with other compatible agents. Core reading,
+editing, history and lexical search work without a model key.
 
 ## What you get
 
